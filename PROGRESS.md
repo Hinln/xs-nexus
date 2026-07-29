@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-07-29 10:14 UTC  
-当前 Git 提交：`77e13b6`  
+当前 Git 提交：`86f8cd9`  
 当前总状态：`IN_PROGRESS`  
 当前里程碑：`M1.1 Controller 最小控制平面`
 
@@ -19,7 +19,8 @@
 - 首个 Git 检查点 `c519e34`；
 - M0.2 clean-room、总体架构、威胁模型和安全假设；
 - XSP/1 字节级协议、密码学设计、测试向量和一致性验证；
-- M0.2 全量验证证据 `/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`。
+- M0.2 全量验证证据 `/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`；
+- M0.2 Git 检查点 `86f8cd9`。
 
 ## 正在进行
 

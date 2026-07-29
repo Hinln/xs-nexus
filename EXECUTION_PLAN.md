@@ -101,6 +101,7 @@
 - 首次全量验证：`/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`
 - XSP/1 编码向量：`tests/vectors/xsp1/data-header-v1.json`
 - 协议一致性检查：`scripts/validate-m02.py`
+- Git 检查点：`86f8cd9`
 
 ### 实际结果
 
