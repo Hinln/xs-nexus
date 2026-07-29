@@ -142,6 +142,20 @@ Agent 比较持久化的最后版本并拒绝低版本、同版本不同哈希�
 
 M1.1 只实现 bootstrap 管理 Token，不代表最终 RBAC、浏览器会话、吊销传播或数据面协议已经完成。
 
+### 8.2 M1.3 协议核心已实现证据
+
+| 控制 | 自动化证据 |
+|---|---|
+| 标准原语调用 | RFC 7748 X25519、RFC 5869 HKDF-SHA-256、RFC 8439 ChaCha20-Poly1305 回归向量 |
+| 身份与 transcript | 四消息 typestate 握手、双方 Ed25519 签名、Network/Node/Virtual IP/版本/套件/Session 绑定及篡改拒绝 |
+| Key confirmation 与方向隔离 | ClientFinish/ServerFinish 双向 AEAD confirmation、独立方向 traffic secret/key/nonce salt |
+| 数据真实性与源绑定 | 完整 96 字节头作为 AAD、Tag 篡改拒绝、IPv4 源/目标虚拟地址和分片拒绝 |
+| 抗重放与轮换 | 每方向每 Epoch 1024 位窗口、AEAD 成功后提交、确认式单方向 Key Update、旧/当前 Epoch 乱序及显式退休 |
+| 编码与 Fuzz seed | canonical session/data 向量以及 Magic、版本、类型、flag、长度、保留字段、截断、尾随字节和意外状态语料 |
+| 秘密生命周期 | 临时 X25519、handshake 和 traffic secret 使用清零包装，Debug 输出不暴露秘密 |
+
+M1.3 还通过两个隔离 Linux namespace 验证 Agent UDP/TUN 双节点链路、业务负载不可见、Tag 篡改、重放、伪造源地址、自动 Key Epoch 和 Controller 中断容错。该证据仍不代表长期 Fuzz、Relay 边界或第三方密码学审计已经完成。
+
 ## 9. 不在安全承诺内
 
 - 被 root、SYSTEM 或设备管理员完全攻陷的端点；

@@ -1,6 +1,6 @@
 # XSP/1 密码学设计
 
-状态：M0.2 规范草案  
+状态：M1.3 协议核心实现  
 日期：2026-07-29  
 审计状态：未完成独立第三方审计，不适合宣称生产级安全。
 
@@ -211,10 +211,12 @@ AAD = exact_96_byte_data_header
 - Epoch 为 `uint32`，初始值 0；
 - 每个 Epoch 具有独立方向密钥、nonce salt 和重放窗口；
 - 单个 Epoch 在 `2^32` 个包、1 小时或实现配置的更低安全阈值首先到达时轮换；
-- Key Update 在当前有效会话内加密和认证，双方确认后切换；
+- Key Update 在当前有效会话内加密和认证，接收方先安装单方向接收 Epoch，发起方收到匹配确认后再切换对应发送 Epoch；
 - 旧 Epoch 最多保留 30 秒且最多接收 1024 个乱序包；
 - 每 24 小时、节点凭证变化、吊销事件、路径身份异常或状态不确定时执行完整 X25519 重握手；
 - 仅通过 HKDF 链轮换不能恢复已泄露会话的前向安全，因此不能无限替代完整重握手。
+
+Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，以先到者为准。`privileged-network-tests` 构建仅为自动化验证把阈值缩短为 4 个数据包或 2 秒，并把旧 Epoch 保留期缩短为 5 秒；这些测试参数不进入默认构建。
 
 ## 9. 抗重放
 
@@ -241,6 +243,15 @@ AAD = exact_96_byte_data_header
 未认证阶段的错误响应不得大于请求，且只返回通用拒绝或静默丢弃。已认证阶段使用加密错误码。签名、X25519、HKDF、AEAD、重放和凭证错误对公网不得形成可区分 oracle。
 
 ## 12. 待审计问题
+
+当前实现证据包括：
+
+- `crates/protocol/tests/primitives.rs` 锁定 RFC 7748、RFC 5869 和 RFC 8439 原语向量；
+- `tests/vectors/xsp1/session-v1.json` 与 `generate_session_vector` 锁定双方 Hello、双向 Finish、应用数据包、方向密钥派生和 AAD；
+- `crates/protocol/tests/session.rs` 覆盖 transcript/身份篡改、全零 X25519、Finish/Tag 篡改、重放窗口、Epoch 乱序和旧 Epoch 退休；
+- `scripts/test-protocol-vectors.sh` 验证 canonical 向量及有效、非规范和意外状态 Fuzz seed corpus 一致性。
+
+上述自动化证据不替代密码学组合的形式化分析或独立第三方审计。
 
 - transcript 和凭证编码是否存在歧义；
 - Ed25519 长期身份与 Controller 凭证组合是否充分绑定；

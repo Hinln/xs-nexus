@@ -5,6 +5,7 @@ use tokio::{sync::watch, task::JoinHandle};
 use crate::{
     config::AgentConfig,
     control::run_control_loop,
+    data_plane::UdpDataPlane,
     error::{AgentError, Result},
     health::AgentHealth,
     ipc::{IpcContext, run_ipc_server},
@@ -29,6 +30,7 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
     state.validate(&identity, controller_url.as_str())?;
     let plan = NetworkPlan::from_state(&config, &state)?;
     let network = TunNetwork::create(plan.clone(), &config.network_manifest_path()).await?;
+    let mut data_plane = UdpDataPlane::bind(&state, Arc::clone(&identity)).await?;
     let state = Arc::new(tokio::sync::RwLock::new(state));
     let health = Arc::new(AgentHealth::new());
 
@@ -55,6 +57,8 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
     let mut control_completed = false;
     let mut ipc_completed = false;
     let mut packet = vec![0_u8; MAX_IPV4_PACKET_BYTES];
+    let mut data_plane_maintenance = tokio::time::interval(std::time::Duration::from_millis(100));
+    data_plane_maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let runtime_result = loop {
         tokio::select! {
             result = shutdown.changed() => {
@@ -65,9 +69,22 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
             received = network.receive(&mut packet) => {
                 match received {
                     Ok(0) => break Err(AgentError::Network),
-                    Ok(_) => health.record_tun_packet(true),
+                    Ok(length) => {
+                        let dropped = data_plane.forward_tun(&packet[..length]).await?;
+                        health.record_tun_packet(dropped);
+                    }
                     Err(error) => break Err(error),
                 }
+            }
+            received = data_plane.receive() => {
+                match received {
+                    Ok(Some(packet)) => network.send(&packet).await?,
+                    Ok(None) => {}
+                    Err(error) => break Err(error),
+                }
+            }
+            _ = data_plane_maintenance.tick() => {
+                data_plane.maintain().await?;
             }
             result = &mut control_task, if !control_completed => {
                 control_completed = true;

@@ -103,6 +103,8 @@ pub struct ConfigurationNode {
     pub node_id_base64: String,
     pub identity_public_key_base64: String,
     pub virtual_ip: String,
+    #[serde(default)]
+    pub direct_endpoints: Vec<String>,
     pub credential_serial: u64,
     pub credential_not_after: DateTime<Utc>,
     pub role_bitmap: u32,

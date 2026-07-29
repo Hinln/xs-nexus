@@ -14,6 +14,8 @@ pub enum AgentError {
     Control,
     #[error("network resource operation failed")]
     Network,
+    #[error("encrypted data plane operation failed")]
+    DataPlane,
     #[error("local management interface failed")]
     Ipc,
     #[error("agent runtime failed")]
@@ -32,6 +34,7 @@ impl AgentError {
             Self::ControllerTrust => "agent_controller_trust_failed",
             Self::Control => "agent_control_unavailable",
             Self::Network => "agent_network_operation_failed",
+            Self::DataPlane => "agent_data_plane_failed",
             Self::Ipc => "agent_ipc_failed",
             Self::Runtime => "agent_runtime_failed",
             Self::UnsupportedPlatform => "agent_platform_unsupported",

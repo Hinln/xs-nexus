@@ -32,6 +32,10 @@ def main() -> int:
         if scanner.scan(root, {}):
             raise RuntimeError("Rust non-literal assignment produced a false positive")
 
+        dynamic.write_bytes(b"let key = EphemeralPrivateKey::from_bytes(value);\n")
+        if scanner.scan(root, {}):
+            raise RuntimeError("Rust private-key type path produced a false positive")
+
         dynamic.write_bytes(
             b"let " + sensitive_name + b" = \"not-a-production-value\";\n"
         )

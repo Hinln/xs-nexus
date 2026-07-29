@@ -333,7 +333,7 @@ KeyUpdate payload：
 | 4 | Next Epoch，必须等于 Current + 1 |
 | 32 | `SHA-256("XSP/1 key update v1" || Session ID || Current Epoch || Next Epoch)` |
 
-KeyUpdate 使用当前 Epoch 加密。双方派生新 Epoch 双向 key；接收 KeyUpdateAck 后发送方切换。旧 Epoch 最多保留 30 秒和 1024 个乱序包。状态冲突、跳跃 Epoch 或计数不确定触发完整重握手。
+KeyUpdate 使用当前发送 Epoch 加密。接收方验证后只安装该方向的下一个接收 Epoch，并使用自身当前发送 Epoch 返回 KeyUpdateAck；发起方收到匹配确认后才切换该方向的发送 Epoch。相反方向独立轮换。生产 Agent 在单方向发送 `2^20` 个数据包或运行 1 小时后触发轮换，旧接收 Epoch 最多保留 30 秒和 1024 个乱序包。状态冲突、跳跃 Epoch、确认重试耗尽后的持续异常或计数不确定触发完整重握手。
 
 ## 13. 关闭
 
@@ -387,6 +387,7 @@ Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session�
 ```text
 tests/vectors/xsp1/data-header-v1.json
 tests/vectors/xsp1/credential-v1.json
+tests/vectors/xsp1/session-v1.json
 ```
 
 生成器与有效凭证 Fuzz corpus：
@@ -394,21 +395,22 @@ tests/vectors/xsp1/credential-v1.json
 ```text
 scripts/generate-xsp1-vectors.py
 crates/protocol/examples/generate_credential_vector.rs
+crates/protocol/examples/generate_session_vector.rs
 fuzz/corpus/credential/valid-v1.bin
+fuzz/corpus/handshake/*.bin
+fuzz/corpus/data/*.bin
 ```
 
 凭证向量固定 Ed25519 签名、公钥、Node ID、Role Set 摘要、Key ID 和完整 200 字节编码。Rust 单元测试验证向量签名，并逐字节篡改 200 个位置确认全部拒绝；规范校验器同时验证长度、字段、哈希和 corpus 一致性。
 
-M1.3 实现前必须补充：
+M1.3 协议核心已锁定以下自动化证据：
 
-- RFC 原语测试向量；
-- 有效握手双方签名；
-- X25519 全零拒绝；
-- HKDF 每个标签；
-- ClientFinish/ServerFinish；
-- Data AEAD；
-- 重放窗口边界；
-- Epoch 切换乱序；
-- 所有长度、类型、flag、版本和状态负向 corpus。
+- `crates/protocol/tests/primitives.rs` 验证 RFC 7748 X25519、RFC 5869 HKDF-SHA-256 和 RFC 8439 ChaCha20-Poly1305 向量；
+- `crates/protocol/tests/session.rs` 验证双方签名、Network/Node/Virtual IP/版本/套件/Session transcript 绑定、双向 Finish、Data AEAD、AAD、虚拟源地址、重放窗口、Epoch 乱序和旧 Epoch 退休；
+- `tests/vectors/xsp1/session-v1.json` 固定四个握手消息、应用数据包、完整数据头和 SHA-256，任一 HKDF 域分离标签、编码或密钥方向变化都会改变向量；
+- `fuzz/corpus/handshake` 和 `fuzz/corpus/data` 包含有效消息以及 Magic、版本、类型、flag、长度、保留字段、截断、尾随字节和意外状态种子；
+- X25519 全零结果、签名/Finish/Tag 篡改、非规范编码、重放边界和 Epoch 状态冲突均以失败关闭测试覆盖。
+
+这些证据只覆盖协议库；Agent UDP/TUN 双节点端到端链路、持续 Fuzz 运行和独立第三方审计仍是后续强制验收。
 
 任何协议字段或标签变化都必须更新本规范、密码学设计、威胁模型、测试向量和 Fuzz corpus。

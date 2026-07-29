@@ -798,6 +798,7 @@ async fn publish_configuration(
             node_id_base64: URL_SAFE_NO_PAD.encode(row.node_id),
             identity_public_key_base64: URL_SAFE_NO_PAD.encode(row.identity_public_key),
             virtual_ip: row.virtual_ip,
+            direct_endpoints: Vec::new(),
             credential_serial: u64::try_from(row.credential_serial)
                 .map_err(|_| ApiError::internal())?,
             credential_not_after: row.credential_not_after,

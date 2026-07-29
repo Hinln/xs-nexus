@@ -1,6 +1,6 @@
 # 第三方依赖与许可证
 
-状态：M1.2 Agent 信任链基础依赖清单  
+状态：M1.3 协议密码学依赖清单  
 日期：2026-07-29
 
 `Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。版本与许可证字段已通过 `cargo metadata` 核对；任何新增依赖必须同步更新本文件。发布前仍须生成完整 SBOM、许可证文本集合和构建来源证明。
@@ -13,10 +13,12 @@
 |---|---:|---|---|
 | axum | 0.8.9 | Controller HTTP/WebSocket | MIT |
 | base64 | 0.23.0 | Base64URL wire encoding | MIT OR Apache-2.0 |
+| chacha20poly1305 | 0.10.1 | XSP/1 Finish 与数据 AEAD | Apache-2.0 OR MIT |
 | chrono | 0.4.45 | UTC 时间与数据库时间 | MIT OR Apache-2.0 |
 | ed25519-dalek | 3.0.0 | 标准 Ed25519 签名与验证 | BSD-3-Clause |
 | futures-util | 0.3.33 | WebSocket stream/sink | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | 操作系统 CSPRNG | MIT OR Apache-2.0 |
+| hkdf | 0.13.0 | XSP/1 HKDF-SHA-256 密钥派生 | MIT OR Apache-2.0 |
 | ipnet | 2.12.0 | IPv4 prefix 和 IPAM 边界 | MIT OR Apache-2.0 |
 | reqwest | 0.12.28 | Agent HTTPS enrollment，禁用系统原生 TLS | MIT OR Apache-2.0 |
 | rtnetlink | 0.21.0 | Linux Agent 使用 Netlink 管理接口、地址和路由 | MIT |
@@ -33,6 +35,7 @@
 | tracing | 0.1.44 | 结构化运行日志 | MIT |
 | tracing-subscriber | 0.3.23 | 日志订阅与过滤 | MIT |
 | uuid | 1.24.0 | 资源标识和 request ID | Apache-2.0 OR MIT |
+| x25519-dalek | 2.0.1 | XSP/1 临时 X25519 密钥协商 | BSD-3-Clause |
 | zeroize | 1.9.0 | 临时密钥和 Token 内存清零 | Apache-2.0 OR MIT |
 
 这些 crate 只提供通用 Web、数据库、序列化、标准密码学原语、Linux Netlink 和 `/dev/net/tun` 文件描述符封装，不包含现成组网、VPN、穿透或 Relay 实现。`tokio-tun` 仅用于 Linux TUN 系统调用封装，不启用持久设备，也不用于 Windows；项目未引入 Wintun。
@@ -78,13 +81,9 @@ Rust 与 npm 传递依赖分别锁定在 `Cargo.lock` 和 `package-lock.json`。
 
 ## 5. 密码学依赖边界
 
-M1.1 仅通过 `ed25519-dalek`、`sha2`、`getrandom`、`subtle` 和 `zeroize` 调用成熟原语与安全辅助能力，不自行实现 Ed25519、SHA-256、CSPRNG 或常量时间比较。M1.3 引入 X25519、HKDF-SHA-256 和 ChaCha20-Poly1305 前必须：
+M1.3 通过 `ed25519-dalek`、`x25519-dalek`、`hkdf`、`chacha20poly1305`、`sha2`、`getrandom`、`subtle` 和 `zeroize` 调用成熟原语与安全辅助能力，不自行实现 Ed25519、X25519、HKDF、ChaCha20-Poly1305、SHA-256、CSPRNG 或常量时间比较。
 
-1. 锁定版本和校验和；
-2. 记录许可证和维护状态；
-3. 确认不包含现成组网协议实现；
-4. 增加标准及项目独立测试向量；
-5. 更新本文件、威胁模型和 SBOM。
+新增密码学 crate 已锁定版本和 Cargo 校验和，许可证通过 `cargo metadata --locked` 核对；它们只提供标准原语，不包含现成组网协议、NAT 穿透、Relay 或虚拟网卡实现。RFC 原语向量、项目独立 session/data 向量及 Fuzz seed corpus 已纳入自动化回归。完整 SBOM、许可证文本集合、维护状态复核和第三方协议审计仍属于发布前强制工作。
 
 ## 6. 禁止依赖
 

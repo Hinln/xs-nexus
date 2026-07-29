@@ -43,3 +43,8 @@ workspace = true
 name = "tun_lifecycle"
 path = "tests/tun_lifecycle.rs"
 required-features = ["privileged-network-tests"]
+
+[[example]]
+name = "generate_pair_fixture"
+path = "examples/generate_pair_fixture.rs"
+required-features = ["privileged-network-tests"]

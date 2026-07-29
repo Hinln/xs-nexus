@@ -1,4 +1,7 @@
-use std::{collections::HashSet, net::Ipv4Addr};
+use std::{
+    collections::HashSet,
+    net::{Ipv4Addr, SocketAddrV4},
+};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
@@ -18,6 +21,7 @@ use crate::{
 const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
 const MAX_CONFIGURATION_BYTES: usize = 256 * 1024;
 const MAX_CONFIGURATION_NODES: usize = 65_535;
+const MAX_DIRECT_ENDPOINTS_PER_NODE: usize = 8;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -239,6 +243,7 @@ fn validate_configuration(
     let mut node_ids = HashSet::with_capacity(payload.nodes.len());
     let mut public_keys = HashSet::with_capacity(payload.nodes.len());
     let mut virtual_ips = HashSet::with_capacity(payload.nodes.len());
+    let mut direct_endpoints = HashSet::new();
     let mut local_match = false;
     for node in &payload.nodes {
         let node_id = decode_fixed::<16>(&node.node_id_base64)?;
@@ -247,7 +252,8 @@ fn validate_configuration(
             .virtual_ip
             .parse::<Ipv4Addr>()
             .map_err(|_| AgentError::ControllerTrust)?;
-        if node_id != node_id_for_key(&public_key)
+        if node.direct_endpoints.len() > MAX_DIRECT_ENDPOINTS_PER_NODE
+            || node_id != node_id_for_key(&public_key)
             || !address_pool.contains(&assigned_ip)
             || role_set_digest(node.role_bitmap, &node.tags).is_err()
             || !node_ids.insert(node_id)
@@ -255,6 +261,19 @@ fn validate_configuration(
             || !virtual_ips.insert(assigned_ip)
         {
             return Err(AgentError::ControllerTrust);
+        }
+        for encoded_endpoint in &node.direct_endpoints {
+            let endpoint = encoded_endpoint
+                .parse::<SocketAddrV4>()
+                .map_err(|_| AgentError::ControllerTrust)?;
+            if endpoint.port() == 0
+                || endpoint.ip().is_unspecified()
+                || endpoint.ip().is_multicast()
+                || *endpoint.ip() == Ipv4Addr::BROADCAST
+                || !direct_endpoints.insert(endpoint)
+            {
+                return Err(AgentError::ControllerTrust);
+            }
         }
         if node_id == local_node_id {
             local_match = public_key == local_public_key
@@ -355,6 +374,7 @@ mod tests {
                 node_id_base64: URL_SAFE_NO_PAD.encode(node_identifier),
                 identity_public_key_base64: URL_SAFE_NO_PAD.encode(identity.public_key()),
                 virtual_ip: virtual_ip.to_string(),
+                direct_endpoints: Vec::new(),
                 credential_serial: serial,
                 credential_not_after: chrono::DateTime::from_timestamp(
                     i64::try_from(not_after).expect("timestamp fits"),

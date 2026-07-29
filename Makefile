@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-protocol-vectors test-spec test-network test-e2e test-visual security-check release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-protocol-vectors test-spec test-network test-e2e test-visual security-check release clean
 
 setup:
 >npm ci
@@ -37,6 +37,9 @@ test-agent-control:
 
 test-agent-systemd:
 >./scripts/test-agent-systemd.sh
+
+test-agent-data-plane:
+>./scripts/test-agent-data-plane.sh
 
 test-protocol-vectors:
 >./scripts/test-protocol-vectors.sh

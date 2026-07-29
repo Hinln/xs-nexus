@@ -1,5 +1,19 @@
 #![forbid(unsafe_code)]
 
+mod data;
+mod handshake;
+
+pub use data::{
+    DATA_HEADER_LENGTH, DATA_TAG_LENGTH, DataFlags, DataHeader, DataReceiver, DataSender,
+    MAX_DATAGRAM_LENGTH, MAX_ENCRYPTED_PAYLOAD_LENGTH, OpenedPacket, PacketType,
+    key_update_payload, verify_key_update_payload,
+};
+pub use handshake::{
+    CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, ClientFinishSent, ClientHandshakeParameters,
+    ClientHelloSent, EphemeralPrivateKey, EstablishedSession, HandshakeContext, SERVER_FINISH_TYPE,
+    SERVER_HELLO_TYPE, ServerHandshakeParameters, ServerHelloSent,
+};
+
 use std::net::Ipv4Addr;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
@@ -45,6 +59,10 @@ pub struct InvalidCredential;
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 #[error("invalid role tag")]
 pub struct InvalidRoleTag;
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("invalid protocol message")]
+pub struct InvalidProtocolMessage;
 
 #[must_use]
 pub fn node_id(identity_public_key: &[u8; 32]) -> [u8; 16] {

@@ -88,7 +88,7 @@ def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
     assignment = re.compile(
         rb"(?i)(?:pass"
         rb"word|passwd|sec"
-        rb"ret|token|private[_-]?key)\s*[:=]\s*([^\s]+)"
+        rb"ret|token|private[_-]?key)\s*(?::(?!:)|=(?!>))\s*([^\s]+)"
     )
 
     for path in repository_files(root):

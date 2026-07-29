@@ -76,6 +76,12 @@
 - 降级字段篡改；
 - 资源耗尽攻击。
 
+### M1.3 自动化覆盖
+
+- `crates/protocol/tests/session.rs` 覆盖握手乱序、签名/transcript/AAD/Tag 篡改、重放窗口、虚拟源地址和 Epoch 边界；
+- `scripts/test-agent-data-plane.sh` 在两个真实 namespace 中覆盖双向 ICMP/TCP/UDP、原始业务包不可见、自动 Key Epoch、Tag 篡改、重放、伪造源地址和 Controller 中断；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`。
+
 ---
 
 ## 4. 路由与 ACL

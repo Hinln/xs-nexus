@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-29 13:06 UTC  
-当前 Git 提交：M1.2 完成检查点（以本文件所在提交为准）  
+最后更新时间：2026-07-29 15:32 UTC  
+当前 Git 提交：M1.3 完成检查点（以本文件所在提交为准）  
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`  
-当前里程碑：`M1.3 XSP/1 两节点加密链路`
+当前里程碑：`M2.1 地址发现与候选管理`
 
 ---
 
@@ -26,36 +26,42 @@
 - 默认路由保护、同名接口拒绝、shutdown、Drop 和 stale manifest 恢复；
 - 严格只读 Unix IPC、`xs status`、`xs peers`、`xs diagnostics` 和 JSON 输出；
 - 最小权限 systemd 单元和 `PrivateNetwork=yes` transient service 生命周期验证；
-- M1.2 全量证据 `/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`。
+- M1.2 全量证据 `/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`；
+- XSP/1 四消息 typestate 握手、Ed25519 身份验证、X25519、HKDF-SHA-256、ChaCha20-Poly1305、双向 Finish 和方向密钥；
+- 96 字节认证数据头、IPv4 源/目标绑定、1024 位重放窗口、严格 Key Epoch、旧 Epoch 退休、协议向量和 Fuzz seed corpus；
+- Agent 签名 Peer 目录、UDP 会话、握手重试与冲突决议、有界队列、TUN/UDP 双向循环和严格 endpoint 绑定；
+- 单方向确认式自动 Key Epoch，生产阈值为 `2^20` 个数据包或 1 小时，旧 Epoch 保留 30 秒；
+- 两个隔离 Linux namespace 中的双向 ICMP/TCP/UDP、密文抓包、Tag 篡改、重放、伪造源地址和 Controller 中断容错；
+- M1.3 全量证据 `/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`。
 
 ## 当前工作点
 
-- M1.2 已完成全部计划内实现和验证，宿主机无 `xstest0`、`xssvc0`、transient unit 或项目路由残留；
-- M1.3 已开始，当前需要把既有 XSP/1 规范收敛为可执行握手、会话密钥、AEAD、抗重放和 Key Epoch 状态机；
-- 在 M1.3 数据循环完成前，Agent 只读取并丢弃 TUN 数据包，不提供明文或未认证回退。
+- M1.3 已完成全部计划内实现和验证，宿主机无测试 TUN、namespace、nftables、路由或 Agent 进程残留；
+- `KI-008` 已解除，虚拟网络业务仅通过认证加密 XSP/1 会话传输；
+- M2.1 开始设计本地、公网映射和 IPv6 候选模型、签名交换、端点变化与认证路径探测。
 
 ## 下一步
 
-1. 完整复核协议目录规则、XSP/1 规范、威胁模型和现有数据头向量；
-2. 先补充握手 transcript、身份/版本绑定、方向密钥和重放窗口的失败测试与确定性向量；
-3. 使用成熟 X25519、HKDF 和 AEAD 原语实现独立会话状态机；
-4. 接入 UDP 传输与 TUN 双向循环，拒绝未认证、篡改、重放和伪造源虚拟 IP；
-5. 在两个隔离 Linux namespace 间完成双向 Ping、断流恢复、密钥轮换和 Controller 短时失联验证。
+1. 固定候选类型、优先级、生命周期、签名 payload 和资源上限；
+2. 实现我方公网映射发现请求/响应，拒绝匿名反射和未认证放大；
+3. 扩展 Controller 配置与 Agent 状态以交换签名候选并处理端点变化；
+4. 实现 XSP/1 PathChallenge/PathResponse、并发候选探测和活动路径晋升；
+5. 在隔离 namespace 中验证多候选优先级、认证探测、路径切换原因和 CLI 可观测性。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '1,360p' crates/protocol/AGENTS.md docs/XSP1_PROTOCOL.md docs/THREAT_MODEL.md
+sed -n '484,520p' XS_Nexus_Codex_Development_Brief.md
 ```
 
 ## 最近测试
 
-- 时间：2026-07-29 13:06 UTC；
+- 时间：2026-07-29 15:32 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m12.sh`；
+- 命令：`./scripts/validate-m13.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`；
-- 覆盖：严格格式化与 Clippy、Rust/Node 构建和单测、真实 PostgreSQL、Agent enrollment/control、协议向量、Unix IPC、CLI、TUN/Netlink namespace 生命周期、transient systemd、ShellCheck、依赖漏洞检查和秘密扫描。
+- 证据：`/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`；
+- 覆盖：严格格式化与 Clippy、Rust/Node 构建和单测、真实 PostgreSQL、Agent enrollment/control、RFC 原语与协议向量、TUN/Netlink、systemd、双节点加密业务、Key Epoch、Tag 篡改、重放、伪造源地址、Controller 中断、ShellCheck、依赖漏洞检查和秘密扫描。
 
 ## 当前失败
 
@@ -71,8 +77,7 @@ sed -n '1,360p' crates/protocol/AGENTS.md docs/XSP1_PROTOCOL.md docs/THREAT_MODE
 
 ## 当前风险
 
-- 自研协议凭证层已实现，但握手、AEAD 数据面和独立审计尚未完成；
-- M1.3 前虚拟网络业务包会安全丢弃，见 `KI-008`；
+- 自研协议握手与 AEAD 数据面已实现，但长期 Fuzz、Relay 边界和独立第三方审计尚未完成；
 - Windows 驱动尚未开发，真实设备尚未接入；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
@@ -85,8 +90,8 @@ cd /srv/xs-nexus
 git status --short --branch
 GIT_PAGER=cat git log --oneline -10
 cat PROGRESS.md
-./scripts/validate-m12.sh
-sed -n '1,360p' crates/protocol/AGENTS.md docs/XSP1_PROTOCOL.md docs/THREAT_MODEL.md
+./scripts/validate-m13.sh
+sed -n '484,520p' XS_Nexus_Codex_Development_Brief.md
 ```
 
 然后读取：

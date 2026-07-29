@@ -187,7 +187,7 @@
 
 ## M1.3 XSP/1 两节点加密链路
 
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE`
 - 前置：M1.2
 - 风险等级：高
 
@@ -215,11 +215,17 @@
 - 伪造源虚拟 IP 被拒绝；
 - Controller 重启时已有会话继续。
 
+### 完成证据
+
+- 协议单元、集成、RFC 原语和确定性向量测试全部通过；
+- 两个隔离 Linux namespace 中完成双向 ICMP、TCP、UDP、加密抓包、自动 Key Epoch、Tag 篡改、重放、伪造源地址和 Controller 端点中断验证；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`。
+
 ---
 
 ## M2.1 地址发现与候选管理
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M1.3
 
 ### 范围
