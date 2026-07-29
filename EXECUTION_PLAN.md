@@ -1,6 +1,6 @@
 # EXECUTION_PLAN.md — 拾枢（XS Nexus）实际执行计划
 
-当前总状态：`NOT_STARTED`
+当前总状态：`IN_PROGRESS`
 
 本计划按依赖顺序推进。不得在 Linux 核心链路未稳定前接入真实 NAS，不得在 Windows 测试虚拟机通过前接入用户日常电脑。
 
@@ -8,7 +8,7 @@
 
 ## M0.1 仓库与环境基线
 
-- 状态：`IN_PROGRESS`
+- 状态：`PASSED`
 - 风险等级：中
 - 人工门禁：无
 
@@ -37,11 +37,33 @@
 - 外部网络只引用、不重建；
 - 恢复命令已记录。
 
+### 验证命令
+
+```bash
+./scripts/validate-m01.sh
+```
+
+### 证据
+
+- 环境基线：`/srv/xs-nexus-qa/baseline/20260729T094000Z`
+- 验证日志：`/srv/xs-nexus/artifacts/qa/m0.1-20260729T095256Z/validate-m01.log`
+- 环境报告：`docs/ENVIRONMENT_BASELINE.md`
+- Git 检查点：`c519e34`
+
+### 实际结果
+
+- 完成系统、Docker、1Panel、网络、防火墙和工具链基线；
+- 在隔离 namespace 中实际验证 TUN 和 nftables；
+- 完成 Rust 与前端最小真实构建、单元测试和组件集成测试；
+- 仓库秘密扫描和 npm 审计通过；
+- Compose 仅引用外部 `1panel-network`，未修改现有 1Panel 资源；
+- 发现既有 PostgreSQL、Redis 公网暴露，记录为 `KI-006` 和 `BLK-005`，不阻塞不受影响开发。
+
 ---
 
 ## M0.2 Clean-room、架构和威胁模型
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 风险等级：高
 
 ### 目标

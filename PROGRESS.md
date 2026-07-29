@@ -1,41 +1,40 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-29 09:58 UTC  
-当前 Git 提交：首个 M0.1 检查点待创建  
+最后更新时间：2026-07-29 10:00 UTC  
+当前 Git 提交：`c519e34`  
 当前总状态：`IN_PROGRESS`  
-当前里程碑：`M0.1 仓库与环境基线（验证通过，检查点待创建）`
+当前里程碑：`M0.2 Clean-room、架构和威胁模型`
 
 ---
 
 ## 已完成
 
-- 完整读取启动指令和全部项目规则；
-- 保存系统、资源、网络、路由、防火墙、Docker、1Panel、服务和工具链基线；
-- 确认 `1panel-network` 为现有 bridge 网络，子网为 `172.18.0.0/16`；
-- 确认项目 Compose 只以外部网络方式引用 `1panel-network`；
-- 在隔离 namespace 中实际验证 TUN、nftables 和网络 capability；
-- 安装并记录 Rust、Node、C/C++、CMake、Make、ripgrep 和 ShellCheck 工具链；
-- 初始化 Git `main` 分支；
-- 创建 Rust workspace、四个最小组件、React/Vite 控制台和统一 Make 入口；
-- 创建秘密扫描、组件集成和隔离网络验证脚本；
-- 生成环境基线报告并记录现有数据库公网暴露风险；
-- M0.1 完整验证通过。
+- M0.1 系统、资源、网络、防火墙、Docker、1Panel、服务和工具链基线；
+- 隔离 namespace 中的真实 TUN、nftables 和 capability 验证；
+- 外部 Secret 文件和 Git 忽略保护；
+- Rust workspace、Controller、Relay、Agent、CLI 最小组件；
+- React/Vite 控制台 workspace；
+- 统一 Make、CI、秘密扫描、组件集成和网络能力脚本；
+- M0.1 完整验证；
+- 首个 Git 检查点 `c519e34`。
 
 ## 正在进行
 
-- 创建第一个范围单一的 Git 检查点。
+- M0.2 Clean-room 边界、总体架构、威胁模型、密码学设计和 XSP/1 协议草案。
 
 ## 下一步
 
-1. 暂存仓库文件并再次检查秘密和差异；
-2. 创建 M0.1 Git 检查点；
-3. 将 M0.1 标记为 `PASSED` 并记录提交哈希；
-4. 立即进入 M0.2 Clean-room、架构和威胁模型。
+1. 创建并完成 M0.2 强制文档；
+2. 明确控制面、数据面、信任边界和故障行为；
+3. 定义 XSP/1 包格式、握手 transcript、密钥生命周期和状态机；
+4. 建立测试向量格式和威胁映射；
+5. 运行文档一致性、秘密扫描和全量 M0.1 回归；
+6. 创建 M0.2 Git 检查点并进入 M1.1。
 
 ## 下一条准确命令
 
 ```bash
-git add . && git diff --cached --check && make security-check
+mkdir -p docs && printf '%s\n' 'start M0.2 architecture documents'
 ```
 
 ## 最近测试
@@ -49,7 +48,7 @@ git add . && git diff --cached --check && make security-check
 
 ## 当前失败
 
-无未解决测试失败。首次执行中的 TypeScript CSS 类型、TUN 接口名长度和秘密扫描误报均已按根因修复，原始失败日志保留在最近测试证据目录。
+无未解决测试失败。
 
 ## 外部阻塞
 
@@ -73,7 +72,7 @@ git add . && git diff --cached --check && make security-check
 ```bash
 cd /srv/xs-nexus
 git status --short --branch
-git log --oneline -10
+GIT_PAGER=cat git log --oneline -10
 cat PROGRESS.md
 ./scripts/validate-m01.sh
 ```
