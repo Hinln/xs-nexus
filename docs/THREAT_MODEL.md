@@ -129,6 +129,19 @@ Agent 比较持久化的最后版本并拒绝低版本、同版本不同哈希�
 | Web | RBAC、CSRF、XSS、注入、会话过期、错误脱敏 |
 | 供应链 | 锁文件、SBOM、依赖审计、签名和构建来源 |
 
+### 8.1 M1.1 已实现证据
+
+| 控制 | 自动化证据 |
+|---|---|
+| Enrollment Token 原子消费 | PostgreSQL 行锁、事务与并发双请求测试证明单次 Token 只成功一次 |
+| IPAM 唯一分配 | 每网络事务 advisory lock、活动地址唯一约束、自动和管理员指定地址集成测试 |
+| 节点凭证完整性 | 固定 200 字节向量、Ed25519 验签、全部 200 个单字节篡改位置拒绝 |
+| 配置真实性与单调性 | 独立配置密钥签名精确 payload、Key ID 校验、版本递增和 WebSocket sync 测试 |
+| 控制连接重放约束 | 每连接随机 challenge、10 秒认证窗口、节点身份签名和真实 loopback WebSocket 测试 |
+| 审计不可变与脱敏 | 数据库 trigger 拒绝 UPDATE/DELETE，集成测试确认事件不含明文 Token |
+
+M1.1 只实现 bootstrap 管理 Token，不代表最终 RBAC、浏览器会话、吊销传播或数据面协议已经完成。
+
 ## 9. 不在安全承诺内
 
 - 被 root、SYSTEM 或设备管理员完全攻陷的端点；

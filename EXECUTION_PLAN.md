@@ -117,7 +117,7 @@
 
 ## M1.1 Controller 最小控制平面
 
-- 状态：`IN_PROGRESS`
+- 状态：`PASSED`
 - 前置：M0.1、M0.2
 
 ### 范围
@@ -140,11 +140,22 @@
 - 重复注册、过期 Token、重复 Token 被拒绝；
 - 配置带版本和签名。
 
+### 实际结果
+
+- 在独立项目 schema 中完成 PostgreSQL 迁移、约束、序列、活动 IP 唯一索引和追加式审计 trigger；
+- 完成严格 JSON API、bootstrap 管理认证、网络创建、一次性 Enrollment Token 和节点本地公钥注册；
+- Token hash、消费计数、IP lease、节点凭证、配置版本和审计在单事务内提交；
+- 完成自动 IPAM、管理员指定 IP、网络级 advisory lock 和并发单次 Token 验证；
+- 完成固定 200 字节 Ed25519 凭证、独立签名配置和 deterministic 测试向量；
+- 完成 WebSocket challenge 认证、单调配置同步、消息上限和 ping/pong；
+- 完成真实 PostgreSQL、HTTP router、loopback WebSocket、主进程健康检查和全量安全回归；
+- Controller 只使用项目 schema，未修改 1Panel 容器、网络、端口、卷或宿主机防火墙。
+
 ---
 
 ## M1.2 Linux Agent 与 TUN
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M1.1
 
 ### 范围

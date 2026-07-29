@@ -51,7 +51,40 @@ Ed25519.Sign(
 
 凭证绑定 Network ID、Node ID、Ed25519 公钥、虚拟 IPv4、序列、有效期、角色摘要和 Controller Key ID。
 
-### 2.4 临时握手密钥
+### 2.4 配置签名
+
+Controller 使用与凭证密钥不同的 Ed25519 Configuration Signing Key，对序列化后的精确紧凑 UTF-8 JSON 字节签名：
+
+```text
+configuration_signature = Ed25519.Sign(
+  controller_configuration_key,
+  "XS Nexus configuration v1" || exact_payload_bytes
+)
+
+configuration_key_id = first_4_bytes(
+  SHA-256(controller_configuration_public_key)
+)
+```
+
+签名信封携带单调版本、原始 payload 的 Base64URL 编码、签名和 Key ID。验证方必须验证签名后再解析 payload，并拒绝低版本及同版本不同 payload。Configuration Signing Public Key 在 TLS 保护的 enrollment 响应中取得并持久化为网络信任材料；后续轮换必须由已信任控制面授权。
+
+### 2.5 控制连接认证
+
+Controller 为每条 WebSocket 控制连接生成 32 字节 CSPRNG challenge，challenge 只用于该连接且 10 秒后失效。节点签名：
+
+```text
+Ed25519.Sign(
+  node_identity_key,
+  "XS Nexus control authentication v1" ||
+  challenge[32] || node_id[16]
+)
+```
+
+Controller 同时验证节点凭证、数据库中的公钥与 Network ID、节点签名和凭证有效期。认证失败只返回通用错误并关闭连接。控制连接只同步签名配置，不承载业务数据。
+
+上述 Controller 控制面标签使用 `XS Nexus ...` 域；XSP/1 节点凭证和数据面标签使用 `XSP/1 ...` 域。两组标签不得互换。
+
+### 2.6 临时握手密钥
 
 每次完整握手双方生成新的 X25519 临时私钥。任何网络切换都不能复用已经完成握手的临时私钥。握手完成或失败后立即清零。
 

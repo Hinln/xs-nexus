@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-components=(agent cli controller relay)
+components=(agent cli relay)
 for component in "${components[@]}"; do
   package="xs-${component}"
   output="$(cargo run --quiet --package "${package}")"
@@ -12,4 +12,4 @@ for component in "${components[@]}"; do
   fi
 done
 
-printf 'component integration checks passed\n'
+printf 'non-database component integration checks passed\n'

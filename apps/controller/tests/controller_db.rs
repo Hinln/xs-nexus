@@ -1,0 +1,512 @@
+use std::{net::SocketAddr, str::FromStr};
+
+use axum::{
+    Router,
+    body::Body,
+    http::{Method, Request, StatusCode, header},
+};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use ed25519_dalek::{Signature, Signer, SigningKey};
+use futures_util::{SinkExt, StreamExt};
+use http_body_util::BodyExt;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tower::ServiceExt;
+use xs_controller::config::ControllerConfig;
+use xs_protocol::verify_credential;
+
+const ADMIN_TOKEN: &str = "integration-admin-token-with-32-characters";
+const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
+const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
+
+#[tokio::test]
+async fn controller_registration_ipam_configuration_and_control_flow() {
+    let config = test_config();
+    let (router, state) = xs_controller::build(&config)
+        .await
+        .expect("controller database initializes");
+    reset_database(&state.pool).await;
+
+    let (status, ready) = request_json(&router, Method::GET, "/health/ready", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ready["database"], "ok");
+
+    let network_request = json!({
+        "name": "integration-network",
+        "address_pool": "100.88.0.0/24",
+        "reserved_addresses": 16
+    });
+    let (status, _) = request_json(
+        &router,
+        Method::POST,
+        "/v1/admin/networks",
+        Some(network_request.clone()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, network) = request_json(
+        &router,
+        Method::POST,
+        "/v1/admin/networks",
+        Some(network_request),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(network["config_version"], 1);
+    let network_id = network["id"].as_str().expect("network id");
+
+    let (token_id, token) = create_token(&router, network_id, 1).await;
+    assert_token_is_hash_only(&state.pool, &config.database_schema).await;
+
+    let identity = SigningKey::from_bytes(&[11_u8; 32]);
+    let enrollment = enroll(
+        &router,
+        &token,
+        "node-a",
+        &identity.verifying_key().to_bytes(),
+    )
+    .await;
+    assert_eq!(enrollment.0, StatusCode::CREATED);
+    let enrollment = enrollment.1;
+    assert_eq!(enrollment["virtual_ip"], "100.88.0.16");
+    verify_enrollment_artifacts(&state, &enrollment);
+
+    let (_, duplicate_token) = create_token(&router, network_id, 1).await;
+    let duplicate = enroll(
+        &router,
+        &duplicate_token,
+        "node-a-duplicate",
+        &identity.verifying_key().to_bytes(),
+    )
+    .await;
+    assert_eq!(duplicate.0, StatusCode::CONFLICT);
+    assert_eq!(duplicate.1["error"]["code"], "resource_conflict");
+
+    assert_expired_token_rejected(&router, &state.pool, network_id).await;
+    assert_concurrent_token_and_ipam(&router, &state.pool, network_id).await;
+    assert_manual_ip_assignment(&router, network_id).await;
+
+    assert_audit_is_append_only_and_redacted(&state.pool, &token).await;
+    verify_websocket_control(&router, &enrollment, &identity).await;
+
+    let control_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE action = 'control.authenticate'",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .expect("control audit count");
+    assert_eq!(control_audits, 1);
+
+    let stored_use_count: i32 =
+        sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
+            .bind(uuid::Uuid::from_str(&token_id).expect("token id"))
+            .fetch_one(&state.pool)
+            .await
+            .expect("token use count");
+    assert_eq!(stored_use_count, 1);
+}
+
+async fn assert_expired_token_rejected(router: &Router, pool: &sqlx::PgPool, network_id: &str) {
+    let (expired_id, expired_token) = create_token(router, network_id, 1).await;
+    sqlx::query(
+        "UPDATE enrollment_tokens SET expires_at = now() - interval '1 second' WHERE id = $1",
+    )
+    .bind(uuid::Uuid::from_str(&expired_id).expect("expired token id"))
+    .execute(pool)
+    .await
+    .expect("expire token");
+    let public_key = SigningKey::from_bytes(&[12_u8; 32])
+        .verifying_key()
+        .to_bytes();
+    let expired = enroll(router, &expired_token, "node-expired", &public_key).await;
+    assert_eq!(expired.0, StatusCode::UNAUTHORIZED);
+}
+
+async fn assert_concurrent_token_and_ipam(router: &Router, pool: &sqlx::PgPool, network_id: &str) {
+    let (_, concurrent_token) = create_token(router, network_id, 1).await;
+    let first_public_key = SigningKey::from_bytes(&[13_u8; 32])
+        .verifying_key()
+        .to_bytes();
+    let second_public_key = SigningKey::from_bytes(&[14_u8; 32])
+        .verifying_key()
+        .to_bytes();
+    let first = enroll(
+        router,
+        &concurrent_token,
+        "node-concurrent-a",
+        &first_public_key,
+    );
+    let second = enroll(
+        router,
+        &concurrent_token,
+        "node-concurrent-b",
+        &second_public_key,
+    );
+    let (first, second) = tokio::join!(first, second);
+    let statuses = [first.0, second.0];
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| **status == StatusCode::CREATED)
+            .count(),
+        1
+    );
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| **status == StatusCode::UNAUTHORIZED)
+            .count(),
+        1
+    );
+
+    let distinct_addresses: i64 =
+        sqlx::query_scalar("SELECT count(DISTINCT virtual_ip) FROM nodes WHERE revoked_at IS NULL")
+            .fetch_one(pool)
+            .await
+            .expect("count addresses");
+    let active_nodes: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM nodes WHERE revoked_at IS NULL")
+            .fetch_one(pool)
+            .await
+            .expect("count nodes");
+    assert_eq!(distinct_addresses, active_nodes);
+    assert_eq!(active_nodes, 2);
+
+    let config_version: i64 =
+        sqlx::query_scalar("SELECT config_version FROM networks WHERE id = $1")
+            .bind(uuid::Uuid::from_str(network_id).expect("network id"))
+            .fetch_one(pool)
+            .await
+            .expect("config version");
+    assert_eq!(config_version, 3);
+}
+
+async fn assert_manual_ip_assignment(router: &Router, network_id: &str) {
+    let (status, response) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/enrollment-tokens",
+        Some(json!({
+            "network_id": network_id,
+            "expires_in_seconds": 3600,
+            "max_uses": 1,
+            "default_role_bitmap": 1,
+            "default_tags": ["linux"],
+            "requested_virtual_ip": "100.88.0.30"
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let token = response["token"].as_str().expect("manual IP token");
+    let public_key = SigningKey::from_bytes(&[15_u8; 32])
+        .verifying_key()
+        .to_bytes();
+    let enrollment = enroll(router, token, "node-manual-ip", &public_key).await;
+    assert_eq!(enrollment.0, StatusCode::CREATED);
+    assert_eq!(enrollment.1["virtual_ip"], "100.88.0.30");
+    assert_eq!(enrollment.1["configuration"]["version"], 4);
+}
+
+fn test_config() -> ControllerConfig {
+    let database_url =
+        std::env::var("XS_TEST_DATABASE_URL").expect("XS_TEST_DATABASE_URL is required");
+    let database_schema =
+        std::env::var("XS_TEST_DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus_test".to_owned());
+    ControllerConfig {
+        listen: SocketAddr::from(([127, 0, 0, 1], 0)),
+        database_url,
+        database_schema,
+        admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
+        credential_signing_key: SigningKey::from_bytes(&[21_u8; 32]),
+        config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
+        credential_ttl_seconds: 86_400,
+    }
+}
+
+async fn reset_database(pool: &sqlx::PgPool) {
+    sqlx::query(
+        "TRUNCATE audit_events, configuration_versions, ip_leases, nodes,
+                  enrollment_tokens, networks
+         RESTART IDENTITY CASCADE",
+    )
+    .execute(pool)
+    .await
+    .expect("truncate project test tables");
+    sqlx::query("ALTER SEQUENCE credential_serial RESTART WITH 1")
+        .execute(pool)
+        .await
+        .expect("reset credential serial");
+}
+
+async fn create_token(router: &Router, network_id: &str, max_uses: u16) -> (String, String) {
+    let (status, response) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/enrollment-tokens",
+        Some(json!({
+            "network_id": network_id,
+            "expires_in_seconds": 3600,
+            "max_uses": max_uses,
+            "default_role_bitmap": 1,
+            "default_tags": ["linux"]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    (
+        response["id"].as_str().expect("token id").to_owned(),
+        response["token"].as_str().expect("token").to_owned(),
+    )
+}
+
+async fn enroll(
+    router: &Router,
+    token: &str,
+    name: &str,
+    public_key: &[u8; 32],
+) -> (StatusCode, Value) {
+    request_json(
+        router,
+        Method::POST,
+        "/v1/enroll",
+        Some(json!({
+            "token": token,
+            "name": name,
+            "device_type": "linux",
+            "identity_public_key_base64": URL_SAFE_NO_PAD.encode(public_key)
+        })),
+        None,
+    )
+    .await
+}
+
+async fn request_json(
+    router: &Router,
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+    admin_token: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder().method(method).uri(path);
+    if let Some(admin_token) = admin_token {
+        builder = builder.header(header::AUTHORIZATION, format!("Bearer {admin_token}"));
+    }
+    let body = if let Some(body) = body {
+        builder = builder.header(header::CONTENT_TYPE, "application/json");
+        Body::from(serde_json::to_vec(&body).expect("serialize body"))
+    } else {
+        Body::empty()
+    };
+    let response = router
+        .clone()
+        .oneshot(builder.body(body).expect("request"))
+        .await
+        .expect("router response");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect response")
+        .to_bytes();
+    let value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).expect("JSON response")
+    };
+    (status, value)
+}
+
+async fn assert_token_is_hash_only(pool: &sqlx::PgPool, schema: &str) {
+    let plaintext_columns: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'enrollment_tokens'
+           AND column_name IN ('token', 'plaintext_token')",
+    )
+    .bind(schema)
+    .fetch_one(pool)
+    .await
+    .expect("inspect token columns");
+    assert_eq!(plaintext_columns, 0);
+
+    let hash_length: i32 =
+        sqlx::query_scalar("SELECT octet_length(token_hash) FROM enrollment_tokens LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .expect("token hash length");
+    assert_eq!(hash_length, 32);
+}
+
+fn verify_enrollment_artifacts(state: &xs_controller::AppState, enrollment: &Value) {
+    let credential = URL_SAFE_NO_PAD
+        .decode(
+            enrollment["credential_base64"]
+                .as_str()
+                .expect("credential"),
+        )
+        .expect("decode credential");
+    let verified = verify_credential(
+        &credential,
+        &state.credential_signing_key.verifying_key(),
+        u64::try_from(chrono::Utc::now().timestamp()).expect("current time"),
+    )
+    .expect("credential verifies");
+    assert_eq!(verified.virtual_ipv4.to_string(), "100.88.0.16");
+
+    let configuration = &enrollment["configuration"];
+    let payload = URL_SAFE_NO_PAD
+        .decode(
+            configuration["payload_base64"]
+                .as_str()
+                .expect("config payload"),
+        )
+        .expect("decode config");
+    let signature = URL_SAFE_NO_PAD
+        .decode(
+            configuration["signature_base64"]
+                .as_str()
+                .expect("config signature"),
+        )
+        .expect("decode signature");
+    let signature = Signature::from_bytes(
+        &signature
+            .try_into()
+            .expect("configuration signature length"),
+    );
+    let mut input = Vec::with_capacity(CONFIGURATION_DOMAIN.len() + payload.len());
+    input.extend_from_slice(CONFIGURATION_DOMAIN);
+    input.extend_from_slice(&payload);
+    state
+        .config_signing_key
+        .verifying_key()
+        .verify_strict(&input, &signature)
+        .expect("configuration signature verifies");
+
+    let payload: Value = serde_json::from_slice(&payload).expect("configuration JSON");
+    assert_eq!(payload["version"], 2);
+    assert_eq!(payload["nodes"].as_array().expect("nodes").len(), 1);
+}
+
+async fn assert_audit_is_append_only_and_redacted(pool: &sqlx::PgPool, token: &str) {
+    let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_events")
+        .fetch_one(pool)
+        .await
+        .expect("audit count");
+    assert!(audit_count >= 7);
+
+    let token_leaked: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM audit_events
+            WHERE metadata::text LIKE '%' || $1 || '%'
+               OR actor_id LIKE '%' || $1 || '%'
+         )",
+    )
+    .bind(token)
+    .fetch_one(pool)
+    .await
+    .expect("audit token scan");
+    assert!(!token_leaked);
+
+    let mutation = sqlx::query(
+        "UPDATE audit_events SET outcome = 'failure' WHERE id = (SELECT min(id) FROM audit_events)",
+    )
+    .execute(pool)
+    .await;
+    assert!(mutation.is_err());
+}
+
+async fn verify_websocket_control(router: &Router, enrollment: &Value, identity: &SigningKey) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind test controller");
+    let address = listener.local_addr().expect("listener address");
+    let application = router.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, application)
+            .await
+            .expect("serve test controller");
+    });
+
+    let (mut socket, _) = connect_async(format!("ws://{address}/v1/control"))
+        .await
+        .expect("connect control websocket");
+    let challenge = socket
+        .next()
+        .await
+        .expect("challenge message")
+        .expect("valid challenge");
+    let Message::Text(challenge) = challenge else {
+        panic!("expected text challenge");
+    };
+    let challenge: Value = serde_json::from_str(&challenge).expect("challenge JSON");
+    let challenge = URL_SAFE_NO_PAD
+        .decode(
+            challenge["challenge_base64"]
+                .as_str()
+                .expect("challenge value"),
+        )
+        .expect("decode challenge");
+    let node_id = URL_SAFE_NO_PAD
+        .decode(enrollment["node_id_base64"].as_str().expect("node id"))
+        .expect("decode node id");
+    let mut input =
+        Vec::with_capacity(CONTROL_AUTHENTICATION_DOMAIN.len() + challenge.len() + node_id.len());
+    input.extend_from_slice(CONTROL_AUTHENTICATION_DOMAIN);
+    input.extend_from_slice(&challenge);
+    input.extend_from_slice(&node_id);
+    let signature = identity.sign(&input);
+
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "authenticate",
+                "node_id_base64": enrollment["node_id_base64"],
+                "credential_base64": enrollment["credential_base64"],
+                "signature_base64": URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send authentication");
+    let authenticated = socket
+        .next()
+        .await
+        .expect("authenticated message")
+        .expect("valid authenticated message");
+    let Message::Text(authenticated) = authenticated else {
+        panic!("expected authenticated text");
+    };
+    let authenticated: Value = serde_json::from_str(&authenticated).expect("authenticated JSON");
+    assert_eq!(authenticated["type"], "authenticated");
+    assert_eq!(authenticated["configuration"]["version"], 4);
+
+    socket
+        .send(Message::Text(
+            json!({"type": "sync", "last_version": 4})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send sync");
+    let synchronized = socket
+        .next()
+        .await
+        .expect("sync response")
+        .expect("valid sync response");
+    let Message::Text(synchronized) = synchronized else {
+        panic!("expected sync text");
+    };
+    let synchronized: Value = serde_json::from_str(&synchronized).expect("sync JSON");
+    assert_eq!(synchronized["type"], "up_to_date");
+    assert_eq!(synchronized["version"], 4);
+
+    socket.close(None).await.expect("close websocket");
+    server.abort();
+}

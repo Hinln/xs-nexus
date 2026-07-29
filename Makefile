@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-spec test-network test-e2e test-visual security-check release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-protocol-vectors test-spec test-network test-e2e test-visual security-check release clean
 
 setup:
 >npm ci
@@ -20,14 +20,20 @@ build:
 >cargo build --workspace
 >npm run build
 
-test: test-unit test-integration test-spec
+test: test-unit test-integration test-controller-db test-protocol-vectors test-spec
 
 test-unit:
->cargo test --workspace
+>cargo test --workspace --lib --bins
 >npm test
 
 test-integration:
 >./scripts/test-integration.sh
+
+test-controller-db:
+>./scripts/test-controller-db.sh
+
+test-protocol-vectors:
+>./scripts/test-protocol-vectors.sh
 
 test-spec:
 >python3 scripts/validate-m02.py
@@ -44,6 +50,7 @@ test-visual:
 >@exit 2
 
 security-check:
+>python3 scripts/test-secret-scanner.py
 >python3 scripts/check-secrets.py --root . --reference-env /etc/xs-nexus/controller.env
 
 release:

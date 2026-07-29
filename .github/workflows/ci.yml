@@ -10,6 +10,23 @@ permissions:
 jobs:
   baseline:
     runs-on: ubuntu-latest
+    env:
+      XS_TEST_DATABASE_URL: postgresql://xs_test@127.0.0.1:5432/xs_nexus_test
+      XS_TEST_DATABASE_SCHEMA: xs_nexus_test
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xs_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: xs_nexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xs_test -d xs_nexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -1,6 +1,6 @@
 # XSP/1（XS Secure Path Protocol v1）
 
-状态：M0.2 规范草案  
+状态：M0.2 规范草案；M1.1 凭证编码已实现  
 日期：2026-07-29  
 安全状态：未经独立第三方审计，不得描述为生产级安全。
 
@@ -68,6 +68,26 @@ Controller 签名输入：
 
 ```text
 "XSP/1 credential v1" || credential[0..136]
+```
+
+Role Bitmap 与标签集合通过固定摘要绑定。标签规则如下：
+
+- 标签数量为 `0..32`；
+- 每个标签长度为 `1..63` 个 ASCII 字节；
+- 首字节必须是小写 `a-z`，其余字节只允许小写字母、数字、`-`、`_`、`.`、`:`、`/`；
+- 标签必须唯一；编码前按原始字节升序排序，因此调用方顺序不影响摘要；
+- 不接受大小写折叠、Unicode 正规化或重复标签。
+
+Role Set 摘要定义为：
+
+```text
+SHA-256(
+  "XSP/1 role set v1" ||
+  uint32_be(role_bitmap) ||
+  uint16_be(tag_count) ||
+  for each canonical_tag:
+    uint16_be(tag_length) || tag_bytes
+)
 ```
 
 接收方验证签名、Key ID、Network ID、Node ID 与公钥哈希、有效期、吊销序列和目标节点目录。动态 ACL 不直接嵌入凭证，由单独签名配置控制。
@@ -362,22 +382,27 @@ Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session�
 
 ## 17. 测试向量和 Fuzz
 
-M0.2 提供 canonical data header 编码与 SHA-256 向量：
+仓库锁定以下 canonical 编码与 SHA-256 向量：
 
 ```text
 tests/vectors/xsp1/data-header-v1.json
+tests/vectors/xsp1/credential-v1.json
 ```
 
-生成器：
+生成器与有效凭证 Fuzz corpus：
 
 ```text
 scripts/generate-xsp1-vectors.py
+crates/protocol/examples/generate_credential_vector.rs
+fuzz/corpus/credential/valid-v1.bin
 ```
+
+凭证向量固定 Ed25519 签名、公钥、Node ID、Role Set 摘要、Key ID 和完整 200 字节编码。Rust 单元测试验证向量签名，并逐字节篡改 200 个位置确认全部拒绝；规范校验器同时验证长度、字段、哈希和 corpus 一致性。
 
 M1.3 实现前必须补充：
 
 - RFC 原语测试向量；
-- 有效双方签名；
+- 有效握手双方签名；
 - X25519 全零拒绝；
 - HKDF 每个标签；
 - ClientFinish/ServerFinish；
