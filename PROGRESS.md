@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-29 10:00 UTC  
-当前 Git 提交：`c519e34`  
+最后更新时间：2026-07-29 10:14 UTC  
+当前 Git 提交：`77e13b6`  
 当前总状态：`IN_PROGRESS`  
-当前里程碑：`M0.2 Clean-room、架构和威胁模型`
+当前里程碑：`M1.1 Controller 最小控制平面`
 
 ---
 
@@ -16,35 +16,38 @@
 - React/Vite 控制台 workspace；
 - 统一 Make、CI、秘密扫描、组件集成和网络能力脚本；
 - M0.1 完整验证；
-- 首个 Git 检查点 `c519e34`。
+- 首个 Git 检查点 `c519e34`；
+- M0.2 clean-room、总体架构、威胁模型和安全假设；
+- XSP/1 字节级协议、密码学设计、测试向量和一致性验证；
+- M0.2 全量验证证据 `/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`。
 
 ## 正在进行
 
-- M0.2 Clean-room 边界、总体架构、威胁模型、密码学设计和 XSP/1 协议草案。
+- M1.1 Controller 最小控制平面：数据模型、迁移、Enrollment、IPAM、签名配置、审计和健康检查。
 
 ## 下一步
 
-1. 创建并完成 M0.2 强制文档；
-2. 明确控制面、数据面、信任边界和故障行为；
-3. 定义 XSP/1 包格式、握手 transcript、密钥生命周期和状态机；
-4. 建立测试向量格式和威胁映射；
-5. 运行文档一致性、秘密扫描和全量 M0.1 回归；
-6. 创建 M0.2 Git 检查点并进入 M1.1。
+1. 定义 Controller 配置、错误模型和 PostgreSQL schema；
+2. 实现一次性 Enrollment Token 的哈希存储和原子消费；
+3. 实现节点注册、稳定 IPAM 和公钥身份绑定；
+4. 实现带版本与签名的配置快照；
+5. 实现健康检查、审计日志和基础控制连接；
+6. 添加数据库集成测试并创建 M1.1 检查点。
 
 ## 下一条准确命令
 
 ```bash
-mkdir -p docs && printf '%s\n' 'start M0.2 architecture documents'
+sed -n '1,240p' apps/controller/Cargo.toml apps/controller/src/main.rs
 ```
 
 ## 最近测试
 
-- 时间：2026-07-29 09:57 UTC；
+- 时间：2026-07-29 10:12 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m01.sh`；
+- 命令：M0.2 全量验证命令集；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m0.1-20260729T095256Z/validate-m01.log`；
-- 覆盖：格式、Clippy、TypeScript、构建、Rust/前端单测、组件集成、隔离 TUN/nftables、秘密扫描、npm 审计、Compose 外部网络、主机残留检查。
+- 证据：`/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`；
+- 覆盖：格式、Clippy、TypeScript、构建、Rust/前端单测、组件集成、XSP/1 规范与向量、隔离 TUN/nftables、秘密扫描、npm 审计、Compose 外部网络。
 
 ## 当前失败
 
@@ -60,7 +63,7 @@ mkdir -p docs && printf '%s\n' 'start M0.2 architecture documents'
 
 ## 当前风险
 
-- 自研协议尚未实现和审计；
+- 自研协议规范已冻结为 v1 草案，但尚未实现和独立审计；
 - Windows 驱动尚未开发；
 - 真实设备尚未接入；
 - PostgreSQL、Redis 现有公网端口仍可达；

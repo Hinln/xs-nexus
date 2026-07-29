@@ -1,0 +1,389 @@
+# XSP/1（XS Secure Path Protocol v1）
+
+状态：M0.2 规范草案  
+日期：2026-07-29  
+安全状态：未经独立第三方审计，不得描述为生产级安全。
+
+## 1. 目标与非目标
+
+### 1.1 目标
+
+- UDP 上的端到端认证加密三层数据通道；
+- 双方节点身份、Network ID、Node ID、虚拟 IP 和协议版本绑定；
+- Direct 与 Relay 路径复用相同内层密文；
+- 每方向独立密钥、序列和重放窗口；
+- 支持路径探测、网络变化、Epoch 更新和完整重握手；
+- 未知、畸形、篡改、重放和越权报文安全拒绝。
+
+### 1.2 非目标
+
+- 不兼容 WireGuard、Noise、QUIC、STUN、TURN、ICE 或其他覆盖网络私有协议；
+- v1 不支持 0-RTT、会话恢复、自定义业务分片、二层广播或 Exit Node；
+- v1 不在内核实现握手、密码学、ACL、NAT 或 Relay；
+- 本规范不替代第三方协议和密码学审计。
+
+## 2. 基础编码
+
+- 所有整数为无符号网络字节序；
+- 所有固定字节数组按原始字节编码，不使用文本十六进制；
+- 所有保留字段发送时为 0，接收时非 0 必须拒绝；
+- 长度字段必须在分配内存前验证上限和剩余报文长度；
+- v1 单个 UDP datagram 最大 1500 字节，握手凭证固定 200 字节；
+- Magic 为 ASCII `XSP1`，字节 `58 53 50 31`；
+- Protocol Version 为 `0x01`；
+- 未知版本、类型、flag 或扩展不能按 v1 猜测解析。
+
+## 3. 标识
+
+| 标识 | 长度 | 生成者 | 说明 |
+|---|---:|---|---|
+| Network ID | 16 | Controller CSPRNG | 网络全局唯一随机值 |
+| Node ID | 16 | 节点公钥哈希 | `SHA-256("XSP/1 node id v1" || public_key)` 前 16 字节 |
+| Session ID | 16 | ServerHello 发送方 CSPRNG | 每次完整握手唯一 |
+| Path ID | 4 | Agent | 本地路径标识，不作为身份 |
+| Credential Serial | 8 | Controller | 网络内单调或唯一序列 |
+| Message ID | 4 | 握手发起方 CSPRNG | 重传去重，不作为密码学 nonce |
+
+## 4. 节点凭证
+
+固定长度：200 字节。
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 1 | Credential Version，v1 为 1 |
+| 1 | 3 | Reserved，必须为 0 |
+| 4 | 16 | Network ID |
+| 20 | 16 | Node ID |
+| 36 | 32 | Ed25519 Public Key |
+| 68 | 4 | Virtual IPv4，网络字节序 |
+| 72 | 8 | Credential Serial |
+| 80 | 8 | Not Before，Unix seconds |
+| 88 | 8 | Not After，Unix seconds |
+| 96 | 4 | Role Bitmap |
+| 100 | 32 | Tag/Role Set SHA-256 |
+| 132 | 4 | Controller Credential Key ID |
+| 136 | 64 | Controller Ed25519 Signature |
+
+Controller 签名输入：
+
+```text
+"XSP/1 credential v1" || credential[0..136]
+```
+
+接收方验证签名、Key ID、Network ID、Node ID 与公钥哈希、有效期、吊销序列和目标节点目录。动态 ACL 不直接嵌入凭证，由单独签名配置控制。
+
+## 5. 握手帧
+
+### 5.1 公共头
+
+固定长度：16 字节。
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 4 | Magic `XSP1` |
+| 4 | 1 | Version = 1 |
+| 5 | 1 | Message Type |
+| 6 | 2 | Flags，v1 必须为 0 |
+| 8 | 4 | Body Length |
+| 12 | 4 | Message ID |
+
+握手类型：
+
+| Value | Name |
+|---:|---|
+| `0x10` | ClientHello |
+| `0x11` | ServerHello |
+| `0x12` | ClientFinish |
+| `0x13` | ServerFinish |
+
+### 5.2 ClientHello
+
+Body Length：389 字节。
+
+| Order | Size | Field |
+|---:|---:|---|
+| 1 | 16 | Network ID |
+| 2 | 16 | Source Node ID |
+| 3 | 16 | Destination Node ID |
+| 4 | 32 | Client Nonce |
+| 5 | 32 | Client X25519 Ephemeral Public Key |
+| 6 | 8 | Client Time，Unix seconds |
+| 7 | 2 | Credential Length，必须为 200 |
+| 8 | 200 | Client Credential |
+| 9 | 1 | Suite Count，v1 必须为 1 |
+| 10 | 2 | Suite ID，必须为 `0x0001` |
+| 11 | 64 | Client Ed25519 Signature |
+
+签名输入：
+
+```text
+"XSP/1 client auth v1" ||
+client_hello_common_header ||
+client_hello_body_without_signature
+```
+
+公共头中的 Body Length 仍填写 389，因此签名输入无长度歧义。
+
+### 5.3 ServerHello
+
+Body Length：468 字节。
+
+| Order | Size | Field |
+|---:|---:|---|
+| 1 | 16 | Network ID |
+| 2 | 16 | Source Node ID（Server） |
+| 3 | 16 | Destination Node ID（Client） |
+| 4 | 32 | Echo Client Nonce |
+| 5 | 32 | Server Nonce |
+| 6 | 32 | Server X25519 Ephemeral Public Key |
+| 7 | 32 | SHA-256(ClientHello Full) |
+| 8 | 16 | Session ID |
+| 9 | 8 | Server Time，Unix seconds |
+| 10 | 2 | Selected Suite ID，必须为 `0x0001` |
+| 11 | 2 | Credential Length，必须为 200 |
+| 12 | 200 | Server Credential |
+| 13 | 64 | Server Ed25519 Signature |
+
+签名输入：
+
+```text
+"XSP/1 server auth v1" ||
+SHA-256(client_hello_full) ||
+server_hello_common_header ||
+server_hello_body_without_signature
+```
+
+### 5.4 ClientFinish 与 ServerFinish
+
+Body Length：76 字节。
+
+| Order | Size | Field |
+|---:|---:|---|
+| 1 | 16 | Session ID |
+| 2 | 8 | Confirm Sequence，v1 必须为 0 |
+| 3 | 2 | Ciphertext Length，v1 必须为 32 |
+| 4 | 2 | Reserved，必须为 0 |
+| 5 | 32 | Ciphertext |
+| 6 | 16 | ChaCha20-Poly1305 Tag |
+
+AAD 为 16 字节公共头加 Body 前 28 字节。ClientFinish 明文为 `hello_transcript_hash`。ServerFinish 明文为：
+
+```text
+SHA-256(
+  "XSP/1 server finish v1" ||
+  client_hello_full || server_hello_full || client_finish_full
+)
+```
+
+同一 Finish 的网络重传必须逐字节相同，不能在相同 key/nonce 下重新加密不同明文。
+
+## 6. 握手状态机
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> ClientHelloSent: initiate
+  Idle --> ServerHelloSent: valid ClientHello
+  ClientHelloSent --> ClientFinishSent: valid ServerHello
+  ServerHelloSent --> ServerFinishSent: valid ClientFinish
+  ClientFinishSent --> Established: valid ServerFinish
+  ServerFinishSent --> Established: ServerFinish sent and ClientFinish confirmed
+  ClientHelloSent --> Failed: timeout or validation error
+  ServerHelloSent --> Failed: timeout or validation error
+  ClientFinishSent --> Failed: timeout or AEAD error
+  ServerFinishSent --> Failed: timeout or state conflict
+  Established --> Rekeying: threshold or security event
+  Rekeying --> Established: Key Update acknowledged
+  Established --> Closing: authenticated close
+  Closing --> [*]
+  Failed --> [*]
+```
+
+### 6.1 处理顺序
+
+1. 验证 datagram 最小长度；
+2. 验证 Magic、Version、Type、Flags 和 Body Length；
+3. 验证 Message ID 和状态是否允许；
+4. 验证字段长度、保留位、Network ID 和目标 Node ID；
+5. 验证凭证格式、Controller 签名、Node ID、公钥和有效期；
+6. 验证节点吊销和网络成员关系；
+7. 验证 Ed25519 握手签名；
+8. ClientHello 执行 nonce 重放缓存检查；
+9. 执行 X25519 并拒绝全零共享结果；
+10. 派生 handshake key 并验证双向 Finish；
+11. 只有双方 key confirmation 完成后建立数据会话。
+
+v1 不允许跨状态接受消息，不允许将重复 ClientHello 当成新身份。实现可以缓存逐字节相同的 ServerHello 处理 UDP 重传，但缓存有严格 TTL 和容量限制。
+
+## 7. 数据包
+
+固定明文头：96 字节。AEAD Tag：16 字节。
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 4 | Magic `XSP1` |
+| 4 | 1 | Version = 1 |
+| 5 | 1 | Packet Type |
+| 6 | 2 | Flags |
+| 8 | 2 | Header Length = 96 |
+| 10 | 2 | Payload Length，密文长度，不含 Tag |
+| 12 | 16 | Network ID |
+| 28 | 16 | Source Node ID |
+| 44 | 16 | Destination Node ID |
+| 60 | 16 | Session ID |
+| 76 | 4 | Key Epoch |
+| 80 | 8 | Sequence |
+| 88 | 4 | Path ID |
+| 92 | 4 | Reserved = 0 |
+| 96 | N | Ciphertext |
+| 96 + N | 16 | AEAD Tag |
+
+UDP payload 总长度必须严格等于 `96 + Payload Length + 16`。整个 96 字节头作为 AAD。
+
+### 7.1 Packet Type
+
+| Value | Name | Encrypted payload |
+|---:|---|---|
+| `0x01` | Data | 完整 IPv4 包 |
+| `0x02` | Keepalive | 空或固定状态摘要 |
+| `0x03` | PathChallenge | 8 字节随机 token |
+| `0x04` | PathResponse | 原样返回 8 字节 token |
+| `0x05` | KeyUpdate | Next Epoch 与确认摘要 |
+| `0x06` | KeyUpdateAck | Next Epoch 与确认摘要 |
+| `0x07` | Close | 加密关闭码和可选受限原因 |
+
+### 7.2 Flags
+
+| Bit | Name | 规则 |
+|---:|---|---|
+| `0x0001` | Ack Eliciting | 接收端需要产生受限确认行为 |
+| `0x0002` | Control | Payload 使用控制类型结构 |
+| `0x0004` | Path Probe | 只允许 PathChallenge/PathResponse |
+
+其他位必须为 0。Relay 路径不写入内层 flag，Direct 与 Relay 的内层 XSP 包保持相同。
+
+## 8. 加密与 nonce
+
+密码套件和 HKDF 见 `CRYPTOGRAPHIC_DESIGN.md`。
+
+```text
+nonce = nonce_salt[4] || uint64_be(sequence)
+AAD = data_header[0..96]
+```
+
+每个方向和 Epoch 独立维护 key、nonce salt、发送序列和 1024 位接收重放窗口。崩溃恢复不能复用旧 key 并重置序列，必须创建新 Session ID 并完整握手。
+
+## 9. 数据包验证
+
+接收端按以下顺序处理：
+
+1. UDP 长度、96 字节最小头和最大 datagram；
+2. Magic、Version、Packet Type、Flags、Header Length、Payload Length 和 Reserved；
+3. Network ID、Destination Node ID、Session ID 和当前/短期旧 Epoch；
+4. 序列是否明显低于窗口或超过实现允许的前瞻上限；
+5. 使用完整头作为 AAD 验证 AEAD；
+6. AEAD 成功后提交重放窗口；
+7. 验证 Source Node ID 与会话身份；
+8. Data 包验证 IPv4 version、总长度、源虚拟 IP、目标虚拟 IP、分片策略和接收端 ACL；
+9. 只有全部通过后写入 TUN。
+
+错误包默认静默丢弃并增加限速指标。未认证来源不能获得详细错误。
+
+## 10. IPv4 载荷规则
+
+- v1 只接受 IPv4；
+- IP Total Length 必须等于解密载荷长度；
+- 源地址必须等于凭证/配置绑定的虚拟 IP；
+- 目标地址必须属于本网络节点或已批准子网；
+- 不接受多播、广播、`0.0.0.0/0` 路由或未批准本地管理网段；
+- 首版默认 TUN MTU 1280；
+- v1 不实现 XSP 自定义分片；
+- 需要通过 PMTU、ICMP 错误和受控 MSS 处理避免黑洞。
+
+## 11. 路径验证与迁移
+
+PathChallenge 和 PathResponse 始终在已认证 XSP 会话内加密。新 UDP 五元组只有在返回正确 token 后才可晋升为活动路径。源 UDP 地址变化不改变节点身份。路径选择记录 Direct/Relay、RTT、稳定性、失败原因和最近验证时间。
+
+## 12. Key Epoch
+
+KeyUpdate payload：
+
+| Size | Field |
+|---:|---|
+| 4 | Next Epoch，必须等于 Current + 1 |
+| 32 | `SHA-256("XSP/1 key update v1" || Session ID || Current Epoch || Next Epoch)` |
+
+KeyUpdate 使用当前 Epoch 加密。双方派生新 Epoch 双向 key；接收 KeyUpdateAck 后发送方切换。旧 Epoch 最多保留 30 秒和 1024 个乱序包。状态冲突、跳跃 Epoch 或计数不确定触发完整重握手。
+
+## 13. 关闭
+
+已认证会话使用加密 Close。关闭码：
+
+| Code | Meaning |
+|---:|---|
+| 1 | Normal |
+| 2 | Credential Revoked |
+| 3 | Policy Changed |
+| 4 | Rekey Required |
+| 5 | Protocol Violation |
+| 6 | Resource Limit |
+
+公网未认证错误不返回内部原因。关闭后密钥和重放状态清零，Session ID 在本地短期 tombstone 中保留以拒绝延迟包。
+
+## 14. Relay 边界
+
+Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session、目的转发槽、长度、序列和 Relay 会话认证 Tag。Relay envelope 的 payload 是完整 XSP/1 UDP payload。Relay 不改变、解密或重新加密内层 XSP/1 包，也不能代表目标节点完成握手。
+
+`XSR/1` 具体格式在 M2.3 前单独规范和威胁评审；本文件不预先声明其安全完成。
+
+## 15. 限制与资源上限
+
+实现必须配置并测试：
+
+- 每来源未完成握手数；
+- 全局未完成握手数；
+- ClientHello nonce 缓存容量和 TTL；
+- 单节点会话数；
+- 每 Session 接收队列；
+- 每 datagram 和解密载荷最大长度；
+- 每秒签名验证和错误指标上限；
+- Relay 会话、带宽、队列和空闲超时。
+
+收到小型未认证请求时不得产生更大的响应。
+
+## 16. 版本和兼容性
+
+- v1 固定密码套件 `0x0001`；
+- 版本和套件进入双方签名 transcript；
+- 未知版本不能回退到 v1；
+- 同版本同 Message ID 的重传必须逐字节一致；
+- 同 Session ID 下字段语义不能重新解释；
+- 未来扩展使用新版本或明确已认证扩展，不占用保留字段偷渡语义。
+
+## 17. 测试向量和 Fuzz
+
+M0.2 提供 canonical data header 编码与 SHA-256 向量：
+
+```text
+tests/vectors/xsp1/data-header-v1.json
+```
+
+生成器：
+
+```text
+scripts/generate-xsp1-vectors.py
+```
+
+M1.3 实现前必须补充：
+
+- RFC 原语测试向量；
+- 有效双方签名；
+- X25519 全零拒绝；
+- HKDF 每个标签；
+- ClientFinish/ServerFinish；
+- Data AEAD；
+- 重放窗口边界；
+- Epoch 切换乱序；
+- 所有长度、类型、flag、版本和状态负向 corpus。
+
+任何协议字段或标签变化都必须更新本规范、密码学设计、威胁模型、测试向量和 Fuzz corpus。

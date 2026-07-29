@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-network test-e2e test-visual security-check release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-spec test-network test-e2e test-visual security-check release clean
 
 setup:
 >npm ci
@@ -20,7 +20,7 @@ build:
 >cargo build --workspace
 >npm run build
 
-test: test-unit test-integration
+test: test-unit test-integration test-spec
 
 test-unit:
 >cargo test --workspace
@@ -28,6 +28,9 @@ test-unit:
 
 test-integration:
 >./scripts/test-integration.sh
+
+test-spec:
+>python3 scripts/validate-m02.py
 
 test-network:
 >./scripts/test-network-capabilities.sh

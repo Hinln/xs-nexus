@@ -63,7 +63,7 @@
 
 ## M0.2 Clean-room、架构和威胁模型
 
-- 状态：`IN_PROGRESS`
+- 状态：`PASSED`
 - 风险等级：高
 
 ### 目标
@@ -90,11 +90,33 @@
 - 明确控制器失联行为；
 - 明确未审计风险。
 
+### 验证命令
+
+```bash
+./scripts/validate-m02.sh
+```
+
+### 证据
+
+- 首次全量验证：`/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`
+- XSP/1 编码向量：`tests/vectors/xsp1/data-header-v1.json`
+- 协议一致性检查：`scripts/validate-m02.py`
+
+### 实际结果
+
+- 完成 clean-room 边界、参考资料和第三方依赖清单；
+- 完成控制面、数据面、部署边界、故障和恢复架构；
+- 完成威胁模型、安全假设、密码学设计和 XSP/1 字节级规范；
+- 固定 v1 密码套件、重放窗口、密钥 epoch、路径验证和失败关闭行为；
+- Relay 仅转发带外层元数据的端到端密文，不持有数据面会话密钥；
+- 编码向量、文档长度约束、全量回归和秘密扫描实际通过；
+- 明确自研协议仍需独立安全审计，不作生产安全声明。
+
 ---
 
 ## M1.1 Controller 最小控制平面
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M0.1、M0.2
 
 ### 范围

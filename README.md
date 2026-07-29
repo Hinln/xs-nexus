@@ -18,6 +18,7 @@ make fmt-check
 make lint
 make build
 make test
+make test-spec
 make test-network
 make security-check
 ```

@@ -18,6 +18,7 @@ REFERENCE_SECRET_NAMES = {
     "REDIS_URL",
     "SESSION_SECRET",
 }
+PSEUDOCODE_ASSIGNMENT_VALUES = {"HKDF-Expand("}
 PLACEHOLDERS = {
     "CHANGE_ME",
     "EXAMPLE",
@@ -111,7 +112,11 @@ def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
                 match = assignment.search(line)
                 if match is not None:
                     value = match.group(1).strip(b"\"'").decode(errors="ignore")
-                    if value not in PLACEHOLDERS and len(value) >= 8:
+                    if (
+                        value not in PLACEHOLDERS
+                        and len(value) >= 8
+                        and value not in PSEUDOCODE_ASSIGNMENT_VALUES
+                    ):
                         findings.append(Finding(relative, line_number, "secret-assignment"))
 
     return sorted(set(findings), key=lambda item: (str(item.path), item.line, item.rule))
