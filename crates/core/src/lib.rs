@@ -2,6 +2,10 @@
 
 use std::fmt;
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Component {
     Agent,
@@ -47,6 +51,96 @@ impl fmt::Display for BaselineReport {
             self.version
         )
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnrollRequest {
+    pub token: String,
+    pub name: String,
+    pub device_type: String,
+    pub identity_public_key_base64: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SignedConfiguration {
+    pub version: u64,
+    pub payload_base64: String,
+    pub signature_base64: String,
+    pub signer_key_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnrollResponse {
+    pub network_id: Uuid,
+    pub node_id_base64: String,
+    pub virtual_ip: String,
+    pub credential_base64: String,
+    pub credential_key_id: u32,
+    pub credential_signing_public_key_base64: String,
+    pub configuration_signing_public_key_base64: String,
+    pub configuration: SignedConfiguration,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigurationPayload {
+    pub schema_version: u8,
+    pub network_id: Uuid,
+    pub version: u64,
+    pub generated_at: DateTime<Utc>,
+    pub address_pool: String,
+    pub nodes: Vec<ConfigurationNode>,
+    pub relays: Vec<serde_json::Value>,
+    pub policies: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigurationNode {
+    pub node_id_base64: String,
+    pub identity_public_key_base64: String,
+    pub virtual_ip: String,
+    pub credential_serial: u64,
+    pub credential_not_after: DateTime<Utc>,
+    pub role_bitmap: u32,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ControlClientMessage {
+    Authenticate {
+        node_id_base64: String,
+        credential_base64: String,
+        signature_base64: String,
+    },
+    Sync {
+        last_version: u64,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ControlServerMessage {
+    Challenge {
+        challenge_base64: String,
+    },
+    Authenticated {
+        node_id_base64: String,
+        configuration: SignedConfiguration,
+    },
+    Configuration {
+        configuration: SignedConfiguration,
+    },
+    UpToDate {
+        version: u64,
+    },
+    Error {
+        code: String,
+    },
 }
 
 #[cfg(test)]

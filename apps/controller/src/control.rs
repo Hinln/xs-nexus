@@ -191,6 +191,12 @@ async fn send_json(
 }
 
 async fn send_error(socket: &mut WebSocket, code: &'static str) {
-    let _ = send_json(socket, &ControlServerMessage::Error { code }).await;
+    let _ = send_json(
+        socket,
+        &ControlServerMessage::Error {
+            code: code.to_owned(),
+        },
+    )
+    .await;
     let _ = socket.send(Message::Close(None)).await;
 }

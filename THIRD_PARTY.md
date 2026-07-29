@@ -1,6 +1,6 @@
 # 第三方依赖与许可证
 
-状态：M1.1 依赖清单  
+状态：M1.2 Agent 信任链基础依赖清单  
 日期：2026-07-29
 
 `Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。版本与许可证字段已通过 `cargo metadata` 核对；任何新增依赖必须同步更新本文件。发布前仍须生成完整 SBOM、许可证文本集合和构建来源证明。
@@ -18,6 +18,7 @@
 | futures-util | 0.3.33 | WebSocket stream/sink | MIT OR Apache-2.0 |
 | getrandom | 0.4.3 | 操作系统 CSPRNG | MIT OR Apache-2.0 |
 | ipnet | 2.12.0 | IPv4 prefix 和 IPAM 边界 | MIT OR Apache-2.0 |
+| reqwest | 0.12.28 | Agent HTTPS enrollment，禁用系统原生 TLS | MIT OR Apache-2.0 |
 | serde | 1.0.229 | 严格请求与配置序列化 | MIT OR Apache-2.0 |
 | serde_json | 1.0.151 | JSON API 和精确配置 payload | MIT OR Apache-2.0 |
 | sha2 | 0.11.0 | SHA-256、Node ID 与域分离摘要 | MIT OR Apache-2.0 |
@@ -25,6 +26,7 @@
 | subtle | 2.6.1 | 常量时间 Token hash 比较 | BSD-3-Clause |
 | thiserror | 2.0.19 | 内部错误类型 | MIT OR Apache-2.0 |
 | tokio | 1.53.1 | 异步运行时、信号与定时器 | MIT |
+| tokio-tungstenite | 0.29.0 | Agent WSS 控制连接与 loopback 集成测试 | MIT |
 | tower-http | 0.7.0 | request ID 与脱敏 HTTP tracing | MIT |
 | tracing | 0.1.44 | 结构化运行日志 | MIT |
 | tracing-subscriber | 0.3.23 | 日志订阅与过滤 | MIT |
@@ -45,7 +47,7 @@
 | 依赖 | 锁定版本 | 用途 | 许可证 | 进入产物 |
 |---|---:|---|---|---|
 | http-body-util | 0.1.4 | HTTP handler 集成测试 | MIT | 否 |
-| tokio-tungstenite | 0.29.0 | loopback WebSocket 集成测试 | MIT | 否 |
+| tempfile | 3.24.0 | Agent 原子状态持久化测试 | MIT OR Apache-2.0 | 否 |
 | tower | 0.5.3 | Router one-shot 测试 | MIT | 否 |
 | TypeScript | 7.0.2 | 类型检查 | Apache-2.0 | 否 |
 | Vite | 8.1.5 | Console 构建 | MIT | 否 |
