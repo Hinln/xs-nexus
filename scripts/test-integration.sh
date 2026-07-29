@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-components=(agent cli relay)
-for component in "${components[@]}"; do
-  package="xs-${component}"
-  output="$(cargo run --quiet --package "${package}")"
-  expected="${package} status=baseline-ready version=0.1.0"
-  if [[ "${output}" != "${expected}" ]]; then
-    printf 'unexpected output for %s: %s\n' "${package}" "${output}" >&2
-    exit 1
-  fi
-done
+agent_output=$(cargo run --quiet --package xs-agent -- --version)
+[[ "$agent_output" == 'xs-agent 0.1.0' ]]
+
+cli_output=$(cargo run --quiet --package xs-cli --bin xs -- --version)
+[[ "$cli_output" == 'xs 0.1.0' ]]
+
+relay_output=$(cargo run --quiet --package xs-relay)
+[[ "$relay_output" == 'xs-relay status=baseline-ready version=0.1.0' ]]
 
 printf 'non-database component integration checks passed\n'

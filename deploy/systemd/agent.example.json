@@ -1,0 +1,10 @@
+{
+  "controller_url": "https://controller.example/",
+  "node_name": "linux-node-1",
+  "device_type": "linux",
+  "state_directory": "/var/lib/xs-nexus",
+  "runtime_directory": "/run/xs-nexus",
+  "interface_name": "xsn0",
+  "mtu": 1280,
+  "control_sync_interval_seconds": 15
+}

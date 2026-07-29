@@ -19,6 +19,7 @@
 | getrandom | 0.4.3 | 操作系统 CSPRNG | MIT OR Apache-2.0 |
 | ipnet | 2.12.0 | IPv4 prefix 和 IPAM 边界 | MIT OR Apache-2.0 |
 | reqwest | 0.12.28 | Agent HTTPS enrollment，禁用系统原生 TLS | MIT OR Apache-2.0 |
+| rtnetlink | 0.21.0 | Linux Agent 使用 Netlink 管理接口、地址和路由 | MIT |
 | serde | 1.0.229 | 严格请求与配置序列化 | MIT OR Apache-2.0 |
 | serde_json | 1.0.151 | JSON API 和精确配置 payload | MIT OR Apache-2.0 |
 | sha2 | 0.11.0 | SHA-256、Node ID 与域分离摘要 | MIT OR Apache-2.0 |
@@ -26,6 +27,7 @@
 | subtle | 2.6.1 | 常量时间 Token hash 比较 | BSD-3-Clause |
 | thiserror | 2.0.19 | 内部错误类型 | MIT OR Apache-2.0 |
 | tokio | 1.53.1 | 异步运行时、信号与定时器 | MIT |
+| tokio-tun | 0.15.2 | Linux-only `/dev/net/tun` 非持久设备 FD 封装 | MIT OR Apache-2.0 |
 | tokio-tungstenite | 0.29.0 | Agent WSS 控制连接与 loopback 集成测试 | MIT |
 | tower-http | 0.7.0 | request ID 与脱敏 HTTP tracing | MIT |
 | tracing | 0.1.44 | 结构化运行日志 | MIT |
@@ -33,7 +35,7 @@
 | uuid | 1.24.0 | 资源标识和 request ID | Apache-2.0 OR MIT |
 | zeroize | 1.9.0 | 临时密钥和 Token 内存清零 | Apache-2.0 OR MIT |
 
-这些 crate 只提供通用 Web、数据库、序列化和标准密码学原语，不包含现成组网、VPN、穿透、Relay 或虚拟网卡实现。
+这些 crate 只提供通用 Web、数据库、序列化、标准密码学原语、Linux Netlink 和 `/dev/net/tun` 文件描述符封装，不包含现成组网、VPN、穿透或 Relay 实现。`tokio-tun` 仅用于 Linux TUN 系统调用封装，不启用持久设备，也不用于 Windows；项目未引入 Wintun。
 
 ### Console 浏览器产物
 

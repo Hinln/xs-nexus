@@ -42,9 +42,9 @@ impl AgentHealth {
         *guard = code.map(str::to_owned);
     }
 
-    pub fn record_tun_packet(&self, valid_ipv4: bool) {
+    pub fn record_tun_packet(&self, dropped: bool) {
         self.tun_packets_received.fetch_add(1, Ordering::Relaxed);
-        if !valid_ipv4 {
+        if dropped {
             self.tun_packets_dropped.fetch_add(1, Ordering::Relaxed);
         }
     }

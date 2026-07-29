@@ -16,6 +16,8 @@ pub enum AgentError {
     Network,
     #[error("local management interface failed")]
     Ipc,
+    #[error("agent runtime failed")]
+    Runtime,
     #[error("requested operation is unsupported on this platform")]
     UnsupportedPlatform,
 }
@@ -31,6 +33,7 @@ impl AgentError {
             Self::Control => "agent_control_unavailable",
             Self::Network => "agent_network_operation_failed",
             Self::Ipc => "agent_ipc_failed",
+            Self::Runtime => "agent_runtime_failed",
             Self::UnsupportedPlatform => "agent_platform_unsupported",
         }
     }

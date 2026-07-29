@@ -155,7 +155,7 @@
 
 ## M1.2 Linux Agent 与 TUN
 
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE`
 - 前置：M1.1
 
 ### 范围
@@ -176,11 +176,18 @@
 - 不修改默认路由；
 - 权限最小化。
 
+### 完成证据
+
+- 非持久 Linux TUN FD、Netlink MTU/地址/路由和默认路由保护已在独立 network namespace 中验证；
+- Agent enrollment/control、严格只读 Unix IPC、`xs status`、`xs peers`、`xs diagnostics` 和 SIGTERM 清理已验证；
+- 最小权限 transient systemd 生命周期测试已验证，宿主机无 `xssvc0` 或项目路由泄漏；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`。
+
 ---
 
 ## M1.3 XSP/1 两节点加密链路
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M1.2
 - 风险等级：高
 

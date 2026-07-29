@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::fmt;
+use std::{fmt, net::Ipv4Addr};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -109,6 +109,72 @@ pub struct ConfigurationNode {
     pub tags: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LocalAgentRequest {
+    Status {},
+    Peers {},
+    Diagnostics {},
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LocalAgentResponse {
+    Status {
+        schema_version: u8,
+        status: LocalAgentStatus,
+    },
+    Peers {
+        schema_version: u8,
+        peers: Vec<LocalPeerStatus>,
+        total: u64,
+        truncated: bool,
+    },
+    Diagnostics {
+        schema_version: u8,
+        diagnostics: LocalAgentDiagnostics,
+    },
+    Error {
+        schema_version: u8,
+        code: String,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalAgentStatus {
+    pub node_id_base64: String,
+    pub virtual_ip: Ipv4Addr,
+    pub controller_connected: bool,
+    pub network_active: bool,
+    pub interface_name: String,
+    pub interface_index: u32,
+    pub configuration_version: u64,
+    pub uptime_seconds: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalPeerStatus {
+    pub node_id_base64: String,
+    pub virtual_ip: Ipv4Addr,
+    pub credential_not_after: DateTime<Utc>,
+    pub role_bitmap: u32,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalAgentDiagnostics {
+    pub status: LocalAgentStatus,
+    pub configuration_generated_at: DateTime<Utc>,
+    pub address_pool: String,
+    pub configuration_sha256: String,
+    pub tun_packets_received: u64,
+    pub tun_packets_dropped: u64,
+    pub last_error_code: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlClientMessage {
@@ -145,7 +211,7 @@ pub enum ControlServerMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::{BaselineReport, Component};
+    use super::{BaselineReport, Component, LocalAgentRequest};
 
     #[test]
     fn report_is_stable_and_component_specific() {
@@ -169,6 +235,18 @@ mod tests {
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
             4
+        );
+    }
+
+    #[test]
+    fn local_request_is_strict_and_stable() {
+        assert_eq!(
+            serde_json::to_string(&LocalAgentRequest::Diagnostics {}).expect("serialize request"),
+            r#"{"command":"diagnostics"}"#
+        );
+        assert!(
+            serde_json::from_str::<LocalAgentRequest>(r#"{"command":"status","unexpected":true}"#)
+                .is_err()
         );
     }
 }

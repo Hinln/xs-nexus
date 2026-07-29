@@ -16,12 +16,12 @@
 
 ## B. Linux 节点
 
-- [ ] MUST：Linux x86_64 Agent 可构建和安装。
+- [x] MUST：Linux x86_64 Agent 可构建和安装。
 - [ ] MUST：Linux arm64 Agent 可交叉构建或在目标环境构建。
-- [ ] MUST：使用 `/dev/net/tun`。
-- [ ] MUST：通过 Netlink 管理接口和路由。
-- [ ] MUST：不依赖 `ip` 命令完成核心运行逻辑。
-- [ ] MUST：崩溃后不破坏默认网络。
+- [x] MUST：使用 `/dev/net/tun`。
+- [x] MUST：通过 Netlink 管理接口和路由。
+- [x] MUST：不依赖 `ip` 命令完成核心运行逻辑。
+- [x] MUST：崩溃后不破坏默认网络。
 - [ ] MUST：卸载后无项目路由残留。
 - [ ] MUST：systemd 自动启动和重启策略正确。
 

@@ -5,7 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+serde_json.workspace = true
+tokio.workspace = true
 xs-core = { path = "../../crates/core" }
+
+[[bin]]
+name = "xs"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "=3.24.0"
 
 [lints]
 workspace = true

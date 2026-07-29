@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+privileged-network-tests = []
+
 [dependencies]
 base64.workspace = true
 chrono.workspace = true
@@ -23,8 +26,20 @@ zeroize.workspace = true
 xs-core = { path = "../../crates/core" }
 xs-protocol = { path = "../../crates/protocol" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rtnetlink.workspace = true
+tokio-tun.workspace = true
+
 [dev-dependencies]
+axum.workspace = true
+sqlx.workspace = true
 tempfile = "=3.24.0"
+xs-controller = { path = "../controller" }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "tun_lifecycle"
+path = "tests/tun_lifecycle.rs"
+required-features = ["privileged-network-tests"]

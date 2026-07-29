@@ -227,7 +227,7 @@ fn validate_configuration(
     if payload.schema_version != 1
         || payload.network_id != network_id
         || payload.version != configuration.version
-        || address_pool.prefix_len() == 0
+        || !(8..=30).contains(&address_pool.prefix_len())
         || !address_pool.contains(&virtual_ip)
         || payload.nodes.len() > MAX_CONFIGURATION_NODES
         || payload.relays.len() > 4096
