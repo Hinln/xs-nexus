@@ -1,0 +1,101 @@
+{
+  "name": "XS Nexus Codex Autonomous Bundle",
+  "files": [
+    {
+      "path": ".env.example",
+      "size": 753
+    },
+    {
+      "path": "00_README_FIRST.md",
+      "size": 4681
+    },
+    {
+      "path": "ACCEPTANCE.md",
+      "size": 5887
+    },
+    {
+      "path": "AGENTS.md",
+      "size": 7625
+    },
+    {
+      "path": "BLOCKERS.md",
+      "size": 1381
+    },
+    {
+      "path": "BOOTSTRAP_PROMPT.md",
+      "size": 5353
+    },
+    {
+      "path": "BUG_LOOP.md",
+      "size": 2196
+    },
+    {
+      "path": "DECISIONS.md",
+      "size": 2891
+    },
+    {
+      "path": "ENVIRONMENT.md",
+      "size": 2807
+    },
+    {
+      "path": "EXECUTION_PLAN.md",
+      "size": 9150
+    },
+    {
+      "path": "FINAL_REPORT.md",
+      "size": 2359
+    },
+    {
+      "path": "IMPLEMENT.md",
+      "size": 3836
+    },
+    {
+      "path": "KNOWN_ISSUES.md",
+      "size": 1345
+    },
+    {
+      "path": "PLANS.md",
+      "size": 2505
+    },
+    {
+      "path": "PROGRESS.md",
+      "size": 1274
+    },
+    {
+      "path": "QA_MATRIX.md",
+      "size": 3466
+    },
+    {
+      "path": "RECOVERY_RUNBOOK.md",
+      "size": 2613
+    },
+    {
+      "path": "RELEASE_CHECKLIST.md",
+      "size": 1798
+    },
+    {
+      "path": "SECURITY_REVIEW.md",
+      "size": 3648
+    },
+    {
+      "path": "VISUAL_QA.md",
+      "size": 3390
+    },
+    {
+      "path": "XS_Nexus_Codex_Development_Brief.md",
+      "size": 32871
+    },
+    {
+      "path": "apps/console/AGENTS.md",
+      "size": 892
+    },
+    {
+      "path": "crates/protocol/AGENTS.md",
+      "size": 944
+    },
+    {
+      "path": "drivers/windows-xsnet/AGENTS.md",
+      "size": 1238
+    }
+  ]
+}

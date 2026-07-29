@@ -1,0 +1,11 @@
+[package]
+name = "xs-controller"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+xs-core = { path = "../../crates/core" }
+
+[lints]
+workspace = true

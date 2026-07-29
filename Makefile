@@ -1,0 +1,52 @@
+SHELL := /usr/bin/env bash
+.RECIPEPREFIX := >
+
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-network test-e2e test-visual security-check release clean
+
+setup:
+>npm ci
+
+fmt:
+>cargo fmt --all
+
+fmt-check:
+>cargo fmt --all -- --check
+
+lint:
+>cargo clippy --workspace --all-targets -- -D warnings
+>npm run lint
+
+build:
+>cargo build --workspace
+>npm run build
+
+test: test-unit test-integration
+
+test-unit:
+>cargo test --workspace
+>npm test
+
+test-integration:
+>./scripts/test-integration.sh
+
+test-network:
+>./scripts/test-network-capabilities.sh
+
+test-e2e:
+>@printf 'E2E tests are not implemented before M4.2\n' >&2
+>@exit 2
+
+test-visual:
+>@printf 'Visual tests are not implemented before M4.2\n' >&2
+>@exit 2
+
+security-check:
+>python3 scripts/check-secrets.py --root . --reference-env /etc/xs-nexus/controller.env
+
+release:
+>@printf 'Release packaging is not implemented before M9.1\n' >&2
+>@exit 2
+
+clean:
+>cargo clean
+>rm -rf apps/console/dist

@@ -1,0 +1,20 @@
+name: xs-nexus-dev
+
+services:
+  network-probe:
+    image: alpine:3.22
+    profiles: ["baseline"]
+    command: ["/bin/true"]
+    user: "65534:65534"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    networks:
+      - 1panel-network
+
+networks:
+  1panel-network:
+    external: true
+    name: 1panel-network

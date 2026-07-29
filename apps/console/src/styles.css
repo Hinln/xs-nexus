@@ -1,0 +1,83 @@
+:root {
+  font-family: Inter, "Noto Sans SC", system-ui, sans-serif;
+  color: #152033;
+  background: #f2f5f9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.card {
+  width: min(680px, 100%);
+  padding: clamp(28px, 6vw, 56px);
+  border: 1px solid #d8e0ea;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgb(31 50 75 / 10%);
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #2d63c8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3.75rem);
+  letter-spacing: -0.04em;
+}
+
+.summary {
+  margin: 24px 0 32px;
+  color: #52647a;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.facts div {
+  padding: 16px;
+  border-radius: 12px;
+  background: #f5f7fb;
+}
+
+.facts dt {
+  color: #6a7a8e;
+  font-size: 0.78rem;
+}
+
+.facts dd {
+  margin: 6px 0 0;
+  font-weight: 650;
+}
+
+@media (max-width: 520px) {
+  .facts {
+    grid-template-columns: 1fr;
+  }
+}
