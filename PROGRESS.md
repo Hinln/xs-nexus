@@ -1,8 +1,8 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-29 10:50 UTC  
-当前 Git 提交：`fe1f9db`  
-当前总状态：`IN_PROGRESS`  
+最后更新时间：2026-07-29 11:11 UTC  
+当前 Git 提交：`c4e8e44`  
+当前总状态：`PAUSED_AT_SAFE_CHECKPOINT`  
 当前里程碑：`M1.2 Linux Agent 与 TUN`
 
 ---
@@ -28,35 +28,36 @@
 - 真实 PostgreSQL、HTTP、loopback WebSocket、主进程和网络能力全量验证；
 - M1.1 证据 `/srv/xs-nexus/artifacts/qa/m1.1-20260729T105009Z/validate-m11.log`；
 - M1.1 Git 检查点 `fe1f9db`。
+- M1.2 Agent 严格配置、本地 Ed25519 身份、`0700`/`0600` 权限和原子状态持久化；
+- Enrollment 凭证与独立配置签名的完整信任链验证、非规范编码和篡改拒绝；
+- WSS 控制 challenge、消息边界、单调配置同步、最后有效配置保留和退避重连；
+- M1.2 中间 Git 检查点 `c4e8e44`。
 
-## 正在进行
+## 暂停点
 
-- M1.2 Linux Agent 与 TUN：节点注册、本地密钥、控制连接、Netlink/TUN 生命周期和 CLI 诊断。
+- 已安全停在 M1.2 的 Agent 本地身份、Enrollment 与控制面信任链边界；尚未创建 TUN、路由、本地 IPC 或 systemd 服务。
 
 ## 下一步
 
-1. 定义 Agent 配置、本地状态和最小权限边界；
-2. 实现 Ed25519 本地密钥生成与 `0600` 原子持久化；
-3. 实现 Controller enrollment 和 WebSocket challenge/sync 客户端；
-4. 通过 Netlink 创建、配置和回收项目 TUN 与路由；
-5. 实现 systemd 服务和崩溃/卸载恢复；
-6. 实现 `xs status`、`xs peers` 和 `xs diagnostics`；
-7. 在隔离 namespace 中完成真实生命周期测试。
+1. 增加 Agent 与本地 Controller 的 enrollment/control 集成测试；
+2. 通过 Netlink 创建、配置和回收项目 TUN 与路由；
+3. 实现 systemd 服务和崩溃/卸载恢复；
+4. 实现本地只读 IPC、`xs status`、`xs peers` 和 `xs diagnostics`；
+5. 在隔离 namespace 中完成真实生命周期测试。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '1,240p' apps/agent/Cargo.toml apps/agent/src/main.rs
+sed -n '1,260p' docs/AGENT_TRUST_FOUNDATION.md apps/agent/src/state.rs
 ```
 
 ## 最近测试
 
-- 时间：2026-07-29 10:50 UTC；
+- 时间：2026-07-29 11:11 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m11.sh`；
+- 命令：`cargo clippy -p xs-core -p xs-controller -p xs-agent --all-targets -- -D warnings`、`cargo test -p xs-core -p xs-protocol -p xs-agent --lib`、`./scripts/test-controller-db.sh`、`make security-check`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m1.1-20260729T105009Z/validate-m11.log`；
-- 覆盖：格式、Clippy、TypeScript、构建、Rust/前端单测、真实 PostgreSQL 迁移和并发、HTTP/WebSocket、凭证向量、隔离 TUN/nftables、秘密扫描回归、ShellCheck、npm 审计、主进程健康检查和 Compose 外部网络不变性。
+- 覆盖：严格 Clippy、Agent 配置与权限、完整 Enrollment 信任链、配置签名篡改拒绝、协议凭证向量、真实 PostgreSQL Controller 回归和秘密扫描。
 
 ## 当前失败
 
@@ -87,6 +88,7 @@ git status --short --branch
 GIT_PAGER=cat git log --oneline -10
 cat PROGRESS.md
 ./scripts/validate-m11.sh
+cargo test -p xs-agent --lib
 ```
 
 然后读取：
