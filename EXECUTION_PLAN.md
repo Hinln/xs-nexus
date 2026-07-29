@@ -225,7 +225,7 @@
 
 ## M2.1 地址发现与候选管理
 
-- 状态：`IN_PROGRESS`
+- 状态：`DONE`
 - 前置：M1.3
 
 ### 范围
@@ -244,11 +244,19 @@
 - 多候选按优先级测试；
 - 控制台和 CLI 显示路径原因。
 
+### 完成证据
+
+- 固定长度认证 `XSD/1` 发现请求/响应、活动凭证检查、每来源限速和响应小于请求验证通过；
+- Agent Netlink IPv4/IPv6 候选、同数据面 UDP socket 映射发现、节点签名广告、单调 generation、短期过期和动态配置应用验证通过；
+- 两个隔离 namespace 中完成首选候选不可达后的握手回退，以及建立会话后更高优先级路径的 AEAD PathChallenge/PathResponse 晋升；
+- CLI/IPC 显示候选、活动端点、候选种类、会话状态和真实路径原因；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`。
+
 ---
 
 ## M2.2 UDP 打洞
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M2.1
 
 ### 验收

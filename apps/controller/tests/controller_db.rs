@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, str::FromStr};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    str::FromStr,
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -6,27 +10,49 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::Utc;
 use ed25519_dalek::{Signature, Signer, SigningKey};
 use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio::{
+    net::{TcpStream, UdpSocket},
+    sync::watch,
+    time::timeout,
+};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 use tower::ServiceExt;
+use uuid::Uuid;
 use xs_controller::config::ControllerConfig;
-use xs_protocol::verify_credential;
+use xs_core::{CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind};
+use xs_protocol::{
+    CREDENTIAL_LENGTH, DiscoveryRequest, verify_credential, verify_discovery_response,
+};
 
 const ADMIN_TOKEN: &str = "integration-admin-token-with-32-characters";
 const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
+const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
+type ControlSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[tokio::test]
 async fn controller_registration_ipam_configuration_and_control_flow() {
-    let config = test_config();
+    let discovery_socket = UdpSocket::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind discovery socket");
+    let discovery_address = discovery_socket.local_addr().expect("discovery address");
+    let config = test_config(discovery_address);
     let (router, state) = xs_controller::build(&config)
         .await
         .expect("controller database initializes");
     reset_database(&state.pool).await;
+    let (discovery_shutdown, discovery_shutdown_rx) = watch::channel(false);
+    let discovery_state = state.clone();
+    let discovery_server = tokio::spawn(async move {
+        xs_controller::discovery::serve(discovery_socket, discovery_state, discovery_shutdown_rx)
+            .await
+    });
 
     let (status, ready) = request_json(&router, Method::GET, "/health/ready", None, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -73,7 +99,8 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     assert_eq!(enrollment.0, StatusCode::CREATED);
     let enrollment = enrollment.1;
     assert_eq!(enrollment["virtual_ip"], "100.88.0.16");
-    verify_enrollment_artifacts(&state, &enrollment);
+    verify_enrollment_artifacts(&state, &enrollment, discovery_address);
+    verify_udp_discovery(&state, &enrollment, &identity, discovery_address).await;
 
     let (_, duplicate_token) = create_token(&router, network_id, 1).await;
     let duplicate = enroll(
@@ -91,7 +118,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     assert_manual_ip_assignment(&router, network_id).await;
 
     assert_audit_is_append_only_and_redacted(&state.pool, &token).await;
-    verify_websocket_control(&router, &enrollment, &identity).await;
+    verify_websocket_control(&router, &enrollment, &identity, discovery_address).await;
 
     let control_audits: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM audit_events WHERE action = 'control.authenticate'",
@@ -108,6 +135,14 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
             .await
             .expect("token use count");
     assert_eq!(stored_use_count, 1);
+
+    discovery_shutdown
+        .send(true)
+        .expect("request discovery shutdown");
+    discovery_server
+        .await
+        .expect("join discovery server")
+        .expect("discovery server exits cleanly");
 }
 
 async fn assert_expired_token_rejected(router: &Router, pool: &sqlx::PgPool, network_id: &str) {
@@ -212,13 +247,15 @@ async fn assert_manual_ip_assignment(router: &Router, network_id: &str) {
     assert_eq!(enrollment.1["configuration"]["version"], 4);
 }
 
-fn test_config() -> ControllerConfig {
+fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
     let database_url =
         std::env::var("XS_TEST_DATABASE_URL").expect("XS_TEST_DATABASE_URL is required");
     let database_schema =
         std::env::var("XS_TEST_DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus_test".to_owned());
     ControllerConfig {
         listen: SocketAddr::from(([127, 0, 0, 1], 0)),
+        discovery_listen: Some(discovery_address),
+        discovery_public_endpoint: Some(discovery_address),
         database_url,
         database_schema,
         admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
@@ -343,7 +380,11 @@ async fn assert_token_is_hash_only(pool: &sqlx::PgPool, schema: &str) {
     assert_eq!(hash_length, 32);
 }
 
-fn verify_enrollment_artifacts(state: &xs_controller::AppState, enrollment: &Value) {
+fn verify_enrollment_artifacts(
+    state: &xs_controller::AppState,
+    enrollment: &Value,
+    discovery_address: SocketAddr,
+) {
     let credential = URL_SAFE_NO_PAD
         .decode(
             enrollment["credential_base64"]
@@ -391,6 +432,80 @@ fn verify_enrollment_artifacts(state: &xs_controller::AppState, enrollment: &Val
     let payload: Value = serde_json::from_slice(&payload).expect("configuration JSON");
     assert_eq!(payload["version"], 2);
     assert_eq!(payload["nodes"].as_array().expect("nodes").len(), 1);
+    assert_eq!(
+        payload["discovery_endpoints"][0],
+        discovery_address.to_string()
+    );
+}
+
+async fn verify_udp_discovery(
+    state: &xs_controller::AppState,
+    enrollment: &Value,
+    identity: &SigningKey,
+    discovery_address: SocketAddr,
+) {
+    let network_id = Uuid::from_str(enrollment["network_id"].as_str().expect("network id"))
+        .expect("valid network id");
+    let node_id: [u8; 16] = URL_SAFE_NO_PAD
+        .decode(enrollment["node_id_base64"].as_str().expect("node id"))
+        .expect("decode node id")
+        .try_into()
+        .expect("node id length");
+    let credential: [u8; CREDENTIAL_LENGTH] = URL_SAFE_NO_PAD
+        .decode(
+            enrollment["credential_base64"]
+                .as_str()
+                .expect("credential"),
+        )
+        .expect("decode credential")
+        .try_into()
+        .expect("credential length");
+    let now = u64::try_from(Utc::now().timestamp()).expect("current time");
+    let request = DiscoveryRequest::new(
+        *network_id.as_bytes(),
+        node_id,
+        [71_u8; 16],
+        now,
+        credential,
+        identity,
+    )
+    .expect("build discovery request");
+    let client = UdpSocket::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind discovery client");
+    let expected_observed = client.local_addr().expect("discovery client address");
+    client
+        .send_to(request.encoded(), discovery_address)
+        .await
+        .expect("send discovery request");
+    let mut response = [0_u8; xs_protocol::DISCOVERY_RESPONSE_LENGTH];
+    let (length, source) = timeout(Duration::from_secs(2), client.recv_from(&mut response))
+        .await
+        .expect("discovery response timeout")
+        .expect("receive discovery response");
+    assert_eq!(length, response.len());
+    assert_eq!(source, discovery_address);
+    let verified = verify_discovery_response(
+        &response,
+        &request,
+        &state.config_signing_key.verifying_key(),
+        u64::try_from(Utc::now().timestamp()).expect("current time"),
+    )
+    .expect("verify discovery response");
+    assert_eq!(verified.observed_endpoint, expected_observed);
+
+    let mut tampered = *request.encoded();
+    tampered[tampered.len() - 1] ^= 1;
+    client
+        .send_to(&tampered, discovery_address)
+        .await
+        .expect("send tampered discovery request");
+    assert!(
+        timeout(Duration::from_millis(200), client.recv_from(&mut response))
+            .await
+            .is_err(),
+        "tampered discovery request must be silently dropped"
+    );
 }
 
 async fn assert_audit_is_append_only_and_redacted(pool: &sqlx::PgPool, token: &str) {
@@ -421,7 +536,12 @@ async fn assert_audit_is_append_only_and_redacted(pool: &sqlx::PgPool, token: &s
     assert!(mutation.is_err());
 }
 
-async fn verify_websocket_control(router: &Router, enrollment: &Value, identity: &SigningKey) {
+async fn verify_websocket_control(
+    router: &Router,
+    enrollment: &Value,
+    identity: &SigningKey,
+    discovery_address: SocketAddr,
+) {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
         .await
         .expect("bind test controller");
@@ -507,6 +627,133 @@ async fn verify_websocket_control(router: &Router, enrollment: &Value, identity:
     assert_eq!(synchronized["type"], "up_to_date");
     assert_eq!(synchronized["version"], 4);
 
+    advertise_candidates_and_verify(&mut socket, enrollment, identity, discovery_address).await;
+
     socket.close(None).await.expect("close websocket");
     server.abort();
+}
+
+async fn advertise_candidates_and_verify(
+    socket: &mut ControlSocket,
+    enrollment: &Value,
+    identity: &SigningKey,
+    discovery_address: SocketAddr,
+) {
+    let now = Utc::now();
+    let advertisement = CandidateAdvertisement {
+        schema_version: 1,
+        network_id: Uuid::from_str(enrollment["network_id"].as_str().expect("network id"))
+            .expect("valid network id"),
+        node_id_base64: enrollment["node_id_base64"]
+            .as_str()
+            .expect("node id")
+            .to_owned(),
+        generation: 1,
+        generated_at: now,
+        expires_at: now + chrono::Duration::minutes(10),
+        candidates: vec![
+            EndpointCandidate {
+                kind: EndpointCandidateKind::Mapped,
+                endpoint: SocketAddr::from((Ipv4Addr::new(198, 51, 100, 27), 42001)),
+                priority: 200,
+                expires_at: now + chrono::Duration::minutes(9),
+            },
+            EndpointCandidate {
+                kind: EndpointCandidateKind::Local,
+                endpoint: SocketAddr::from((Ipv4Addr::new(192, 168, 50, 9), 42001)),
+                priority: 100,
+                expires_at: now + chrono::Duration::minutes(9),
+            },
+        ],
+    };
+    let payload = serde_json::to_vec(&advertisement).expect("serialize candidate advertisement");
+    let mut signing_input =
+        Vec::with_capacity(CANDIDATE_ADVERTISEMENT_DOMAIN.len() + payload.len());
+    signing_input.extend_from_slice(CANDIDATE_ADVERTISEMENT_DOMAIN);
+    signing_input.extend_from_slice(&payload);
+    let signature = identity.sign(&signing_input);
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "advertise_candidates",
+                "advertisement": advertisement.clone(),
+                "signature_base64": URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("advertise candidates");
+    let configuration = socket
+        .next()
+        .await
+        .expect("configuration response")
+        .expect("valid configuration response");
+    let Message::Text(configuration) = configuration else {
+        panic!("expected configuration text");
+    };
+    let configuration: Value =
+        serde_json::from_str(&configuration).expect("configuration response JSON");
+    assert_eq!(configuration["type"], "configuration");
+    assert_eq!(configuration["configuration"]["version"], 5);
+    let configuration_payload = URL_SAFE_NO_PAD
+        .decode(
+            configuration["configuration"]["payload_base64"]
+                .as_str()
+                .expect("configuration payload"),
+        )
+        .expect("decode configuration payload");
+    let configuration_payload: Value =
+        serde_json::from_slice(&configuration_payload).expect("configuration payload JSON");
+    assert_eq!(
+        configuration_payload["discovery_endpoints"][0],
+        discovery_address.to_string()
+    );
+    let advertised_node = configuration_payload["nodes"]
+        .as_array()
+        .expect("configuration nodes")
+        .iter()
+        .find(|node| node["node_id_base64"] == enrollment["node_id_base64"])
+        .expect("advertising node");
+    assert_eq!(
+        advertised_node["candidates"]
+            .as_array()
+            .expect("candidates")
+            .len(),
+        2
+    );
+    assert_eq!(advertised_node["candidates"][0]["priority"], 200);
+    assert_eq!(advertised_node["candidates"][0]["kind"], "mapped");
+
+    verify_idempotent_advertisement(socket, advertisement, signature).await;
+}
+
+async fn verify_idempotent_advertisement(
+    socket: &mut ControlSocket,
+    advertisement: CandidateAdvertisement,
+    signature: Signature,
+) {
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "advertise_candidates",
+                "advertisement": advertisement,
+                "signature_base64": URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("repeat identical candidate advertisement");
+    let repeated = socket
+        .next()
+        .await
+        .expect("idempotent configuration response")
+        .expect("valid idempotent configuration response");
+    let Message::Text(repeated) = repeated else {
+        panic!("expected idempotent configuration text");
+    };
+    let repeated: Value = serde_json::from_str(&repeated).expect("idempotent response JSON");
+    assert_eq!(repeated["type"], "configuration");
+    assert_eq!(repeated["configuration"]["version"], 5);
 }

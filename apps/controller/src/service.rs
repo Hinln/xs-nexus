@@ -1,8 +1,12 @@
-use std::{collections::HashSet, net::Ipv4Addr, str::FromStr};
+use std::{
+    collections::HashSet,
+    net::{Ipv4Addr, Ipv6Addr},
+    str::FromStr,
+};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, VerifyingKey};
 use ipnet::Ipv4Net;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -16,8 +20,9 @@ use xs_protocol::{
 use crate::{
     error::ApiError,
     model::{
-        ConfigurationNode, ConfigurationPayload, CreateEnrollmentTokenRequest,
-        CreateNetworkRequest, EnrollRequest, EnrollResponse, EnrollmentTokenResponse,
+        CandidateAdvertisement, ConfigurationNode, ConfigurationPayload,
+        CreateEnrollmentTokenRequest, CreateNetworkRequest, EndpointCandidate,
+        EndpointCandidateKind, EnrollRequest, EnrollResponse, EnrollmentTokenResponse,
         NetworkResponse, SignedConfiguration,
     },
     state::AppState,
@@ -25,6 +30,9 @@ use crate::{
 
 const ENROLLMENT_TOKEN_DOMAIN: &[u8] = b"XS Nexus enrollment token v1";
 const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
+const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
+const MAX_CANDIDATES_PER_NODE: usize = 16;
+const MAX_CANDIDATE_ADVERTISEMENT_BYTES: usize = 16 * 1024;
 
 #[derive(FromRow)]
 struct TokenRow {
@@ -52,6 +60,7 @@ struct ConfigurationNodeRow {
     credential_not_after: DateTime<Utc>,
     role_bitmap: i64,
     tags: Vec<String>,
+    candidate_payload: Option<Vec<u8>>,
 }
 
 pub(crate) async fn create_network(
@@ -109,8 +118,7 @@ pub(crate) async fn create_network(
     )
     .await?;
 
-    let configuration =
-        publish_configuration(&mut transaction, network_id, &state.config_signing_key).await?;
+    let configuration = publish_configuration(&mut transaction, network_id, state).await?;
     transaction.commit().await.map_err(internal_database)?;
 
     Ok(NetworkResponse {
@@ -319,12 +327,7 @@ pub(crate) async fn enroll_node(
     .await?;
     consume_token(&mut transaction, &enrollment.token_hash).await?;
 
-    let configuration = publish_configuration(
-        &mut transaction,
-        token.network_id,
-        &state.config_signing_key,
-    )
-    .await?;
+    let configuration = publish_configuration(&mut transaction, token.network_id, state).await?;
     let enrollment_actor_id = URL_SAFE_NO_PAD.encode(enrollment.node_id);
     append_audit(
         &mut transaction,
@@ -586,6 +589,7 @@ async fn consume_token(
 pub(crate) struct AuthenticatedNode {
     pub network_id: Uuid,
     pub node_id_base64: String,
+    pub node_id: [u8; 16],
 }
 
 pub(crate) async fn authenticate_control(
@@ -669,7 +673,230 @@ pub(crate) async fn authenticate_control(
     Ok(AuthenticatedNode {
         network_id,
         node_id_base64: node_id_base64.to_owned(),
+        node_id: claimed_node_id,
     })
+}
+
+pub(crate) async fn advertise_candidates(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    advertisement: CandidateAdvertisement,
+    signature_base64: &str,
+) -> Result<SignedConfiguration, ApiError> {
+    validate_candidate_advertisement(authenticated, &advertisement)?;
+    let payload = serde_json::to_vec(&advertisement).map_err(|_| ApiError::validation())?;
+    if payload.len() > MAX_CANDIDATE_ADVERTISEMENT_BYTES {
+        return Err(ApiError::validation());
+    }
+    let signature = decode_array::<64>(signature_base64).map_err(|()| ApiError::unauthorized())?;
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    let node = sqlx::query(
+        "SELECT id, identity_public_key
+         FROM nodes
+         WHERE network_id = $1 AND node_id = $2 AND revoked_at IS NULL
+         FOR UPDATE",
+    )
+    .bind(authenticated.network_id)
+    .bind(authenticated.node_id.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::unauthorized)?;
+    let node_database_id = node.try_get::<Uuid, _>("id").map_err(internal_database)?;
+    let public_key = node
+        .try_get::<Vec<u8>, _>("identity_public_key")
+        .map_err(internal_database)?;
+    let verifying_key = VerifyingKey::from_bytes(
+        &public_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| ApiError::internal())?,
+    )
+    .map_err(|_| ApiError::internal())?;
+    let mut signing_input =
+        Vec::with_capacity(CANDIDATE_ADVERTISEMENT_DOMAIN.len() + payload.len());
+    signing_input.extend_from_slice(CANDIDATE_ADVERTISEMENT_DOMAIN);
+    signing_input.extend_from_slice(&payload);
+    verifying_key
+        .verify_strict(&signing_input, &Signature::from_bytes(&signature))
+        .map_err(|_| ApiError::unauthorized())?;
+
+    if candidate_advertisement_is_duplicate(
+        &mut transaction,
+        node_database_id,
+        advertisement.generation,
+        &payload,
+        &signature,
+    )
+    .await?
+    {
+        transaction.rollback().await.map_err(internal_database)?;
+        return latest_configuration(state, authenticated.network_id).await;
+    }
+
+    sqlx::query(
+        "INSERT INTO node_candidate_advertisements
+         (node_id, generation, payload, signature, expires_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (node_id) DO UPDATE
+         SET generation = EXCLUDED.generation,
+             payload = EXCLUDED.payload,
+             signature = EXCLUDED.signature,
+             expires_at = EXCLUDED.expires_at,
+             updated_at = now()",
+    )
+    .bind(node_database_id)
+    .bind(i64::try_from(advertisement.generation).map_err(|_| ApiError::validation())?)
+    .bind(&payload)
+    .bind(signature.as_slice())
+    .bind(advertisement.expires_at)
+    .execute(&mut *transaction)
+    .await
+    .map_err(map_write_error)?;
+
+    let configuration =
+        publish_configuration(&mut transaction, authenticated.network_id, state).await?;
+    append_audit(
+        &mut transaction,
+        AuditEvent {
+            network_id: Some(authenticated.network_id),
+            actor_type: "node",
+            actor_id: &authenticated.node_id_base64,
+            action: "candidates.advertise",
+            target_type: "node",
+            target_id: Some(authenticated.node_id_base64.clone()),
+            outcome: "success",
+            metadata: json!({
+                "generation": advertisement.generation,
+                "candidate_count": advertisement.candidates.len()
+            }),
+        },
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    Ok(configuration)
+}
+
+async fn candidate_advertisement_is_duplicate(
+    transaction: &mut Transaction<'_, Postgres>,
+    node_id: Uuid,
+    generation: u64,
+    payload: &[u8],
+    signature: &[u8; 64],
+) -> Result<bool, ApiError> {
+    let current = sqlx::query(
+        "SELECT generation, payload, signature
+         FROM node_candidate_advertisements
+         WHERE node_id = $1
+         FOR UPDATE",
+    )
+    .bind(node_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    let Some(current) = current else {
+        return Ok(false);
+    };
+    let current_generation = current
+        .try_get::<i64, _>("generation")
+        .map_err(internal_database)?;
+    let current_generation = u64::try_from(current_generation).map_err(|_| ApiError::internal())?;
+    let duplicate = current_generation == generation
+        && current
+            .try_get::<Vec<u8>, _>("payload")
+            .map_err(internal_database)?
+            == payload
+        && current
+            .try_get::<Vec<u8>, _>("signature")
+            .map_err(internal_database)?
+            == signature;
+    if current_generation >= generation && !duplicate {
+        return Err(ApiError::conflict());
+    }
+    Ok(duplicate)
+}
+
+fn validate_candidate_advertisement(
+    authenticated: &AuthenticatedNode,
+    advertisement: &CandidateAdvertisement,
+) -> Result<(), ApiError> {
+    let now = Utc::now();
+    if advertisement.schema_version != 1
+        || advertisement.network_id != authenticated.network_id
+        || advertisement.node_id_base64 != authenticated.node_id_base64
+        || advertisement.generation == 0
+        || advertisement.candidates.len() > MAX_CANDIDATES_PER_NODE
+        || advertisement.generated_at < now - Duration::minutes(5)
+        || advertisement.generated_at > now + Duration::minutes(5)
+        || advertisement.expires_at <= now + Duration::seconds(30)
+        || advertisement.expires_at > now + Duration::minutes(15)
+        || advertisement
+            .candidates
+            .windows(2)
+            .any(|pair| pair[0].priority <= pair[1].priority)
+    {
+        return Err(ApiError::validation());
+    }
+
+    let mut endpoints = HashSet::with_capacity(advertisement.candidates.len());
+    let mut priorities = HashSet::with_capacity(advertisement.candidates.len());
+    for candidate in &advertisement.candidates {
+        if candidate.priority == 0
+            || candidate.expires_at <= now
+            || candidate.expires_at > advertisement.expires_at
+            || candidate.kind == EndpointCandidateKind::Relay
+            || !valid_candidate_endpoint(candidate)
+            || !endpoints.insert((candidate.kind, candidate.endpoint))
+            || !priorities.insert(candidate.priority)
+        {
+            return Err(ApiError::validation());
+        }
+    }
+    Ok(())
+}
+
+fn valid_candidate_endpoint(candidate: &EndpointCandidate) -> bool {
+    if candidate.endpoint.port() == 0 {
+        return false;
+    }
+    match candidate.endpoint {
+        std::net::SocketAddr::V4(endpoint) => {
+            let address = *endpoint.ip();
+            if address.is_unspecified()
+                || address.is_loopback()
+                || address.is_multicast()
+                || address == Ipv4Addr::BROADCAST
+            {
+                return false;
+            }
+            candidate.kind != EndpointCandidateKind::PublicIpv6
+        }
+        std::net::SocketAddr::V6(endpoint) => {
+            let address = *endpoint.ip();
+            if endpoint.flowinfo() != 0
+                || address.is_unspecified()
+                || address.is_loopback()
+                || address.is_multicast()
+                || (address.is_unicast_link_local() && endpoint.scope_id() == 0)
+                || (!address.is_unicast_link_local() && endpoint.scope_id() != 0)
+            {
+                return false;
+            }
+            match candidate.kind {
+                EndpointCandidateKind::PublicIpv6 => {
+                    public_ipv6(address) && endpoint.scope_id() == 0
+                }
+                EndpointCandidateKind::Local
+                | EndpointCandidateKind::Mapped
+                | EndpointCandidateKind::Static => true,
+                EndpointCandidateKind::Relay => false,
+            }
+        }
+    }
+}
+
+fn public_ipv6(address: Ipv6Addr) -> bool {
+    !address.is_unique_local() && !address.is_unicast_link_local()
 }
 
 pub(crate) async fn latest_configuration(
@@ -758,7 +985,7 @@ fn validate_allocatable_address(
 async fn publish_configuration(
     transaction: &mut Transaction<'_, Postgres>,
     network_id: Uuid,
-    signing_key: &SigningKey,
+    state: &AppState,
 ) -> Result<SignedConfiguration, ApiError> {
     let network = sqlx::query(
         "UPDATE networks
@@ -781,11 +1008,14 @@ async fn publish_configuration(
         .map_err(internal_database)?;
 
     let rows = sqlx::query_as::<_, ConfigurationNodeRow>(
-        "SELECT node_id, identity_public_key, host(virtual_ip) AS virtual_ip,
-                credential_serial, credential_not_after, role_bitmap, tags
-         FROM nodes
-         WHERE network_id = $1 AND revoked_at IS NULL
-         ORDER BY node_id",
+        "SELECT n.node_id, n.identity_public_key, host(n.virtual_ip) AS virtual_ip,
+                n.credential_serial, n.credential_not_after, n.role_bitmap, n.tags,
+                c.payload AS candidate_payload
+         FROM nodes n
+         LEFT JOIN node_candidate_advertisements c
+           ON c.node_id = n.id AND c.expires_at > now()
+         WHERE n.network_id = $1 AND n.revoked_at IS NULL
+         ORDER BY n.node_id",
     )
     .bind(network_id)
     .fetch_all(&mut **transaction)
@@ -794,11 +1024,22 @@ async fn publish_configuration(
 
     let mut nodes = Vec::with_capacity(rows.len());
     for row in rows {
+        let candidates = row
+            .candidate_payload
+            .as_deref()
+            .map(|payload| {
+                serde_json::from_slice::<CandidateAdvertisement>(payload)
+                    .map(|advertisement| advertisement.candidates)
+                    .map_err(|_| ApiError::internal())
+            })
+            .transpose()?
+            .unwrap_or_default();
         nodes.push(ConfigurationNode {
             node_id_base64: URL_SAFE_NO_PAD.encode(row.node_id),
             identity_public_key_base64: URL_SAFE_NO_PAD.encode(row.identity_public_key),
             virtual_ip: row.virtual_ip,
             direct_endpoints: Vec::new(),
+            candidates,
             credential_serial: u64::try_from(row.credential_serial)
                 .map_err(|_| ApiError::internal())?,
             credential_not_after: row.credential_not_after,
@@ -813,6 +1054,7 @@ async fn publish_configuration(
         version,
         generated_at: Utc::now(),
         address_pool,
+        discovery_endpoints: state.discovery_public_endpoints.as_ref().clone(),
         nodes,
         relays: Vec::new(),
         policies: Vec::new(),
@@ -825,8 +1067,8 @@ async fn publish_configuration(
     let mut signing_input = Vec::with_capacity(CONFIGURATION_DOMAIN.len() + payload.len());
     signing_input.extend_from_slice(CONFIGURATION_DOMAIN);
     signing_input.extend_from_slice(&payload);
-    let signature = signing_key.sign(&signing_input).to_bytes();
-    let key_id = controller_key_id(&signing_key.verifying_key());
+    let signature = state.config_signing_key.sign(&signing_input).to_bytes();
+    let key_id = controller_key_id(&state.config_signing_key.verifying_key());
 
     sqlx::query(
         "INSERT INTO configuration_versions

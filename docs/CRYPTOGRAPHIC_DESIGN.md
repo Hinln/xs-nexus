@@ -1,6 +1,6 @@
 # XSP/1 密码学设计
 
-状态：M1.3 协议核心实现  
+状态：M2.1 协议核心、地址发现、候选签名和认证路径迁移实现  
 日期：2026-07-29  
 审计状态：未完成独立第三方审计，不适合宣称生产级安全。
 
@@ -87,6 +87,37 @@ Controller 同时验证节点凭证、数据库中的公钥与 Network ID、节�
 ### 2.6 临时握手密钥
 
 每次完整握手双方生成新的 X25519 临时私钥。任何网络切换都不能复用已经完成握手的临时私钥。握手完成或失败后立即清零。
+
+### 2.7 发现与候选签名
+
+XSD/1 地址发现请求使用节点长期 Ed25519 身份密钥签名，并携带 Controller 签名的节点凭证。签名覆盖固定长度请求头、Network ID、Node ID、随机 Request ID、客户端时间和完整凭证：
+
+```text
+discovery_request_signature = Ed25519.Sign(
+  node_identity_key,
+  "XS Nexus discovery request v1" || request_without_signature
+)
+```
+
+Controller 只在数据库确认凭证仍活动后返回观察端点，并使用 Configuration Signing Key 签名精确响应。响应绑定请求的 Network ID、Node ID、Request ID 和完整 SHA-256，因此不能移植到其他请求或节点：
+
+```text
+discovery_response_signature = Ed25519.Sign(
+  controller_configuration_key,
+  "XS Nexus discovery response v1" || response_without_signature
+)
+```
+
+候选广告通过已经完成 challenge 认证的 WebSocket 控制连接发送。节点使用长期身份密钥签名精确紧凑 JSON 字节：
+
+```text
+candidate_signature = Ed25519.Sign(
+  node_identity_key,
+  "XS Nexus candidate advertisement v1" || exact_payload_bytes
+)
+```
+
+广告绑定 Network ID、Node ID、持久化单调 generation、生成/过期时间和有界候选列表。Controller 验证后将候选放入新的 Controller 签名配置版本；节点之间不直接信任对方提交的原始 JSON 或签名信封。
 
 ## 3. transcript
 
@@ -206,6 +237,8 @@ AAD = exact_96_byte_data_header
 - 崩溃后不得从持久化会话恢复旧密钥并重置序列，必须完整重握手；
 - 序列接近上限、计数状态不确定或可能回绕时立即停止发送并重握手。
 
+PathChallenge 和 PathResponse 不派生独立弱密钥，也不接受明文 token。它们使用当前方向 traffic key、标准数据头 AAD、独立序列和重放窗口；Path ID 与 Packet Type 位于 AAD 中，8 字节 challenge token 位于密文中。只有来源端点、Path ID、token 和 AEAD 全部匹配时才可迁移活动路径。
+
 ## 8. Epoch 与完整重握手
 
 - Epoch 为 `uint32`，初始值 0；
@@ -232,6 +265,8 @@ Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，
 ## 10. 密钥生命周期
 
 - 长期节点私钥：本机受限存储，可轮换；
+- 发现请求与候选广告：复用节点身份签名用途，但由独立域标签隔离，绝不复用 XSP/1 traffic key；
+- 发现响应：复用 Controller Configuration Signing Key，但由独立域标签隔离并绑定精确请求哈希；
 - 临时 X25519 私钥：单次握手，结束后清零；
 - handshake key：Finish 完成后清零；
 - traffic secret 和 key：会话/Epoch 内存；
@@ -249,6 +284,7 @@ Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，
 - `crates/protocol/tests/primitives.rs` 锁定 RFC 7748、RFC 5869 和 RFC 8439 原语向量；
 - `tests/vectors/xsp1/session-v1.json` 与 `generate_session_vector` 锁定双方 Hello、双向 Finish、应用数据包、方向密钥派生和 AAD；
 - `crates/protocol/tests/session.rs` 覆盖 transcript/身份篡改、全零 X25519、Finish/Tag 篡改、重放窗口、Epoch 乱序和旧 Epoch 退休；
+- `tests/vectors/xsp1/discovery-v1.json` 与 `generate_discovery_vector` 锁定 XSD/1 请求/响应、精确请求哈希、观察端点和双方签名；
 - `scripts/test-protocol-vectors.sh` 验证 canonical 向量及有效、非规范和意外状态 Fuzz seed corpus 一致性。
 
 上述自动化证据不替代密码学组合的形式化分析或独立第三方审计。
@@ -257,6 +293,9 @@ Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，
 - Ed25519 长期身份与 Controller 凭证组合是否充分绑定；
 - key confirmation 和应用密钥派生的形式化安全性；
 - Epoch 更新、乱序与重放窗口的竞态；
+- XSD/1 使用长期身份签名与配置签名密钥时的跨协议域分离充分性；
+- 候选 generation、过期时间和动态配置传播在时钟异常下的安全边界；
+- AEAD PathChallenge/PathResponse 与普通数据共享 traffic key、序列空间和重放窗口的状态机正确性；
 - Relay 元数据与流量分析；
 - DoS 预检和签名验证成本；
 - 时钟异常、吊销和离线窗口。

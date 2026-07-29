@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-protocol-vectors test-spec test-network test-e2e test-visual security-check release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-protocol-vectors test-spec test-network test-e2e test-visual security-check validate-m21 release clean
 
 setup:
 >npm ci
@@ -41,6 +41,14 @@ test-agent-systemd:
 test-agent-data-plane:
 >./scripts/test-agent-data-plane.sh
 
+test-agent-candidate-fallback:
+>./scripts/test-agent-candidate-fallback.sh
+
+test-agent-candidate-path:
+>./scripts/test-agent-candidate-path.sh
+
+test-agent-candidates: test-agent-candidate-fallback test-agent-candidate-path
+
 test-protocol-vectors:
 >./scripts/test-protocol-vectors.sh
 
@@ -63,6 +71,9 @@ test-visual:
 security-check:
 >python3 scripts/test-secret-scanner.py
 >python3 scripts/check-secrets.py --root . --reference-env /etc/xs-nexus/controller.env
+
+validate-m21:
+>./scripts/validate-m21.sh
 
 release:
 >@printf 'Release packaging is not implemented before M9.1\n' >&2

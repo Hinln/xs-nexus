@@ -12,6 +12,7 @@ use tokio::{
 };
 use uuid::Uuid;
 use xs_agent::{
+    data_plane::DataPlaneStatus,
     health::AgentHealth,
     ipc::{IpcContext, run_ipc_server},
     state::NodeState,
@@ -38,6 +39,7 @@ async fn local_ipc_is_private_bounded_and_redacted() {
         IpcContext {
             interface_name: "xstest0".to_owned(),
             interface_index: 17,
+            data_plane_status: Arc::new(tokio::sync::RwLock::new(DataPlaneStatus::default())),
         },
         shutdown_receiver,
     ));
@@ -159,6 +161,7 @@ fn fixture_state() -> NodeState {
         identity_public_key_base64: "local-public-key".to_owned(),
         virtual_ip: "100.127.20.2".to_owned(),
         direct_endpoints: Vec::new(),
+        candidates: Vec::new(),
         credential_serial: 1,
         credential_not_after: expires_at,
         role_bitmap: 1,
@@ -169,6 +172,7 @@ fn fixture_state() -> NodeState {
         identity_public_key_base64: "peer-public-key".to_owned(),
         virtual_ip: "100.127.20.3".to_owned(),
         direct_endpoints: Vec::new(),
+        candidates: Vec::new(),
         credential_serial: 2,
         credential_not_after: expires_at,
         role_bitmap: 2,
@@ -196,6 +200,7 @@ fn fixture_state() -> NodeState {
             version: 7,
             generated_at,
             address_pool: "100.127.20.0/24".to_owned(),
+            discovery_endpoints: Vec::new(),
             nodes: vec![local_node, peer_node],
             relays: Vec::new(),
             policies: Vec::new(),
@@ -203,5 +208,6 @@ fn fixture_state() -> NodeState {
         configuration_sha256: "7f76e8d8f19d3c1d8fcd65767889d66f592b37b5cd45d5ef7ac38dcaf8268efb"
             .to_owned(),
         credential_serial: 1,
+        candidate_generation: 0,
     }
 }

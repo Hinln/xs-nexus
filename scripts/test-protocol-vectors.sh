@@ -6,7 +6,8 @@ cd "$root_dir"
 
 generated="$(mktemp)"
 session_generated="$(mktemp)"
-trap 'rm -f "$generated" "$session_generated"' EXIT
+discovery_generated="$(mktemp)"
+trap 'rm -f "$generated" "$session_generated" "$discovery_generated"' EXIT
 
 cargo run --quiet -p xs-protocol --example generate_credential_vector >"$generated"
 if ! cmp --silent "$generated" tests/vectors/xsp1/credential-v1.json; then
@@ -69,3 +70,43 @@ for relative, expected in corpora.items():
 PY
 
 printf 'XSP/1 session and data vectors passed\n'
+
+cargo run --quiet -p xs-protocol --example generate_discovery_vector >"$discovery_generated"
+if ! cmp --silent "$discovery_generated" tests/vectors/xsp1/discovery-v1.json; then
+    diff -u tests/vectors/xsp1/discovery-v1.json "$discovery_generated" || true
+    printf 'discovery vector differs from the checked-in file\n' >&2
+    exit 1
+fi
+
+python3 - "$discovery_generated" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+vector = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+
+def changed(original, index, *, value=None):
+    malformed = bytearray(original)
+    malformed[index] = value if value is not None else malformed[index] ^ 1
+    return bytes(malformed)
+
+request = bytes.fromhex(vector["request_hex"])
+response = bytes.fromhex(vector["response_hex"])
+corpora = {
+    "fuzz/corpus/discovery/request-v1.bin": request,
+    "fuzz/corpus/discovery/response-v1.bin": response,
+    "fuzz/corpus/discovery/request-invalid-magic-v1.bin": changed(request, 0),
+    "fuzz/corpus/discovery/request-invalid-version-v1.bin": changed(request, 4, value=2),
+    "fuzz/corpus/discovery/request-invalid-type-v1.bin": changed(request, 5, value=2),
+    "fuzz/corpus/discovery/request-invalid-length-v1.bin": changed(request, 9),
+    "fuzz/corpus/discovery/request-truncated-v1.bin": request[:-1],
+    "fuzz/corpus/discovery/response-invalid-family-v1.bin": changed(response, 68, value=5),
+    "fuzz/corpus/discovery/response-tampered-v1.bin": changed(response, 88),
+    "fuzz/corpus/discovery/response-truncated-v1.bin": response[:-1],
+}
+for relative, expected in corpora.items():
+    if Path(relative).read_bytes() != expected:
+        raise SystemExit(f"Fuzz corpus mismatch: {relative}")
+PY
+
+printf 'authenticated discovery vectors passed\n'

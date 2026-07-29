@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4},
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -10,7 +10,10 @@ use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use xs_core::{ConfigurationPayload, EnrollResponse, SignedConfiguration};
+use xs_core::{
+    ConfigurationPayload, EndpointCandidate, EndpointCandidateKind, EnrollResponse,
+    SignedConfiguration,
+};
 use xs_protocol::{controller_key_id, node_id, role_set_digest, verify_credential};
 
 use crate::{
@@ -22,6 +25,8 @@ const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
 const MAX_CONFIGURATION_BYTES: usize = 256 * 1024;
 const MAX_CONFIGURATION_NODES: usize = 65_535;
 const MAX_DIRECT_ENDPOINTS_PER_NODE: usize = 8;
+const MAX_DISCOVERY_ENDPOINTS: usize = 8;
+const MAX_CANDIDATES_PER_NODE: usize = 16;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,6 +44,8 @@ pub struct NodeState {
     pub configuration_payload: ConfigurationPayload,
     pub configuration_sha256: String,
     pub credential_serial: u64,
+    #[serde(default)]
+    pub candidate_generation: u64,
 }
 
 impl NodeState {
@@ -109,6 +116,7 @@ impl NodeState {
             configuration_payload: payload,
             configuration_sha256,
             credential_serial: claims.serial,
+            candidate_generation: 0,
         })
     }
 
@@ -233,6 +241,7 @@ fn validate_configuration(
         || payload.version != configuration.version
         || !(8..=30).contains(&address_pool.prefix_len())
         || !address_pool.contains(&virtual_ip)
+        || payload.discovery_endpoints.len() > MAX_DISCOVERY_ENDPOINTS
         || payload.nodes.len() > MAX_CONFIGURATION_NODES
         || payload.relays.len() > 4096
         || payload.policies.len() > 4096
@@ -240,12 +249,16 @@ fn validate_configuration(
         return Err(AgentError::ControllerTrust);
     }
 
+    validate_discovery_endpoints(&payload.discovery_endpoints)?;
+
     let mut node_ids = HashSet::with_capacity(payload.nodes.len());
     let mut public_keys = HashSet::with_capacity(payload.nodes.len());
     let mut virtual_ips = HashSet::with_capacity(payload.nodes.len());
     let mut direct_endpoints = HashSet::new();
     let mut local_match = false;
     for node in &payload.nodes {
+        let mut node_direct_endpoints = HashSet::new();
+        let mut node_candidate_endpoints = HashSet::new();
         let node_id = decode_fixed::<16>(&node.node_id_base64)?;
         let public_key = decode_fixed::<32>(&node.identity_public_key_base64)?;
         let assigned_ip = node
@@ -253,6 +266,11 @@ fn validate_configuration(
             .parse::<Ipv4Addr>()
             .map_err(|_| AgentError::ControllerTrust)?;
         if node.direct_endpoints.len() > MAX_DIRECT_ENDPOINTS_PER_NODE
+            || node.candidates.len() > MAX_CANDIDATES_PER_NODE
+            || node
+                .candidates
+                .windows(2)
+                .any(|pair| pair[0].priority <= pair[1].priority)
             || node_id != node_id_for_key(&public_key)
             || !address_pool.contains(&assigned_ip)
             || role_set_digest(node.role_bitmap, &node.tags).is_err()
@@ -270,7 +288,19 @@ fn validate_configuration(
                 || endpoint.ip().is_unspecified()
                 || endpoint.ip().is_multicast()
                 || *endpoint.ip() == Ipv4Addr::BROADCAST
-                || !direct_endpoints.insert(endpoint)
+                || !node_direct_endpoints.insert(SocketAddr::V4(endpoint))
+                || !direct_endpoints.insert(SocketAddr::V4(endpoint))
+            {
+                return Err(AgentError::ControllerTrust);
+            }
+        }
+        for candidate in &node.candidates {
+            if candidate.priority == 0
+                || candidate.expires_at <= payload.generated_at
+                || !valid_candidate(candidate)
+                || !node_candidate_endpoints.insert(candidate.endpoint)
+                || (!node_direct_endpoints.contains(&candidate.endpoint)
+                    && !direct_endpoints.insert(candidate.endpoint))
             {
                 return Err(AgentError::ControllerTrust);
             }
@@ -287,6 +317,67 @@ fn validate_configuration(
 
     let hash = Sha256::digest(&payload_bytes);
     Ok((payload, hex(&hash)))
+}
+
+fn validate_discovery_endpoints(endpoints: &[SocketAddr]) -> Result<()> {
+    let mut unique = HashSet::new();
+    if endpoints
+        .iter()
+        .any(|endpoint| !valid_service_endpoint(*endpoint) || !unique.insert(*endpoint))
+    {
+        return Err(AgentError::ControllerTrust);
+    }
+    Ok(())
+}
+
+fn valid_service_endpoint(endpoint: SocketAddr) -> bool {
+    if endpoint.port() == 0 {
+        return false;
+    }
+    match endpoint {
+        SocketAddr::V4(endpoint) => {
+            let address = *endpoint.ip();
+            !address.is_unspecified() && !address.is_multicast() && address != Ipv4Addr::BROADCAST
+        }
+        SocketAddr::V6(endpoint) => {
+            let address = *endpoint.ip();
+            endpoint.flowinfo() == 0
+                && !address.is_unspecified()
+                && !address.is_multicast()
+                && (!address.is_unicast_link_local() || endpoint.scope_id() != 0)
+                && (address.is_unicast_link_local() || endpoint.scope_id() == 0)
+        }
+    }
+}
+
+fn valid_candidate(candidate: &EndpointCandidate) -> bool {
+    if !valid_service_endpoint(candidate.endpoint) {
+        return false;
+    }
+    match candidate.endpoint {
+        SocketAddr::V4(endpoint) => {
+            !endpoint.ip().is_loopback() && candidate.kind != EndpointCandidateKind::PublicIpv6
+        }
+        SocketAddr::V6(endpoint) => {
+            let address = *endpoint.ip();
+            if address.is_loopback() {
+                return false;
+            }
+            match candidate.kind {
+                EndpointCandidateKind::PublicIpv6 => {
+                    public_ipv6(address) && endpoint.scope_id() == 0
+                }
+                EndpointCandidateKind::Local
+                | EndpointCandidateKind::Mapped
+                | EndpointCandidateKind::Static
+                | EndpointCandidateKind::Relay => true,
+            }
+        }
+    }
+}
+
+fn public_ipv6(address: Ipv6Addr) -> bool {
+    !address.is_unique_local() && !address.is_unicast_link_local()
 }
 
 fn node_id_for_key(public_key: &[u8; 32]) -> [u8; 16] {
@@ -370,11 +461,13 @@ mod tests {
             version: 1,
             generated_at: Utc::now(),
             address_pool: "100.88.0.0/16".to_owned(),
+            discovery_endpoints: Vec::new(),
             nodes: vec![ConfigurationNode {
                 node_id_base64: URL_SAFE_NO_PAD.encode(node_identifier),
                 identity_public_key_base64: URL_SAFE_NO_PAD.encode(identity.public_key()),
                 virtual_ip: virtual_ip.to_string(),
                 direct_endpoints: Vec::new(),
+                candidates: Vec::new(),
                 credential_serial: serial,
                 credential_not_after: chrono::DateTime::from_timestamp(
                     i64::try_from(not_after).expect("timestamp fits"),

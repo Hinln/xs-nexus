@@ -5,7 +5,10 @@ use tokio::{
     net::UnixStream,
     time::timeout,
 };
-use xs_core::{LocalAgentRequest, LocalAgentResponse, LocalAgentStatus};
+use xs_core::{
+    EndpointCandidateKind, LocalAgentRequest, LocalAgentResponse, LocalAgentStatus,
+    PathSelectionReason,
+};
 
 const DEFAULT_SOCKET_PATH: &str = "/run/xs-nexus/agent.sock";
 const MAX_RESPONSE_BYTES: usize = 512 * 1024;
@@ -170,13 +173,32 @@ fn print_text(response: LocalAgentResponse) -> Result<(), ()> {
             );
             for peer in peers {
                 println!(
-                    "{} {} roles=0x{:08x} expires={} tags={}",
+                    "{} {} roles=0x{:08x} expires={} tags={} session={} active={} kind={} reason={}",
                     peer.node_id_base64,
                     peer.virtual_ip,
                     peer.role_bitmap,
                     peer.credential_not_after.to_rfc3339(),
-                    peer.tags.join(",")
+                    peer.tags.join(","),
+                    if peer.session_established {
+                        "established"
+                    } else {
+                        "idle"
+                    },
+                    peer.active_endpoint
+                        .map_or_else(|| "none".to_owned(), |endpoint| endpoint.to_string()),
+                    peer.active_candidate_kind
+                        .map_or("none", candidate_kind_label),
+                    peer.path_reason.map_or("none", path_reason_label),
                 );
+                for candidate in peer.candidates {
+                    println!(
+                        "  candidate={} kind={} priority={} expires={}",
+                        candidate.endpoint,
+                        candidate_kind_label(candidate.kind),
+                        candidate.priority,
+                        candidate.expires_at.to_rfc3339()
+                    );
+                }
             }
             Ok(())
         }
@@ -194,9 +216,39 @@ fn print_text(response: LocalAgentResponse) -> Result<(), ()> {
                 "last_error_code={}",
                 diagnostics.last_error_code.as_deref().unwrap_or("none")
             );
+            for candidate in diagnostics.local_candidates {
+                println!(
+                    "local_candidate={} kind={} priority={} expires={}",
+                    candidate.endpoint,
+                    candidate_kind_label(candidate.kind),
+                    candidate.priority,
+                    candidate.expires_at.to_rfc3339()
+                );
+            }
             Ok(())
         }
         LocalAgentResponse::Error { .. } => Err(()),
+    }
+}
+
+const fn candidate_kind_label(kind: EndpointCandidateKind) -> &'static str {
+    match kind {
+        EndpointCandidateKind::Local => "local",
+        EndpointCandidateKind::PublicIpv6 => "public_ipv6",
+        EndpointCandidateKind::Mapped => "mapped",
+        EndpointCandidateKind::Static => "static",
+        EndpointCandidateKind::Relay => "relay",
+    }
+}
+
+const fn path_reason_label(reason: PathSelectionReason) -> &'static str {
+    match reason {
+        PathSelectionReason::HighestPriority => "highest_priority",
+        PathSelectionReason::HandshakeFallback => "handshake_fallback",
+        PathSelectionReason::AuthenticatedHandshake => "authenticated_handshake",
+        PathSelectionReason::AuthenticatedPeerTraffic => "authenticated_peer_traffic",
+        PathSelectionReason::AuthenticatedPathProbe => "authenticated_path_probe",
+        PathSelectionReason::ConfigurationUpdate => "configuration_update",
     }
 }
 

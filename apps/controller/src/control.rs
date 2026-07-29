@@ -144,7 +144,7 @@ async fn handle_authenticated_message(
 ) -> bool {
     match message {
         Message::Text(text) if text.len() <= 4096 => {
-            handle_sync(socket, state, authenticated, &text).await
+            handle_authenticated_text(socket, state, authenticated, &text).await
         }
         Message::Ping(payload) => socket.send(Message::Pong(payload)).await.is_ok(),
         Message::Pong(_) => true,
@@ -156,27 +156,52 @@ async fn handle_authenticated_message(
     }
 }
 
-async fn handle_sync(
+async fn handle_authenticated_text(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
     text: &str,
 ) -> bool {
-    let Ok(ControlClientMessage::Sync { last_version }) = serde_json::from_str(text) else {
+    let Ok(message) = serde_json::from_str::<ControlClientMessage>(text) else {
         send_error(socket, "invalid_control_message").await;
         return false;
     };
-    let Ok(configuration) =
-        crate::service::latest_configuration(state, authenticated.network_id).await
-    else {
-        send_error(socket, "control_unavailable").await;
-        return false;
-    };
-    let response = if configuration.version > last_version {
-        ControlServerMessage::Configuration { configuration }
-    } else {
-        ControlServerMessage::UpToDate {
-            version: configuration.version,
+    let response = match message {
+        ControlClientMessage::Sync { last_version } => {
+            let Ok(configuration) =
+                crate::service::latest_configuration(state, authenticated.network_id).await
+            else {
+                send_error(socket, "control_unavailable").await;
+                return false;
+            };
+            if configuration.version > last_version {
+                ControlServerMessage::Configuration { configuration }
+            } else {
+                ControlServerMessage::UpToDate {
+                    version: configuration.version,
+                }
+            }
+        }
+        ControlClientMessage::AdvertiseCandidates {
+            advertisement,
+            signature_base64,
+        } => {
+            let Ok(configuration) = crate::service::advertise_candidates(
+                state,
+                authenticated,
+                advertisement,
+                &signature_base64,
+            )
+            .await
+            else {
+                send_error(socket, "candidate_advertisement_rejected").await;
+                return false;
+            };
+            ControlServerMessage::Configuration { configuration }
+        }
+        ControlClientMessage::Authenticate { .. } => {
+            send_error(socket, "invalid_control_message").await;
+            return false;
         }
     };
     send_json(socket, &response).await.is_ok()

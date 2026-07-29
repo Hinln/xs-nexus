@@ -17,7 +17,7 @@ REQUIRED_DOCUMENTS = {
     "docs/SECURITY_ASSUMPTIONS.md": ["## 10. 明确未解决", "## 11. 失败关闭策略"],
     "docs/CRYPTOGRAPHIC_DESIGN.md": ["## 3. transcript", "## 7. 数据 nonce 与 AAD", "## 9. 抗重放"],
     "docs/CONTROLLER_API.md": ["## 5. 节点 Enrollment", "## 7. WebSocket 控制连接", "## 8. 数据库与审计"],
-    "docs/XSP1_PROTOCOL.md": ["## 5. 握手帧", "## 7. 数据包", "## 17. 测试向量和 Fuzz"],
+    "docs/XSP1_PROTOCOL.md": ["## 5. 握手帧", "## 7. 数据包", "## 19. 测试向量和 Fuzz"],
     "THIRD_PARTY.md": ["## 1. 当前运行时直接依赖", "## 6. 禁止依赖"],
 }
 
@@ -42,12 +42,16 @@ def validate_lengths() -> None:
     server_hello = [16, 16, 16, 32, 32, 32, 32, 16, 8, 2, 2, 200, 64]
     finish = [16, 8, 2, 2, 32, 16]
     data_header = [4, 1, 1, 2, 2, 2, 16, 16, 16, 16, 4, 8, 4, 4]
+    discovery_request = [4, 1, 1, 2, 2, 2, 16, 16, 16, 8, 2, 200, 64]
+    discovery_response = [4, 1, 1, 2, 2, 2, 16, 16, 16, 8, 24, 32, 64]
     expected = {
         "credential": (credential, 200),
         "client_hello": (client_hello, 389),
         "server_hello": (server_hello, 468),
         "finish": (finish, 76),
         "data_header": (data_header, 96),
+        "discovery_request": (discovery_request, 334),
+        "discovery_response": (discovery_response, 188),
     }
     for name, (parts, total) in expected.items():
         actual = sum(parts)

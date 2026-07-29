@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub use xs_core::{
-    ConfigurationNode, ConfigurationPayload, ControlClientMessage, ControlServerMessage,
-    EnrollRequest, EnrollResponse, SignedConfiguration,
+    CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ControlClientMessage,
+    ControlServerMessage, EndpointCandidate, EndpointCandidateKind, EnrollRequest, EnrollResponse,
+    SignedConfiguration,
 };
 
 #[derive(Debug, Deserialize)]

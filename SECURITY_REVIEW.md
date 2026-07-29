@@ -54,6 +54,10 @@
 - 篡改包丢弃；
 - 错误消息不形成 oracle；
 - 无反射放大；
+- 地址发现请求需要活动凭证和节点身份签名；
+- 地址发现响应绑定精确请求且小于请求；
+- 候选广告由节点签名、generation 单调并由 Controller 重新签名；
+- 新端点仅在认证握手、认证 Peer 流量或 AEAD PathResponse 后晋升；
 - 资源限制；
 - Fuzz；
 - 测试向量；
@@ -66,6 +70,16 @@
 - 两个隔离 namespace 已验证密文抓包、Tag 篡改、重放、伪造源地址、自动轮换和 Controller 中断容错；
 - 第三方协议与密码学审计仍未完成，`KI-001` 保持开放。
 
+### M2.1 验证状态
+
+- XSD/1 使用固定 334 字节认证请求和 188 字节 Controller 签名响应，绑定 Network/Node/Request ID、完整请求哈希、时间和观察端点；
+- Controller 在响应前验证活动凭证，并对每来源限速；无效或未认证报文静默丢弃，不形成匿名放大；
+- 候选广告通过认证 WebSocket 提交，以节点长期身份签名，最多 16 项、短期过期、优先级唯一且 generation 单调；
+- 相同 generation/payload/signature 重试幂等，低 generation 或同 generation 不同内容拒绝；
+- 隔离 namespace 已验证首选路径失败后的回退，以及建立会话后更高优先级路径的 AEAD Challenge/Response 晋升；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`；
+- 真实公网和完整 NAT 类型矩阵属于 M2.2，第三方协议审计仍未完成。
+
 ---
 
 ## 4. 控制器
@@ -74,6 +88,8 @@
 - WebSocket 认证；
 - 配置签名；
 - 版本单调；
+- 发现端点配置有界且只由 Controller 签名配置发布；
+- 候选数据库记录有短期过期、单节点唯一行和审计事件；
 - API 权限；
 - 管理操作审计；
 - 密码哈希；

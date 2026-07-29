@@ -1,12 +1,18 @@
 #![forbid(unsafe_code)]
 
 mod data;
+mod discovery;
 mod handshake;
 
 pub use data::{
     DATA_HEADER_LENGTH, DATA_TAG_LENGTH, DataFlags, DataHeader, DataReceiver, DataSender,
     MAX_DATAGRAM_LENGTH, MAX_ENCRYPTED_PAYLOAD_LENGTH, OpenedPacket, PacketType,
     key_update_payload, verify_key_update_payload,
+};
+pub use discovery::{
+    DISCOVERY_REQUEST_LENGTH, DISCOVERY_RESPONSE_LENGTH, DiscoveryRequest,
+    VerifiedDiscoveryRequest, VerifiedDiscoveryResponse, discovery_response,
+    verify_discovery_request, verify_discovery_response,
 };
 pub use handshake::{
     CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, ClientFinishSent, ClientHandshakeParameters,

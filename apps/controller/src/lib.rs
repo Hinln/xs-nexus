@@ -3,6 +3,7 @@
 pub mod config;
 mod control;
 pub mod db;
+pub mod discovery;
 mod error;
 pub mod model;
 mod service;

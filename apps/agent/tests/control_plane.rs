@@ -9,6 +9,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::Utc;
 use ed25519_dalek::SigningKey;
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
@@ -23,6 +24,7 @@ use xs_agent::{
     storage::{Identity, read_json},
 };
 use xs_controller::config::ControllerConfig;
+use xs_core::{CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind};
 
 const ADMIN_TOKEN: &str = "agent-integration-admin-token-32-characters";
 
@@ -95,12 +97,14 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
 
     let shared_state = Arc::new(RwLock::new(initial_state));
     let health = Arc::new(AgentHealth::new());
+    let (candidate_tx, candidate_rx) = watch::channel(None);
     let (control_shutdown_tx, control_shutdown_rx) = watch::channel(false);
     let control = tokio::spawn(run_control_loop(
         config.clone(),
         Arc::clone(&identity),
         Arc::clone(&shared_state),
         Arc::clone(&health),
+        candidate_rx,
         control_shutdown_rx,
     ));
     wait_until_connected(&health).await;
@@ -108,6 +112,8 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     enroll_peer(&client, &config.controller_url, network_id).await;
     wait_for_new_configuration(&shared_state, initial_version).await;
     assert_updated_state(&config, &identity, &shared_state).await;
+
+    advertise_local_candidate(&candidate_tx, &shared_state).await;
 
     control_shutdown_tx
         .send(true)
@@ -121,9 +127,50 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     controller_state.pool.close().await;
 }
 
+async fn advertise_local_candidate(
+    candidate_tx: &watch::Sender<Option<CandidateAdvertisement>>,
+    shared_state: &RwLock<NodeState>,
+) {
+    let now = Utc::now();
+    let local_state = shared_state.read().await.clone();
+    let advertisement = CandidateAdvertisement {
+        schema_version: 1,
+        network_id: local_state.network_id,
+        node_id_base64: local_state.node_id_base64.clone(),
+        generation: local_state.candidate_generation.saturating_add(1),
+        generated_at: now,
+        expires_at: now + chrono::Duration::minutes(10),
+        candidates: vec![EndpointCandidate {
+            kind: EndpointCandidateKind::Mapped,
+            endpoint: "198.51.100.42:42001".parse().expect("candidate endpoint"),
+            priority: 100,
+            expires_at: now + chrono::Duration::minutes(10),
+        }],
+    };
+    candidate_tx
+        .send(Some(advertisement))
+        .expect("publish candidate advertisement");
+    wait_for_new_configuration(shared_state, local_state.configuration.version).await;
+    assert!(
+        shared_state
+            .read()
+            .await
+            .configuration_payload
+            .nodes
+            .iter()
+            .find(|node| node.node_id_base64 == local_state.node_id_base64)
+            .expect("local node in configuration")
+            .candidates
+            .iter()
+            .any(|candidate| candidate.endpoint.to_string() == "198.51.100.42:42001")
+    );
+}
+
 fn controller_config() -> ControllerConfig {
     ControllerConfig {
         listen: SocketAddr::from(([127, 0, 0, 1], 0)),
+        discovery_listen: None,
+        discovery_public_endpoint: None,
         database_url: std::env::var("XS_TEST_DATABASE_URL")
             .expect("XS_TEST_DATABASE_URL is required"),
         database_schema: std::env::var("XS_TEST_AGENT_DATABASE_SCHEMA")

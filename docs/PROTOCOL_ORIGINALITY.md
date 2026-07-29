@@ -9,6 +9,7 @@
 以下内容由本项目根据任务需求和公开标准原则独立定义：
 
 - `XSP1` magic、版本和消息类型命名；
+- `XSD1` 地址发现 magic、固定请求/响应线格式、请求哈希绑定和域标签；
 - 96 字节固定数据包头的字段集合、顺序和长度；
 - Network ID、Source Node ID、Destination Node ID、Session ID、Epoch、Sequence 和 Path ID 的组合；
 - `ClientHello → ServerHello → ClientFinish → ServerFinish` 状态机；
@@ -16,6 +17,7 @@
 - 配置版本、节点凭证、虚拟 IP 和协议身份的绑定关系；
 - Direct 与 Relay 使用同一端到端密文、外层 Relay envelope 单独认证的边界；
 - 错误码、关闭语义、重放窗口和 Key Epoch 切换规则。
+- 候选种类、generation、短期生命周期、优先级与 AEAD PathChallenge/PathResponse 晋升状态机。
 
 ## 2. 公开标准原语
 
@@ -65,4 +67,5 @@ Relay envelope 只负责已认证会话的有限路由，不参与 XSP/1 内层�
 - Role Set 摘要规则在数据面实现前完成澄清，属于 v1 初始定义，不产生兼容性迁移；
 - M1.3 已锁定 RFC 7748、RFC 5869、RFC 8439 原语向量和项目独立的四消息握手、Finish、数据 AEAD 向量；
 - canonical 与负向 Fuzz seed corpus 由项目生成器复现，覆盖 Magic、版本、类型、flag、长度、保留字段、截断、尾随字节和意外状态；
-- 当前自动化验证不代表协议组合已经通过第三方安全审计，也不代表 Agent UDP/TUN 端到端链路已经完成。
+- M2.1 已锁定项目独立的 `XSD1` 请求/响应向量、发现 Fuzz corpus、签名候选 schema、握手候选回退和认证路径迁移语义；
+- 当前自动化已覆盖 Agent UDP/TUN 隔离 namespace 端到端链路，但不代表协议组合已经通过第三方安全审计，也不代表真实公网/NAT 或 Relay 矩阵已经完成。

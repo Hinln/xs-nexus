@@ -1,6 +1,6 @@
 # XSP/1（XS Secure Path Protocol v1）
 
-状态：M0.2 规范草案；M1.1 凭证编码已实现  
+状态：M2.1 协议、地址发现、候选交换和认证路径迁移已实现  
 日期：2026-07-29  
 安全状态：未经独立第三方审计，不得描述为生产级安全。
 
@@ -320,11 +320,89 @@ AAD = data_header[0..96]
 - v1 不实现 XSP 自定义分片；
 - 需要通过 PMTU、ICMP 错误和受控 MSS 处理避免黑洞。
 
-## 11. 路径验证与迁移
+## 11. XSD/1 地址映射发现
 
-PathChallenge 和 PathResponse 始终在已认证 XSP 会话内加密。新 UDP 五元组只有在返回正确 token 后才可晋升为活动路径。源 UDP 地址变化不改变节点身份。路径选择记录 Direct/Relay、RTT、稳定性、失败原因和最近验证时间。
+XSD/1 是与 XSP/1 数据面配套、但不属于 XSP/1 会话包类型的固定长度 UDP 协议。Agent 必须从承载 XSP/1 的同一个 UDP socket 发送请求，使响应中的观察端点包含真实数据面源端口。Magic 为 ASCII `XSD1`，版本为 1。
 
-## 12. Key Epoch
+公共头固定 12 字节：
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 4 | Magic `XSD1` |
+| 4 | 1 | Version = 1 |
+| 5 | 1 | Type：Request = 1，Response = 2 |
+| 6 | 2 | Reserved = 0 |
+| 8 | 2 | Total Length |
+| 10 | 2 | Reserved = 0 |
+
+Request 固定 334 字节：
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 12 | 16 | Network ID |
+| 28 | 16 | Node ID |
+| 44 | 16 | Request ID，CSPRNG 且非全零 |
+| 60 | 8 | Client Time，Unix seconds |
+| 68 | 2 | Credential Length = 200 |
+| 70 | 200 | Controller 签名节点凭证 |
+| 270 | 64 | 节点 Ed25519 签名 |
+
+请求签名输入：
+
+```text
+"XS Nexus discovery request v1" || request[0..270]
+```
+
+Response 固定 188 字节：
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 12 | 16 | Network ID |
+| 28 | 16 | Node ID |
+| 44 | 16 | Request ID |
+| 60 | 8 | Server Time，Unix seconds |
+| 68 | 24 | Observed Endpoint |
+| 92 | 32 | `SHA-256(request[0..334])` |
+| 124 | 64 | Controller Configuration Signing Key 签名 |
+
+观察端点编码固定 24 字节：第 0 字节为地址族 4 或 6；1..3 和 22..23 为 0；4..19 为地址，其中 IPv4 只使用 4..7 且 8..19 必须为 0；20..21 为非零 UDP 端口。响应签名输入为：
+
+```text
+"XS Nexus discovery response v1" || response[0..124]
+```
+
+双方时间允许最多 300 秒偏差。Controller 只有在请求长度、凭证、节点身份、签名、时间和数据库中的活动凭证状态全部有效时才响应；无效请求静默丢弃。响应小于请求，单来源限制为每分钟 30 个请求，最多跟踪 1024 个来源，因此不能作为匿名放大器。Agent 只接受来自已配置发现端点、匹配精确 Request ID 与请求哈希、时间新鲜且由已信任配置密钥签名的响应。
+
+## 12. 签名候选交换
+
+Agent 通过 Netlink 枚举承载数据面端口的 IPv4、IPv6 地址，并将 XSD/1 观察端点作为 `mapped` 候选。候选种类与优先顺序固定为：
+
+1. `local`：本机直接配置的非 loopback IPv4、ULA 或带 scope 的 link-local IPv6；
+2. `public_ipv6`：非 ULA、非 link-local 的全局 IPv6；
+3. `mapped`：XSD/1 返回的观察端点；
+4. `static`：未来显式管理员配置；
+5. `relay`：M2.3 单独定义，不允许由 M2.1 节点广告提交。
+
+每个节点最多发布 16 个候选，其中本地枚举最多 12 个、发现服务最多 8 个。Agent 为候选分配严格递减且唯一的优先级，默认生命周期 10 分钟、每 4 分钟刷新；测试特性只缩短刷新间隔，不改变默认构建。候选广告字段为 schema version、Network ID、Node ID、持久化单调 generation、生成时间、过期时间和候选列表。
+
+广告在已认证 WebSocket 控制连接中发送。节点对精确紧凑 UTF-8 JSON payload 签名：
+
+```text
+Ed25519.Sign(
+  node_identity_key,
+  "XS Nexus candidate advertisement v1" || exact_payload_bytes
+)
+```
+
+Controller 验证控制连接身份、签名、Network/Node 绑定、generation、时间窗口、严格递减优先级、端点类型、重复项和资源上限，再持久化并重新发布 Controller 签名配置。相同 generation、payload 和签名的重试是幂等的；相同或更低 generation 的不同内容失败关闭。过期候选不进入新配置。节点自身配置的 direct endpoint 与候选可重复；不同节点的活动端点冲突必须拒绝。
+
+## 13. 路径验证与迁移
+
+初始握手按候选优先级选择端点；当前候选在有界重传后仍未建立会话时才转向下一候选，并记录 `handshake_fallback`。配置更新可替换候选列表，但不得无条件丢弃已建立会话。
+
+PathChallenge 和 PathResponse 始终在已认证 XSP 会话内加密，使用当前方向 traffic key、序列、重放窗口和完整 96 字节 AAD。Challenge payload 为 8 字节 CSPRNG token，并设置非零 Path ID 与 Path Probe flag。新 UDP 五元组只有在同一端点返回 AEAD 有效、Path ID 和 token 均匹配的 PathResponse 后才可晋升为活动路径。Agent 只探测优先级高于当前活动路径的候选，使用有界重传和冷却时间；成功时记录 `authenticated_path_probe`。经认证握手或普通 Peer 流量也可证明其来源端点，但未认证源地址变化永远不改变节点身份或活动路径。
+
+## 14. Key Epoch
 
 KeyUpdate payload：
 
@@ -335,7 +413,7 @@ KeyUpdate payload：
 
 KeyUpdate 使用当前发送 Epoch 加密。接收方验证后只安装该方向的下一个接收 Epoch，并使用自身当前发送 Epoch 返回 KeyUpdateAck；发起方收到匹配确认后才切换该方向的发送 Epoch。相反方向独立轮换。生产 Agent 在单方向发送 `2^20` 个数据包或运行 1 小时后触发轮换，旧接收 Epoch 最多保留 30 秒和 1024 个乱序包。状态冲突、跳跃 Epoch、确认重试耗尽后的持续异常或计数不确定触发完整重握手。
 
-## 13. 关闭
+## 15. 关闭
 
 已认证会话使用加密 Close。关闭码：
 
@@ -350,13 +428,13 @@ KeyUpdate 使用当前发送 Epoch 加密。接收方验证后只安装该方向
 
 公网未认证错误不返回内部原因。关闭后密钥和重放状态清零，Session ID 在本地短期 tombstone 中保留以拒绝延迟包。
 
-## 14. Relay 边界
+## 16. Relay 边界
 
 Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session、目的转发槽、长度、序列和 Relay 会话认证 Tag。Relay envelope 的 payload 是完整 XSP/1 UDP payload。Relay 不改变、解密或重新加密内层 XSP/1 包，也不能代表目标节点完成握手。
 
 `XSR/1` 具体格式在 M2.3 前单独规范和威胁评审；本文件不预先声明其安全完成。
 
-## 15. 限制与资源上限
+## 17. 限制与资源上限
 
 实现必须配置并测试：
 
@@ -367,11 +445,14 @@ Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session�
 - 每 Session 接收队列；
 - 每 datagram 和解密载荷最大长度；
 - 每秒签名验证和错误指标上限；
+- 每节点候选、发现端点、广告字节和 generation 状态；
+- 每来源发现请求速率及全局来源跟踪容量；
+- 每 Peer 握手候选重试、PathChallenge 重试和冷却状态；
 - Relay 会话、带宽、队列和空闲超时。
 
 收到小型未认证请求时不得产生更大的响应。
 
-## 16. 版本和兼容性
+## 18. 版本和兼容性
 
 - v1 固定密码套件 `0x0001`；
 - 版本和套件进入双方签名 transcript；
@@ -380,7 +461,7 @@ Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session�
 - 同 Session ID 下字段语义不能重新解释；
 - 未来扩展使用新版本或明确已认证扩展，不占用保留字段偷渡语义。
 
-## 17. 测试向量和 Fuzz
+## 19. 测试向量和 Fuzz
 
 仓库锁定以下 canonical 编码与 SHA-256 向量：
 
@@ -388,6 +469,7 @@ Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session�
 tests/vectors/xsp1/data-header-v1.json
 tests/vectors/xsp1/credential-v1.json
 tests/vectors/xsp1/session-v1.json
+tests/vectors/xsp1/discovery-v1.json
 ```
 
 生成器与有效凭证 Fuzz corpus：
@@ -396,21 +478,26 @@ tests/vectors/xsp1/session-v1.json
 scripts/generate-xsp1-vectors.py
 crates/protocol/examples/generate_credential_vector.rs
 crates/protocol/examples/generate_session_vector.rs
+crates/protocol/examples/generate_discovery_vector.rs
 fuzz/corpus/credential/valid-v1.bin
 fuzz/corpus/handshake/*.bin
 fuzz/corpus/data/*.bin
+fuzz/corpus/discovery/*.bin
 ```
 
 凭证向量固定 Ed25519 签名、公钥、Node ID、Role Set 摘要、Key ID 和完整 200 字节编码。Rust 单元测试验证向量签名，并逐字节篡改 200 个位置确认全部拒绝；规范校验器同时验证长度、字段、哈希和 corpus 一致性。
 
-M1.3 协议核心已锁定以下自动化证据：
+M1.3 和 M2.1 已锁定以下自动化证据：
 
 - `crates/protocol/tests/primitives.rs` 验证 RFC 7748 X25519、RFC 5869 HKDF-SHA-256 和 RFC 8439 ChaCha20-Poly1305 向量；
 - `crates/protocol/tests/session.rs` 验证双方签名、Network/Node/Virtual IP/版本/套件/Session transcript 绑定、双向 Finish、Data AEAD、AAD、虚拟源地址、重放窗口、Epoch 乱序和旧 Epoch 退休；
 - `tests/vectors/xsp1/session-v1.json` 固定四个握手消息、应用数据包、完整数据头和 SHA-256，任一 HKDF 域分离标签、编码或密钥方向变化都会改变向量；
 - `fuzz/corpus/handshake` 和 `fuzz/corpus/data` 包含有效消息以及 Magic、版本、类型、flag、长度、保留字段、截断、尾随字节和意外状态种子；
 - X25519 全零结果、签名/Finish/Tag 篡改、非规范编码、重放边界和 Epoch 状态冲突均以失败关闭测试覆盖。
+- `tests/vectors/xsp1/discovery-v1.json` 固定 XSD/1 请求、响应、签名、观察端点和 SHA-256；`fuzz/corpus/discovery` 覆盖有效请求/响应、篡改、截断、时间和请求绑定失败；
+- Controller/Agent 集成测试覆盖活动凭证检查、响应小于请求、签名候选发布、幂等重试、generation 冲突和动态配置应用；
+- 隔离 namespace 测试覆盖首选候选不可达后的握手回退，以及已建立会话对更高优先级路径的 AEAD Challenge/Response 晋升和双向业务连续性。
 
-这些证据只覆盖协议库；Agent UDP/TUN 双节点端到端链路、持续 Fuzz 运行和独立第三方审计仍是后续强制验收。
+这些证据覆盖协议库、真实 Controller/PostgreSQL 和隔离 Linux namespace 中的 Agent UDP/TUN 链路；持续 Fuzz、真实公网/NAT 行为矩阵、Relay 边界和独立第三方审计仍是后续强制验收。
 
 任何协议字段或标签变化都必须更新本规范、密码学设计、威胁模型、测试向量和 Fuzz corpus。

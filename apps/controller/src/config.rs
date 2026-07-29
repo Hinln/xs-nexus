@@ -10,6 +10,8 @@ use std::os::unix::fs::PermissionsExt;
 
 pub struct ControllerConfig {
     pub listen: SocketAddr,
+    pub discovery_listen: Option<SocketAddr>,
+    pub discovery_public_endpoint: Option<SocketAddr>,
     pub database_url: String,
     pub database_schema: String,
     pub admin_token_hash: [u8; 32],
@@ -24,6 +26,8 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("invalid CONTROLLER_LISTEN")]
     Listen,
+    #[error("DISCOVERY_LISTEN and DISCOVERY_PUBLIC_ENDPOINT must be valid and set together")]
+    Discovery,
     #[error("invalid DATABASE_SCHEMA")]
     Schema,
     #[error("ADMIN_API_TOKEN must contain at least 32 characters")]
@@ -52,6 +56,18 @@ impl ControllerConfig {
         let listen = required("CONTROLLER_LISTEN")?
             .parse()
             .map_err(|_| ConfigError::Listen)?;
+        let discovery_listen = optional_socket("DISCOVERY_LISTEN")?;
+        let discovery_public_endpoint = optional_socket("DISCOVERY_PUBLIC_ENDPOINT")?;
+        if discovery_listen.is_some() != discovery_public_endpoint.is_some()
+            || discovery_listen.is_some_and(|endpoint| endpoint.port() == 0)
+            || discovery_public_endpoint.is_some_and(|endpoint| {
+                endpoint.port() == 0
+                    || endpoint.ip().is_unspecified()
+                    || endpoint.ip().is_multicast()
+            })
+        {
+            return Err(ConfigError::Discovery);
+        }
         let database_url = required("DATABASE_URL")?;
         let database_schema = env::var("DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus".to_owned());
         validate_schema(&database_schema)?;
@@ -81,6 +97,8 @@ impl ControllerConfig {
 
         Ok(Self {
             listen,
+            discovery_listen,
+            discovery_public_endpoint,
             database_url,
             database_schema,
             admin_token_hash,
@@ -93,6 +111,13 @@ impl ControllerConfig {
 
 fn required(name: &'static str) -> Result<String, ConfigError> {
     env::var(name).map_err(|_| ConfigError::Missing(name))
+}
+
+fn optional_socket(name: &'static str) -> Result<Option<SocketAddr>, ConfigError> {
+    env::var(name)
+        .ok()
+        .map(|value| value.parse().map_err(|_| ConfigError::Discovery))
+        .transpose()
 }
 
 /// Validates a `PostgreSQL` schema identifier before it is quoted into SQL.

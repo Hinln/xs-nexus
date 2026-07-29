@@ -51,6 +51,15 @@
 - 错误码；
 - 日志路径。
 
+### M2.1 自动化覆盖
+
+- `apps/controller/tests/controller_db.rs` 使用真实 PostgreSQL 和 UDP socket 验证 XSD/1 活动凭证、响应小于请求、篡改静默丢弃、候选签名、generation 幂等和冲突拒绝；
+- `scripts/test-agent-control.sh` 验证 Agent 通过认证 WebSocket 发布节点签名候选并应用 Controller 重新签名的动态配置；
+- `scripts/test-agent-candidate-fallback.sh` 在两个 namespace 中证明首选候选不可达时确实被尝试，随后按优先级回退并报告 `handshake_fallback`；
+- `scripts/test-agent-candidate-path.sh` 验证发现请求复用数据面 UDP 源端口、初始加密会话、更高优先级路径的 AEAD Challenge/Response、`authenticated_path_probe` 和双向业务连续性；
+- `scripts/validate-m21.sh` 汇总格式化、Clippy、构建、单测、真实数据库、协议向量、三组 namespace 数据面测试、秘密扫描以及 Docker、`1panel-network`、默认路由和 nftables 前后基线。
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`。
+
 ---
 
 ## 3. 协议负向测试
@@ -74,6 +83,9 @@
 - 过期凭证；
 - 吊销凭证；
 - 降级字段篡改；
+- XSD/1 错误长度、类型、保留字段、时间、凭证、节点签名、请求哈希和 Controller 签名；
+- 候选广告错误 Network/Node、重复端点/优先级、过期、Relay 类型、低 generation 和同 generation 不同内容；
+- PathResponse 错误来源端点、Path ID、token、AEAD Tag 和重放；
 - 资源耗尽攻击。
 
 ### M1.3 自动化覆盖

@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use tokio::signal;
+use tokio::{signal, sync::watch};
 use tracing_subscriber::EnvFilter;
 use xs_controller::config::ControllerConfig;
 
@@ -27,9 +27,20 @@ async fn main() -> ExitCode {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = ControllerConfig::from_env()?;
     let listen = config.listen;
+    let discovery_listen = config.discovery_listen;
     let (application, state) = xs_controller::build(&config).await?;
     drop(config);
     let listener = tokio::net::TcpListener::bind(listen).await?;
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let discovery = if let Some(address) = discovery_listen {
+        let socket = tokio::net::UdpSocket::bind(address).await?;
+        let state = state.clone();
+        Some(tokio::spawn(async move {
+            xs_controller::discovery::serve(socket, state, shutdown_rx).await
+        }))
+    } else {
+        None
+    };
     tracing::info!(
         event = "controller_started",
         address = %listen,
@@ -42,8 +53,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     axum::serve(listener, application)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            let _ = shutdown_tx.send(true);
+        })
         .await?;
+    if let Some(discovery) = discovery {
+        discovery.await??;
+    }
     state.pool.close().await;
     Ok(())
 }

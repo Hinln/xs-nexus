@@ -14,7 +14,10 @@ use xs_agent::{
     state::NodeState,
     storage::{Identity, write_json},
 };
-use xs_core::{ConfigurationNode, ConfigurationPayload, EnrollResponse, SignedConfiguration};
+use xs_core::{
+    ConfigurationNode, ConfigurationPayload, EndpointCandidate, EndpointCandidateKind,
+    EnrollResponse, SignedConfiguration,
+};
 use xs_protocol::{CredentialClaims, controller_key_id, node_id, role_set_digest, sign_credential};
 
 const CONTROLLER_URL: &str = "http://127.0.0.1:9/";
@@ -48,17 +51,27 @@ struct NodeFixture<'a> {
     identity: Identity,
     virtual_ip: Ipv4Addr,
     endpoint: SocketAddrV4,
+    candidates: Vec<SocketAddrV4>,
     credential_serial: u64,
 }
 
+type FixtureArguments = (
+    PathBuf,
+    SocketAddrV4,
+    SocketAddrV4,
+    Option<SocketAddrV4>,
+    Option<SocketAddrV4>,
+);
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let (root, endpoint_a, endpoint_b) = arguments()?;
+    let (root, endpoint_a, endpoint_b, preferred_a, preferred_b) = arguments()?;
     let node_a = create_node(
         &root,
         "node-a",
         "xsa0",
         Ipv4Addr::new(100, 127, 253, 1),
         endpoint_a,
+        preferred_a,
         1,
     )?;
     let node_b = create_node(
@@ -67,6 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "xsb0",
         Ipv4Addr::new(100, 127, 253, 2),
         endpoint_b,
+        preferred_b,
         2,
     )?;
     let credential_key = signing_key()?;
@@ -110,7 +124,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn arguments() -> Result<(PathBuf, SocketAddrV4, SocketAddrV4), Box<dyn Error>> {
+fn arguments() -> Result<FixtureArguments, Box<dyn Error>> {
     let mut arguments = std::env::args_os().skip(1);
     let root = PathBuf::from(arguments.next().ok_or("missing fixture root")?);
     let endpoint_a = arguments
@@ -125,7 +139,28 @@ fn arguments() -> Result<(PathBuf, SocketAddrV4, SocketAddrV4), Box<dyn Error>> 
         .into_string()
         .map_err(|_| "node B endpoint is not UTF-8")?
         .parse::<SocketAddrV4>()?;
+    let preferred_a = if let Some(value) = arguments.next() {
+        Some(
+            value
+                .into_string()
+                .map_err(|_| "node A preferred endpoint is not UTF-8")?
+                .parse::<SocketAddrV4>()?,
+        )
+    } else {
+        None
+    };
+    let preferred_b = if let Some(value) = arguments.next() {
+        Some(
+            value
+                .into_string()
+                .map_err(|_| "node B preferred endpoint is not UTF-8")?
+                .parse::<SocketAddrV4>()?,
+        )
+    } else {
+        None
+    };
     if arguments.next().is_some()
+        || preferred_a.is_some() != preferred_b.is_some()
         || !root.is_absolute()
         || endpoint_a == endpoint_b
         || endpoint_a.port() == 0
@@ -133,7 +168,7 @@ fn arguments() -> Result<(PathBuf, SocketAddrV4, SocketAddrV4), Box<dyn Error>> 
     {
         return Err("invalid fixture arguments".into());
     }
-    Ok((root, endpoint_a, endpoint_b))
+    Ok((root, endpoint_a, endpoint_b, preferred_a, preferred_b))
 }
 
 fn create_node(
@@ -142,6 +177,7 @@ fn create_node(
     interface_name: &'static str,
     virtual_ip: Ipv4Addr,
     endpoint: SocketAddrV4,
+    preferred_endpoint: Option<SocketAddrV4>,
     credential_serial: u64,
 ) -> Result<NodeFixture<'static>, Box<dyn Error>> {
     let node_root = root.join(name);
@@ -154,6 +190,7 @@ fn create_node(
         identity,
         virtual_ip,
         endpoint,
+        candidates: preferred_endpoint.into_iter().chain([endpoint]).collect(),
         credential_serial,
     })
 }
@@ -173,6 +210,17 @@ fn signed_configuration(
             identity_public_key_base64: URL_SAFE_NO_PAD.encode(node.identity.public_key()),
             virtual_ip: node.virtual_ip.to_string(),
             direct_endpoints: vec![node.endpoint.to_string()],
+            candidates: node
+                .candidates
+                .iter()
+                .enumerate()
+                .map(|(index, endpoint)| EndpointCandidate {
+                    kind: EndpointCandidateKind::Static,
+                    endpoint: (*endpoint).into(),
+                    priority: 200_u32.saturating_sub(u32::try_from(index).unwrap_or(u32::MAX)),
+                    expires_at: credential_not_after,
+                })
+                .collect(),
             credential_serial: node.credential_serial,
             credential_not_after,
             role_bitmap: 1,
@@ -185,6 +233,7 @@ fn signed_configuration(
         version: 1,
         generated_at,
         address_pool: ADDRESS_POOL.to_owned(),
+        discovery_endpoints: Vec::new(),
         nodes,
         relays: Vec::new(),
         policies: Vec::new(),

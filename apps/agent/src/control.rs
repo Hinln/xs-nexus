@@ -8,7 +8,9 @@ use tokio_tungstenite::{
     connect_async_with_config,
     tungstenite::{Message, protocol::WebSocketConfig},
 };
-use xs_core::{ControlClientMessage, ControlServerMessage, SignedConfiguration};
+use xs_core::{
+    CandidateAdvertisement, ControlClientMessage, ControlServerMessage, SignedConfiguration,
+};
 
 use crate::{
     config::AgentConfig,
@@ -19,6 +21,7 @@ use crate::{
 };
 
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
+const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
 const CONTROL_MESSAGE_LIMIT: usize = 4096;
 
 pub async fn run_control_loop(
@@ -26,6 +29,7 @@ pub async fn run_control_loop(
     identity: Arc<Identity>,
     state: Arc<tokio::sync::RwLock<NodeState>>,
     health: Arc<AgentHealth>,
+    mut candidates: watch::Receiver<Option<CandidateAdvertisement>>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
@@ -33,7 +37,16 @@ pub async fn run_control_loop(
         if *shutdown.borrow() {
             return;
         }
-        match control_session(&config, &identity, &state, &health, &mut shutdown).await {
+        match control_session(
+            &config,
+            &identity,
+            &state,
+            &health,
+            &mut candidates,
+            &mut shutdown,
+        )
+        .await
+        {
             Ok(()) if *shutdown.borrow() => return,
             Ok(()) | Err(_) => {
                 health.set_controller_connected(false);
@@ -58,6 +71,7 @@ async fn control_session(
     identity: &Identity,
     state: &tokio::sync::RwLock<NodeState>,
     health: &AgentHealth,
+    candidates: &mut watch::Receiver<Option<CandidateAdvertisement>>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<()> {
     let websocket_config = WebSocketConfig::default()
@@ -111,6 +125,10 @@ async fn control_session(
     };
     apply_configuration(state, identity, initial, &config.node_state_path()).await?;
     health.set_controller_connected(true);
+    let initial_advertisement = candidates.borrow().clone();
+    if let Some(advertisement) = initial_advertisement {
+        send_candidate_advertisement(&mut socket, identity, advertisement).await?;
+    }
 
     let mut synchronization =
         tokio::time::interval(Duration::from_secs(config.control_sync_interval_seconds));
@@ -129,6 +147,15 @@ async fn control_session(
                 let last_version = state.read().await.configuration.version;
                 send_json(&mut socket, &ControlClientMessage::Sync { last_version }).await?;
             }
+            changed = candidates.changed() => {
+                if changed.is_err() {
+                    return Err(AgentError::Control);
+                }
+                let advertisement = candidates.borrow_and_update().clone();
+                if let Some(advertisement) = advertisement {
+                    send_candidate_advertisement(&mut socket, identity, advertisement).await?;
+                }
+            }
             incoming = receive_json(&mut socket) => {
                 match incoming? {
                     ControlServerMessage::Configuration { configuration } => {
@@ -144,6 +171,30 @@ async fn control_session(
             }
         }
     }
+}
+
+async fn send_candidate_advertisement<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    identity: &Identity,
+    advertisement: CandidateAdvertisement,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let payload = serde_json::to_vec(&advertisement).map_err(|_| AgentError::Control)?;
+    let mut signing_input =
+        Vec::with_capacity(CANDIDATE_ADVERTISEMENT_DOMAIN.len() + payload.len());
+    signing_input.extend_from_slice(CANDIDATE_ADVERTISEMENT_DOMAIN);
+    signing_input.extend_from_slice(&payload);
+    let signature = identity.signing_key().sign(&signing_input);
+    send_json(
+        socket,
+        &ControlClientMessage::AdvertiseCandidates {
+            advertisement,
+            signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+        },
+    )
+    .await
 }
 
 async fn apply_configuration(

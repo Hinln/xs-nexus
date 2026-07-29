@@ -11,7 +11,7 @@ use crate::{
     ipc::{IpcContext, run_ipc_server},
     network::{NetworkPlan, TunNetwork},
     state::NodeState,
-    storage::{Identity, read_json},
+    storage::{Identity, read_json, write_json},
 };
 
 const MAX_IPV4_PACKET_BYTES: usize = 65_535;
@@ -31,14 +31,17 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
     let plan = NetworkPlan::from_state(&config, &state)?;
     let network = TunNetwork::create(plan.clone(), &config.network_manifest_path()).await?;
     let mut data_plane = UdpDataPlane::bind(&state, Arc::clone(&identity)).await?;
+    let data_plane_status = data_plane.status_handle();
     let state = Arc::new(tokio::sync::RwLock::new(state));
     let health = Arc::new(AgentHealth::new());
+    let (candidate_sender, candidate_receiver) = watch::channel(None);
 
     let control_task = tokio::spawn(run_control_loop(
         config.clone(),
         Arc::clone(&identity),
         Arc::clone(&state),
         Arc::clone(&health),
+        candidate_receiver,
         shutdown.clone(),
     ));
     let ipc_task = tokio::spawn(run_ipc_server(
@@ -48,6 +51,7 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
         IpcContext {
             interface_name: plan.interface_name().to_owned(),
             interface_index: network.interface_index(),
+            data_plane_status,
         },
         shutdown.clone(),
     ));
@@ -84,7 +88,12 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
                 }
             }
             _ = data_plane_maintenance.tick() => {
-                data_plane.maintain().await?;
+                maintain_data_plane(
+                    &mut data_plane,
+                    &state,
+                    &config,
+                    &candidate_sender,
+                ).await?;
             }
             result = &mut control_task, if !control_completed => {
                 control_completed = true;
@@ -112,6 +121,27 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
     }
     let network_result = network.shutdown().await;
     runtime_result.and(network_result)
+}
+
+async fn maintain_data_plane(
+    data_plane: &mut UdpDataPlane,
+    state: &tokio::sync::RwLock<NodeState>,
+    config: &AgentConfig,
+    candidate_sender: &watch::Sender<Option<xs_core::CandidateAdvertisement>>,
+) -> Result<()> {
+    let snapshot = state.read().await.clone();
+    if data_plane.configuration_version() != snapshot.configuration.version {
+        data_plane.apply_configuration(&snapshot).await?;
+    }
+    if let Some(advertisement) = data_plane.maintain(&snapshot).await? {
+        {
+            let mut state = state.write().await;
+            state.candidate_generation = advertisement.generation;
+            write_json(&config.node_state_path(), &*state)?;
+        }
+        candidate_sender.send_replace(Some(advertisement));
+    }
+    Ok(())
 }
 
 async fn stop_task<T>(mut task: JoinHandle<T>) {

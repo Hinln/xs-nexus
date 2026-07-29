@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
-use std::{fmt, net::Ipv4Addr};
+use std::{
+    fmt,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -92,6 +95,8 @@ pub struct ConfigurationPayload {
     pub version: u64,
     pub generated_at: DateTime<Utc>,
     pub address_pool: String,
+    #[serde(default)]
+    pub discovery_endpoints: Vec<SocketAddr>,
     pub nodes: Vec<ConfigurationNode>,
     pub relays: Vec<serde_json::Value>,
     pub policies: Vec<serde_json::Value>,
@@ -105,10 +110,43 @@ pub struct ConfigurationNode {
     pub virtual_ip: String,
     #[serde(default)]
     pub direct_endpoints: Vec<String>,
+    #[serde(default)]
+    pub candidates: Vec<EndpointCandidate>,
     pub credential_serial: u64,
     pub credential_not_after: DateTime<Utc>,
     pub role_bitmap: u32,
     pub tags: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointCandidateKind {
+    Local,
+    PublicIpv6,
+    Mapped,
+    Static,
+    Relay,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EndpointCandidate {
+    pub kind: EndpointCandidateKind,
+    pub endpoint: SocketAddr,
+    pub priority: u32,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateAdvertisement {
+    pub schema_version: u8,
+    pub network_id: Uuid,
+    pub node_id_base64: String,
+    pub generation: u64,
+    pub generated_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub candidates: Vec<EndpointCandidate>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -163,6 +201,22 @@ pub struct LocalPeerStatus {
     pub credential_not_after: DateTime<Utc>,
     pub role_bitmap: u32,
     pub tags: Vec<String>,
+    pub candidates: Vec<EndpointCandidate>,
+    pub active_endpoint: Option<SocketAddr>,
+    pub active_candidate_kind: Option<EndpointCandidateKind>,
+    pub path_reason: Option<PathSelectionReason>,
+    pub session_established: bool,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PathSelectionReason {
+    HighestPriority,
+    HandshakeFallback,
+    AuthenticatedHandshake,
+    AuthenticatedPeerTraffic,
+    AuthenticatedPathProbe,
+    ConfigurationUpdate,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -175,6 +229,7 @@ pub struct LocalAgentDiagnostics {
     pub tun_packets_received: u64,
     pub tun_packets_dropped: u64,
     pub last_error_code: Option<String>,
+    pub local_candidates: Vec<EndpointCandidate>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -187,6 +242,10 @@ pub enum ControlClientMessage {
     },
     Sync {
         last_version: u64,
+    },
+    AdvertiseCandidates {
+        advertisement: CandidateAdvertisement,
+        signature_base64: String,
     },
 }
 

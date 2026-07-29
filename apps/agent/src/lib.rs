@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod candidates;
 pub mod config;
 pub mod control;
 pub mod data_plane;

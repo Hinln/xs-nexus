@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -9,7 +9,11 @@ use chrono::Utc;
 use ed25519_dalek::VerifyingKey;
 use getrandom::fill;
 use sha2::{Digest, Sha256};
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::UdpSocket;
+use xs_core::{
+    CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind, PathSelectionReason,
+};
 use xs_protocol::{
     CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, CREDENTIAL_LENGTH, ClientFinishSent,
     ClientHandshakeParameters, ClientHelloSent, DataFlags, DataReceiver, DataSender,
@@ -19,6 +23,7 @@ use xs_protocol::{
 };
 
 use crate::{
+    candidates::{CandidateManager, normalize_endpoint},
     error::{AgentError, Result},
     state::{NodeState, decode_fixed},
     storage::Identity,
@@ -33,6 +38,9 @@ const HANDSHAKE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const HANDSHAKE_MAX_ATTEMPTS: u8 = 6;
 const KEY_UPDATE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const KEY_UPDATE_MAX_ATTEMPTS: u8 = 6;
+const PATH_PROBE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
+const PATH_PROBE_MAX_ATTEMPTS: u8 = 4;
+const PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(30);
 #[cfg(not(feature = "privileged-network-tests"))]
 const KEY_UPDATE_PACKET_LIMIT: u64 = 1 << 20;
 #[cfg(feature = "privileged-network-tests")]
@@ -58,11 +66,15 @@ struct LocalMaterial {
 struct Peer {
     node_id: [u8; 16],
     virtual_ip: Ipv4Addr,
-    endpoint: SocketAddr,
+    candidates: Vec<EndpointCandidate>,
+    active_endpoint: Option<SocketAddr>,
+    path_reason: Option<PathSelectionReason>,
     state: PeerState,
     queued_packets: VecDeque<Vec<u8>>,
     queued_bytes: usize,
     recent_client_hellos: VecDeque<([u8; 32], Instant)>,
+    pending_path_probe: Option<PendingPathProbe>,
+    path_probe_retry_after: Instant,
 }
 
 enum PeerState {
@@ -104,6 +116,13 @@ struct PendingKeyUpdate {
     retry: RetryState,
 }
 
+struct PendingPathProbe {
+    endpoint: SocketAddr,
+    path_id: u32,
+    token: [u8; 8],
+    retry: RetryState,
+}
+
 struct RetryState {
     encoded: Vec<u8>,
     last_sent: Instant,
@@ -128,6 +147,15 @@ impl RetryState {
             now,
             KEY_UPDATE_RETRY_INTERVAL,
             KEY_UPDATE_MAX_ATTEMPTS,
+        )
+    }
+
+    fn path_probe(encoded: Vec<u8>, now: Instant) -> Self {
+        Self::new(
+            encoded,
+            now,
+            PATH_PROBE_RETRY_INTERVAL,
+            PATH_PROBE_MAX_ATTEMPTS,
         )
     }
 
@@ -163,6 +191,7 @@ enum RetryAction {
 struct ProcessResult {
     outbound: Vec<Vec<u8>>,
     plaintext: Option<Vec<u8>>,
+    path_authenticated: bool,
 }
 
 impl ProcessResult {
@@ -170,9 +199,32 @@ impl ProcessResult {
         Self {
             outbound: Vec::new(),
             plaintext: None,
+            path_authenticated: false,
         }
     }
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct DataPlaneStatus {
+    pub local_candidates: Vec<EndpointCandidate>,
+    pub peers: HashMap<Ipv4Addr, PeerPathStatus>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PeerPathStatus {
+    pub candidates: Vec<EndpointCandidate>,
+    pub active_endpoint: Option<SocketAddr>,
+    pub active_candidate_kind: Option<EndpointCandidateKind>,
+    pub path_reason: Option<PathSelectionReason>,
+    pub session_established: bool,
+}
+
+pub type SharedDataPlaneStatus = Arc<tokio::sync::RwLock<DataPlaneStatus>>;
+type PeerDirectory = (
+    SocketAddr,
+    HashMap<Ipv4Addr, Peer>,
+    HashMap<SocketAddr, Ipv4Addr>,
+);
 
 /// Owns the authenticated XSP/1 UDP sessions for one Agent.
 pub struct UdpDataPlane {
@@ -180,6 +232,9 @@ pub struct UdpDataPlane {
     material: LocalMaterial,
     peers_by_virtual_ip: HashMap<Ipv4Addr, Peer>,
     peer_by_endpoint: HashMap<SocketAddr, Ipv4Addr>,
+    candidate_manager: CandidateManager,
+    status: SharedDataPlaneStatus,
+    configuration_version: u64,
 }
 
 impl UdpDataPlane {
@@ -198,70 +253,70 @@ impl UdpDataPlane {
                 &state.credential_signing_public_key_base64,
             )?)
             .map_err(|_| AgentError::ControllerTrust)?,
-            identity,
+            identity: Arc::clone(&identity),
         };
-        let mut local_endpoint = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
-        let mut peers_by_virtual_ip = HashMap::new();
-        let mut peer_by_endpoint = HashMap::new();
-
-        for node in &state.configuration_payload.nodes {
-            let node_id = decode_fixed::<16>(&node.node_id_base64)?;
-            let virtual_ip = node
-                .virtual_ip
-                .parse::<Ipv4Addr>()
-                .map_err(|_| AgentError::ControllerTrust)?;
-            let endpoints = node
-                .direct_endpoints
-                .iter()
-                .map(|encoded| {
-                    encoded
-                        .parse::<SocketAddrV4>()
-                        .map(SocketAddr::V4)
-                        .map_err(|_| AgentError::ControllerTrust)
-                })
-                .collect::<Result<Vec<_>>>()?;
-            if node_id == material.node_id {
-                if let Some(endpoint) = endpoints.first() {
-                    local_endpoint = *endpoint;
-                }
-                continue;
-            }
-            let Some(endpoint) = endpoints.first().copied() else {
-                continue;
-            };
-            if peers_by_virtual_ip.len() >= MAX_CONFIGURED_PEERS
-                || peers_by_virtual_ip.contains_key(&virtual_ip)
-            {
-                return Err(AgentError::DataPlane);
-            }
-            for candidate in endpoints {
-                if peer_by_endpoint.insert(candidate, virtual_ip).is_some() {
-                    return Err(AgentError::DataPlane);
-                }
-            }
-            peers_by_virtual_ip.insert(
-                virtual_ip,
-                Peer {
-                    node_id,
-                    virtual_ip,
-                    endpoint,
-                    state: PeerState::Idle,
-                    queued_packets: VecDeque::new(),
-                    queued_bytes: 0,
-                    recent_client_hellos: VecDeque::new(),
-                },
-            );
-        }
-
-        let socket = UdpSocket::bind(local_endpoint)
-            .await
-            .map_err(|_| AgentError::Network)?;
-        Ok(Self {
+        let (local_endpoint, peers_by_virtual_ip, peer_by_endpoint) =
+            build_peer_directory(state, material.node_id)?;
+        let socket = bind_data_socket(local_endpoint)?;
+        let candidate_manager = CandidateManager::new(state, identity)?;
+        let status = Arc::new(tokio::sync::RwLock::new(DataPlaneStatus::default()));
+        let data_plane = Self {
             socket,
             material,
             peers_by_virtual_ip,
             peer_by_endpoint,
-        })
+            candidate_manager,
+            status,
+            configuration_version: state.configuration.version,
+        };
+        data_plane.synchronize_status().await;
+        Ok(data_plane)
+    }
+
+    #[must_use]
+    pub fn status_handle(&self) -> SharedDataPlaneStatus {
+        Arc::clone(&self.status)
+    }
+
+    #[must_use]
+    pub const fn configuration_version(&self) -> u64 {
+        self.configuration_version
+    }
+
+    /// Applies a newer trusted peer candidate directory while preserving established sessions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an Agent error when the trusted configuration contains an unusable peer identity.
+    pub async fn apply_configuration(&mut self, state: &NodeState) -> Result<()> {
+        let (_, desired, _) = build_peer_directory(state, self.material.node_id)?;
+        let mut updated = HashMap::with_capacity(desired.len());
+        for (virtual_ip, mut replacement) in desired {
+            if let Some(mut existing) = self.peers_by_virtual_ip.remove(&virtual_ip)
+                && existing.node_id == replacement.node_id
+            {
+                existing.candidates = replacement.candidates;
+                if !matches!(existing.state, PeerState::Established(_))
+                    && existing
+                        .active_endpoint
+                        .is_none_or(|endpoint| !peer_has_endpoint(&existing, endpoint))
+                {
+                    existing.active_endpoint = existing
+                        .candidates
+                        .first()
+                        .map(|candidate| candidate.endpoint);
+                    existing.path_reason = Some(PathSelectionReason::ConfigurationUpdate);
+                }
+                replacement = existing;
+            }
+            updated.insert(virtual_ip, replacement);
+        }
+        self.peers_by_virtual_ip = updated;
+        self.rebuild_endpoint_index()?;
+        self.configuration_version = state.configuration.version;
+        self.candidate_manager.force_refresh();
+        self.synchronize_status().await;
+        Ok(())
     }
 
     /// Returns the actual local UDP socket address.
@@ -314,7 +369,9 @@ impl UdpDataPlane {
                 return Ok(false);
             }
         };
-        let endpoint = peer.endpoint;
+        let Some(endpoint) = peer.active_endpoint else {
+            return Ok(true);
+        };
         self.socket
             .send_to(&outbound, endpoint)
             .await
@@ -334,19 +391,57 @@ impl UdpDataPlane {
             .recv_from(&mut datagram)
             .await
             .map_err(|_| AgentError::Network)?;
+        let source = normalize_endpoint(source);
+        if self
+            .candidate_manager
+            .handles_discovery_response(&datagram[..length])
+        {
+            let _ = self
+                .candidate_manager
+                .handle_discovery_response(source, &datagram[..length]);
+            return Ok(None);
+        }
         let Some(peer_ip) = self.peer_by_endpoint.get(&source).copied() else {
             return Ok(None);
         };
         let Some(peer) = self.peers_by_virtual_ip.get_mut(&peer_ip) else {
             return Ok(None);
         };
-        let result = process_datagram(&self.material, peer, &datagram[..length], Instant::now());
+        let handshake_packet = matches!(
+            datagram.get(5).copied(),
+            Some(CLIENT_HELLO_TYPE | SERVER_HELLO_TYPE | CLIENT_FINISH_TYPE | SERVER_FINISH_TYPE)
+        );
+        let result = process_datagram(
+            &self.material,
+            peer,
+            source,
+            &datagram[..length],
+            Instant::now(),
+        );
+        let retain_fallback_reason = handshake_packet
+            && peer.active_endpoint == Some(source)
+            && peer.path_reason == Some(PathSelectionReason::HandshakeFallback);
+        if result.path_authenticated
+            && !retain_fallback_reason
+            && (handshake_packet || peer.active_endpoint != Some(source))
+        {
+            promote_path(
+                peer,
+                source,
+                if handshake_packet {
+                    PathSelectionReason::AuthenticatedHandshake
+                } else {
+                    PathSelectionReason::AuthenticatedPeerTraffic
+                },
+            );
+        }
         for outbound in result.outbound {
             self.socket
-                .send_to(&outbound, peer.endpoint)
+                .send_to(&outbound, source)
                 .await
                 .map_err(|_| AgentError::Network)?;
         }
+        self.synchronize_status().await;
         Ok(result.plaintext)
     }
 
@@ -355,18 +450,38 @@ impl UdpDataPlane {
     /// # Errors
     ///
     /// Returns an Agent error when a UDP retransmission fails.
-    pub async fn maintain(&mut self) -> Result<()> {
+    pub async fn maintain(&mut self, state: &NodeState) -> Result<Option<CandidateAdvertisement>> {
         let now = Instant::now();
+        self.prune_expired_candidates()?;
         let mut retransmissions = Vec::new();
         for peer in self.peers_by_virtual_ip.values_mut() {
             prune_client_hello_cache(peer, now);
-            if let Some(encoded) = poll_peer_retry(peer, now) {
-                retransmissions.push((peer.endpoint, encoded));
+            match poll_peer_retry(peer, now) {
+                RetryAction::Wait => {}
+                RetryAction::Send(encoded) => {
+                    if let Some(endpoint) = peer.active_endpoint {
+                        retransmissions.push((endpoint, encoded));
+                    }
+                }
+                RetryAction::Expired => {
+                    if advance_handshake_candidate(peer) {
+                        if let Some(endpoint) = peer.active_endpoint {
+                            let encoded = begin_client_handshake(&self.material, peer, now)?;
+                            retransmissions.push((endpoint, encoded));
+                        }
+                    } else {
+                        clear_queue(peer);
+                    }
+                }
             }
             if let PeerState::Established(established) = &mut peer.state
                 && let Some(encoded) = maintain_established(established, now)?
+                && let Some(endpoint) = peer.active_endpoint
             {
-                retransmissions.push((peer.endpoint, encoded));
+                retransmissions.push((endpoint, encoded));
+            }
+            if let Some((endpoint, encoded)) = maintain_path_probe(peer, now)? {
+                retransmissions.push((endpoint, encoded));
             }
         }
         for (endpoint, encoded) in retransmissions {
@@ -375,8 +490,292 @@ impl UdpDataPlane {
                 .await
                 .map_err(|_| AgentError::Network)?;
         }
+        if self.candidate_manager.refresh_due(now) {
+            self.candidate_manager.refresh(&self.socket, state).await?;
+        }
+        let advertisement = self.candidate_manager.take_advertisement();
+        self.synchronize_status().await;
+        Ok(advertisement)
+    }
+
+    fn prune_expired_candidates(&mut self) -> Result<()> {
+        let now = Utc::now();
+        for peer in self.peers_by_virtual_ip.values_mut() {
+            peer.candidates
+                .retain(|candidate| candidate.expires_at > now);
+            if !matches!(peer.state, PeerState::Established(_))
+                && peer
+                    .active_endpoint
+                    .is_some_and(|endpoint| !peer_has_endpoint(peer, endpoint))
+            {
+                peer.active_endpoint = peer.candidates.first().map(|candidate| candidate.endpoint);
+                peer.path_reason = Some(PathSelectionReason::ConfigurationUpdate);
+            }
+        }
+        self.rebuild_endpoint_index()
+    }
+
+    fn rebuild_endpoint_index(&mut self) -> Result<()> {
+        let mut endpoints = HashMap::new();
+        for (virtual_ip, peer) in &self.peers_by_virtual_ip {
+            let mut peer_endpoints = std::collections::HashSet::new();
+            for endpoint in peer
+                .candidates
+                .iter()
+                .map(|candidate| candidate.endpoint)
+                .chain(peer.active_endpoint)
+            {
+                if !peer_endpoints.insert(endpoint) {
+                    continue;
+                }
+                if endpoints.insert(endpoint, *virtual_ip).is_some() {
+                    return Err(AgentError::DataPlane);
+                }
+            }
+        }
+        self.peer_by_endpoint = endpoints;
         Ok(())
     }
+
+    async fn synchronize_status(&self) {
+        let mut status = self.status.write().await;
+        status.local_candidates = self.candidate_manager.candidates();
+        status.peers = self
+            .peers_by_virtual_ip
+            .iter()
+            .map(|(virtual_ip, peer)| {
+                (
+                    *virtual_ip,
+                    PeerPathStatus {
+                        candidates: peer.candidates.clone(),
+                        active_endpoint: peer.active_endpoint,
+                        active_candidate_kind: peer.active_endpoint.and_then(|endpoint| {
+                            peer.candidates
+                                .iter()
+                                .find(|candidate| candidate.endpoint == endpoint)
+                                .map(|candidate| candidate.kind)
+                        }),
+                        path_reason: peer.path_reason,
+                        session_established: matches!(peer.state, PeerState::Established(_)),
+                    },
+                )
+            })
+            .collect();
+    }
+}
+
+fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<PeerDirectory> {
+    let mut local_endpoint = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
+    let mut peers = HashMap::new();
+    let mut endpoints = HashMap::new();
+    for node in &state.configuration_payload.nodes {
+        let node_id = decode_fixed::<16>(&node.node_id_base64)?;
+        let virtual_ip = node
+            .virtual_ip
+            .parse::<Ipv4Addr>()
+            .map_err(|_| AgentError::ControllerTrust)?;
+        let direct_endpoints = node
+            .direct_endpoints
+            .iter()
+            .map(|encoded| {
+                encoded
+                    .parse::<SocketAddrV4>()
+                    .map(SocketAddr::V4)
+                    .map_err(|_| AgentError::ControllerTrust)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if node_id == local_node_id {
+            if let Some(endpoint) = direct_endpoints.first() {
+                local_endpoint = *endpoint;
+            }
+            continue;
+        }
+        if peers.len() >= MAX_CONFIGURED_PEERS || peers.contains_key(&virtual_ip) {
+            return Err(AgentError::DataPlane);
+        }
+        let candidates = configured_candidates(node, direct_endpoints);
+        for candidate in &candidates {
+            if endpoints.insert(candidate.endpoint, virtual_ip).is_some() {
+                return Err(AgentError::DataPlane);
+            }
+        }
+        let active_endpoint = candidates.first().map(|candidate| candidate.endpoint);
+        peers.insert(
+            virtual_ip,
+            Peer {
+                node_id,
+                virtual_ip,
+                candidates,
+                active_endpoint,
+                path_reason: active_endpoint.map(|_| PathSelectionReason::HighestPriority),
+                state: PeerState::Idle,
+                queued_packets: VecDeque::new(),
+                queued_bytes: 0,
+                recent_client_hellos: VecDeque::new(),
+                pending_path_probe: None,
+                path_probe_retry_after: Instant::now(),
+            },
+        );
+    }
+    Ok((local_endpoint, peers, endpoints))
+}
+
+fn configured_candidates(
+    node: &xs_core::ConfigurationNode,
+    direct_endpoints: Vec<SocketAddr>,
+) -> Vec<EndpointCandidate> {
+    let now = Utc::now();
+    let mut seen = std::collections::HashSet::new();
+    let mut candidates = node
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.expires_at > now && candidate.kind != EndpointCandidateKind::Relay
+        })
+        .cloned()
+        .map(|mut candidate| {
+            candidate.endpoint = normalize_endpoint(candidate.endpoint);
+            candidate
+        })
+        .filter(|candidate| seen.insert(candidate.endpoint))
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        candidates.extend(
+            direct_endpoints
+                .into_iter()
+                .map(normalize_endpoint)
+                .filter(|endpoint| seen.insert(*endpoint))
+                .enumerate()
+                .map(|(index, endpoint)| EndpointCandidate {
+                    kind: EndpointCandidateKind::Static,
+                    endpoint,
+                    priority: 10_000_u32.saturating_sub(u32::try_from(index).unwrap_or(u32::MAX)),
+                    expires_at: node.credential_not_after,
+                }),
+        );
+    }
+    candidates.sort_by(|left, right| right.priority.cmp(&left.priority));
+    candidates
+}
+
+fn bind_data_socket(endpoint: SocketAddr) -> Result<UdpSocket> {
+    let (domain, bind_endpoint, dual_stack) = match endpoint {
+        SocketAddr::V4(endpoint) if endpoint.ip().is_unspecified() => (
+            Domain::IPV6,
+            SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::UNSPECIFIED,
+                endpoint.port(),
+                0,
+                0,
+            )),
+            true,
+        ),
+        SocketAddr::V4(_) => (Domain::IPV4, endpoint, false),
+        SocketAddr::V6(_) => (Domain::IPV6, endpoint, true),
+    };
+    let socket =
+        Socket::new(domain, Type::DGRAM, Some(Protocol::UDP)).map_err(|_| AgentError::Network)?;
+    if dual_stack {
+        socket.set_only_v6(false).map_err(|_| AgentError::Network)?;
+    }
+    socket
+        .set_nonblocking(true)
+        .map_err(|_| AgentError::Network)?;
+    socket
+        .bind(&bind_endpoint.into())
+        .map_err(|_| AgentError::Network)?;
+    let socket: std::net::UdpSocket = socket.into();
+    UdpSocket::from_std(socket).map_err(|_| AgentError::Network)
+}
+
+fn peer_has_endpoint(peer: &Peer, endpoint: SocketAddr) -> bool {
+    peer.candidates
+        .iter()
+        .any(|candidate| candidate.endpoint == endpoint)
+}
+
+fn advance_handshake_candidate(peer: &mut Peer) -> bool {
+    let next = peer.active_endpoint.map_or(0, |active| {
+        peer.candidates
+            .iter()
+            .position(|candidate| candidate.endpoint == active)
+            .map_or(0, |index| index.saturating_add(1))
+    });
+    let Some(candidate) = peer.candidates.get(next) else {
+        return false;
+    };
+    peer.active_endpoint = Some(candidate.endpoint);
+    peer.path_reason = Some(PathSelectionReason::HandshakeFallback);
+    peer.state = PeerState::Idle;
+    peer.pending_path_probe = None;
+    true
+}
+
+fn promote_path(peer: &mut Peer, endpoint: SocketAddr, reason: PathSelectionReason) {
+    peer.active_endpoint = Some(endpoint);
+    peer.path_reason = Some(reason);
+    peer.pending_path_probe = None;
+}
+
+fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAddr, Vec<u8>)>> {
+    if let Some(pending) = &mut peer.pending_path_probe {
+        return match pending.retry.poll(now) {
+            RetryAction::Wait => Ok(None),
+            RetryAction::Send(encoded) => Ok(Some((pending.endpoint, encoded))),
+            RetryAction::Expired => {
+                peer.pending_path_probe = None;
+                peer.path_probe_retry_after = now + PATH_PROBE_COOLDOWN;
+                Ok(None)
+            }
+        };
+    }
+    if now < peer.path_probe_retry_after {
+        return Ok(None);
+    }
+    let target = best_probe_target(peer);
+    let Some(endpoint) = target else {
+        return Ok(None);
+    };
+    let PeerState::Established(established) = &mut peer.state else {
+        return Ok(None);
+    };
+    let token = random_array::<8>()?;
+    let mut path_id = u32::from_be_bytes(random_array()?);
+    if path_id == 0 {
+        path_id = 1;
+    }
+    let encoded = established
+        .sender
+        .seal_control(
+            PacketType::PathChallenge,
+            DataFlags::PATH_PROBE,
+            path_id,
+            &token,
+        )
+        .map_err(|_| AgentError::DataPlane)?;
+    peer.pending_path_probe = Some(PendingPathProbe {
+        endpoint,
+        path_id,
+        token,
+        retry: RetryState::path_probe(encoded.clone(), now),
+    });
+    Ok(Some((endpoint, encoded)))
+}
+
+fn best_probe_target(peer: &Peer) -> Option<SocketAddr> {
+    let active_priority = peer.active_endpoint.and_then(|active| {
+        peer.candidates
+            .iter()
+            .find(|candidate| candidate.endpoint == active)
+            .map(|candidate| candidate.priority)
+    });
+    peer.candidates
+        .iter()
+        .find(|candidate| {
+            Some(candidate.endpoint) != peer.active_endpoint
+                && active_priority.is_none_or(|priority| candidate.priority > priority)
+        })
+        .map(|candidate| candidate.endpoint)
 }
 
 fn queue_packet(peer: &mut Peer, packet: &[u8]) -> bool {
@@ -418,6 +817,7 @@ fn begin_client_handshake(
 fn process_datagram(
     material: &LocalMaterial,
     peer: &mut Peer,
+    source: SocketAddr,
     datagram: &[u8],
     now: Instant,
 ) -> ProcessResult {
@@ -426,7 +826,7 @@ fn process_datagram(
         Some(SERVER_HELLO_TYPE) => handle_server_hello(material, peer, datagram, now),
         Some(CLIENT_FINISH_TYPE) => handle_client_finish(peer, datagram),
         Some(SERVER_FINISH_TYPE) => handle_server_finish(peer, datagram),
-        Some(value) if PacketType::try_from(value).is_ok() => handle_data(peer, datagram),
+        Some(value) if PacketType::try_from(value).is_ok() => handle_data(peer, source, datagram),
         _ => ProcessResult::empty(),
     }
 }
@@ -444,6 +844,7 @@ fn handle_client_hello(
         return ProcessResult {
             outbound: vec![pending.retry.encoded.clone()],
             plaintext: None,
+            path_authenticated: true,
         };
     }
     prune_client_hello_cache(peer, now);
@@ -503,6 +904,7 @@ fn handle_client_hello(
     ProcessResult {
         outbound: vec![encoded],
         plaintext: None,
+        path_authenticated: true,
     }
 }
 
@@ -516,6 +918,7 @@ fn handle_server_hello(
         return ProcessResult {
             outbound: vec![pending.retry.encoded.clone()],
             plaintext: None,
+            path_authenticated: true,
         };
     }
     let state = std::mem::replace(&mut peer.state, PeerState::Idle);
@@ -542,6 +945,7 @@ fn handle_server_hello(
     ProcessResult {
         outbound: vec![encoded],
         plaintext: None,
+        path_authenticated: true,
     }
 }
 
@@ -560,6 +964,7 @@ fn handle_client_finish(peer: &mut Peer, datagram: &[u8]) -> ProcessResult {
     ProcessResult {
         outbound,
         plaintext: None,
+        path_authenticated: true,
     }
 }
 
@@ -576,36 +981,75 @@ fn handle_server_finish(peer: &mut Peer, datagram: &[u8]) -> ProcessResult {
     ProcessResult {
         outbound: install_session(peer, session),
         plaintext: None,
+        path_authenticated: true,
     }
 }
 
-fn handle_data(peer: &mut Peer, datagram: &[u8]) -> ProcessResult {
-    let PeerState::Established(established) = &mut peer.state else {
-        return ProcessResult::empty();
-    };
-    let Ok(opened) = established.receiver.open(datagram) else {
-        return ProcessResult::empty();
-    };
-    match opened.packet_type {
-        PacketType::Data => ProcessResult {
-            outbound: Vec::new(),
-            plaintext: Some(opened.plaintext),
-        },
-        PacketType::KeyUpdate => ProcessResult {
-            outbound: handle_key_update(established, &opened)
-                .into_iter()
-                .collect(),
-            plaintext: None,
-        },
-        PacketType::KeyUpdateAck => {
-            handle_key_update_ack(established, &opened);
-            ProcessResult::empty()
+fn handle_data(peer: &mut Peer, source: SocketAddr, datagram: &[u8]) -> ProcessResult {
+    let mut path_probe_succeeded = false;
+    let result = {
+        let PeerState::Established(established) = &mut peer.state else {
+            return ProcessResult::empty();
+        };
+        let Ok(opened) = established.receiver.open(datagram) else {
+            return ProcessResult::empty();
+        };
+        match opened.packet_type {
+            PacketType::Data => ProcessResult {
+                outbound: Vec::new(),
+                plaintext: Some(opened.plaintext),
+                path_authenticated: true,
+            },
+            PacketType::KeyUpdate => ProcessResult {
+                outbound: handle_key_update(established, &opened)
+                    .into_iter()
+                    .collect(),
+                plaintext: None,
+                path_authenticated: true,
+            },
+            PacketType::KeyUpdateAck => {
+                handle_key_update_ack(established, &opened);
+                ProcessResult {
+                    outbound: Vec::new(),
+                    plaintext: None,
+                    path_authenticated: true,
+                }
+            }
+            PacketType::Keepalive => ProcessResult {
+                outbound: Vec::new(),
+                plaintext: None,
+                path_authenticated: true,
+            },
+            PacketType::PathChallenge => ProcessResult {
+                outbound: established
+                    .sender
+                    .seal_control(
+                        PacketType::PathResponse,
+                        DataFlags::PATH_PROBE,
+                        opened.path_id,
+                        &opened.plaintext,
+                    )
+                    .into_iter()
+                    .collect(),
+                plaintext: None,
+                path_authenticated: false,
+            },
+            PacketType::PathResponse => {
+                path_probe_succeeded = peer.pending_path_probe.as_ref().is_some_and(|pending| {
+                    pending.endpoint == source
+                        && pending.path_id == opened.path_id
+                        && pending.token.as_slice() == opened.plaintext
+                });
+                ProcessResult::empty()
+            }
+            PacketType::Close => ProcessResult::empty(),
         }
-        PacketType::Keepalive
-        | PacketType::PathChallenge
-        | PacketType::PathResponse
-        | PacketType::Close => ProcessResult::empty(),
+    };
+    if path_probe_succeeded {
+        peer.pending_path_probe = None;
+        promote_path(peer, source, PathSelectionReason::AuthenticatedPathProbe);
     }
+    result
 }
 
 fn install_session(peer: &mut Peer, session: EstablishedSession) -> Vec<Vec<u8>> {
@@ -721,38 +1165,39 @@ fn maintain_established(
     Ok(Some(encoded))
 }
 
-fn poll_peer_retry(peer: &mut Peer, now: Instant) -> Option<Vec<u8>> {
+fn poll_peer_retry(peer: &mut Peer, now: Instant) -> RetryAction {
     let state = std::mem::replace(&mut peer.state, PeerState::Idle);
-    let (state, action) = match state {
+    let (state, action, client_initiated) = match state {
         PeerState::ClientHello(mut pending) => {
             let action = pending.retry.poll(now);
-            (PeerState::ClientHello(pending), action)
+            (PeerState::ClientHello(pending), action, true)
         }
         PeerState::ClientFinish(mut pending) => {
             let action = pending.retry.poll(now);
-            (PeerState::ClientFinish(pending), action)
+            (PeerState::ClientFinish(pending), action, true)
         }
         PeerState::ServerHello(mut pending) => {
             let action = pending.retry.poll(now);
-            (PeerState::ServerHello(pending), action)
+            (PeerState::ServerHello(pending), action, false)
         }
         other => {
             peer.state = other;
-            return None;
+            return RetryAction::Wait;
         }
     };
     match action {
         RetryAction::Wait => {
             peer.state = state;
-            None
+            RetryAction::Wait
         }
         RetryAction::Send(encoded) => {
             peer.state = state;
-            Some(encoded)
+            RetryAction::Send(encoded)
         }
+        RetryAction::Expired if client_initiated => RetryAction::Expired,
         RetryAction::Expired => {
-            clear_queue(peer);
-            None
+            peer.state = PeerState::Idle;
+            RetryAction::Wait
         }
     }
 }
