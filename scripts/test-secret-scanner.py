@@ -65,6 +65,20 @@ def main() -> int:
         if [finding.rule for finding in findings] != ["secret-assignment"]:
             raise RuntimeError("generic literal assignment was not detected")
 
+        config.write_bytes(b"safe: scanner-fixture\n")
+        shell = root / "dynamic.sh"
+        private_name = b"private_" + b"key"
+        shell.write_bytes(private_name + b'="$temporary/release-signing.pem"\n')
+        if scanner.scan(root, {}):
+            raise RuntimeError("Shell variable path assignment produced a false positive")
+
+        password_name = b"pass" + b"word"
+        shell.write_bytes(password_name + b'="not-a-production-value"\n')
+        findings = scanner.scan(root, {})
+        if [finding.rule for finding in findings] != ["secret-assignment"]:
+            raise RuntimeError("Shell literal assignment was not detected")
+
+        shell.unlink()
         reference_value = b"reference-value-only-for-scanner-test"
         config.write_bytes(b"safe: " + reference_value + b"\n")
         findings = scanner.scan(root, {"TEST_REFERENCE": reference_value})

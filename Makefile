@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-protocol-vectors test-spec test-network test-e2e test-visual security-check validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-protocol-vectors test-spec test-network test-e2e test-visual security-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 release clean
 
 setup:
 >npm ci
@@ -66,6 +66,9 @@ test-agent-acl:
 test-agent-subnet-route:
 >./scripts/test-agent-subnet-route.sh
 
+test-linux-installer:
+>./scripts/test-linux-installer.sh
+
 test-protocol-vectors:
 >./scripts/test-protocol-vectors.sh
 
@@ -87,6 +90,16 @@ security-check:
 >python3 scripts/test-secret-scanner.py
 >python3 scripts/check-secrets.py --root . --reference-env /etc/xs-nexus/controller.env
 
+linux-package-x86_64:
+>test -n "$(RELEASE_SIGNING_KEY)"
+>./installers/linux/build-package.sh --target x86_64-unknown-linux-gnu --signing-key "$(RELEASE_SIGNING_KEY)" --output "$(or $(RELEASE_OUTPUT),artifacts/release)"
+
+linux-package-aarch64:
+>test -n "$(RELEASE_SIGNING_KEY)"
+>./installers/linux/build-package.sh --target aarch64-unknown-linux-gnu --signing-key "$(RELEASE_SIGNING_KEY)" --output "$(or $(RELEASE_OUTPUT),artifacts/release)"
+
+linux-packages: linux-package-x86_64 linux-package-aarch64
+
 validate-m21:
 >./scripts/validate-m21.sh
 
@@ -104,6 +117,9 @@ validate-m32:
 
 validate-m42:
 >./scripts/validate-m42.sh
+
+validate-m51:
+>./scripts/validate-m51.sh
 
 release:
 >@printf 'Release packaging is not implemented before M9.1\n' >&2

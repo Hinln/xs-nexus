@@ -298,6 +298,13 @@ mod platform {
         /// Returns [`AgentError::Network`] for malformed manifests, mismatched plans, active
         /// interfaces, Netlink failures, or manifest removal failures.
         pub async fn recover_stale(plan: &NetworkPlan, manifest_path: &Path) -> Result<()> {
+            let (connection, handle, _) = new_connection().map_err(|_| AgentError::Network)?;
+            let connection = tokio::spawn(connection);
+            let active = find_link_index(&handle, plan.interface_name()).await?;
+            connection.abort();
+            if active.is_some() {
+                return Err(AgentError::Network);
+            }
             if !manifest_path.exists() {
                 return Ok(());
             }
@@ -308,13 +315,6 @@ mod platform {
                 || manifest.virtual_ip != plan.virtual_ip
                 || manifest.address_pool != plan.address_pool
             {
-                return Err(AgentError::Network);
-            }
-            let (connection, handle, _) = new_connection().map_err(|_| AgentError::Network)?;
-            let connection = tokio::spawn(connection);
-            let active = find_link_index(&handle, plan.interface_name()).await?;
-            connection.abort();
-            if active.is_some() {
                 return Err(AgentError::Network);
             }
             cleanup_manifest_gateway(&manifest)?;

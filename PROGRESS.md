@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-30 22:38 UTC
-当前 Git 提交：M4.2 完成检查点（以本文件所在提交为准）
+最后更新时间：2026-07-30 23:35 UTC
+当前 Git 提交：M5.1 完成检查点（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M5.1 Linux 安装、升级、回滚和卸载`
+当前里程碑：`M5.2 Docker / 1Panel 部署`
 
 ---
 
@@ -72,38 +72,44 @@
 - React 控制台完成登录、首页、节点详情、网络、地址池、Token、组、路由审批、Relay、ACL、用户、审计、告警、更新、设置、备份和 404；
 - 6 项 Playwright 主流程、6 个固定视口、135 张截图、空/错误/无权限/大量数据/长 IPv6/离线/部分服务异常和键盘焦点恢复均通过；
 - M4.1/M4.2 全量证据 `/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`，截图 `/srv/xs-nexus/artifacts/visual/m4.1`。
+- Linux Agent 新增严格 `cleanup --config` 生命周期命令，只使用已存在本地身份、签名状态和可信恢复清单清理项目网络资源，缺失或不匹配状态失败关闭；
+- Linux 发布构建器完成 x86_64 与 aarch64 release 构建、ELF 架构检查、确定性归档、逐文件 SHA-256、外部严格清单和 Ed25519 分离签名；
+- Linux 安装器完成首次公钥固定、平台/架构绑定、原子版本切换、防外部降级、失败自动回滚、显式历史版本回滚、身份保留、默认卸载保留和显式 purge；
+- 生命周期测试覆盖干净/重复安装、外层和内层篡改、错误签名/公钥、升级、失败激活、回滚、清理失败、卸载重装和无服务残留；
+- systemd 崩溃测试改为 SIGKILL 后调用发布路径 cleanup，验证恢复清单和主机接口无残留；
+- M5.1 全量证据 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`，包含真实 x86_64/aarch64 构建和宿主/1Panel 前后基线。
 
 ## 当前工作点
 
-- M4.1 和 M4.2 已完成全部计划内实现、浏览器人工抽查和全量验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
-- M5.1 开始盘点现有构建产物、systemd 单元、状态目录和恢复语义，设计 Linux 安装、升级、失败回滚和卸载流程；
+- M5.1 已完成全部计划内实现与全量验证，最终验证无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
+- M5.2 开始核对现有 Dockerfile、Compose、迁移、健康检查、持久化、备份恢复和开发/RC 隔离边界；
 - 真实 NAS `192.168.0.0/24` 保持人工门禁，不以 namespace 结果替代真实设备验收。
 
 ## 下一步
 
-1. 完整读取 M5.1 安装、升级、回滚、卸载和发布签名要求；
-2. 盘点现有 Linux 二进制、systemd 单元、用户、目录、权限和配置迁移边界；
-3. 设计固定版本清单、平台/架构绑定、哈希与签名验证以及原子版本切换；
-4. 实现安装、重复安装、升级、失败回滚、身份保留、卸载和诊断脚本；
-5. 在隔离目录和 transient systemd 环境运行实际生命周期测试，不触碰 1Panel 资源。
+1. 完整读取 M5.2 Docker、1Panel、迁移、备份恢复和开发/RC 隔离要求；
+2. 盘点现有镜像、Compose、运行用户、capability、健康检查、日志和数据卷；
+3. 设计只引用外部 `1panel-network` 且不创建数据库容器的部署拓扑；
+4. 实现固定构建产物、非 root 容器、迁移门禁、备份恢复和失败回滚；
+5. 在项目命名资源内运行实际部署验证并复核 1Panel 前后基线。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '465,505p' EXECUTION_PLAN.md
-rg -n 'install|upgrade|rollback|uninstall|systemd|signature|manifest' IMPLEMENT.md ACCEPTANCE.md RELEASE_CHECKLIST.md RECOVERY_RUNBOOK.md
-rg --files deploy scripts apps | sort
-sed -n '1,260p' deploy/systemd/xs-agent.service
+sed -n '503,520p' EXECUTION_PLAN.md
+rg -n 'Docker|Compose|1Panel|migration|backup|restore|health|non-root' IMPLEMENT.md ACCEPTANCE.md RELEASE_CHECKLIST.md RECOVERY_RUNBOOK.md ENVIRONMENT.md
+find deploy -maxdepth 3 -type f -print | sort
+docker compose version && docker network inspect 1panel-network
 ```
 
 ## 最近测试
 
-- 时间：2026-07-30 22:37 UTC；
+- 时间：2026-07-30 23:35 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m42.sh`；
+- 命令：`./scripts/validate-m51.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`；
-- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、6 项 Playwright E2E、135 张视觉截图、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；
+- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、Linux 签名安装生命周期、真实 x86_64/aarch64 release 构建、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
 
 ## 当前失败
 
@@ -139,8 +145,9 @@ cat PROGRESS.md
 ./scripts/validate-m31.sh
 ./scripts/validate-m32.sh
 ./scripts/validate-m42.sh
-sed -n '465,505p' EXECUTION_PLAN.md
-rg --files deploy scripts apps | sort
+./scripts/validate-m51.sh
+sed -n '503,520p' EXECUTION_PLAN.md
+find deploy -maxdepth 3 -type f -print | sort
 ```
 
 然后读取：

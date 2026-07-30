@@ -3,7 +3,10 @@ use std::{sync::Arc, time::Duration};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer as _;
 use futures_util::{SinkExt as _, StreamExt as _};
-use tokio::{sync::watch, time::timeout};
+use tokio::{
+    sync::watch,
+    time::{Instant, interval_at, timeout},
+};
 use tokio_tungstenite::{
     connect_async_with_config,
     tungstenite::{Message, protocol::WebSocketConfig},
@@ -102,10 +105,10 @@ async fn control_session(
         send_subnet_route_advertisement(&mut socket, identity, advertisement).await?;
     }
 
-    let mut synchronization =
-        tokio::time::interval(Duration::from_secs(config.control_sync_interval_seconds));
+    let synchronization_period = Duration::from_secs(config.control_sync_interval_seconds);
+    let first_synchronization = Instant::now() + Duration::from_secs(1).min(synchronization_period);
+    let mut synchronization = interval_at(first_synchronization, synchronization_period);
     synchronization.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    synchronization.tick().await;
 
     loop {
         tokio::select! {

@@ -1116,16 +1116,37 @@ fn authenticated_path_reason(
     through_relay: bool,
 ) -> PathSelectionReason {
     if through_relay {
-        return if peer.path_reason == Some(PathSelectionReason::RelayFailover) {
-            PathSelectionReason::RelayFailover
-        } else {
-            PathSelectionReason::RelayFallback
-        };
+        let active_is_relay = peer.active_endpoint.is_some_and(|active| {
+            peer.candidates.iter().any(|candidate| {
+                candidate.endpoint == active && candidate.kind == EndpointCandidateKind::Relay
+            })
+        });
+        return classify_authenticated_relay_path(
+            peer.path_reason,
+            peer.active_endpoint,
+            source,
+            active_is_relay,
+        );
     }
     if handshake_packet {
         authenticated_handshake_reason(peer, source)
     } else {
         PathSelectionReason::AuthenticatedPeerTraffic
+    }
+}
+
+fn classify_authenticated_relay_path(
+    current_reason: Option<PathSelectionReason>,
+    active_endpoint: Option<SocketAddr>,
+    source: SocketAddr,
+    active_is_relay: bool,
+) -> PathSelectionReason {
+    if current_reason == Some(PathSelectionReason::RelayFailover)
+        || (active_is_relay && active_endpoint.is_some_and(|active| active != source))
+    {
+        PathSelectionReason::RelayFailover
+    } else {
+        PathSelectionReason::RelayFallback
     }
 }
 
@@ -1872,5 +1893,30 @@ mod tests {
 
         replacement[0].priority -= 1;
         assert!(candidate_routes_changed(&current, &replacement));
+    }
+
+    #[test]
+    fn authenticated_alternate_relay_is_classified_as_failover() {
+        let first_relay = "192.0.2.10:443".parse().expect("first relay");
+        let second_relay = "192.0.2.20:443".parse().expect("second relay");
+
+        assert_eq!(
+            classify_authenticated_relay_path(
+                Some(PathSelectionReason::RelayFallback),
+                Some(first_relay),
+                second_relay,
+                true,
+            ),
+            PathSelectionReason::RelayFailover
+        );
+        assert_eq!(
+            classify_authenticated_relay_path(
+                Some(PathSelectionReason::AuthenticatedPeerTraffic),
+                Some(first_relay),
+                second_relay,
+                false,
+            ),
+            PathSelectionReason::RelayFallback
+        );
     }
 }

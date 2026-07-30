@@ -82,10 +82,12 @@ cleanup() {
             >/dev/null 2>&1
     fi
     if [[ "$install_link_created" == true ]]; then
-        rm -f /usr/local/libexec/xs-nexus/xs-agent
+        rm -f /usr/local/lib/xs-nexus/current/bin/xs-agent
     fi
     if [[ "$install_directory_created" == true ]]; then
-        rmdir /usr/local/libexec/xs-nexus >/dev/null 2>&1
+        rmdir /usr/local/lib/xs-nexus/current/bin >/dev/null 2>&1
+        rmdir /usr/local/lib/xs-nexus/current >/dev/null 2>&1
+        rmdir /usr/local/lib/xs-nexus >/dev/null 2>&1
     fi
     rm -rf "$temporary"
     if [[ -e "/sys/class/net/$TEST_INTERFACE" ]]; then
@@ -130,14 +132,14 @@ current_step=database_reset
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$schema" \
     "$ROOT_DIR/target/debug/examples/reset_test_schema"
-if [[ ! -d /usr/local/libexec/xs-nexus ]]; then
-    mkdir -p /usr/local/libexec/xs-nexus
+if [[ ! -d /usr/local/lib/xs-nexus/current/bin ]]; then
+    mkdir -p /usr/local/lib/xs-nexus/current/bin
     install_directory_created=true
 fi
-if [[ ! -e /usr/local/libexec/xs-nexus/xs-agent ]]; then
-    ln -s "$ROOT_DIR/target/debug/xs-agent" /usr/local/libexec/xs-nexus/xs-agent
+if [[ ! -e /usr/local/lib/xs-nexus/current/bin/xs-agent ]]; then
+    ln -s "$ROOT_DIR/target/debug/xs-agent" /usr/local/lib/xs-nexus/current/bin/xs-agent
     install_link_created=true
-elif [[ ! -x /usr/local/libexec/xs-nexus/xs-agent ]]; then
+elif [[ ! -x /usr/local/lib/xs-nexus/current/bin/xs-agent ]]; then
     printf 'existing Agent install path is not executable\n' >&2
     exit 2
 fi
@@ -267,12 +269,18 @@ grep -F 'configured_peers=0 returned=0 truncated=false' <<<"$peers_output" >/dev
 diagnostics_output=$("$ROOT_DIR/target/debug/xs" diagnostics --socket "$socket_path")
 grep -F 'address_pool=100.89.20.0/24' <<<"$diagnostics_output" >/dev/null
 
-current_step=unit_stop
-systemctl stop "$unit.service"
+current_step=crash_recovery
+test -f "$state_directory/network-manifest.json"
+systemctl kill --kill-whom=main --signal=SIGKILL "$unit.service"
 for _ in {1..50}; do
-    [[ ! -e "$socket_path" ]] && break
+    ! systemctl is-active --quiet "$unit.service" && break
     sleep 0.1
 done
-test ! -e "$socket_path"
+if systemctl is-active --quiet "$unit.service"; then
+    exit 1
+fi
+"$ROOT_DIR/target/debug/xs-agent" cleanup --config "$config_path" >/dev/null
+test ! -e "$state_directory/network-manifest.json"
+rm -f "$socket_path"
 test ! -e "/sys/class/net/$TEST_INTERFACE"
-printf 'Agent systemd lifecycle and local diagnostics passed\n'
+printf 'Agent systemd lifecycle, crash cleanup, and local diagnostics passed\n'

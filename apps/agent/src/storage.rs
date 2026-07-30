@@ -22,6 +22,23 @@ pub struct Identity {
 }
 
 impl Identity {
+    /// Loads an existing restricted Ed25519 seed file without creating state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AgentError::State`] when the file is absent, unsafe, or invalid.
+    pub fn load(path: &Path) -> Result<Self> {
+        let metadata = path.symlink_metadata().map_err(|_| AgentError::State)?;
+        if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+            return Err(AgentError::State);
+        }
+        let bytes = Zeroizing::new(std::fs::read(path).map_err(|_| AgentError::State)?);
+        let seed: &[u8; 32] = bytes.as_slice().try_into().map_err(|_| AgentError::State)?;
+        Ok(Self {
+            signing_key: SigningKey::from_bytes(seed),
+        })
+    }
+
     /// Loads a restricted Ed25519 seed file or atomically creates one.
     ///
     /// # Errors
@@ -31,16 +48,7 @@ impl Identity {
         let parent = path.parent().ok_or(AgentError::State)?;
         ensure_private_directory(parent)?;
         match path.symlink_metadata() {
-            Ok(metadata) => {
-                if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
-                    return Err(AgentError::State);
-                }
-                let bytes = Zeroizing::new(std::fs::read(path).map_err(|_| AgentError::State)?);
-                let seed: &[u8; 32] = bytes.as_slice().try_into().map_err(|_| AgentError::State)?;
-                Ok(Self {
-                    signing_key: SigningKey::from_bytes(seed),
-                })
-            }
+            Ok(_) => Self::load(path),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let mut seed = Zeroizing::new([0_u8; 32]);
                 fill(seed.as_mut()).map_err(|_| AgentError::State)?;
@@ -196,5 +204,15 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640))
             .expect("set permissions");
         assert!(Identity::load_or_create(&path).is_err());
+    }
+
+    #[test]
+    fn strict_identity_load_never_creates_missing_state() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("missing/identity.key");
+
+        assert!(Identity::load(&path).is_err());
+        assert!(!path.exists());
+        assert!(!path.parent().expect("parent").exists());
     }
 }

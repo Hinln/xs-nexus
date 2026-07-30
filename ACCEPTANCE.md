@@ -17,13 +17,15 @@
 ## B. Linux 节点
 
 - [x] MUST：Linux x86_64 Agent 可构建和安装。
-- [ ] MUST：Linux arm64 Agent 可交叉构建或在目标环境构建。
+- [x] MUST：Linux arm64 Agent 可交叉构建或在目标环境构建。
 - [x] MUST：使用 `/dev/net/tun`。
 - [x] MUST：通过 Netlink 管理接口和路由。
 - [x] MUST：不依赖 `ip` 命令完成核心运行逻辑。
 - [x] MUST：崩溃后不破坏默认网络。
-- [ ] MUST：卸载后无项目路由残留。
-- [ ] MUST：systemd 自动启动和重启策略正确。
+- [x] MUST：卸载后无项目路由残留。
+- [x] MUST：systemd 自动启动和重启策略正确。
+
+证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；arm64 为真实交叉构建与 ELF 架构验证，目标设备运行仍由 NAS/arm64 实机门禁验证。
 
 ---
 
@@ -132,16 +134,18 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更�
 
 ## I. 安装、升级和卸载
 
-- [ ] MUST：Linux 一键安装。
-- [ ] MUST：安装包哈希。
-- [ ] MUST：发布签名。
-- [ ] MUST：失败回滚。
-- [ ] MUST：升级保留节点身份。
-- [ ] MUST：升级包篡改被拒绝。
-- [ ] MUST：卸载不残留接口和路由。
+- [x] MUST：Linux 一键安装。
+- [x] MUST：安装包哈希。
+- [x] MUST：发布签名。
+- [x] MUST：失败回滚。
+- [x] MUST：升级保留节点身份。
+- [x] MUST：升级包篡改被拒绝。
+- [x] MUST：卸载不残留接口和路由。
 - [ ] MUST：Windows 安装器在测试 VM 通过。
 - [ ] MUST：驱动和 Agent 版本兼容。
-- [ ] MUST：正式签名状态如实说明。
+- [x] MUST：正式签名状态如实说明。
+
+证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。已验证测试密钥签名、首次公钥固定、错误密钥/签名/哈希/包内篡改拒绝；正式离线发布密钥和签名仪式未完成，不以测试签名冒充生产签名。Windows 项保持未完成。
 
 ---
 

@@ -10,6 +10,7 @@ pub mod error;
 mod gateway;
 pub mod health;
 pub mod ipc;
+pub mod lifecycle;
 pub mod network;
 mod relay;
 pub mod runtime;

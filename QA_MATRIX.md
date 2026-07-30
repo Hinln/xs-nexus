@@ -187,6 +187,15 @@
 - 卸载后重装；
 - 重启后恢复。
 
+### M5.1 自动化结果
+
+- 已通过：干净安装、重复安装、哈希错误、签名错误、错误公钥、包内篡改、服务启动失败、升级、升级失败自动回滚、显式回滚、卸载、卸载后重装、身份保留和无项目服务/网络残留；
+- 已通过：真实 x86_64 与 aarch64 release 构建，分别验证 ELF `X86-64` 与 `AArch64`；
+- Enrollment Token 的一次性、过期和错误语义由 M1.1 Controller/PostgreSQL 集成测试覆盖；安装器只接受 token 文件路径并在 staging 后删除，不在命令行或状态中输出 token；
+- 截断或下载中断产物由外部清单长度、文件名和 SHA-256 校验失败关闭；安装器不内置下载器；
+- systemd 自动重启与 SIGKILL 后可信 cleanup 已在真实 transient unit 验证；整机重启、真实 arm64/NAS 运行仍属于实机门禁；
+- 证据：`/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。
+
 ### Windows
 
 - 干净安装；

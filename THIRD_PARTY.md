@@ -1,7 +1,7 @@
 # 第三方依赖与许可证
 
-状态：M1.3 协议密码学依赖清单  
-日期：2026-07-29
+状态：M5.1 运行时、构建与测试依赖清单  
+日期：2026-07-31
 
 `Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。版本与许可证字段已通过 `cargo metadata` 核对；任何新增依赖必须同步更新本文件。发布前仍须生成完整 SBOM、许可证文本集合和构建来源证明。
 
@@ -71,6 +71,10 @@
 | Node.js/npm | Console 构建和依赖审计 | 构建工具，不进入浏览器 bundle |
 | PostgreSQL 17 Alpine | CI 迁移与事务集成测试 | 临时 CI service，不进入应用产物 |
 | GCC/Clang/CMake/Make | 本地和未来驱动构建 | 构建工具 |
+| `gcc-aarch64-linux-gnu` / `libc6-dev-arm64-cross` | Linux aarch64 交叉编译和链接 | 构建工具，不进入应用产物 |
+| Rust `rust-src` / Cargo `build-std` | 为 aarch64 目标构建匹配标准库 | 构建工具，不进入应用产物 |
+| OpenSSL CLI | Linux 发布清单 Ed25519 签名和验证 | 构建/安装工具，不链接进入应用产物 |
+| GNU tar/gzip/coreutils/binutils | 确定性归档、SHA-256、文件处理和 ELF Machine 验证 | 构建/安装工具，不进入应用产物 |
 | Docker Compose | 服务编排 | 运行环境工具 |
 | Alpine `3.22` | 基线 profile 的网络配置探针 | 当前只解析配置，尚未发布 |
 | Chromium for Testing 151.0.7922.34 | Playwright 固定浏览器渲染 | 仅测试缓存，不进入应用产物 |

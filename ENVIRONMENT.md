@@ -178,3 +178,16 @@ CONSOLE_SESSION_TTL_SECONDS=28800
 - Enrollment Token。
 
 正式环境建议切换到 SSH Key，并禁止 root 密码远程登录。
+
+---
+
+## 10. Linux 发布构建工具链
+
+M5.1 在开发服务器安装并验证以下发行版构建包：
+
+- `rust-src`：与服务器 Rust 工具链匹配的标准库源码；
+- `gcc-aarch64-linux-gnu`：aarch64 GNU 交叉编译器和 linker；
+- `libc6-dev-arm64-cross`：aarch64 glibc 开发文件；
+- OpenSSL CLI、GNU tar/gzip/coreutils、`readelf`：清单签名、确定性归档、哈希和 ELF 架构验证。
+
+这些是构建主机工具，不进入 Agent 运行时产物。实际 x86_64 与 aarch64 构建证据位于 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。正式签名私钥不得安装或持久化在该开发服务器。

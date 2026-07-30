@@ -50,11 +50,14 @@ free -h
 
 ## 3. TUN 和路由清理
 
-项目必须提供幂等清理命令，例如：
+项目提供严格可信状态清理命令：
 
 ```bash
-xs-agent cleanup
+sudo /usr/local/lib/xs-nexus/current/bin/xs-agent cleanup \
+  --config /etc/xs-nexus/agent.json
 ```
+
+`cleanup` 只加载现有配置、本地身份、签名节点状态和恢复清单，不创建新身份、不 enrollment、不接受任意接口名。可信项目接口仍处于活动状态、身份不匹配或清单无效时失败关闭。正常卸载应优先使用安装器，由安装器停止服务后调用该命令。
 
 至少恢复：
 
@@ -100,23 +103,33 @@ xs-agent cleanup
 
 ## 6. Agent 升级恢复
 
-升级前保存：
+升级前保存只读证据：
 
-- 当前二进制；
+- `readlink /usr/local/lib/xs-nexus/current` 与 `previous`；
 - 版本；
-- 配置；
-- 节点身份；
-- 路由状态。
+- 配置和节点身份的路径、所有者、权限与哈希，不记录内容；
+- `ip -details link`、`ip route show table all`、`ip rule show` 与项目 nftables 表；
+- `systemctl status xs-agent` 和 `journalctl -u xs-agent` 的脱敏输出。
 
-失败：
+安装器激活失败会自动恢复旧版本链接、systemd 单元和先前活动状态，并删除失败版本。需要显式回滚时：
 
-1. 停止新版本；
-2. 恢复旧二进制；
-3. 恢复配置；
-4. 启动；
+```bash
+sudo ./installers/linux/xs-nexus-installer.sh status
+sudo ./installers/linux/xs-nexus-installer.sh rollback
+sudo ./installers/linux/xs-nexus-installer.sh rollback --version <已安装版本>
+```
+
+只允许回滚到仍通过原签名、外部清单、归档和逐文件哈希验证的已安装版本。失败后：
+
+1. 保存安装器与 systemd 脱敏日志；
+2. 确认 `current` 指向预期旧版本；
+3. 确认配置、身份和签名状态未被替换；
+4. 启动或确认安装器已恢复服务；
 5. 验证普通网络；
 6. 验证虚拟网络；
 7. 记录 Bug。
+
+默认卸载保留配置、身份、签名状态、诊断和固定公钥；只有明确销毁节点时才使用 `uninstall --purge`。cleanup 失败时不得手工删除未知路由、接口、规则、Docker 网络或 1Panel 资源。
 
 ---
 

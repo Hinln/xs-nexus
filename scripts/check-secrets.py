@@ -20,6 +20,7 @@ REFERENCE_SECRET_NAMES = {
 }
 PSEUDOCODE_ASSIGNMENT_VALUES = {"HKDF-Expand("}
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".go", ".h", ".hpp", ".js", ".jsx", ".py", ".rs", ".ts", ".tsx"}
+SHELL_SUFFIXES = {".bash", ".sh"}
 PLACEHOLDERS = {
     "CHANGE_ME",
     "EXAMPLE",
@@ -124,12 +125,17 @@ def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
                         path.suffix in SOURCE_SUFFIXES
                         and source_literal.match(raw_value) is None
                     )
+                    shell_nonliteral_assignment = (
+                        path.suffix in SHELL_SUFFIXES
+                        and re.search(rb"\$(?:[A-Za-z_{(])", raw_value) is not None
+                    )
                     if (
                         value not in PLACEHOLDERS
                         and len(value) >= 8
                         and value not in PSEUDOCODE_ASSIGNMENT_VALUES
                         and not rust_type_annotation
                         and not source_nonliteral_assignment
+                        and not shell_nonliteral_assignment
                     ):
                         findings.append(Finding(relative, line_number, "secret-assignment"))
 

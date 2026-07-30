@@ -1,6 +1,6 @@
 [Unit]
 Description=XS Nexus Linux Agent
-Documentation=file:/usr/share/doc/xs-nexus/README.md
+Documentation=file:/usr/local/lib/xs-nexus/current/share/doc/xs-nexus/LINUX_INSTALLATION.md
 Wants=network-online.target
 After=network-online.target
 ConditionPathIsReadWrite=/dev/net/tun
@@ -11,7 +11,7 @@ ConditionPathExists=/var/lib/xs-nexus/node-state.json
 Type=simple
 User=xs-nexus
 Group=xs-nexus
-ExecStart=/usr/local/libexec/xs-nexus/xs-agent run --config /etc/xs-nexus/agent.json
+ExecStart=/usr/local/lib/xs-nexus/current/bin/xs-agent run --config /etc/xs-nexus/agent.json
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=30s

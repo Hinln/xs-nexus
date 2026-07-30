@@ -16,7 +16,7 @@ REQUIRED_DOCUMENTS = {
     "docs/THREAT_MODEL.md": ["## 5. 安全不变量", "## 6. 威胁与控制", "## 8. 测试映射"],
     "docs/SECURITY_ASSUMPTIONS.md": ["## 10. 明确未解决", "## 11. 失败关闭策略"],
     "docs/CRYPTOGRAPHIC_DESIGN.md": ["## 3. transcript", "## 7. 数据 nonce 与 AAD", "## 9. 抗重放"],
-    "docs/CONTROLLER_API.md": ["## 5. 节点 Enrollment", "## 7. WebSocket 控制连接", "## 8. 数据库与审计"],
+    "docs/CONTROLLER_API.md": ["## 6. 节点 Enrollment", "## 8. WebSocket 控制连接", "## 9. 数据库与审计"],
     "docs/XSP1_PROTOCOL.md": ["## 5. 握手帧", "## 7. 数据包", "## 19. 测试向量和 Fuzz"],
     "THIRD_PARTY.md": ["## 1. 当前运行时直接依赖", "## 6. 禁止依赖"],
 }
