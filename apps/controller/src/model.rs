@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub use xs_core::{
+    AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
     CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ControlClientMessage,
     ControlServerMessage, EndpointCandidate, EndpointCandidateKind, EnrollRequest, EnrollResponse,
-    SignedConfiguration,
+    PortRange, SignedConfiguration,
 };
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +57,65 @@ pub struct EnrollmentTokenResponse {
     pub token: String,
     pub expires_at: DateTime<Utc>,
     pub max_uses: u16,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AclGroupRequest {
+    pub name: String,
+    pub node_ids_base64: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceAclPolicyRequest {
+    pub expected_policy_version: u64,
+    #[serde(default)]
+    pub groups: Vec<AclGroupRequest>,
+    pub rules: Vec<AclRule>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplaceAclPolicyResponse {
+    pub network_id: Uuid,
+    pub policy_version: u64,
+    pub configuration_version: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExplainAclRequest {
+    pub source_node_id_base64: String,
+    pub destination_node_id_base64: String,
+    pub protocol: AclProtocol,
+    pub destination_port: Option<u16>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExplainAclResponse {
+    pub network_id: Uuid,
+    pub policy_version: u64,
+    pub decision: AclDecision,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RevokeNodeRequest {
+    #[serde(default = "default_ip_cooldown_seconds")]
+    pub ip_cooldown_seconds: u64,
+}
+
+const fn default_ip_cooldown_seconds() -> u64 {
+    3600
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevokeNodeResponse {
+    pub network_id: Uuid,
+    pub node_id_base64: String,
+    pub virtual_ip: String,
+    pub cooldown_until: DateTime<Utc>,
+    pub configuration_version: u64,
 }
 
 #[derive(Debug, Serialize)]

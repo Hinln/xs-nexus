@@ -9,6 +9,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod acl;
+
+pub use acl::{
+    AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
+    AclValidationError, PortRange,
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Component {
     Agent,
@@ -93,6 +100,8 @@ pub struct ConfigurationPayload {
     pub schema_version: u8,
     pub network_id: Uuid,
     pub version: u64,
+    #[serde(default = "default_policy_version")]
+    pub policy_version: u64,
     pub generated_at: DateTime<Utc>,
     pub address_pool: String,
     #[serde(default)]
@@ -100,7 +109,12 @@ pub struct ConfigurationPayload {
     pub nodes: Vec<ConfigurationNode>,
     #[serde(default)]
     pub relays: Vec<ConfigurationRelay>,
-    pub policies: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub policies: Vec<AclRule>,
+}
+
+const fn default_policy_version() -> u64 {
+    1
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -116,6 +130,8 @@ pub struct ConfigurationNode {
     pub credential_serial: u64,
     pub credential_not_after: DateTime<Utc>,
     pub role_bitmap: u32,
+    #[serde(default)]
+    pub groups: Vec<String>,
     pub tags: Vec<String>,
 }
 

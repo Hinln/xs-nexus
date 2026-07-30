@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-30 11:35 UTC  
-当前 Git 提交：M2.3 完成检查点（以本文件所在提交为准）  
+最后更新时间：2026-07-30 19:46 UTC
+当前 Git 提交：M3.1 完成检查点（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M3.1 路由、ACL 与 IPAM 完整化`
+当前里程碑：`M3.2 子网路由`
 
 ---
 
@@ -53,37 +53,44 @@
 - Relay 链路抓包验证不包含原始虚拟 IP 包和业务明文标记，伪造外层来源被认证丢弃；
 - UDP 单次发送失败按路径不可达处理，不再终止 Agent；仅候选路由身份变化才重置回退，候选过期时间刷新不会破坏正在进行的握手；
 - M2.3 全量证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z`。
+- 严格默认拒绝 ACL，支持节点、组、标签、Allow/Deny、稳定优先级、TCP、UDP、ICMP、目标端口范围和 Explain；
+- Agent 在 XSP/1 加密前和认证解密后双端执行 ACL，将会话 Peer 身份绑定到内层虚拟源地址；
+- 签名策略采用严格单调更新，低版本、同版本异内容、无签名和无效 ACL 均保留最近有效状态；
+- Controller 使用 PostgreSQL 持久化组、成员和 ACL，策略原子替换并以期望版本防止并发覆盖；
+- 活动虚拟地址唯一、节点吊销、地址冷却复用、地址池重叠拒绝和 Agent 系统路由冲突保护完成；
+- 两个隔离 namespace 的 ICMP/TCP/UDP 允许、发送端拒绝、接收端拒绝和拒绝负载不可见验证完成；
+- M3.1 全量证据 `/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`。
 
 ## 当前工作点
 
-- M2.3 已完成全部计划内实现和验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
-- Relay 已具备认证、限速、队列、健康检查和基础错误/字节指标；全局验收中的延迟与丢包指标仍未勾选，不在本里程碑伪造完成；
-- M3.1 开始默认拒绝 ACL、节点/组/标签、协议/端口匹配、双端执行、策略签名与 IPAM 冲突完整化。
+- M3.1 已完成全部计划内实现和全量验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
+- M3.2 开始子网建议、管理员审批、纯路由/NAT、转发 ACL、冲突优先级和网关离线撤销；
+- 真实 NAS `192.168.0.0/24` 保持人工门禁，本阶段只使用隔离 namespace 和测试网段，不连接或修改 NAS。
 
 ## 下一步
 
-1. 读取 M3.1 验收与现有配置/数据面结构，定义默认拒绝策略模型和稳定编码；
-2. 完成节点、组、标签、TCP、UDP、ICMP 与端口规则的 Controller 持久化和签名下发；
-3. 在发送端与接收端同时执行策略，并绑定节点身份、虚拟源 IP 和策略版本；
-4. 完成 `100.88.0.0/16`、活动地址、地址池和重叠子网冲突检查；
-5. 建立 ACL 正负、离线旧策略和 IPAM 并发回归矩阵。
+1. 盘点 Controller 配置、Agent 路由清单和数据面转发边界，定义子网建议、审批和签名配置模型；
+2. 先建立审批前不可达、重叠拒绝、网关离线和卸载清理的失败测试；
+3. 实现子网路由持久化、审批状态、优先级、纯路由/NAT 模式和审计；
+4. 实现 Agent 子网路由安装、转发 ACL、源地址保护、网关健康撤销和幂等恢复；
+5. 在隔离 namespace 中完成批准/拒绝、未授权、纯路由/NAT、离线和清理矩阵。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '315,370p' EXECUTION_PLAN.md
-rg -n -C 8 'ACL|IPAM|policy|策略|路由' \
+sed -n '340,390p' EXECUTION_PLAN.md
+rg -n -C 8 'subnet|route|gateway|forward|nat|子网|路由|网关|审批' \
   docs/ARCHITECTURE.md docs/THREAT_MODEL.md crates/core apps/controller apps/agent
 ```
 
 ## 最近测试
 
-- 时间：2026-07-30 11:35 UTC；
+- 时间：2026-07-30 14:00 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m23.sh`；
+- 命令：`./scripts/validate-m31.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z`；
-- 覆盖：M2.2 全部回归、XSR/1 协议与 Relay 单测、真实双 Relay fallback/failover、密文抓包、伪造来源拒绝、Direct 回切、速率限制恢复、ShellCheck、秘密扫描、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`；
+- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL namespace 网络实验、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
 
 ## 当前失败
 
@@ -116,8 +123,9 @@ cat PROGRESS.md
 ./scripts/validate-m21.sh
 ./scripts/validate-m22.sh
 ./scripts/validate-m23.sh
-sed -n '315,370p' EXECUTION_PLAN.md
-rg -n -C 8 'ACL|IPAM|policy|策略|路由' \
+./scripts/validate-m31.sh
+sed -n '340,390p' EXECUTION_PLAN.md
+rg -n -C 8 'subnet|route|gateway|forward|nat|子网|路由|网关|审批' \
   docs/ARCHITECTURE.md docs/THREAT_MODEL.md crates/core apps/controller apps/agent
 ```
 

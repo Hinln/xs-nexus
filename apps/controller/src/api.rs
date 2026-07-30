@@ -1,9 +1,9 @@
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, State, WebSocketUpgrade},
+    extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade},
     http::{HeaderMap, StatusCode, header},
     response::Response,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -14,7 +14,10 @@ use tower_http::{
 
 use crate::{
     error::ApiError,
-    model::{CreateEnrollmentTokenRequest, CreateNetworkRequest, EnrollRequest, HealthResponse},
+    model::{
+        CreateEnrollmentTokenRequest, CreateNetworkRequest, EnrollRequest, ExplainAclRequest,
+        HealthResponse, ReplaceAclPolicyRequest, RevokeNodeRequest,
+    },
     state::AppState,
 };
 
@@ -24,10 +27,22 @@ pub fn router(state: AppState) -> Router {
         .route("/health/ready", get(ready))
         .route("/v1/admin/networks", post(create_network))
         .route("/v1/admin/enrollment-tokens", post(create_enrollment_token))
+        .route(
+            "/v1/admin/networks/{network_id}/acl",
+            put(replace_acl_policy),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/acl/explain",
+            post(explain_acl),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/nodes/{node_id_base64}/revoke",
+            post(revoke_node),
+        )
         .route("/v1/enroll", post(enroll))
         .route("/v1/control", get(control))
         .fallback(not_found)
-        .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(
@@ -74,6 +89,40 @@ async fn create_enrollment_token(
     authenticate_admin(&state, &headers)?;
     let response = crate::service::create_enrollment_token(&state, request).await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn replace_acl_policy(
+    State(state): State<AppState>,
+    Path(network_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<ReplaceAclPolicyRequest>,
+) -> Result<Json<crate::model::ReplaceAclPolicyResponse>, ApiError> {
+    authenticate_admin(&state, &headers)?;
+    let response = crate::service::replace_acl_policy(&state, network_id, request).await?;
+    Ok(Json(response))
+}
+
+async fn explain_acl(
+    State(state): State<AppState>,
+    Path(network_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<ExplainAclRequest>,
+) -> Result<Json<crate::model::ExplainAclResponse>, ApiError> {
+    authenticate_admin(&state, &headers)?;
+    let response = crate::service::explain_acl(&state, network_id, request).await?;
+    Ok(Json(response))
+}
+
+async fn revoke_node(
+    State(state): State<AppState>,
+    Path((network_id, node_id_base64)): Path<(uuid::Uuid, String)>,
+    headers: HeaderMap,
+    Json(request): Json<RevokeNodeRequest>,
+) -> Result<Json<crate::model::RevokeNodeResponse>, ApiError> {
+    authenticate_admin(&state, &headers)?;
+    let response =
+        crate::service::revoke_node(&state, network_id, &node_id_base64, request).await?;
+    Ok(Json(response))
 }
 
 async fn enroll(

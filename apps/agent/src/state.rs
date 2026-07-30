@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use xs_core::{
-    ConfigurationPayload, EndpointCandidate, EndpointCandidateKind, EnrollResponse,
+    AclPolicy, ConfigurationPayload, EndpointCandidate, EndpointCandidateKind, EnrollResponse,
     SignedConfiguration,
 };
 use xs_protocol::{controller_key_id, node_id, role_set_digest, verify_credential};
@@ -217,22 +217,7 @@ fn validate_configuration(
     virtual_ip: Ipv4Addr,
     credential_serial: u64,
 ) -> Result<(ConfigurationPayload, String)> {
-    if configuration.version == 0 || configuration.signer_key_id != controller_key_id(verifying_key)
-    {
-        return Err(AgentError::ControllerTrust);
-    }
-    let payload_bytes = decode_bounded(&configuration.payload_base64, MAX_CONFIGURATION_BYTES)?;
-    let signature_bytes = decode_fixed::<64>(&configuration.signature_base64)?;
-    let signature = Signature::from_bytes(&signature_bytes);
-    let mut signing_input = Vec::with_capacity(CONFIGURATION_DOMAIN.len() + payload_bytes.len());
-    signing_input.extend_from_slice(CONFIGURATION_DOMAIN);
-    signing_input.extend_from_slice(&payload_bytes);
-    verifying_key
-        .verify_strict(&signing_input, &signature)
-        .map_err(|_| AgentError::ControllerTrust)?;
-
-    let payload: ConfigurationPayload =
-        serde_json::from_slice(&payload_bytes).map_err(|_| AgentError::ControllerTrust)?;
+    let (payload, payload_bytes) = decode_signed_configuration(configuration, verifying_key)?;
     let address_pool = payload
         .address_pool
         .parse::<Ipv4Net>()
@@ -240,6 +225,7 @@ fn validate_configuration(
     if payload.schema_version != 1
         || payload.network_id != network_id
         || payload.version != configuration.version
+        || payload.policy_version > payload.version
         || !(8..=30).contains(&address_pool.prefix_len())
         || !address_pool.contains(&virtual_ip)
         || payload.discovery_endpoints.len() > MAX_DISCOVERY_ENDPOINTS
@@ -318,9 +304,33 @@ fn validate_configuration(
     if !local_match {
         return Err(AgentError::ControllerTrust);
     }
+    AclPolicy::compile(&payload).map_err(|_| AgentError::ControllerTrust)?;
 
     let hash = Sha256::digest(&payload_bytes);
     Ok((payload, hex(&hash)))
+}
+
+fn decode_signed_configuration(
+    configuration: &SignedConfiguration,
+    verifying_key: &VerifyingKey,
+) -> Result<(ConfigurationPayload, Vec<u8>)> {
+    if configuration.version == 0 || configuration.signer_key_id != controller_key_id(verifying_key)
+    {
+        return Err(AgentError::ControllerTrust);
+    }
+    let payload_bytes = decode_bounded(&configuration.payload_base64, MAX_CONFIGURATION_BYTES)?;
+    let signature_bytes = decode_fixed::<64>(&configuration.signature_base64)?;
+    let signature = Signature::from_bytes(&signature_bytes);
+    let mut signing_input = Vec::with_capacity(CONFIGURATION_DOMAIN.len() + payload_bytes.len());
+    signing_input.extend_from_slice(CONFIGURATION_DOMAIN);
+    signing_input.extend_from_slice(&payload_bytes);
+    verifying_key
+        .verify_strict(&signing_input, &signature)
+        .map_err(|_| AgentError::ControllerTrust)?;
+
+    let payload: ConfigurationPayload =
+        serde_json::from_slice(&payload_bytes).map_err(|_| AgentError::ControllerTrust)?;
+    Ok((payload, payload_bytes))
 }
 
 fn validate_discovery_endpoints(endpoints: &[SocketAddr]) -> Result<()> {
@@ -459,7 +469,9 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::{Signer as _, SigningKey};
-    use xs_core::ConfigurationNode;
+    use xs_core::{
+        AclAction, AclProtocol, AclRule, AclSelector, ConfigurationNode, ConfigurationPayload,
+    };
     use xs_protocol::{CredentialClaims, sign_credential};
 
     use super::*;
@@ -495,6 +507,7 @@ mod tests {
             schema_version: 1,
             network_id,
             version: 1,
+            policy_version: 1,
             generated_at: Utc::now(),
             address_pool: "100.88.0.0/16".to_owned(),
             discovery_endpoints: Vec::new(),
@@ -511,6 +524,7 @@ mod tests {
                 )
                 .expect("valid timestamp"),
                 role_bitmap,
+                groups: Vec::new(),
                 tags,
             }],
             relays: Vec::new(),
@@ -543,6 +557,36 @@ mod tests {
         )
     }
 
+    fn signed_configuration(
+        original: &SignedConfiguration,
+        version: u64,
+        modify: impl FnOnce(&mut ConfigurationPayload),
+    ) -> SignedConfiguration {
+        let configuration_key = SigningKey::from_bytes(&[8_u8; 32]);
+        let payload_bytes = URL_SAFE_NO_PAD
+            .decode(&original.payload_base64)
+            .expect("fixture payload");
+        let mut payload: ConfigurationPayload =
+            serde_json::from_slice(&payload_bytes).expect("fixture configuration");
+        payload.version = version;
+        modify(&mut payload);
+        let payload_bytes = serde_json::to_vec(&payload).expect("serialize configuration");
+        let mut signing_input = CONFIGURATION_DOMAIN.to_vec();
+        signing_input.extend_from_slice(&payload_bytes);
+
+        SignedConfiguration {
+            version,
+            payload_base64: URL_SAFE_NO_PAD.encode(payload_bytes),
+            signature_base64: URL_SAFE_NO_PAD
+                .encode(configuration_key.sign(&signing_input).to_bytes()),
+            signer_key_id: controller_key_id(&configuration_key.verifying_key()),
+        }
+    }
+
+    fn state_snapshot(state: &NodeState) -> serde_json::Value {
+        serde_json::to_value(state).expect("serialize state")
+    }
+
     #[test]
     fn fixed_decoder_requires_canonical_base64url() {
         let canonical = URL_SAFE_NO_PAD.encode([7_u8; 16]);
@@ -570,5 +614,71 @@ mod tests {
         assert!(
             NodeState::from_enrollment(response, &identity, "https://controller.example/").is_err()
         );
+    }
+
+    #[test]
+    fn configuration_update_rejects_rollback_without_mutating_state() {
+        let (response, identity) = enrollment_fixture();
+        let previous = response.configuration.clone();
+        let mut state =
+            NodeState::from_enrollment(response, &identity, "https://controller.example/")
+                .expect("trusted enrollment");
+        let newer = signed_configuration(&previous, 2, |_| {});
+        assert!(
+            state
+                .apply_configuration(newer, &identity)
+                .expect("newer configuration")
+        );
+        let snapshot = state_snapshot(&state);
+
+        assert!(state.apply_configuration(previous, &identity).is_err());
+        assert_eq!(state_snapshot(&state), snapshot);
+    }
+
+    #[test]
+    fn configuration_update_rejects_equivocation_without_mutating_state() {
+        let (response, identity) = enrollment_fixture();
+        let equivocation = signed_configuration(&response.configuration, 1, |payload| {
+            payload.generated_at += chrono::Duration::seconds(1);
+        });
+        let mut state =
+            NodeState::from_enrollment(response, &identity, "https://controller.example/")
+                .expect("trusted enrollment");
+        let snapshot = state_snapshot(&state);
+
+        assert!(state.apply_configuration(equivocation, &identity).is_err());
+        assert_eq!(state_snapshot(&state), snapshot);
+    }
+
+    #[test]
+    fn configuration_update_rejects_invalid_signature_and_acl_without_mutating_state() {
+        let (response, identity) = enrollment_fixture();
+        let mut missing_signature = signed_configuration(&response.configuration, 2, |_| {});
+        missing_signature.signature_base64.clear();
+        let invalid_acl = signed_configuration(&response.configuration, 2, |payload| {
+            payload.policy_version = 2;
+            payload.policies = vec![AclRule {
+                id: "invalid-empty-source".to_owned(),
+                priority: 1,
+                action: AclAction::Allow,
+                sources: Vec::new(),
+                destinations: vec![AclSelector::Any],
+                protocol: AclProtocol::Icmp,
+                destination_ports: Vec::new(),
+            }];
+        });
+        let mut state =
+            NodeState::from_enrollment(response, &identity, "https://controller.example/")
+                .expect("trusted enrollment");
+        let snapshot = state_snapshot(&state);
+
+        assert!(
+            state
+                .apply_configuration(missing_signature, &identity)
+                .is_err()
+        );
+        assert_eq!(state_snapshot(&state), snapshot);
+        assert!(state.apply_configuration(invalid_acl, &identity).is_err());
+        assert_eq!(state_snapshot(&state), snapshot);
     }
 }

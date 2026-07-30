@@ -12,7 +12,8 @@ use sha2::{Digest, Sha256};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::UdpSocket;
 use xs_core::{
-    CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind, PathSelectionReason,
+    AclPolicy, AclProtocol, CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind,
+    PathSelectionReason,
 };
 use xs_protocol::{
     CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, CREDENTIAL_LENGTH, ClientFinishSent,
@@ -260,8 +261,10 @@ pub struct UdpDataPlane {
     peer_by_node_id: HashMap<[u8; 16], Ipv4Addr>,
     candidate_manager: CandidateManager,
     relay_manager: RelayManager,
+    acl_policy: AclPolicy,
     status: SharedDataPlaneStatus,
     configuration_version: u64,
+    policy_version: u64,
 }
 
 impl UdpDataPlane {
@@ -294,6 +297,8 @@ impl UdpDataPlane {
             build_peer_directory(state, material.node_id, &relay_candidates)?;
         let socket = bind_data_socket(local_endpoint)?;
         let candidate_manager = CandidateManager::new(state, identity)?;
+        let acl_policy = AclPolicy::compile(&state.configuration_payload)
+            .map_err(|_| AgentError::ControllerTrust)?;
         let status = Arc::new(tokio::sync::RwLock::new(DataPlaneStatus::default()));
         let data_plane = Self {
             socket,
@@ -303,8 +308,10 @@ impl UdpDataPlane {
             peer_by_node_id,
             candidate_manager,
             relay_manager,
+            acl_policy,
             status,
             configuration_version: state.configuration.version,
+            policy_version: state.configuration_payload.policy_version,
         };
         data_plane.synchronize_status().await;
         Ok(data_plane)
@@ -326,6 +333,9 @@ impl UdpDataPlane {
     ///
     /// Returns an Agent error when the trusted configuration contains an unusable peer identity.
     pub async fn apply_configuration(&mut self, state: &NodeState) -> Result<()> {
+        let acl_policy = AclPolicy::compile(&state.configuration_payload)
+            .map_err(|_| AgentError::ControllerTrust)?;
+        let policy_changed = state.configuration_payload.policy_version != self.policy_version;
         let failed_relays = self.relay_manager.apply_configuration(state)?;
         let relay_candidates = self.relay_manager.candidates();
         let (_, desired, _, _) =
@@ -336,6 +346,9 @@ impl UdpDataPlane {
             if let Some(mut existing) = self.peers_by_virtual_ip.remove(&virtual_ip)
                 && existing.node_id == replacement.node_id
             {
+                if policy_changed {
+                    clear_queue(&mut existing);
+                }
                 let candidates_changed =
                     candidate_routes_changed(&existing.candidates, &replacement.candidates);
                 existing.candidates = replacement.candidates;
@@ -373,7 +386,9 @@ impl UdpDataPlane {
             fail_relay_path(&mut self.peers_by_virtual_ip, endpoint);
         }
         self.rebuild_endpoint_index()?;
+        self.acl_policy = acl_policy;
         self.configuration_version = state.configuration.version;
+        self.policy_version = state.configuration_payload.policy_version;
         self.synchronize_status().await;
         Ok(())
     }
@@ -424,14 +439,24 @@ impl UdpDataPlane {
         if packet.len() > MAX_ENCRYPTED_PAYLOAD_LENGTH {
             return Ok(true);
         }
-        let Some((source, destination)) = ipv4_endpoints(packet) else {
+        let Some(flow) = ipv4_flow(packet) else {
             return Ok(true);
         };
-        if source != self.material.virtual_ip {
+        if flow.source != self.material.virtual_ip
+            || !self
+                .acl_policy
+                .evaluate(
+                    flow.source,
+                    flow.destination,
+                    flow.protocol,
+                    flow.destination_port,
+                )
+                .allowed
+        {
             return Ok(true);
         }
         let now = Instant::now();
-        let Some(peer) = self.peers_by_virtual_ip.get_mut(&destination) else {
+        let Some(peer) = self.peers_by_virtual_ip.get_mut(&flow.destination) else {
             return Ok(true);
         };
         if !matches!(peer.state, PeerState::Established(_)) && peer.active_endpoint.is_none() {
@@ -493,39 +518,11 @@ impl UdpDataPlane {
         }
         let now = Instant::now();
         let unix_now = unix_time()?;
-        let mut relay_payload = None;
-        let (peer_ip, source_is_known, through_relay) =
-            match self
-                .relay_manager
-                .handle_datagram(source, &datagram[..length], now, unix_now)
-            {
-                RelayInbound::Consumed => return Ok(None),
-                RelayInbound::Data {
-                    source_node_id,
-                    payload,
-                } => {
-                    let Some(peer_ip) = self.peer_by_node_id.get(&source_node_id).copied() else {
-                        return Ok(None);
-                    };
-                    relay_payload = Some(payload);
-                    (peer_ip, false, true)
-                }
-                RelayInbound::NotRelay => {
-                    let source_is_known = self.peer_by_endpoint.contains_key(&source);
-                    let peer_ip = if source_is_known {
-                        let Some(peer_ip) = self.peer_by_endpoint.get(&source).copied() else {
-                            return Ok(None);
-                        };
-                        peer_ip
-                    } else {
-                        let Some(peer_ip) = self.rebinding_peer(&datagram[..length]) else {
-                            return Ok(None);
-                        };
-                        peer_ip
-                    };
-                    (peer_ip, source_is_known, false)
-                }
-            };
+        let Some((peer_ip, source_is_known, through_relay, relay_payload)) =
+            self.resolve_inbound_peer(source, &datagram[..length], now, unix_now)
+        else {
+            return Ok(None);
+        };
         let packet = relay_payload
             .as_deref()
             .unwrap_or_else(|| &datagram[..length]);
@@ -564,8 +561,55 @@ impl UdpDataPlane {
         if endpoint_index_changed {
             self.rebuild_endpoint_index()?;
         }
+        let plaintext = result.plaintext.filter(|plaintext| {
+            ipv4_flow(plaintext).is_some_and(|flow| {
+                flow.source == peer_ip
+                    && flow.destination == self.material.virtual_ip
+                    && self
+                        .acl_policy
+                        .evaluate(
+                            flow.source,
+                            flow.destination,
+                            flow.protocol,
+                            flow.destination_port,
+                        )
+                        .allowed
+            })
+        });
         self.synchronize_status().await;
-        Ok(result.plaintext)
+        Ok(plaintext)
+    }
+
+    fn resolve_inbound_peer(
+        &mut self,
+        source: SocketAddr,
+        datagram: &[u8],
+        now: Instant,
+        unix_now: u64,
+    ) -> Option<(Ipv4Addr, bool, bool, Option<Vec<u8>>)> {
+        match self
+            .relay_manager
+            .handle_datagram(source, datagram, now, unix_now)
+        {
+            RelayInbound::Consumed => None,
+            RelayInbound::Data {
+                source_node_id,
+                payload,
+            } => self
+                .peer_by_node_id
+                .get(&source_node_id)
+                .copied()
+                .map(|peer_ip| (peer_ip, false, true, Some(payload))),
+            RelayInbound::NotRelay => {
+                let source_is_known = self.peer_by_endpoint.contains_key(&source);
+                let peer_ip = if source_is_known {
+                    self.peer_by_endpoint.get(&source).copied()
+                } else {
+                    self.rebinding_peer(datagram)
+                }?;
+                Some((peer_ip, source_is_known, false, None))
+            }
+        }
     }
 
     fn rebinding_peer(&self, datagram: &[u8]) -> Option<Ipv4Addr> {
@@ -1581,7 +1625,15 @@ fn context(material: &LocalMaterial, peer: &Peer) -> HandshakeContext {
     }
 }
 
-fn ipv4_endpoints(packet: &[u8]) -> Option<(Ipv4Addr, Ipv4Addr)> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Ipv4Flow {
+    source: Ipv4Addr,
+    destination: Ipv4Addr,
+    protocol: AclProtocol,
+    destination_port: Option<u16>,
+}
+
+fn ipv4_flow(packet: &[u8]) -> Option<Ipv4Flow> {
     if packet.len() < 20 || packet[0] >> 4 != 4 {
         return None;
     }
@@ -1589,10 +1641,32 @@ fn ipv4_endpoints(packet: &[u8]) -> Option<(Ipv4Addr, Ipv4Addr)> {
     if header_length < 20 || packet.len() < header_length {
         return None;
     }
-    Some((
-        Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]),
-        Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]),
-    ))
+    let total_length = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    if total_length < header_length || total_length > packet.len() || fragment & 0x3fff != 0 {
+        return None;
+    }
+    let protocol = match packet[9] {
+        1 => AclProtocol::Icmp,
+        6 => AclProtocol::Tcp,
+        17 => AclProtocol::Udp,
+        _ => return None,
+    };
+    let destination_port = if matches!(protocol, AclProtocol::Tcp | AclProtocol::Udp) {
+        let transport = packet.get(header_length..total_length)?;
+        if transport.len() < 4 {
+            return None;
+        }
+        Some(u16::from_be_bytes([transport[2], transport[3]]))
+    } else {
+        None
+    };
+    Some(Ipv4Flow {
+        source: Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]),
+        destination: Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]),
+        protocol,
+        destination_port,
+    })
 }
 
 fn random_array<const LENGTH: usize>() -> Result<[u8; LENGTH]> {
@@ -1624,18 +1698,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ipv4_endpoints_require_a_complete_ipv4_header() {
-        let mut packet = [0_u8; 20];
+    fn ipv4_flow_requires_a_complete_unfragmented_packet() {
+        let mut packet = [0_u8; 28];
         packet[0] = 0x45;
+        packet[2..4].copy_from_slice(&28_u16.to_be_bytes());
+        packet[9] = 17;
         packet[12..16].copy_from_slice(&[100, 88, 0, 1]);
         packet[16..20].copy_from_slice(&[100, 88, 0, 2]);
+        packet[22..24].copy_from_slice(&53_u16.to_be_bytes());
         assert_eq!(
-            ipv4_endpoints(&packet),
-            Some((Ipv4Addr::new(100, 88, 0, 1), Ipv4Addr::new(100, 88, 0, 2)))
+            ipv4_flow(&packet),
+            Some(Ipv4Flow {
+                source: Ipv4Addr::new(100, 88, 0, 1),
+                destination: Ipv4Addr::new(100, 88, 0, 2),
+                protocol: AclProtocol::Udp,
+                destination_port: Some(53),
+            })
         );
         packet[0] = 0x65;
-        assert_eq!(ipv4_endpoints(&packet), None);
-        assert_eq!(ipv4_endpoints(&packet[..19]), None);
+        assert_eq!(ipv4_flow(&packet), None);
+        packet[0] = 0x45;
+        packet[6] = 0x20;
+        assert_eq!(ipv4_flow(&packet), None);
+        assert_eq!(ipv4_flow(&packet[..19]), None);
     }
 
     #[test]

@@ -84,6 +84,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(network["config_version"], 1);
     let network_id = network["id"].as_str().expect("network id");
+    assert_overlapping_network_rejected(&router).await;
 
     let (token_id, token) = create_token(&router, network_id, 1).await;
     assert_token_is_hash_only(&state.pool, &config.database_schema).await;
@@ -115,26 +116,20 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
 
     assert_expired_token_rejected(&router, &state.pool, network_id).await;
     assert_concurrent_token_and_ipam(&router, &state.pool, network_id).await;
-    assert_manual_ip_assignment(&router, network_id).await;
+    let manual_enrollment = assert_manual_ip_assignment(&router, network_id).await;
 
     assert_audit_is_append_only_and_redacted(&state.pool, &token).await;
     verify_websocket_control(&router, &enrollment, &identity, discovery_address).await;
-
-    let control_audits: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM audit_events WHERE action = 'control.authenticate'",
+    assert_acl_policy_explain_revoke_and_cooldown(
+        &router,
+        &state.pool,
+        network_id,
+        &enrollment,
+        &manual_enrollment,
     )
-    .fetch_one(&state.pool)
-    .await
-    .expect("control audit count");
-    assert_eq!(control_audits, 1);
+    .await;
 
-    let stored_use_count: i32 =
-        sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
-            .bind(uuid::Uuid::from_str(&token_id).expect("token id"))
-            .fetch_one(&state.pool)
-            .await
-            .expect("token use count");
-    assert_eq!(stored_use_count, 1);
+    assert_control_audit_and_token_use(&state.pool, &token_id).await;
 
     discovery_shutdown
         .send(true)
@@ -143,6 +138,23 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         .await
         .expect("join discovery server")
         .expect("discovery server exits cleanly");
+}
+
+async fn assert_overlapping_network_rejected(router: &Router) {
+    let (status, response) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/networks",
+        Some(json!({
+            "name": "overlapping-network",
+            "address_pool": "100.88.0.128/25",
+            "reserved_addresses": 16
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(response["error"]["code"], "resource_conflict");
 }
 
 async fn assert_expired_token_rejected(router: &Router, pool: &sqlx::PgPool, network_id: &str) {
@@ -220,7 +232,7 @@ async fn assert_concurrent_token_and_ipam(router: &Router, pool: &sqlx::PgPool, 
     assert_eq!(config_version, 3);
 }
 
-async fn assert_manual_ip_assignment(router: &Router, network_id: &str) {
+async fn assert_manual_ip_assignment(router: &Router, network_id: &str) -> Value {
     let (status, response) = request_json(
         router,
         Method::POST,
@@ -245,6 +257,281 @@ async fn assert_manual_ip_assignment(router: &Router, network_id: &str) {
     assert_eq!(enrollment.0, StatusCode::CREATED);
     assert_eq!(enrollment.1["virtual_ip"], "100.88.0.30");
     assert_eq!(enrollment.1["configuration"]["version"], 4);
+    enrollment.1
+}
+
+async fn assert_acl_policy_explain_revoke_and_cooldown(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    client: &Value,
+    server: &Value,
+) {
+    let client_node_id = client["node_id_base64"].as_str().expect("client node id");
+    let server_node_id = server["node_id_base64"].as_str().expect("server node id");
+    replace_acl_policy(router, network_id, client_node_id, server_node_id).await;
+    assert_acl_explanations_and_payload(router, pool, network_id, client_node_id, server_node_id)
+        .await;
+    assert_revoke_and_cooldown_reuse(router, pool, network_id, server_node_id).await;
+}
+
+async fn replace_acl_policy(
+    router: &Router,
+    network_id: &str,
+    client_node_id: &str,
+    server_node_id: &str,
+) {
+    let path = format!("/v1/admin/networks/{network_id}/acl");
+    let policy = json!({
+        "expected_policy_version": 1,
+        "groups": [
+            {"name": "clients", "node_ids_base64": [client_node_id]},
+            {"name": "servers", "node_ids_base64": [server_node_id]}
+        ],
+        "rules": [
+            {
+                "id": "allow-https",
+                "priority": 100,
+                "action": "allow",
+                "sources": [{"type": "group", "name": "clients"}],
+                "destinations": [{"type": "group", "name": "servers"}],
+                "protocol": "tcp",
+                "destination_ports": [{"start": 443, "end": 443}]
+            },
+            {
+                "id": "allow-ping",
+                "priority": 300,
+                "action": "allow",
+                "sources": [{"type": "node", "node_id_base64": client_node_id}],
+                "destinations": [{"type": "node", "node_id_base64": server_node_id}],
+                "protocol": "icmp"
+            },
+            {
+                "id": "deny-postgresql",
+                "priority": 200,
+                "action": "deny",
+                "sources": [{"type": "tag", "name": "linux"}],
+                "destinations": [{"type": "group", "name": "servers"}],
+                "protocol": "tcp",
+                "destination_ports": [{"start": 5432, "end": 5432}]
+            }
+        ]
+    });
+    let (status, unauthorized) =
+        request_json(router, Method::PUT, &path, Some(policy.clone()), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(unauthorized["error"]["code"], "unauthorized");
+
+    let (status, replaced) = request_json(
+        router,
+        Method::PUT,
+        &path,
+        Some(policy.clone()),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(replaced["policy_version"], 2);
+    assert_eq!(replaced["configuration_version"], 6);
+
+    let (status, stale) =
+        request_json(router, Method::PUT, &path, Some(policy), Some(ADMIN_TOKEN)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(stale["error"]["code"], "resource_conflict");
+}
+
+async fn assert_acl_explanations_and_payload(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    client_node_id: &str,
+    server_node_id: &str,
+) {
+    assert_acl_explain(
+        router,
+        network_id,
+        client_node_id,
+        server_node_id,
+        "tcp",
+        Some(443),
+        true,
+        Some("allow-https"),
+    )
+    .await;
+    assert_acl_explain(
+        router,
+        network_id,
+        client_node_id,
+        server_node_id,
+        "tcp",
+        Some(5432),
+        false,
+        Some("deny-postgresql"),
+    )
+    .await;
+    assert_acl_explain(
+        router,
+        network_id,
+        client_node_id,
+        server_node_id,
+        "udp",
+        Some(53),
+        false,
+        None,
+    )
+    .await;
+
+    let latest_payload: Vec<u8> = sqlx::query_scalar(
+        "SELECT payload FROM configuration_versions
+         WHERE network_id = $1 ORDER BY version DESC LIMIT 1",
+    )
+    .bind(Uuid::from_str(network_id).expect("network id"))
+    .fetch_one(pool)
+    .await
+    .expect("latest configuration payload");
+    let latest_payload: Value =
+        serde_json::from_slice(&latest_payload).expect("configuration payload JSON");
+    assert_eq!(latest_payload["policy_version"], 2);
+    assert_eq!(latest_payload["policies"][0]["id"], "allow-ping");
+    let server_entry = latest_payload["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .find(|node| node["node_id_base64"] == server_node_id)
+        .expect("server node");
+    assert_eq!(server_entry["groups"][0], "servers");
+}
+
+async fn assert_revoke_and_cooldown_reuse(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    server_node_id: &str,
+) {
+    let revoke_path = format!("/v1/admin/networks/{network_id}/nodes/{server_node_id}/revoke");
+    let (status, revoked) = request_json(
+        router,
+        Method::POST,
+        &revoke_path,
+        Some(json!({"ip_cooldown_seconds": 60})),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(revoked["virtual_ip"], "100.88.0.30");
+    assert_eq!(revoked["configuration_version"], 7);
+
+    let (status, cooling) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/enrollment-tokens",
+        Some(json!({
+            "network_id": network_id,
+            "expires_in_seconds": 3600,
+            "requested_virtual_ip": "100.88.0.30"
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(cooling["error"]["code"], "resource_conflict");
+
+    sqlx::query(
+        "UPDATE ip_leases
+         SET cooldown_until = now() - interval '1 second'
+         WHERE network_id = $1 AND virtual_ip = '100.88.0.30'::inet",
+    )
+    .bind(Uuid::from_str(network_id).expect("network id"))
+    .execute(pool)
+    .await
+    .expect("expire address cooldown");
+    let (status, token) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/enrollment-tokens",
+        Some(json!({
+            "network_id": network_id,
+            "expires_in_seconds": 3600,
+            "requested_virtual_ip": "100.88.0.30"
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let replacement_identity = SigningKey::from_bytes(&[16_u8; 32]);
+    let replacement = enroll(
+        router,
+        token["token"].as_str().expect("replacement token"),
+        "node-replacement",
+        &replacement_identity.verifying_key().to_bytes(),
+    )
+    .await;
+    assert_eq!(replacement.0, StatusCode::CREATED);
+    assert_eq!(replacement.1["virtual_ip"], "100.88.0.30");
+    assert_eq!(replacement.1["configuration"]["version"], 8);
+
+    let active_lease: bool = sqlx::query_scalar(
+        "SELECT state = 'active' AND cooldown_until IS NULL
+         FROM ip_leases
+         WHERE network_id = $1 AND virtual_ip = '100.88.0.30'::inet",
+    )
+    .bind(Uuid::from_str(network_id).expect("network id"))
+    .fetch_one(pool)
+    .await
+    .expect("reused active lease");
+    assert!(active_lease);
+}
+
+async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str) {
+    let control_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE action = 'control.authenticate'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("control audit count");
+    assert_eq!(control_audits, 1);
+
+    let stored_use_count: i32 =
+        sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
+            .bind(uuid::Uuid::from_str(token_id).expect("token id"))
+            .fetch_one(pool)
+            .await
+            .expect("token use count");
+    assert_eq!(stored_use_count, 1);
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn assert_acl_explain(
+    router: &Router,
+    network_id: &str,
+    source_node_id: &str,
+    destination_node_id: &str,
+    protocol: &str,
+    destination_port: Option<u16>,
+    allowed: bool,
+    matched_rule_id: Option<&str>,
+) {
+    let path = format!("/v1/admin/networks/{network_id}/acl/explain");
+    let (status, response) = request_json(
+        router,
+        Method::POST,
+        &path,
+        Some(json!({
+            "source_node_id_base64": source_node_id,
+            "destination_node_id_base64": destination_node_id,
+            "protocol": protocol,
+            "destination_port": destination_port
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["policy_version"], 2);
+    assert_eq!(response["decision"]["allowed"], allowed);
+    assert_eq!(
+        response["decision"]["matched_rule_id"].as_str(),
+        matched_rule_id
+    );
 }
 
 fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
@@ -268,7 +555,8 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE audit_events, configuration_versions, ip_leases, nodes,
+        "TRUNCATE audit_events, configuration_versions, acl_rules,
+                  node_group_memberships, node_groups, ip_leases, nodes,
                   enrollment_tokens, networks
          RESTART IDENTITY CASCADE",
     )

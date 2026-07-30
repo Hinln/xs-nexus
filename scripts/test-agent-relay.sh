@@ -8,7 +8,9 @@ RELAY="$ROOT_DIR/target/debug/xs-relay"
 AGENT="$ROOT_DIR/target/debug/xs-agent"
 CLI="$ROOT_DIR/target/debug/xs"
 KEY_DERIVER="$ROOT_DIR/target/debug/examples/derive_ed25519_public"
+SCHEMA_RESET="$ROOT_DIR/target/debug/examples/reset_test_schema"
 TEMPORARY=$(mktemp -d /tmp/xs-m23-relay.XXXXXX)
+TEST_DATABASE_SCHEMA=xs_nexus_m23_relay_test
 SUFFIX=$(printf '%04x' "$(( $$ % 65536 ))")
 BRIDGE="xm23b$SUFFIX"
 NETNS_A="xsm23a-$SUFFIX"
@@ -41,6 +43,11 @@ cleanup() {
             wait "$pid" >/dev/null 2>&1
         fi
     done
+    if [[ -x $SCHEMA_RESET && -n ${XS_TEST_DATABASE_URL:-} ]]; then
+        DATABASE_URL="$XS_TEST_DATABASE_URL" \
+        DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+            "$SCHEMA_RESET" >/dev/null 2>&1
+    fi
     for namespace in "$NETNS_A" "$NETNS_B"; do
         if ip netns list | awk '{print $1}' | grep -Fxq "$namespace"; then
             ip netns exec "$namespace" nft delete table inet xsm23block >/dev/null 2>&1
@@ -189,6 +196,53 @@ PY
     exit 1
 }
 
+wait_configuration_version() {
+    local socket=$1
+    local expected=$2
+    for _ in $(seq 1 160); do
+        local response
+        response=$("$CLI" status --socket "$socket" --json 2>/dev/null || true)
+        if [[ -n $response ]] &&
+            python3 - "$response" "$expected" <<'PY'
+import json
+import sys
+
+status = json.loads(sys.argv[1])["status"]
+raise SystemExit(status["configuration_version"] < int(sys.argv[2]))
+PY
+        then
+            return
+        fi
+        sleep 0.1
+    done
+    printf 'Agent did not apply configuration version %s: %s\n' "$expected" "$socket" >&2
+    exit 1
+}
+
+install_test_acl() {
+    local response
+    response=$(curl --fail --silent \
+        -X PUT "$CONTROLLER_BASE/v1/admin/networks/$NETWORK_ID/acl" \
+        -H "Authorization: Bearer $fixture_bearer" \
+        -H 'Content-Type: application/json' \
+        --data '{
+            "expected_policy_version": 1,
+            "groups": [],
+            "rules": [{
+                "id": "allow-test-traffic",
+                "priority": 100,
+                "action": "allow",
+                "sources": [{"type": "any"}],
+                "destinations": [{"type": "any"}],
+                "protocol": "any",
+                "destination_ports": []
+            }]
+        }')
+    ACL_CONFIGURATION_VERSION=$(python3 -c \
+        'import json,sys; print(json.load(sys.stdin)["configuration_version"])' \
+        <<<"$response")
+}
+
 candidate_endpoint() {
     local socket=$1
     local address=$2
@@ -277,7 +331,7 @@ wait_relay_metric() {
     exit 1
 }
 
-wait_relay_metric_greater() {
+wait_relay_metric_kreater() {
     local base_url=$1
     local field=$2
     local previous=$3
@@ -383,10 +437,14 @@ fi
 cd "$ROOT_DIR"
 umask 077
 cargo build -p xs-controller
+cargo build -p xs-controller --example reset_test_schema
 cargo build -p xs-relay
 cargo build -p xs-agent --features privileged-network-tests --bin xs-agent
 cargo build -p xs-cli
 cargo build -p xs-protocol --example derive_ed25519_public
+DATABASE_URL="$XS_TEST_DATABASE_URL" \
+DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+    "$SCHEMA_RESET"
 
 mapfile -t ports < <(python3 - <<'PY'
 import socket
@@ -548,7 +606,7 @@ CONTROLLER_LISTEN="$BRIDGE_IP:$CONTROLLER_PORT" \
 DISCOVERY_LISTEN="$BRIDGE_IP:$CONTROLLER_PORT" \
 DISCOVERY_PUBLIC_ENDPOINT="$BRIDGE_IP:$CONTROLLER_PORT" \
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
-DATABASE_SCHEMA=xs_nexus_m23_relay_test \
+DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
 CREDENTIAL_SIGNING_KEY_PATH="$credential_key" \
 CONFIG_SIGNING_KEY_PATH="$configuration_key" \
 NODE_CREDENTIAL_TTL_SECONDS=86400 \
@@ -580,6 +638,7 @@ network_response=$(curl --fail --silent \
     -H 'Content-Type: application/json' \
     --data "{\"name\":\"relay-path-$SUFFIX\",\"address_pool\":\"100.93.23.0/24\",\"reserved_addresses\":16}")
 NETWORK_ID=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$network_response")
+install_test_acl
 prepare_agent "$NETNS_A" relay-path-a xsm23a0 "$TEMPORARY/node-a"
 prepare_agent "$NETNS_B" relay-path-b xsm23b0 "$TEMPORARY/node-b"
 
@@ -593,6 +652,8 @@ wait_for_interface "$NETNS_A" xsm23a0
 wait_for_interface "$NETNS_B" xsm23b0
 wait_controller_connected "$TEMPORARY/node-a/run/agent.sock"
 wait_controller_connected "$TEMPORARY/node-b/run/agent.sock"
+wait_configuration_version "$TEMPORARY/node-a/run/agent.sock" "$ACL_CONFIGURATION_VERSION"
+wait_configuration_version "$TEMPORARY/node-b/run/agent.sock" "$ACL_CONFIGURATION_VERSION"
 
 candidate_endpoint "$TEMPORARY/node-a/run/agent.sock" "$CONTROL_IP_A" >/dev/null
 endpoint_b=$(candidate_endpoint "$TEMPORARY/node-b/run/agent.sock" "$CONTROL_IP_B")
@@ -649,7 +710,7 @@ from pathlib import Path
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
     sock.sendto(Path(sys.argv[1]).read_bytes(), (sys.argv[2], int(sys.argv[3])))
 PY
-wait_relay_metric_greater "$RELAY_HEALTH_1" authentication_drops "$authentication_before"
+wait_relay_metric_kreater "$RELAY_HEALTH_1" authentication_drops "$authentication_before"
 
 kill "$RELAY_1_PID"
 wait "$RELAY_1_PID"

@@ -6,7 +6,9 @@ PROBE="$ROOT_DIR/scripts/xsp-network-probe.py"
 CONTROLLER="$ROOT_DIR/target/debug/xs-controller"
 AGENT="$ROOT_DIR/target/debug/xs-agent"
 CLI="$ROOT_DIR/target/debug/xs"
+SCHEMA_RESET="$ROOT_DIR/target/debug/examples/reset_test_schema"
 TEMPORARY=$(mktemp -d /tmp/xs-m21-path.XXXXXX)
+TEST_DATABASE_SCHEMA=xs_nexus_m21_path_test
 SUFFIX=$(printf '%04x' "$(( $$ % 65536 ))")
 BRIDGE="xm21b$SUFFIX"
 NETNS_A="xsm21a-$SUFFIX"
@@ -42,6 +44,11 @@ cleanup() {
             wait "$pid" >/dev/null 2>&1
         fi
     done
+    if [[ -x $SCHEMA_RESET && -n ${XS_TEST_DATABASE_URL:-} ]]; then
+        DATABASE_URL="$XS_TEST_DATABASE_URL" \
+        DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+            "$SCHEMA_RESET" >/dev/null 2>&1
+    fi
     ip netns del "$NETNS_A" >/dev/null 2>&1
     ip netns del "$NETNS_B" >/dev/null 2>&1
     ip link del "$BRIDGE" >/dev/null 2>&1
@@ -171,6 +178,53 @@ wait_controller_connected() {
     done
     printf 'Agent control connection did not become ready: %s\n' "$socket" >&2
     exit 1
+}
+
+wait_configuration_version() {
+    local socket=$1
+    local expected=$2
+    for _ in $(seq 1 120); do
+        local response
+        response=$("$CLI" status --socket "$socket" --json 2>/dev/null || true)
+        if [[ -n $response ]] &&
+            python3 - "$response" "$expected" <<'PY'
+import json
+import sys
+
+status = json.loads(sys.argv[1])["status"]
+raise SystemExit(status["configuration_version"] < int(sys.argv[2]))
+PY
+        then
+            return
+        fi
+        sleep 0.1
+    done
+    printf 'Agent did not apply configuration version %s: %s\n' "$expected" "$socket" >&2
+    exit 1
+}
+
+install_test_acl() {
+    local response
+    response=$(curl --fail --silent \
+        -X PUT "$CONTROLLER_BASE/v1/admin/networks/$NETWORK_ID/acl" \
+        -H "Authorization: Bearer $fixture_bearer" \
+        -H 'Content-Type: application/json' \
+        --data '{
+            "expected_policy_version": 1,
+            "groups": [],
+            "rules": [{
+                "id": "allow-test-traffic",
+                "priority": 100,
+                "action": "allow",
+                "sources": [{"type": "any"}],
+                "destinations": [{"type": "any"}],
+                "protocol": "any",
+                "destination_ports": []
+            }]
+        }')
+    ACL_CONFIGURATION_VERSION=$(python3 -c \
+        'import json,sys; print(json.load(sys.stdin)["configuration_version"])' \
+        <<<"$response")
 }
 
 candidate_endpoint() {
@@ -308,8 +362,12 @@ fi
 cd "$ROOT_DIR"
 umask 077
 cargo build -p xs-controller
+cargo build -p xs-controller --example reset_test_schema
 cargo build -p xs-agent --features privileged-network-tests --bin xs-agent
 cargo build -p xs-cli
+DATABASE_URL="$XS_TEST_DATABASE_URL" \
+DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+    "$SCHEMA_RESET"
 
 ip link add "$BRIDGE" type bridge
 ip addr add "$BRIDGE_IP/29" dev "$BRIDGE"
@@ -372,7 +430,7 @@ CONTROLLER_LISTEN="$BRIDGE_IP:$CONTROLLER_PORT" \
 DISCOVERY_LISTEN="$BRIDGE_IP:$CONTROLLER_PORT" \
 DISCOVERY_PUBLIC_ENDPOINT="$BRIDGE_IP:$CONTROLLER_PORT" \
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
-DATABASE_SCHEMA=xs_nexus_m21_path_test \
+DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
 CREDENTIAL_SIGNING_KEY_PATH="$credential_key" \
 CONFIG_SIGNING_KEY_PATH="$configuration_key" \
 NODE_CREDENTIAL_TTL_SECONDS=86400 \
@@ -403,6 +461,7 @@ network_response=$(curl --fail --silent \
     -H 'Content-Type: application/json' \
     --data "{\"name\":\"candidate-path-$SUFFIX\",\"address_pool\":\"100.91.21.0/24\",\"reserved_addresses\":16}")
 NETWORK_ID=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$network_response")
+install_test_acl
 prepare_agent "$NETNS_A" candidate-path-a xsm21a0 "$TEMPORARY/node-a"
 prepare_agent "$NETNS_B" candidate-path-b xsm21b0 "$TEMPORARY/node-b"
 
@@ -416,6 +475,8 @@ wait_for_interface "$NETNS_A" xsm21a0
 wait_for_interface "$NETNS_B" xsm21b0
 wait_controller_connected "$TEMPORARY/node-a/run/agent.sock"
 wait_controller_connected "$TEMPORARY/node-b/run/agent.sock"
+wait_configuration_version "$TEMPORARY/node-a/run/agent.sock" "$ACL_CONFIGURATION_VERSION"
+wait_configuration_version "$TEMPORARY/node-b/run/agent.sock" "$ACL_CONFIGURATION_VERSION"
 
 endpoint_a=$(candidate_endpoint "$TEMPORARY/node-a/run/agent.sock" "$CONTROL_IP_A")
 candidate_endpoint "$TEMPORARY/node-b/run/agent.sock" "$CONTROL_IP_B" >/dev/null

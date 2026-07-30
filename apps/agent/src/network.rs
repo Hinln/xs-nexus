@@ -117,9 +117,13 @@ mod platform {
     };
 
     use futures_util::TryStreamExt as _;
+    use ipnet::Ipv4Net;
     use rtnetlink::{
         Handle, LinkUnspec, RouteMessageBuilder, new_connection,
-        packet_route::{link::LinkAttribute, route::RouteMessage},
+        packet_route::{
+            link::LinkAttribute,
+            route::{RouteAddress, RouteAttribute, RouteMessage},
+        },
     };
     use tokio::task::JoinHandle;
     use tokio_tun::{Tun, TunBuilder};
@@ -154,6 +158,13 @@ mod platform {
             if find_link_index(&handle, plan.interface_name())
                 .await?
                 .is_some()
+            {
+                connection.abort();
+                return Err(AgentError::Network);
+            }
+            if ensure_route_available(&handle, plan.address_pool())
+                .await
+                .is_err()
             {
                 connection.abort();
                 return Err(AgentError::Network);
@@ -363,6 +374,38 @@ mod platform {
         Ok(matching_index)
     }
 
+    async fn ensure_route_available(handle: &Handle, desired: Ipv4Net) -> Result<()> {
+        let mut routes = handle
+            .route()
+            .get(RouteMessageBuilder::<Ipv4Addr>::new().build())
+            .execute();
+        while let Some(route) = routes.try_next().await.map_err(|_| AgentError::Network)? {
+            let prefix = route.header.destination_prefix_length;
+            if prefix == 0 {
+                continue;
+            }
+            let destination = route.attributes.iter().find_map(|attribute| {
+                if let RouteAttribute::Destination(RouteAddress::Inet(address)) = attribute {
+                    Some(*address)
+                } else {
+                    None
+                }
+            });
+            let Some(destination) = destination else {
+                return Err(AgentError::Network);
+            };
+            let existing = Ipv4Net::new(destination, prefix).map_err(|_| AgentError::Network)?;
+            if networks_overlap(existing, desired) {
+                return Err(AgentError::Network);
+            }
+        }
+        Ok(())
+    }
+
+    fn networks_overlap(left: Ipv4Net, right: Ipv4Net) -> bool {
+        left.contains(&right.network()) || right.contains(&left.network())
+    }
+
     async fn wait_for_link_removal(handle: &Handle, name: &str) -> bool {
         for _ in 0..40 {
             if matches!(find_link_index(handle, name).await, Ok(None)) {
@@ -378,6 +421,27 @@ mod platform {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(_) => Err(AgentError::Network),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::networks_overlap;
+
+        #[test]
+        fn overlap_detection_handles_both_prefix_directions() {
+            assert!(networks_overlap(
+                "100.88.0.0/16".parse().expect("left"),
+                "100.88.10.0/24".parse().expect("right"),
+            ));
+            assert!(networks_overlap(
+                "100.88.10.0/24".parse().expect("left"),
+                "100.88.0.0/16".parse().expect("right"),
+            ));
+            assert!(!networks_overlap(
+                "100.88.0.0/16".parse().expect("left"),
+                "100.89.0.0/16".parse().expect("right"),
+            ));
         }
     }
 }

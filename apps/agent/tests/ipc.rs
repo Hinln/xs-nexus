@@ -165,6 +165,7 @@ fn fixture_state() -> NodeState {
         credential_serial: 1,
         credential_not_after: expires_at,
         role_bitmap: 1,
+        groups: Vec::new(),
         tags: vec!["linux".to_owned()],
     };
     let peer_node = ConfigurationNode {
@@ -176,6 +177,7 @@ fn fixture_state() -> NodeState {
         credential_serial: 2,
         credential_not_after: expires_at,
         role_bitmap: 2,
+        groups: Vec::new(),
         tags: vec!["server".to_owned()],
     };
     NodeState {
@@ -198,6 +200,7 @@ fn fixture_state() -> NodeState {
             schema_version: 1,
             network_id: Uuid::from_u128(1),
             version: 7,
+            policy_version: 1,
             generated_at,
             address_pool: "100.127.20.0/24".to_owned(),
             discovery_endpoints: Vec::new(),

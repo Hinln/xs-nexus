@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
@@ -20,10 +20,12 @@ use xs_protocol::{
 use crate::{
     error::ApiError,
     model::{
+        AclAction, AclGroupRequest, AclPolicy, AclProtocol, AclRule, AclSelector,
         CandidateAdvertisement, ConfigurationNode, ConfigurationPayload,
         CreateEnrollmentTokenRequest, CreateNetworkRequest, EndpointCandidate,
         EndpointCandidateKind, EnrollRequest, EnrollResponse, EnrollmentTokenResponse,
-        NetworkResponse, SignedConfiguration,
+        ExplainAclRequest, ExplainAclResponse, NetworkResponse, PortRange, ReplaceAclPolicyRequest,
+        ReplaceAclPolicyResponse, RevokeNodeRequest, RevokeNodeResponse, SignedConfiguration,
     },
     state::AppState,
 };
@@ -53,6 +55,7 @@ struct NetworkAllocationRow {
 
 #[derive(FromRow)]
 struct ConfigurationNodeRow {
+    database_id: Uuid,
     node_id: Vec<u8>,
     identity_public_key: Vec<u8>,
     virtual_ip: String,
@@ -61,6 +64,20 @@ struct ConfigurationNodeRow {
     role_bitmap: i64,
     tags: Vec<String>,
     candidate_payload: Option<Vec<u8>>,
+}
+
+#[derive(FromRow)]
+struct PolicyNodeRow {
+    database_id: Uuid,
+    node_id: Vec<u8>,
+    virtual_ip: String,
+    tags: Vec<String>,
+}
+
+struct ConfigurationMetadata {
+    version: u64,
+    policy_version: u64,
+    address_pool: String,
 }
 
 pub(crate) async fn create_network(
@@ -85,6 +102,19 @@ pub(crate) async fn create_network(
     let network_id = Uuid::new_v4();
     let created_at = Utc::now();
     let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    lock_address_pools(&mut transaction).await?;
+    let overlaps: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM networks WHERE address_pool && $1::cidr
+         )",
+    )
+    .bind(pool.to_string())
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(internal_database)?;
+    if overlaps {
+        return Err(ApiError::conflict());
+    }
 
     let inserted = sqlx::query(
         "INSERT INTO networks
@@ -221,6 +251,517 @@ pub(crate) async fn create_enrollment_token(
         expires_at,
         max_uses: request.max_uses,
     })
+}
+
+pub(crate) async fn replace_acl_policy(
+    state: &AppState,
+    network_id: Uuid,
+    request: ReplaceAclPolicyRequest,
+) -> Result<ReplaceAclPolicyResponse, ApiError> {
+    if request.expected_policy_version == 0
+        || request.groups.len() > 256
+        || request.rules.len() > 4096
+    {
+        return Err(ApiError::validation());
+    }
+    let groups = canonical_groups(request.groups)?;
+    let rules = canonical_rules(request.rules);
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    lock_network(&mut transaction, network_id).await?;
+    let current_policy_version = sqlx::query_scalar::<_, i64>(
+        "SELECT policy_version FROM networks WHERE id = $1 FOR UPDATE",
+    )
+    .bind(network_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    let current_policy_version =
+        u64::try_from(current_policy_version).map_err(|_| ApiError::internal())?;
+    if current_policy_version != request.expected_policy_version {
+        return Err(ApiError::conflict());
+    }
+
+    let policy_nodes = load_policy_nodes(&mut transaction, network_id).await?;
+    let node_database_ids = policy_nodes
+        .iter()
+        .map(|node| (URL_SAFE_NO_PAD.encode(&node.node_id), node.database_id))
+        .collect::<HashMap<_, _>>();
+    validate_policy_references(&rules, &groups, &node_database_ids, &policy_nodes)?;
+    let groups_by_node = groups_by_node(&groups, &node_database_ids)?;
+    let next_policy_version = current_policy_version
+        .checked_add(1)
+        .ok_or_else(ApiError::conflict)?;
+    let validation_payload = policy_validation_payload(
+        network_id,
+        next_policy_version,
+        &policy_nodes,
+        &groups_by_node,
+        rules.clone(),
+    );
+    AclPolicy::compile(&validation_payload).map_err(|_| ApiError::validation())?;
+
+    persist_acl_policy(
+        &mut transaction,
+        network_id,
+        &groups,
+        &rules,
+        &node_database_ids,
+        next_policy_version,
+    )
+    .await?;
+
+    let configuration = publish_configuration(&mut transaction, network_id, state).await?;
+    append_audit(
+        &mut transaction,
+        AuditEvent {
+            network_id: Some(network_id),
+            actor_type: "admin",
+            actor_id: "bootstrap-admin",
+            action: "acl.replace",
+            target_type: "network_acl",
+            target_id: Some(network_id.to_string()),
+            outcome: "success",
+            metadata: json!({
+                "policy_version": next_policy_version,
+                "rule_count": rules.len(),
+                "group_count": groups.len(),
+            }),
+        },
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    Ok(ReplaceAclPolicyResponse {
+        network_id,
+        policy_version: next_policy_version,
+        configuration_version: configuration.version,
+    })
+}
+
+async fn persist_acl_policy(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+    groups: &[AclGroupRequest],
+    rules: &[AclRule],
+    node_database_ids: &HashMap<String, Uuid>,
+    policy_version: u64,
+) -> Result<(), ApiError> {
+    sqlx::query("DELETE FROM node_group_memberships WHERE network_id = $1")
+        .bind(network_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_database)?;
+    sqlx::query("DELETE FROM node_groups WHERE network_id = $1")
+        .bind(network_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_database)?;
+    sqlx::query("DELETE FROM acl_rules WHERE network_id = $1")
+        .bind(network_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_database)?;
+
+    for group in groups {
+        sqlx::query("INSERT INTO node_groups (network_id, name) VALUES ($1, $2)")
+            .bind(network_id)
+            .bind(&group.name)
+            .execute(&mut **transaction)
+            .await
+            .map_err(map_write_error)?;
+        for node_id in &group.node_ids_base64 {
+            let database_id = node_database_ids
+                .get(node_id)
+                .copied()
+                .ok_or_else(ApiError::validation)?;
+            sqlx::query(
+                "INSERT INTO node_group_memberships
+                 (network_id, group_name, node_id)
+                 VALUES ($1, $2, $3)",
+            )
+            .bind(network_id)
+            .bind(&group.name)
+            .bind(database_id)
+            .execute(&mut **transaction)
+            .await
+            .map_err(map_write_error)?;
+        }
+    }
+    for rule in rules {
+        sqlx::query(
+            "INSERT INTO acl_rules
+             (network_id, rule_id, priority, action, protocol, sources, destinations,
+              destination_ports)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(network_id)
+        .bind(&rule.id)
+        .bind(i64::from(rule.priority))
+        .bind(acl_action_name(rule.action))
+        .bind(acl_protocol_name(rule.protocol))
+        .bind(serde_json::to_value(&rule.sources).map_err(|_| ApiError::validation())?)
+        .bind(serde_json::to_value(&rule.destinations).map_err(|_| ApiError::validation())?)
+        .bind(serde_json::to_value(&rule.destination_ports).map_err(|_| ApiError::validation())?)
+        .execute(&mut **transaction)
+        .await
+        .map_err(map_write_error)?;
+    }
+    sqlx::query("UPDATE networks SET policy_version = $2 WHERE id = $1")
+        .bind(network_id)
+        .bind(i64::try_from(policy_version).map_err(|_| ApiError::conflict())?)
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_database)?;
+    Ok(())
+}
+
+pub(crate) async fn explain_acl(
+    state: &AppState,
+    network_id: Uuid,
+    request: ExplainAclRequest,
+) -> Result<ExplainAclResponse, ApiError> {
+    if matches!(request.protocol, AclProtocol::Any)
+        || matches!(request.protocol, AclProtocol::Tcp | AclProtocol::Udp)
+            != request.destination_port.is_some()
+    {
+        return Err(ApiError::validation());
+    }
+    decode_canonical_array::<16>(&request.source_node_id_base64)
+        .map_err(|()| ApiError::validation())?;
+    decode_canonical_array::<16>(&request.destination_node_id_base64)
+        .map_err(|()| ApiError::validation())?;
+    let payload = latest_configuration_payload(&state.pool, network_id).await?;
+    let policy = AclPolicy::compile(&payload).map_err(|_| ApiError::internal())?;
+    let source = payload
+        .nodes
+        .iter()
+        .find(|node| node.node_id_base64 == request.source_node_id_base64)
+        .ok_or_else(ApiError::not_found)?
+        .virtual_ip
+        .parse::<Ipv4Addr>()
+        .map_err(|_| ApiError::internal())?;
+    let destination = payload
+        .nodes
+        .iter()
+        .find(|node| node.node_id_base64 == request.destination_node_id_base64)
+        .ok_or_else(ApiError::not_found)?
+        .virtual_ip
+        .parse::<Ipv4Addr>()
+        .map_err(|_| ApiError::internal())?;
+    Ok(ExplainAclResponse {
+        network_id,
+        policy_version: payload.policy_version,
+        decision: policy.evaluate(
+            source,
+            destination,
+            request.protocol,
+            request.destination_port,
+        ),
+    })
+}
+
+pub(crate) async fn revoke_node(
+    state: &AppState,
+    network_id: Uuid,
+    node_id_base64: &str,
+    request: RevokeNodeRequest,
+) -> Result<RevokeNodeResponse, ApiError> {
+    if !(60..=604_800).contains(&request.ip_cooldown_seconds) {
+        return Err(ApiError::validation());
+    }
+    let node_id =
+        decode_canonical_array::<16>(node_id_base64).map_err(|()| ApiError::validation())?;
+    let cooldown_until = Utc::now()
+        + Duration::seconds(
+            i64::try_from(request.ip_cooldown_seconds).map_err(|_| ApiError::validation())?,
+        );
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    lock_network(&mut transaction, network_id).await?;
+    let node = sqlx::query(
+        "SELECT id, host(virtual_ip) AS virtual_ip
+         FROM nodes
+         WHERE network_id = $1 AND node_id = $2 AND revoked_at IS NULL
+         FOR UPDATE",
+    )
+    .bind(network_id)
+    .bind(node_id.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    let database_id = node.try_get::<Uuid, _>("id").map_err(internal_database)?;
+    let virtual_ip = node
+        .try_get::<String, _>("virtual_ip")
+        .map_err(internal_database)?;
+    sqlx::query("UPDATE nodes SET revoked_at = now(), updated_at = now() WHERE id = $1")
+        .bind(database_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_database)?;
+    sqlx::query(
+        "UPDATE ip_leases
+         SET state = 'cooling', cooldown_until = $2
+         WHERE node_id = $1 AND state = 'active'",
+    )
+    .bind(database_id)
+    .bind(cooldown_until)
+    .execute(&mut *transaction)
+    .await
+    .map_err(internal_database)?;
+    let configuration = publish_configuration(&mut transaction, network_id, state).await?;
+    append_audit(
+        &mut transaction,
+        AuditEvent {
+            network_id: Some(network_id),
+            actor_type: "admin",
+            actor_id: "bootstrap-admin",
+            action: "node.revoke",
+            target_type: "node",
+            target_id: Some(database_id.to_string()),
+            outcome: "success",
+            metadata: json!({
+                "node_id_base64": node_id_base64,
+                "virtual_ip": virtual_ip,
+                "cooldown_until": cooldown_until,
+            }),
+        },
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    Ok(RevokeNodeResponse {
+        network_id,
+        node_id_base64: node_id_base64.to_owned(),
+        virtual_ip,
+        cooldown_until,
+        configuration_version: configuration.version,
+    })
+}
+
+fn canonical_groups(mut groups: Vec<AclGroupRequest>) -> Result<Vec<AclGroupRequest>, ApiError> {
+    for group in &mut groups {
+        if !valid_acl_name(&group.name)
+            || group.node_ids_base64.is_empty()
+            || group.node_ids_base64.len() > 1024
+        {
+            return Err(ApiError::validation());
+        }
+        for node_id in &group.node_ids_base64 {
+            decode_canonical_array::<16>(node_id).map_err(|()| ApiError::validation())?;
+        }
+        group.node_ids_base64.sort();
+        if group
+            .node_ids_base64
+            .windows(2)
+            .any(|pair| pair[0] == pair[1])
+        {
+            return Err(ApiError::validation());
+        }
+    }
+    groups.sort_by(|left, right| left.name.cmp(&right.name));
+    if groups.windows(2).any(|pair| pair[0].name == pair[1].name) {
+        return Err(ApiError::validation());
+    }
+    Ok(groups)
+}
+
+fn canonical_rules(mut rules: Vec<AclRule>) -> Vec<AclRule> {
+    for rule in &mut rules {
+        rule.sources.sort_by_key(selector_key);
+        rule.destinations.sort_by_key(selector_key);
+        rule.destination_ports
+            .sort_by_key(|range| (range.start, range.end));
+    }
+    rules.sort_by(|left, right| {
+        right
+            .priority
+            .cmp(&left.priority)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    rules
+}
+
+fn selector_key(selector: &AclSelector) -> String {
+    match selector {
+        AclSelector::Any => "any".to_owned(),
+        AclSelector::Node { node_id_base64 } => format!("node:{node_id_base64}"),
+        AclSelector::Group { name } => format!("group:{name}"),
+        AclSelector::Tag { name } => format!("tag:{name}"),
+    }
+}
+
+fn groups_by_node(
+    groups: &[AclGroupRequest],
+    node_database_ids: &HashMap<String, Uuid>,
+) -> Result<HashMap<Uuid, Vec<String>>, ApiError> {
+    let mut result = HashMap::<Uuid, Vec<String>>::new();
+    for group in groups {
+        for node_id in &group.node_ids_base64 {
+            let database_id = node_database_ids
+                .get(node_id)
+                .copied()
+                .ok_or_else(ApiError::validation)?;
+            result
+                .entry(database_id)
+                .or_default()
+                .push(group.name.clone());
+        }
+    }
+    Ok(result)
+}
+
+fn validate_policy_references(
+    rules: &[AclRule],
+    groups: &[AclGroupRequest],
+    node_database_ids: &HashMap<String, Uuid>,
+    nodes: &[PolicyNodeRow],
+) -> Result<(), ApiError> {
+    let group_names = groups
+        .iter()
+        .map(|group| group.name.as_str())
+        .collect::<HashSet<_>>();
+    let tags = nodes
+        .iter()
+        .flat_map(|node| node.tags.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    for selector in rules
+        .iter()
+        .flat_map(|rule| rule.sources.iter().chain(&rule.destinations))
+    {
+        let valid = match selector {
+            AclSelector::Any => true,
+            AclSelector::Node { node_id_base64 } => node_database_ids.contains_key(node_id_base64),
+            AclSelector::Group { name } => group_names.contains(name.as_str()),
+            AclSelector::Tag { name } => tags.contains(name.as_str()),
+        };
+        if !valid {
+            return Err(ApiError::validation());
+        }
+    }
+    Ok(())
+}
+
+async fn load_policy_nodes(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<Vec<PolicyNodeRow>, ApiError> {
+    sqlx::query_as::<_, PolicyNodeRow>(
+        "SELECT id AS database_id, node_id, host(virtual_ip) AS virtual_ip, tags
+         FROM nodes
+         WHERE network_id = $1 AND revoked_at IS NULL
+         ORDER BY node_id",
+    )
+    .bind(network_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_database)
+}
+
+fn policy_validation_payload(
+    network_id: Uuid,
+    policy_version: u64,
+    nodes: &[PolicyNodeRow],
+    groups_by_node: &HashMap<Uuid, Vec<String>>,
+    policies: Vec<AclRule>,
+) -> ConfigurationPayload {
+    let nodes = nodes
+        .iter()
+        .map(|node| {
+            let mut tags = node.tags.clone();
+            tags.sort();
+            let mut groups = groups_by_node
+                .get(&node.database_id)
+                .cloned()
+                .unwrap_or_default();
+            groups.sort();
+            ConfigurationNode {
+                node_id_base64: URL_SAFE_NO_PAD.encode(&node.node_id),
+                identity_public_key_base64: String::new(),
+                virtual_ip: node.virtual_ip.clone(),
+                direct_endpoints: Vec::new(),
+                candidates: Vec::new(),
+                credential_serial: 1,
+                credential_not_after: Utc::now(),
+                role_bitmap: 0,
+                groups,
+                tags,
+            }
+        })
+        .collect();
+    ConfigurationPayload {
+        schema_version: 1,
+        network_id,
+        version: policy_version,
+        policy_version,
+        generated_at: Utc::now(),
+        address_pool: "100.88.0.0/16".to_owned(),
+        discovery_endpoints: Vec::new(),
+        nodes,
+        relays: Vec::new(),
+        policies,
+    }
+}
+
+async fn latest_configuration_payload(
+    pool: &sqlx::PgPool,
+    network_id: Uuid,
+) -> Result<ConfigurationPayload, ApiError> {
+    let payload = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT payload
+         FROM configuration_versions
+         WHERE network_id = $1
+         ORDER BY version DESC
+         LIMIT 1",
+    )
+    .bind(network_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    serde_json::from_slice(&payload).map_err(|_| ApiError::internal())
+}
+
+const fn acl_action_name(action: AclAction) -> &'static str {
+    match action {
+        AclAction::Allow => "allow",
+        AclAction::Deny => "deny",
+    }
+}
+
+const fn acl_protocol_name(protocol: AclProtocol) -> &'static str {
+    match protocol {
+        AclProtocol::Any => "any",
+        AclProtocol::Tcp => "tcp",
+        AclProtocol::Udp => "udp",
+        AclProtocol::Icmp => "icmp",
+    }
+}
+
+fn parse_acl_action(value: &str) -> Result<AclAction, ApiError> {
+    match value {
+        "allow" => Ok(AclAction::Allow),
+        "deny" => Ok(AclAction::Deny),
+        _ => Err(ApiError::internal()),
+    }
+}
+
+fn parse_acl_protocol(value: &str) -> Result<AclProtocol, ApiError> {
+    match value {
+        "any" => Ok(AclProtocol::Any),
+        "tcp" => Ok(AclProtocol::Tcp),
+        "udp" => Ok(AclProtocol::Udp),
+        "icmp" => Ok(AclProtocol::Icmp),
+        _ => Err(ApiError::internal()),
+    }
+}
+
+fn valid_acl_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+        })
 }
 
 async fn validate_requested_virtual_ip(
@@ -420,6 +961,14 @@ async fn lock_network(
     Ok(())
 }
 
+async fn lock_address_pools(transaction: &mut Transaction<'_, Postgres>) -> Result<(), ApiError> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('xs-nexus-address-pools', 0))")
+        .execute(&mut **transaction)
+        .await
+        .map_err(internal_database)?;
+    Ok(())
+}
+
 async fn identity_exists(
     transaction: &mut Transaction<'_, Postgres>,
     node_id: &[u8; 16],
@@ -553,7 +1102,14 @@ async fn persist_node(
 
     sqlx::query(
         "INSERT INTO ip_leases (network_id, virtual_ip, node_id, state)
-         VALUES ($1, $2::inet, $3, 'active')",
+         VALUES ($1, $2::inet, $3, 'active')
+         ON CONFLICT (network_id, virtual_ip) DO UPDATE
+         SET node_id = EXCLUDED.node_id,
+             state = 'active',
+             cooldown_until = NULL,
+             allocated_at = now()
+         WHERE ip_leases.state = 'cooling'
+           AND ip_leases.cooldown_until <= now()",
     )
     .bind(node.network_id)
     .bind(node.virtual_ip.to_string())
@@ -987,28 +1543,81 @@ async fn publish_configuration(
     network_id: Uuid,
     state: &AppState,
 ) -> Result<SignedConfiguration, ApiError> {
+    let metadata = next_configuration_metadata(transaction, network_id).await?;
+    let nodes = load_configuration_nodes(transaction, network_id).await?;
+    let policies = load_acl_policies(transaction, network_id).await?;
+    let configuration_payload = ConfigurationPayload {
+        schema_version: 1,
+        network_id,
+        version: metadata.version,
+        policy_version: metadata.policy_version,
+        generated_at: Utc::now(),
+        address_pool: metadata.address_pool,
+        discovery_endpoints: state.discovery_public_endpoints.as_ref().clone(),
+        nodes,
+        relays: state.relays.as_ref().clone(),
+        policies,
+    };
+    AclPolicy::compile(&configuration_payload).map_err(|_| ApiError::internal())?;
+    let (payload, signature, key_id) = encode_configuration(state, &configuration_payload)?;
+    persist_configuration(
+        transaction,
+        network_id,
+        metadata.version,
+        &payload,
+        &signature,
+        key_id,
+    )
+    .await?;
+
+    Ok(SignedConfiguration {
+        version: metadata.version,
+        payload_base64: URL_SAFE_NO_PAD.encode(payload),
+        signature_base64: URL_SAFE_NO_PAD.encode(signature),
+        signer_key_id: key_id,
+    })
+}
+
+async fn next_configuration_metadata(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<ConfigurationMetadata, ApiError> {
     let network = sqlx::query(
         "UPDATE networks
          SET config_version = config_version + 1
          WHERE id = $1
-         RETURNING config_version, address_pool::text AS address_pool",
+         RETURNING config_version, policy_version, address_pool::text AS address_pool",
     )
     .bind(network_id)
     .fetch_one(&mut **transaction)
     .await
     .map_err(internal_database)?;
-    let version = u64::try_from(
-        network
-            .try_get::<i64, _>("config_version")
+    Ok(ConfigurationMetadata {
+        version: u64::try_from(
+            network
+                .try_get::<i64, _>("config_version")
+                .map_err(internal_database)?,
+        )
+        .map_err(|_| ApiError::internal())?,
+        address_pool: network
+            .try_get::<String, _>("address_pool")
             .map_err(internal_database)?,
-    )
-    .map_err(|_| ApiError::internal())?;
-    let address_pool = network
-        .try_get::<String, _>("address_pool")
-        .map_err(internal_database)?;
+        policy_version: u64::try_from(
+            network
+                .try_get::<i64, _>("policy_version")
+                .map_err(internal_database)?,
+        )
+        .map_err(|_| ApiError::internal())?,
+    })
+}
 
+async fn load_configuration_nodes(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<Vec<ConfigurationNode>, ApiError> {
     let rows = sqlx::query_as::<_, ConfigurationNodeRow>(
-        "SELECT n.node_id, n.identity_public_key, host(n.virtual_ip) AS virtual_ip,
+        "SELECT n.id AS database_id, n.node_id, n.identity_public_key,
+                host(n.virtual_ip) AS virtual_ip,
                 n.credential_serial, n.credential_not_after, n.role_bitmap, n.tags,
                 c.payload AS candidate_payload
          FROM nodes n
@@ -1022,44 +1631,119 @@ async fn publish_configuration(
     .await
     .map_err(internal_database)?;
 
-    let mut nodes = Vec::with_capacity(rows.len());
-    for row in rows {
-        let candidates = row
-            .candidate_payload
-            .as_deref()
-            .map(|payload| {
-                serde_json::from_slice::<CandidateAdvertisement>(payload)
-                    .map(|advertisement| advertisement.candidates)
-                    .map_err(|_| ApiError::internal())
-            })
-            .transpose()?
-            .unwrap_or_default();
-        nodes.push(ConfigurationNode {
-            node_id_base64: URL_SAFE_NO_PAD.encode(row.node_id),
-            identity_public_key_base64: URL_SAFE_NO_PAD.encode(row.identity_public_key),
-            virtual_ip: row.virtual_ip,
-            direct_endpoints: Vec::new(),
-            candidates,
-            credential_serial: u64::try_from(row.credential_serial)
-                .map_err(|_| ApiError::internal())?,
-            credential_not_after: row.credential_not_after,
-            role_bitmap: u32::try_from(row.role_bitmap).map_err(|_| ApiError::internal())?,
-            tags: row.tags,
-        });
+    let group_rows = sqlx::query(
+        "SELECT node_id, group_name
+         FROM node_group_memberships
+         WHERE network_id = $1
+         ORDER BY node_id, group_name",
+    )
+    .bind(network_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    let mut groups_by_node = HashMap::<Uuid, Vec<String>>::new();
+    for row in group_rows {
+        groups_by_node
+            .entry(
+                row.try_get::<Uuid, _>("node_id")
+                    .map_err(internal_database)?,
+            )
+            .or_default()
+            .push(
+                row.try_get::<String, _>("group_name")
+                    .map_err(internal_database)?,
+            );
     }
 
-    let payload = serde_json::to_vec(&ConfigurationPayload {
-        schema_version: 1,
-        network_id,
-        version,
-        generated_at: Utc::now(),
-        address_pool,
-        discovery_endpoints: state.discovery_public_endpoints.as_ref().clone(),
-        nodes,
-        relays: state.relays.as_ref().clone(),
-        policies: Vec::new(),
-    })
-    .map_err(|_| ApiError::internal())?;
+    rows.into_iter()
+        .map(|mut row| {
+            let candidates = row
+                .candidate_payload
+                .as_deref()
+                .map(|payload| {
+                    serde_json::from_slice::<CandidateAdvertisement>(payload)
+                        .map(|advertisement| advertisement.candidates)
+                        .map_err(|_| ApiError::internal())
+                })
+                .transpose()?
+                .unwrap_or_default();
+            row.tags.sort();
+            Ok(ConfigurationNode {
+                node_id_base64: URL_SAFE_NO_PAD.encode(row.node_id),
+                identity_public_key_base64: URL_SAFE_NO_PAD.encode(row.identity_public_key),
+                virtual_ip: row.virtual_ip,
+                direct_endpoints: Vec::new(),
+                candidates,
+                credential_serial: u64::try_from(row.credential_serial)
+                    .map_err(|_| ApiError::internal())?,
+                credential_not_after: row.credential_not_after,
+                role_bitmap: u32::try_from(row.role_bitmap).map_err(|_| ApiError::internal())?,
+                groups: groups_by_node.remove(&row.database_id).unwrap_or_default(),
+                tags: row.tags,
+            })
+        })
+        .collect()
+}
+
+async fn load_acl_policies(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<Vec<AclRule>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT rule_id, priority, action, protocol, sources, destinations,
+                destination_ports
+         FROM acl_rules
+         WHERE network_id = $1
+         ORDER BY priority DESC, rule_id",
+    )
+    .bind(network_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(AclRule {
+                id: row
+                    .try_get::<String, _>("rule_id")
+                    .map_err(internal_database)?,
+                priority: u32::try_from(
+                    row.try_get::<i64, _>("priority")
+                        .map_err(internal_database)?,
+                )
+                .map_err(|_| ApiError::internal())?,
+                action: parse_acl_action(
+                    &row.try_get::<String, _>("action")
+                        .map_err(internal_database)?,
+                )?,
+                protocol: parse_acl_protocol(
+                    &row.try_get::<String, _>("protocol")
+                        .map_err(internal_database)?,
+                )?,
+                sources: serde_json::from_value(
+                    row.try_get::<serde_json::Value, _>("sources")
+                        .map_err(internal_database)?,
+                )
+                .map_err(|_| ApiError::internal())?,
+                destinations: serde_json::from_value(
+                    row.try_get::<serde_json::Value, _>("destinations")
+                        .map_err(internal_database)?,
+                )
+                .map_err(|_| ApiError::internal())?,
+                destination_ports: serde_json::from_value::<Vec<PortRange>>(
+                    row.try_get::<serde_json::Value, _>("destination_ports")
+                        .map_err(internal_database)?,
+                )
+                .map_err(|_| ApiError::internal())?,
+            })
+        })
+        .collect()
+}
+
+fn encode_configuration(
+    state: &AppState,
+    configuration_payload: &ConfigurationPayload,
+) -> Result<(Vec<u8>, [u8; 64], u32), ApiError> {
+    let payload = serde_json::to_vec(configuration_payload).map_err(|_| ApiError::internal())?;
     if payload.len() > 1_048_576 {
         return Err(ApiError::internal());
     }
@@ -1069,7 +1753,17 @@ async fn publish_configuration(
     signing_input.extend_from_slice(&payload);
     let signature = state.config_signing_key.sign(&signing_input).to_bytes();
     let key_id = controller_key_id(&state.config_signing_key.verifying_key());
+    Ok((payload, signature, key_id))
+}
 
+async fn persist_configuration(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+    version: u64,
+    payload: &[u8],
+    signature: &[u8; 64],
+    key_id: u32,
+) -> Result<(), ApiError> {
     sqlx::query(
         "INSERT INTO configuration_versions
          (network_id, version, payload, signature, signer_key_id)
@@ -1077,19 +1771,13 @@ async fn publish_configuration(
     )
     .bind(network_id)
     .bind(i64::try_from(version).map_err(|_| ApiError::internal())?)
-    .bind(&payload)
+    .bind(payload)
     .bind(signature.as_slice())
     .bind(i64::from(key_id))
     .execute(&mut **transaction)
     .await
     .map_err(map_write_error)?;
-
-    Ok(SignedConfiguration {
-        version,
-        payload_base64: URL_SAFE_NO_PAD.encode(payload),
-        signature_base64: URL_SAFE_NO_PAD.encode(signature),
-        signer_key_id: key_id,
-    })
+    Ok(())
 }
 
 fn signed_configuration_from_row(
@@ -1199,6 +1887,15 @@ fn validate_device_type(device_type: &str) -> Result<&str, ApiError> {
 fn decode_array<const LENGTH: usize>(encoded: &str) -> Result<[u8; LENGTH], ()> {
     let decoded = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| ())?;
     decoded.try_into().map_err(|_| ())
+}
+
+fn decode_canonical_array<const LENGTH: usize>(encoded: &str) -> Result<[u8; LENGTH], ()> {
+    let decoded = decode_array::<LENGTH>(encoded)?;
+    if URL_SAFE_NO_PAD.encode(decoded) == encoded {
+        Ok(decoded)
+    } else {
+        Err(())
+    }
 }
 
 fn internal_database(_error: sqlx::Error) -> ApiError {

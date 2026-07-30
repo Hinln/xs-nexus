@@ -46,16 +46,18 @@
 
 ## D. 控制平面
 
-- [ ] MUST：节点本地生成私钥。
-- [ ] MUST：一次性 Token 有有效期和使用次数。
-- [ ] MUST：Token 只存哈希。
-- [ ] MUST：节点凭证可吊销。
-- [ ] MUST：配置带版本和签名。
-- [ ] MUST：配置回滚攻击被拒绝。
-- [ ] MUST：Controller 短暂中断时已有连接继续。
-- [ ] MUST：恢复后增量同步。
-- [ ] MUST：审计日志覆盖安全和管理操作。
-- [ ] MUST：Controller 不承载普通业务数据。
+- [x] MUST：节点本地生成私钥。
+- [x] MUST：一次性 Token 有有效期和使用次数。
+- [x] MUST：Token 只存哈希。
+- [x] MUST：节点凭证可吊销。
+- [x] MUST：配置带版本和签名。
+- [x] MUST：配置回滚攻击被拒绝。
+- [x] MUST：Controller 短暂中断时已有连接继续。
+- [x] MUST：恢复后增量同步。
+- [x] MUST：审计日志覆盖安全和管理操作。
+- [x] MUST：Controller 不承载普通业务数据。
+
+证据：M1.1 `/srv/xs-nexus/artifacts/qa/m1.1-20260729T105009Z`、M1.3 `/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`、M3.1 `/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`。
 
 ---
 
@@ -77,17 +79,19 @@
 
 ## F. 路由和 ACL
 
-- [ ] MUST：默认拒绝。
-- [ ] MUST：发送端与接收端双重执行。
-- [ ] MUST：节点身份与源虚拟 IP 绑定。
-- [ ] MUST：策略版本和签名。
-- [ ] MUST：控制器离线继续使用最近有效策略。
-- [ ] MUST：IPAM 无活动地址冲突。
-- [ ] MUST：`100.88.0.0/16` 冲突检测。
+- [x] MUST：默认拒绝。
+- [x] MUST：发送端与接收端双重执行。
+- [x] MUST：节点身份与源虚拟 IP 绑定。
+- [x] MUST：策略版本和签名。
+- [x] MUST：控制器离线继续使用最近有效策略。
+- [x] MUST：IPAM 无活动地址冲突。
+- [x] MUST：`100.88.0.0/16` 冲突检测。
 - [ ] MUST：重叠子网检测。
 - [ ] MUST：子网发布需要审批。
 - [ ] MUST：网关离线后路由失效。
 - [ ] MUST：卸载和禁用可撤销路由。
+
+M3.1 证据：`/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`。子网发布、网关撤销和子网重叠仍由 M3.2 验证，未提前勾选。
 
 ---
 

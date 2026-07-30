@@ -185,7 +185,8 @@ fn controller_config() -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE audit_events, configuration_versions, ip_leases, nodes,
+        "TRUNCATE audit_events, configuration_versions, acl_rules,
+                  node_group_memberships, node_groups, ip_leases, nodes,
                   enrollment_tokens, networks
          RESTART IDENTITY CASCADE",
     )

@@ -316,7 +316,7 @@
 
 ## M3.1 路由、ACL 与 IPAM 完整化
 
-- 状态：`IN_PROGRESS`
+- 状态：`PASSED`
 - 前置：M2.3
 
 ### 范围
@@ -337,11 +337,32 @@
 - 策略解释可用；
 - 冲突不强行覆盖系统路由。
 
+### 验证命令
+
+```bash
+./scripts/validate-m31.sh
+```
+
+### 证据
+
+- 全量验证：`/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`
+- Git 检查点：以本节所在提交为准
+
+### 实际结果
+
+- 完成严格默认拒绝 ACL，支持节点、组、标签、Allow/Deny、优先级、TCP、UDP、ICMP、端口范围和解释结果；
+- Agent 在加密前发送路径和解密后接收路径均执行同一签名策略，并将认证 Peer 身份绑定到虚拟源地址；
+- Agent 只在配置签名、网络、节点、版本和 ACL 全部验证后原子替换状态，低版本、同版本异内容、无签名和无效策略均保留最近有效配置；
+- Controller 使用 PostgreSQL 持久化组、成员和 ACL，策略原子替换并使用乐观版本防止并发覆盖；
+- 活动地址唯一、节点吊销和地址冷却复用已验证；重叠地址池和 Agent 本机系统路由冲突失败关闭；
+- 两个隔离 namespace 已验证允许 ICMP/TCP/UDP、发送端拒绝、接收端拒绝和明文负载不泄露；
+- 全量回归、真实 PostgreSQL、ShellCheck、秘密扫描、npm audit、Docker、`1panel-network`、默认路由和 nftables 前后基线均通过。
+
 ---
 
 ## M3.2 子网路由
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M3.1
 - 人工门禁：真实 NAS 子网审批
 

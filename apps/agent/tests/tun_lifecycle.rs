@@ -4,7 +4,7 @@ use std::{net::IpAddr, net::Ipv4Addr, path::Path, time::Duration};
 
 use futures_util::TryStreamExt as _;
 use rtnetlink::{
-    Handle, RouteMessageBuilder, new_connection,
+    Handle, LinkDummy, RouteMessageBuilder, new_connection,
     packet_route::{
         address::AddressAttribute,
         link::{LinkAttribute, LinkFlags},
@@ -27,6 +27,39 @@ async fn tun_lifecycle_is_scoped_and_recovers_after_drop() {
     let manifest = temporary.path().join("network-manifest.json");
     let (handle, connection) = netlink();
     let default_routes = default_route_fingerprints(&handle).await;
+    handle
+        .link()
+        .add(LinkDummy::new("xsconflict0").up().build())
+        .execute()
+        .await
+        .expect("create conflicting dummy interface");
+    let conflict_index = link_index(&handle, "xsconflict0").await;
+    handle
+        .address()
+        .add(
+            conflict_index,
+            IpAddr::V4(Ipv4Addr::new(100, 127, 250, 129)),
+            25,
+        )
+        .execute()
+        .await
+        .expect("install conflicting connected route");
+    assert!(
+        TunNetwork::create(plan.clone(), &manifest).await.is_err(),
+        "overlapping system route must reject TUN creation"
+    );
+    assert!(!manifest.exists());
+    assert_eq!(
+        link_index_optional(&handle, plan.interface_name()).await,
+        None
+    );
+    handle
+        .link()
+        .del(conflict_index)
+        .execute()
+        .await
+        .expect("remove conflicting dummy interface");
+    wait_for_absent_link(&handle, "xsconflict0").await;
 
     let network = TunNetwork::create(plan.clone(), &manifest)
         .await
@@ -54,6 +87,26 @@ async fn tun_lifecycle_is_scoped_and_recovers_after_drop() {
     assert!(!manifest.exists());
     assert_eq!(default_routes, default_route_fingerprints(&handle).await);
     connection.abort();
+}
+
+async fn link_index(handle: &Handle, name: &str) -> u32 {
+    link_index_optional(handle, name)
+        .await
+        .expect("expected network interface")
+}
+
+async fn link_index_optional(handle: &Handle, name: &str) -> Option<u32> {
+    let mut links = handle.link().get().execute();
+    while let Some(link) = links.try_next().await.expect("query links") {
+        if link
+            .attributes
+            .iter()
+            .any(|attribute| matches!(attribute, LinkAttribute::IfName(value) if value == name))
+        {
+            return Some(link.header.index);
+        }
+    }
+    None
 }
 
 fn netlink() -> (Handle, JoinHandle<()>) {

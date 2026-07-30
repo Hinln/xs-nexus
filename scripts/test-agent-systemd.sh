@@ -53,6 +53,7 @@ controller_pid=
 install_link_created=false
 install_directory_created=false
 current_step=initialization
+schema="xs_nexus_agent_systemd_test"
 
 report_failure() {
     status=$?
@@ -73,6 +74,12 @@ cleanup() {
     if [[ -n "$controller_pid" ]]; then
         kill "$controller_pid" >/dev/null 2>&1
         wait "$controller_pid" >/dev/null 2>&1
+    fi
+    if [[ -x "$ROOT_DIR/target/debug/examples/reset_test_schema" ]]; then
+        DATABASE_URL="$XS_TEST_DATABASE_URL" \
+        DATABASE_SCHEMA="$schema" \
+            "$ROOT_DIR/target/debug/examples/reset_test_schema" \
+            >/dev/null 2>&1
     fi
     if [[ "$install_link_created" == true ]]; then
         rm -f /usr/local/libexec/xs-nexus/xs-agent
@@ -114,11 +121,15 @@ PY
 controller_url="http://127.0.0.1:$port/"
 controller_base=${controller_url%/}
 test_auth_value="agent-systemd-integration-auth-value-32"
-schema="xs_nexus_agent_systemd_test"
 
 cd "$ROOT_DIR"
 current_step=build
 cargo build -p xs-controller -p xs-agent -p xs-cli
+cargo build -p xs-controller --example reset_test_schema
+current_step=database_reset
+DATABASE_URL="$XS_TEST_DATABASE_URL" \
+DATABASE_SCHEMA="$schema" \
+    "$ROOT_DIR/target/debug/examples/reset_test_schema"
 if [[ ! -d /usr/local/libexec/xs-nexus ]]; then
     mkdir -p /usr/local/libexec/xs-nexus
     install_directory_created=true
