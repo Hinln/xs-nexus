@@ -61,17 +61,17 @@
 
 ## E. NAT 和路径
 
-- [ ] MUST：候选地址收集。
-- [ ] MUST：公网映射发现。
-- [ ] MUST：认证探测包。
-- [ ] MUST：同 LAN 优先。
-- [ ] MUST：IPv6 可用时优先合理路径。
-- [ ] MUST：UDP 打洞。
+- [x] MUST：候选地址收集。
+- [x] MUST：公网映射发现。
+- [x] MUST：认证探测包。
+- [x] MUST：同 LAN 优先。
+- [x] MUST：IPv6 可用时优先合理路径。
+- [x] MUST：UDP 打洞。
 - [ ] MUST：无法直连自动 Relay。
 - [ ] MUST：Relay 故障切换。
 - [ ] MUST：恢复后尝试 Direct。
-- [ ] MUST：路径变化有真实原因记录。
-- [ ] MUST：UDP 被封锁时行为明确。
+- [x] MUST：路径变化有真实原因记录。
+- [x] MUST：UDP 被封锁时行为明确。
 
 ---
 

@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-07-29 17:54 UTC  
-当前 Git 提交：M2.1 完成检查点（以本文件所在提交为准）  
-当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`  
-当前里程碑：`M2.2 UDP 打洞`
+当前 Git 提交：M2.2 完成检查点（以本文件所在提交为准）  
+当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
+当前里程碑：`M2.3 自研 Relay`
 
 ---
 
@@ -40,36 +40,42 @@
 - 多候选握手有界回退、AEAD PathChallenge/PathResponse、更高优先级路径晋升，以及 CLI/IPC 候选、活动端点和路径原因可观测性；
 - 隔离 namespace 验证首选候选确实被尝试后回退、发现请求复用数据面源端口、认证路径晋升和双向 ICMP 连续性；
 - M2.1 全量证据 `/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`。
+- 双方主动认证 ClientHello 调度、同时握手冲突决议、每进程/每 Tick/每 Peer 资源上限和失败指数退避；
+- 已建立 XSP/1 会话的 AEAD Keepalive，生产 15 秒、特权网络测试 1 秒，保持 NAT 映射而不发送明文探测；
+- 未知 UDP 来源的 NAT rebinding 只有在 Network/Node/Session Header 预筛选及 AEAD、Epoch、序列、重放验证成功后晋升；
+- 同 LAN、Full-cone 类、Restricted、Port-restricted、双端 NAT、公网 IP 重绑定、对称 NAT 无 Direct、UDP 封锁和解封恢复的隔离 namespace/nftables 矩阵；
+- M2.1 候选优先级、`handshake_fallback` 和 AEAD PathChallenge/PathResponse 回归保持通过；
+- M2.2 全量证据 `/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`。
 
 ## 当前工作点
 
-- M2.1 已完成全部计划内实现和验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 或 `1panel-network` 变化；
-- `KI-009` 明确记录隔离拓扑不代表真实公网和完整 NAT 行为，M2.2 不得借用 M2.1 证据伪造完成；
-- M2.2 开始设计双方协同的认证 UDP 打洞、NAT 行为实验、映射保活、端点变化恢复和 Direct-first 决策。
+- M2.2 已完成全部计划内实现和验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 或 `1panel-network` 变化；
+- `KI-009` 继续明确隔离 nftables 模型不代表全部运营商 CGNAT、真实公网 IPv6、多出口和长期抖动；
+- M2.3 开始自研 Relay 的认证会话、限速、队列、心跳、多 Relay、故障切换和 Direct 恢复设计。
 
 ## 下一步
 
-1. 在独立 namespace 中建立可重复的 Full-cone 类、Restricted、Port-restricted、双端 NAT、对称 NAT 和 UDP 封锁模型；
-2. 定义 Controller 协调的打洞计划、双方时间窗、认证 probe、重试、抖动和资源上限；
-3. 实现候选组合并发探测、NAT 映射保活、公网端点变化触发和网络切换恢复；
-4. 记录路径 RTT、稳定性、失败原因和最近探测结果，能直连时始终优先 Direct；
-5. 将所有模型接入 M2.2 自动化验证，并保持默认路由、1Panel 和宿主机防火墙不变。
+1. 定义 Relay 认证 wire format、会话/目的节点授权、空闲超时、队列和限速边界；
+2. 实现 Relay 无法解密的 XSP/1 密文转发与严格放大限制；
+3. 将 Relay 候选接入 Controller 签名配置和 Agent 路径状态机；
+4. 验证 Direct 不可用时自动 Relay、Relay 故障切换和恢复后 Direct 回切；
+5. 建立 M2.3 namespace/进程矩阵并保持 1Panel 和宿主机网络基线不变。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '249,269p' EXECUTION_PLAN.md
-sed -n '480,525p' XS_Nexus_Codex_Development_Brief.md
+sed -n '279,315p' EXECUTION_PLAN.md
+rg -n -C 8 'Relay' ARCHITECTURE.md XSP1_PROTOCOL.md THREAT_MODEL.md
 ```
 
 ## 最近测试
 
-- 时间：2026-07-29 17:53 UTC；
+- 时间：2026-07-30 09:27 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m21.sh`；
+- 命令：`./scripts/validate-m22.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`；
-- 覆盖：严格格式化与 Clippy、Rust/Node 构建和单测、真实 PostgreSQL、Agent enrollment/control、RFC 原语与协议/发现向量、TUN/Netlink、systemd、双节点加密业务、Key Epoch、候选握手回退、同 socket 地址发现、AEAD 路径晋升、ShellCheck、依赖漏洞检查、秘密扫描，以及 Docker、`1panel-network`、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`；
+- 覆盖：M2.1 全部验证，以及双方主动认证握手、并发冲突、有界退避、AEAD Keepalive、Full-cone 类、Restricted、Port-restricted、双端 NAT、公网 IP 重绑定、对称 NAT 无 Direct、UDP 封锁/恢复、ShellCheck、秘密扫描，以及 Docker、`1panel-network`、默认路由和 nftables 前后基线。
 
 ## 当前失败
 
@@ -85,7 +91,7 @@ sed -n '480,525p' XS_Nexus_Codex_Development_Brief.md
 
 ## 当前风险
 
-- 自研协议握手、AEAD 数据面、地址发现和认证路径迁移已实现，但真实 NAT 打洞、长期 Fuzz、Relay 边界和独立第三方审计尚未完成；
+- 自研协议握手、AEAD 数据面、地址发现、认证路径迁移和隔离 NAT 打洞矩阵已实现，但真实运营商网络、长期 Fuzz、Relay 边界和独立第三方审计尚未完成；
 - Windows 驱动尚未开发，真实设备尚未接入；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
@@ -100,8 +106,9 @@ GIT_PAGER=cat git log --oneline -10
 cat PROGRESS.md
 ./scripts/validate-m13.sh
 ./scripts/validate-m21.sh
-sed -n '249,269p' EXECUTION_PLAN.md
-sed -n '480,525p' XS_Nexus_Codex_Development_Brief.md
+./scripts/validate-m22.sh
+sed -n '279,315p' EXECUTION_PLAN.md
+rg -n -C 8 'Relay' ARCHITECTURE.md XSP1_PROTOCOL.md THREAT_MODEL.md
 ```
 
 然后读取：

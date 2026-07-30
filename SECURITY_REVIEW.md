@@ -78,7 +78,18 @@
 - 相同 generation/payload/signature 重试幂等，低 generation 或同 generation 不同内容拒绝；
 - 隔离 namespace 已验证首选路径失败后的回退，以及建立会话后更高优先级路径的 AEAD Challenge/Response 晋升；
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`；
-- 真实公网和完整 NAT 类型矩阵属于 M2.2，第三方协议审计仍未完成。
+- 第三方协议审计仍未完成。
+
+### M2.2 验证状态
+
+- 双方主动 ClientHello 使用现有身份、凭证、transcript 和四消息握手认证，不引入未认证打洞探测包；
+- 每进程同时主动握手最多 32 个、每 100 ms Tick 最多启动 8 个、每 Peer 每轮最多尝试 8 个候选，握手/路径探测/退避均有硬上限；
+- 映射保活使用 AEAD Keepalive，不接受明文心跳，也不会把业务数据发往控制面；
+- 未知 UDP 来源不能仅凭地址晋升：Header 必须绑定当前 Network、目标 Node、已配置 Source Node 和已建立 Session ID，并继续通过 AEAD、Epoch、序列和重放窗口；
+- 隔离 nftables 模型已验证普通双端 NAT、受限 NAT、端口受限 NAT、公网 IP 重绑定、对称 NAT 无 Direct 和 UDP 封锁后恢复；
+- 对称 NAT 与 UDP 封锁阶段不会降级为明文或伪造 Direct 成功，后续由 M2.3 自研 Relay 提供回退；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`；
+- nftables 模型不能替代运营商 CGNAT、真实公网 IPv6、多出口和长期网络抖动实测，相关限制继续记录于 `KI-009`。
 
 ---
 

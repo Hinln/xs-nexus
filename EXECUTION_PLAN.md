@@ -256,7 +256,7 @@
 
 ## M2.2 UDP 打洞
 
-- 状态：`IN_PROGRESS`
+- 状态：`DONE`
 - 前置：M2.1
 
 ### 验收
@@ -274,11 +274,21 @@
 
 能直连时必须优先直连。
 
+### 完成证据
+
+- Idle Peer 无需等待 TUN 业务包即可双方主动发送认证 XSP/1 ClientHello；全局并发、每 Tick 启动量、每 Peer 候选数、重传次数和指数退避均有界；
+- 已建立会话发送 AEAD Keepalive 维护 UDP 映射，生产默认 15 秒、特权网络测试 1 秒；
+- 未知 UDP 来源只在 XSP/1 Header 绑定当前 Network、目标 Node、已知 Peer 和已建立 Session ID，且 AEAD/重放验证成功后才作为 NAT rebinding 晋升；
+- `scripts/test-agent-proactive-punch.sh` 证明无 TUN 流量时自动建立认证 Direct 会话、周期保活和双向 ICMP；
+- `scripts/test-agent-nat-matrix.sh` 在独立 namespace/nftables 中覆盖同 LAN、Full-cone 类、Restricted、Port-restricted、双端 NAT、公网 IP 重绑定、对称 NAT 无法直连、UDP 封锁后恢复；
+- M2.1 的候选优先级、`handshake_fallback` 和 AEAD 路径晋升语义保持回归通过；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`。
+
 ---
 
 ## M2.3 自研 Relay
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M2.2
 - 风险等级：高
 

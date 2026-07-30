@@ -16,7 +16,7 @@ use xs_core::{
 };
 use xs_protocol::{
     CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, CREDENTIAL_LENGTH, ClientFinishSent,
-    ClientHandshakeParameters, ClientHelloSent, DataFlags, DataReceiver, DataSender,
+    ClientHandshakeParameters, ClientHelloSent, DataFlags, DataHeader, DataReceiver, DataSender,
     EphemeralPrivateKey, EstablishedSession, HandshakeContext, MAX_DATAGRAM_LENGTH,
     MAX_ENCRYPTED_PAYLOAD_LENGTH, PacketType, SERVER_FINISH_TYPE, SERVER_HELLO_TYPE,
     ServerHandshakeParameters, ServerHelloSent, key_update_payload, verify_key_update_payload,
@@ -36,6 +36,17 @@ const MAX_RECENT_CLIENT_HELLOS: usize = 64;
 const CLIENT_HELLO_CACHE_LIFETIME: Duration = Duration::from_secs(300);
 const HANDSHAKE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const HANDSHAKE_MAX_ATTEMPTS: u8 = 6;
+const MAX_CONCURRENT_PROACTIVE_HANDSHAKES: usize = 32;
+const MAX_PROACTIVE_HANDSHAKES_PER_TICK: usize = 8;
+const MAX_HANDSHAKE_CANDIDATES_PER_CYCLE: usize = 8;
+#[cfg(not(feature = "privileged-network-tests"))]
+const HANDSHAKE_BACKOFF_BASE: Duration = Duration::from_secs(1);
+#[cfg(feature = "privileged-network-tests")]
+const HANDSHAKE_BACKOFF_BASE: Duration = Duration::from_millis(200);
+#[cfg(not(feature = "privileged-network-tests"))]
+const HANDSHAKE_BACKOFF_MAX: Duration = Duration::from_secs(60);
+#[cfg(feature = "privileged-network-tests")]
+const HANDSHAKE_BACKOFF_MAX: Duration = Duration::from_secs(2);
 const KEY_UPDATE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const KEY_UPDATE_MAX_ATTEMPTS: u8 = 6;
 const PATH_PROBE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
@@ -53,6 +64,10 @@ const KEY_UPDATE_INTERVAL: Duration = Duration::from_secs(2);
 const PREVIOUS_EPOCH_RETENTION: Duration = Duration::from_secs(30);
 #[cfg(feature = "privileged-network-tests")]
 const PREVIOUS_EPOCH_RETENTION: Duration = Duration::from_secs(5);
+#[cfg(not(feature = "privileged-network-tests"))]
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+#[cfg(feature = "privileged-network-tests")]
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(1);
 
 struct LocalMaterial {
     network_id: [u8; 16],
@@ -75,6 +90,9 @@ struct Peer {
     recent_client_hellos: VecDeque<([u8; 32], Instant)>,
     pending_path_probe: Option<PendingPathProbe>,
     path_probe_retry_after: Instant,
+    next_proactive_handshake_at: Instant,
+    handshake_failures: u8,
+    handshake_candidate_attempts: usize,
 }
 
 enum PeerState {
@@ -109,6 +127,7 @@ struct EstablishedPeer {
     epoch_started_at: Instant,
     outbound_key_update: Option<PendingKeyUpdate>,
     previous_epoch_installed_at: Option<Instant>,
+    last_keepalive_at: Instant,
 }
 
 struct PendingKeyUpdate {
@@ -224,6 +243,7 @@ type PeerDirectory = (
     SocketAddr,
     HashMap<Ipv4Addr, Peer>,
     HashMap<SocketAddr, Ipv4Addr>,
+    HashMap<[u8; 16], Ipv4Addr>,
 );
 
 /// Owns the authenticated XSP/1 UDP sessions for one Agent.
@@ -232,6 +252,7 @@ pub struct UdpDataPlane {
     material: LocalMaterial,
     peers_by_virtual_ip: HashMap<Ipv4Addr, Peer>,
     peer_by_endpoint: HashMap<SocketAddr, Ipv4Addr>,
+    peer_by_node_id: HashMap<[u8; 16], Ipv4Addr>,
     candidate_manager: CandidateManager,
     status: SharedDataPlaneStatus,
     configuration_version: u64,
@@ -255,7 +276,7 @@ impl UdpDataPlane {
             .map_err(|_| AgentError::ControllerTrust)?,
             identity: Arc::clone(&identity),
         };
-        let (local_endpoint, peers_by_virtual_ip, peer_by_endpoint) =
+        let (local_endpoint, peers_by_virtual_ip, peer_by_endpoint, peer_by_node_id) =
             build_peer_directory(state, material.node_id)?;
         let socket = bind_data_socket(local_endpoint)?;
         let candidate_manager = CandidateManager::new(state, identity)?;
@@ -265,6 +286,7 @@ impl UdpDataPlane {
             material,
             peers_by_virtual_ip,
             peer_by_endpoint,
+            peer_by_node_id,
             candidate_manager,
             status,
             configuration_version: state.configuration.version,
@@ -289,13 +311,29 @@ impl UdpDataPlane {
     ///
     /// Returns an Agent error when the trusted configuration contains an unusable peer identity.
     pub async fn apply_configuration(&mut self, state: &NodeState) -> Result<()> {
-        let (_, desired, _) = build_peer_directory(state, self.material.node_id)?;
+        let (_, desired, _, _) = build_peer_directory(state, self.material.node_id)?;
         let mut updated = HashMap::with_capacity(desired.len());
+        let now = Instant::now();
         for (virtual_ip, mut replacement) in desired {
             if let Some(mut existing) = self.peers_by_virtual_ip.remove(&virtual_ip)
                 && existing.node_id == replacement.node_id
             {
+                let candidates_changed = existing.candidates != replacement.candidates;
                 existing.candidates = replacement.candidates;
+                if candidates_changed {
+                    existing.pending_path_probe = None;
+                    existing.path_probe_retry_after = now;
+                    if !matches!(existing.state, PeerState::Established(_)) {
+                        existing.state = PeerState::Idle;
+                        existing.handshake_candidate_attempts = 0;
+                        existing.next_proactive_handshake_at = now;
+                        existing.active_endpoint = existing
+                            .candidates
+                            .first()
+                            .map(|candidate| candidate.endpoint);
+                        existing.path_reason = Some(PathSelectionReason::ConfigurationUpdate);
+                    }
+                }
                 if !matches!(existing.state, PeerState::Established(_))
                     && existing
                         .active_endpoint
@@ -349,6 +387,9 @@ impl UdpDataPlane {
         let Some(peer) = self.peers_by_virtual_ip.get_mut(&destination) else {
             return Ok(true);
         };
+        if !matches!(peer.state, PeerState::Established(_)) && peer.active_endpoint.is_none() {
+            return Ok(true);
+        }
 
         let outbound = if let PeerState::Established(established) = &mut peer.state {
             let Ok(outbound) = established
@@ -358,6 +399,7 @@ impl UdpDataPlane {
                 return Ok(true);
             };
             established.sent_packets_in_epoch = established.sent_packets_in_epoch.saturating_add(1);
+            established.last_keepalive_at = now;
             outbound
         } else {
             if !queue_packet(peer, packet) {
@@ -401,8 +443,17 @@ impl UdpDataPlane {
                 .handle_discovery_response(source, &datagram[..length]);
             return Ok(None);
         }
-        let Some(peer_ip) = self.peer_by_endpoint.get(&source).copied() else {
-            return Ok(None);
+        let source_is_known = self.peer_by_endpoint.contains_key(&source);
+        let peer_ip = if source_is_known {
+            let Some(peer_ip) = self.peer_by_endpoint.get(&source).copied() else {
+                return Ok(None);
+            };
+            peer_ip
+        } else {
+            let Some(peer_ip) = self.rebinding_peer(&datagram[..length]) else {
+                return Ok(None);
+            };
+            peer_ip
         };
         let Some(peer) = self.peers_by_virtual_ip.get_mut(&peer_ip) else {
             return Ok(None);
@@ -429,20 +480,40 @@ impl UdpDataPlane {
                 peer,
                 source,
                 if handshake_packet {
-                    PathSelectionReason::AuthenticatedHandshake
+                    authenticated_handshake_reason(peer, source)
                 } else {
                     PathSelectionReason::AuthenticatedPeerTraffic
                 },
             );
         }
+        let endpoint_index_changed =
+            !source_is_known && result.path_authenticated && peer.active_endpoint == Some(source);
         for outbound in result.outbound {
             self.socket
                 .send_to(&outbound, source)
                 .await
                 .map_err(|_| AgentError::Network)?;
         }
+        if endpoint_index_changed {
+            self.rebuild_endpoint_index()?;
+        }
         self.synchronize_status().await;
         Ok(result.plaintext)
+    }
+
+    fn rebinding_peer(&self, datagram: &[u8]) -> Option<Ipv4Addr> {
+        let header = DataHeader::parse(datagram).ok()?;
+        if header.network_id != self.material.network_id
+            || header.destination_node_id != self.material.node_id
+        {
+            return None;
+        }
+        let virtual_ip = self.peer_by_node_id.get(&header.source_node_id).copied()?;
+        let peer = self.peers_by_virtual_ip.get(&virtual_ip)?;
+        let PeerState::Established(established) = &peer.state else {
+            return None;
+        };
+        (established.session_id == header.session_id).then_some(virtual_ip)
     }
 
     /// Retransmits bounded pending handshakes and expires stale state.
@@ -454,6 +525,17 @@ impl UdpDataPlane {
         let now = Instant::now();
         self.prune_expired_candidates()?;
         let mut retransmissions = Vec::new();
+        let mut active_client_handshakes = self
+            .peers_by_virtual_ip
+            .values()
+            .filter(|peer| {
+                matches!(
+                    peer.state,
+                    PeerState::ClientHello(_) | PeerState::ClientFinish(_)
+                )
+            })
+            .count();
+        let mut proactive_started = 0_usize;
         for peer in self.peers_by_virtual_ip.values_mut() {
             prune_client_hello_cache(peer, now);
             match poll_peer_retry(peer, now) {
@@ -470,7 +552,8 @@ impl UdpDataPlane {
                             retransmissions.push((endpoint, encoded));
                         }
                     } else {
-                        clear_queue(peer);
+                        schedule_handshake_retry(peer, now);
+                        active_client_handshakes = active_client_handshakes.saturating_sub(1);
                     }
                 }
             }
@@ -482,6 +565,23 @@ impl UdpDataPlane {
             }
             if let Some((endpoint, encoded)) = maintain_path_probe(peer, now)? {
                 retransmissions.push((endpoint, encoded));
+            }
+            if matches!(peer.state, PeerState::Idle)
+                && peer.handshake_candidate_attempts >= MAX_HANDSHAKE_CANDIDATES_PER_CYCLE
+            {
+                schedule_handshake_retry(peer, now);
+            }
+            if matches!(peer.state, PeerState::Idle)
+                && peer.active_endpoint.is_some()
+                && now >= peer.next_proactive_handshake_at
+                && active_client_handshakes < MAX_CONCURRENT_PROACTIVE_HANDSHAKES
+                && proactive_started < MAX_PROACTIVE_HANDSHAKES_PER_TICK
+            {
+                let endpoint = peer.active_endpoint.ok_or(AgentError::DataPlane)?;
+                let encoded = begin_client_handshake(&self.material, peer, now)?;
+                retransmissions.push((endpoint, encoded));
+                active_client_handshakes = active_client_handshakes.saturating_add(1);
+                proactive_started = proactive_started.saturating_add(1);
             }
         }
         for (endpoint, encoded) in retransmissions {
@@ -517,7 +617,11 @@ impl UdpDataPlane {
 
     fn rebuild_endpoint_index(&mut self) -> Result<()> {
         let mut endpoints = HashMap::new();
+        let mut node_ids = HashMap::new();
         for (virtual_ip, peer) in &self.peers_by_virtual_ip {
+            if node_ids.insert(peer.node_id, *virtual_ip).is_some() {
+                return Err(AgentError::DataPlane);
+            }
             let mut peer_endpoints = std::collections::HashSet::new();
             for endpoint in peer
                 .candidates
@@ -534,6 +638,7 @@ impl UdpDataPlane {
             }
         }
         self.peer_by_endpoint = endpoints;
+        self.peer_by_node_id = node_ids;
         Ok(())
     }
 
@@ -568,6 +673,8 @@ fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<Pe
     let mut local_endpoint = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
     let mut peers = HashMap::new();
     let mut endpoints = HashMap::new();
+    let mut node_ids = HashMap::new();
+    let now = Instant::now();
     for node in &state.configuration_payload.nodes {
         let node_id = decode_fixed::<16>(&node.node_id_base64)?;
         let virtual_ip = node
@@ -593,6 +700,9 @@ fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<Pe
         if peers.len() >= MAX_CONFIGURED_PEERS || peers.contains_key(&virtual_ip) {
             return Err(AgentError::DataPlane);
         }
+        if node_ids.insert(node_id, virtual_ip).is_some() {
+            return Err(AgentError::DataPlane);
+        }
         let candidates = configured_candidates(node, direct_endpoints);
         for candidate in &candidates {
             if endpoints.insert(candidate.endpoint, virtual_ip).is_some() {
@@ -613,11 +723,14 @@ fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<Pe
                 queued_bytes: 0,
                 recent_client_hellos: VecDeque::new(),
                 pending_path_probe: None,
-                path_probe_retry_after: Instant::now(),
+                path_probe_retry_after: now,
+                next_proactive_handshake_at: now,
+                handshake_failures: 0,
+                handshake_candidate_attempts: 0,
             },
         );
     }
-    Ok((local_endpoint, peers, endpoints))
+    Ok((local_endpoint, peers, endpoints, node_ids))
 }
 
 fn configured_candidates(
@@ -695,6 +808,9 @@ fn peer_has_endpoint(peer: &Peer, endpoint: SocketAddr) -> bool {
 }
 
 fn advance_handshake_candidate(peer: &mut Peer) -> bool {
+    if peer.handshake_candidate_attempts >= MAX_HANDSHAKE_CANDIDATES_PER_CYCLE {
+        return false;
+    }
     let next = peer.active_endpoint.map_or(0, |active| {
         peer.candidates
             .iter()
@@ -711,10 +827,50 @@ fn advance_handshake_candidate(peer: &mut Peer) -> bool {
     true
 }
 
+fn schedule_handshake_retry(peer: &mut Peer, now: Instant) {
+    clear_queue(peer);
+    peer.handshake_candidate_attempts = 0;
+    peer.handshake_failures = peer.handshake_failures.saturating_add(1);
+    let exponent = u32::from(peer.handshake_failures.saturating_sub(1).min(6));
+    let multiplier = 1_u32 << exponent;
+    let delay = (HANDSHAKE_BACKOFF_BASE * multiplier).min(HANDSHAKE_BACKOFF_MAX);
+    peer.next_proactive_handshake_at = now + delay;
+    peer.active_endpoint = peer.candidates.first().map(|candidate| candidate.endpoint);
+    peer.path_reason = peer
+        .active_endpoint
+        .map(|_| PathSelectionReason::HighestPriority);
+}
+
 fn promote_path(peer: &mut Peer, endpoint: SocketAddr, reason: PathSelectionReason) {
     peer.active_endpoint = Some(endpoint);
     peer.path_reason = Some(reason);
     peer.pending_path_probe = None;
+}
+
+fn authenticated_handshake_reason(peer: &Peer, source: SocketAddr) -> PathSelectionReason {
+    if peer.path_reason == Some(PathSelectionReason::HandshakeFallback) {
+        return PathSelectionReason::HandshakeFallback;
+    }
+    let source_priority = peer
+        .candidates
+        .iter()
+        .find(|candidate| candidate.endpoint == source)
+        .map(|candidate| candidate.priority);
+    let active_priority = peer.active_endpoint.and_then(|active| {
+        peer.candidates
+            .iter()
+            .find(|candidate| candidate.endpoint == active)
+            .map(|candidate| candidate.priority)
+    });
+    if peer.handshake_candidate_attempts > 0
+        && source_priority
+            .zip(active_priority)
+            .is_some_and(|(source, active)| source < active)
+    {
+        PathSelectionReason::HandshakeFallback
+    } else {
+        PathSelectionReason::AuthenticatedHandshake
+    }
 }
 
 fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAddr, Vec<u8>)>> {
@@ -794,6 +950,11 @@ fn begin_client_handshake(
     peer: &mut Peer,
     now: Instant,
 ) -> Result<Vec<u8>> {
+    if peer.active_endpoint.is_none()
+        || peer.handshake_candidate_attempts >= MAX_HANDSHAKE_CANDIDATES_PER_CYCLE
+    {
+        return Err(AgentError::DataPlane);
+    }
     let machine = ClientHelloSent::start(
         ClientHandshakeParameters {
             context: context(material, peer),
@@ -811,6 +972,7 @@ fn begin_client_handshake(
         machine,
         retry: RetryState::handshake(encoded.clone(), now),
     }));
+    peer.handshake_candidate_attempts = peer.handshake_candidate_attempts.saturating_add(1);
     Ok(encoded)
 }
 
@@ -1066,14 +1228,19 @@ fn install_session(peer: &mut Peer, session: EstablishedSession) -> Vec<Vec<u8>>
         }
     }
     peer.queued_bytes = 0;
+    peer.handshake_failures = 0;
+    peer.handshake_candidate_attempts = 0;
+    let now = Instant::now();
+    peer.next_proactive_handshake_at = now;
     peer.state = PeerState::Established(Box::new(EstablishedPeer {
         session_id,
         sender,
         receiver,
         sent_packets_in_epoch: 0,
-        epoch_started_at: Instant::now(),
+        epoch_started_at: now,
         outbound_key_update: None,
         previous_epoch_installed_at: None,
+        last_keepalive_at: now,
     }));
     outbound
 }
@@ -1144,25 +1311,33 @@ fn maintain_established(
             }
         };
     }
-    if established.sent_packets_in_epoch < KEY_UPDATE_PACKET_LIMIT
-        && now.duration_since(established.epoch_started_at) < KEY_UPDATE_INTERVAL
+    if established.sent_packets_in_epoch >= KEY_UPDATE_PACKET_LIMIT
+        || now.duration_since(established.epoch_started_at) >= KEY_UPDATE_INTERVAL
     {
-        return Ok(None);
+        let current_epoch = established.sender.current_epoch();
+        let next_epoch = current_epoch.checked_add(1).ok_or(AgentError::DataPlane)?;
+        let payload = key_update_payload(established.session_id, current_epoch, next_epoch)
+            .map_err(|_| AgentError::DataPlane)?;
+        let encoded = established
+            .sender
+            .seal_control(PacketType::KeyUpdate, DataFlags::CONTROL, 0, &payload)
+            .map_err(|_| AgentError::DataPlane)?;
+        established.outbound_key_update = Some(PendingKeyUpdate {
+            next_epoch,
+            retry: RetryState::key_update(encoded.clone(), now),
+        });
+        return Ok(Some(encoded));
     }
 
-    let current_epoch = established.sender.current_epoch();
-    let next_epoch = current_epoch.checked_add(1).ok_or(AgentError::DataPlane)?;
-    let payload = key_update_payload(established.session_id, current_epoch, next_epoch)
-        .map_err(|_| AgentError::DataPlane)?;
-    let encoded = established
-        .sender
-        .seal_control(PacketType::KeyUpdate, DataFlags::CONTROL, 0, &payload)
-        .map_err(|_| AgentError::DataPlane)?;
-    established.outbound_key_update = Some(PendingKeyUpdate {
-        next_epoch,
-        retry: RetryState::key_update(encoded.clone(), now),
-    });
-    Ok(Some(encoded))
+    if now.duration_since(established.last_keepalive_at) >= KEEPALIVE_INTERVAL {
+        let encoded = established
+            .sender
+            .seal_control(PacketType::Keepalive, DataFlags::NONE, 0, &[])
+            .map_err(|_| AgentError::DataPlane)?;
+        established.last_keepalive_at = now;
+        return Ok(Some(encoded));
+    }
+    Ok(None)
 }
 
 fn poll_peer_retry(peer: &mut Peer, now: Instant) -> RetryAction {

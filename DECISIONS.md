@@ -315,3 +315,15 @@
 - 原因：复用现有方向 traffic key 和重放状态即可证明对端持有会话密钥，同时保持数据连续性和路径可观测性。
 - 代价：每 Peer 增加待处理 probe、重试、冷却和路径原因状态；路径性能评分、Relay 与 RTT 尚待后续里程碑。
 - 安全影响：未认证地址变化不能晋升；错误来源、Path ID、token、Tag 或重放响应全部拒绝。
+
+---
+
+## ADR-028：UDP 打洞采用双方主动认证握手与 AEAD 映射保活
+
+- 状态：接受
+- 日期：2026-07-30
+- 背景：仅在首个 TUN 业务包到达时握手无法提前建立 NAT 映射；公网映射变化后继续把未知来源全部丢弃又会让已建立会话失去恢复能力。
+- 决策：Idle Peer 根据 Controller 签名候选目录主动发起现有四消息 XSP/1 握手，不增加匿名探测协议；每进程最多 32 个主动客户端握手、每维护 Tick 最多启动 8 个、每 Peer 每轮最多 8 个候选，失败后有界指数退避。已建立会话以 AEAD Keepalive 维持映射。未知来源只有在严格 XSP/1 Header 绑定当前 Network、Destination Node、已知 Source Node 和当前 Session ID，并通过 AEAD、Epoch、序列及重放验证后，才作为 `authenticated_peer_traffic` 晋升。
+- 原因：双方主动发送能为普通 Full-cone/Restricted/Port-restricted NAT 建立状态，同时复用既有身份、凭证和会话密钥证明，不扩大匿名 UDP 接口。
+- 代价：每个 Peer 增加主动调度、失败退避和 Keepalive 状态；对称 NAT 或 UDP 永久封锁仍需 M2.3 Relay；真实运营商网络仍需外部门禁测试。
+- 安全影响：未认证来源、伪造 Session ID、错误 Node/Network、Tag 篡改和重放均不能改变活动路径；生产 Keepalive 为 15 秒，测试特性缩短为 1 秒；不会降级到明文、STUN/TURN 或现成 VPN/穿透核心。
