@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use ed25519_dalek::SigningKey;
 use sqlx::PgPool;
+use xs_core::ConfigurationRelay;
 
 use crate::config::ControllerConfig;
 
@@ -14,6 +15,7 @@ pub struct AppState {
     pub config_signing_key: Arc<SigningKey>,
     pub credential_ttl_seconds: u64,
     pub discovery_public_endpoints: Arc<Vec<SocketAddr>>,
+    pub relays: Arc<Vec<ConfigurationRelay>>,
 }
 
 impl AppState {
@@ -28,6 +30,7 @@ impl AppState {
             discovery_public_endpoints: Arc::new(
                 config.discovery_public_endpoint.into_iter().collect(),
             ),
+            relays: Arc::new(config.relays.clone()),
         }
     }
 }

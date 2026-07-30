@@ -27,6 +27,7 @@ const MAX_CONFIGURATION_NODES: usize = 65_535;
 const MAX_DIRECT_ENDPOINTS_PER_NODE: usize = 8;
 const MAX_DISCOVERY_ENDPOINTS: usize = 8;
 const MAX_CANDIDATES_PER_NODE: usize = 16;
+const MAX_CONFIGURED_RELAYS: usize = 16;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -243,13 +244,14 @@ fn validate_configuration(
         || !address_pool.contains(&virtual_ip)
         || payload.discovery_endpoints.len() > MAX_DISCOVERY_ENDPOINTS
         || payload.nodes.len() > MAX_CONFIGURATION_NODES
-        || payload.relays.len() > 4096
+        || payload.relays.len() > MAX_CONFIGURED_RELAYS
         || payload.policies.len() > 4096
     {
         return Err(AgentError::ControllerTrust);
     }
 
     validate_discovery_endpoints(&payload.discovery_endpoints)?;
+    let relay_endpoints = validate_relays(&payload)?;
 
     let mut node_ids = HashSet::with_capacity(payload.nodes.len());
     let mut public_keys = HashSet::with_capacity(payload.nodes.len());
@@ -288,6 +290,7 @@ fn validate_configuration(
                 || endpoint.ip().is_unspecified()
                 || endpoint.ip().is_multicast()
                 || *endpoint.ip() == Ipv4Addr::BROADCAST
+                || relay_endpoints.contains(&SocketAddr::V4(endpoint))
                 || !node_direct_endpoints.insert(SocketAddr::V4(endpoint))
                 || !direct_endpoints.insert(SocketAddr::V4(endpoint))
             {
@@ -298,6 +301,7 @@ fn validate_configuration(
             if candidate.priority == 0
                 || candidate.expires_at <= payload.generated_at
                 || !valid_candidate(candidate)
+                || relay_endpoints.contains(&candidate.endpoint)
                 || !node_candidate_endpoints.insert(candidate.endpoint)
                 || (!node_direct_endpoints.contains(&candidate.endpoint)
                     && !direct_endpoints.insert(candidate.endpoint))
@@ -328,6 +332,38 @@ fn validate_discovery_endpoints(endpoints: &[SocketAddr]) -> Result<()> {
         return Err(AgentError::ControllerTrust);
     }
     Ok(())
+}
+
+fn validate_relays(payload: &ConfigurationPayload) -> Result<HashSet<SocketAddr>> {
+    let mut relay_ids = HashSet::new();
+    let mut endpoints = HashSet::new();
+    let mut public_keys = HashSet::new();
+    let mut previous: Option<(u32, &str)> = None;
+    for relay in &payload.relays {
+        let relay_id = decode_fixed::<16>(&relay.relay_id_base64)?;
+        let public_key = decode_fixed::<32>(&relay.identity_public_key_base64)?;
+        if relay_id == [0_u8; 16]
+            || VerifyingKey::from_bytes(&public_key).is_err()
+            || relay.priority == 0
+            || relay.expires_at <= payload.generated_at
+            || !valid_service_endpoint(relay.endpoint)
+            || payload.discovery_endpoints.contains(&relay.endpoint)
+            || !relay_ids.insert(relay_id)
+            || !endpoints.insert(relay.endpoint)
+            || !public_keys.insert(public_key)
+        {
+            return Err(AgentError::ControllerTrust);
+        }
+        if let Some((priority, relay_id_base64)) = previous
+            && (priority < relay.priority
+                || (priority == relay.priority
+                    && relay_id_base64 >= relay.relay_id_base64.as_str()))
+        {
+            return Err(AgentError::ControllerTrust);
+        }
+        previous = Some((relay.priority, relay.relay_id_base64.as_str()));
+    }
+    Ok(endpoints)
 }
 
 fn valid_service_endpoint(endpoint: SocketAddr) -> bool {

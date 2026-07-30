@@ -248,6 +248,8 @@ const fn path_reason_label(reason: PathSelectionReason) -> &'static str {
         PathSelectionReason::AuthenticatedHandshake => "authenticated_handshake",
         PathSelectionReason::AuthenticatedPeerTraffic => "authenticated_peer_traffic",
         PathSelectionReason::AuthenticatedPathProbe => "authenticated_path_probe",
+        PathSelectionReason::RelayFallback => "relay_fallback",
+        PathSelectionReason::RelayFailover => "relay_failover",
         PathSelectionReason::ConfigurationUpdate => "configuration_update",
     }
 }

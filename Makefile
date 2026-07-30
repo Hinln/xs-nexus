@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-protocol-vectors test-spec test-network test-e2e test-visual security-check validate-m21 validate-m22 release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-protocol-vectors test-spec test-network test-e2e test-visual security-check validate-m21 validate-m22 validate-m23 release clean
 
 setup:
 >npm ci
@@ -57,6 +57,9 @@ test-agent-nat-matrix:
 
 test-agent-nat: test-agent-proactive-punch test-agent-nat-matrix
 
+test-agent-relay:
+>./scripts/test-agent-relay.sh
+
 test-protocol-vectors:
 >./scripts/test-protocol-vectors.sh
 
@@ -85,6 +88,9 @@ validate-m21:
 
 validate-m22:
 >./scripts/validate-m22.sh
+
+validate-m23:
+>./scripts/validate-m23.sh
 
 release:
 >@printf 'Release packaging is not implemented before M9.1\n' >&2

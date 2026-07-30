@@ -1,7 +1,7 @@
 # XSP/1 密码学设计
 
-状态：M2.1 协议核心、地址发现、候选签名和认证路径迁移实现  
-日期：2026-07-29  
+状态：M2.3 XSP/1 核心、XSD/1 发现和 XSR/1 Relay 线格式实现  
+日期：2026-07-30  
 审计状态：未完成独立第三方审计，不适合宣称生产级安全。
 
 ## 1. v1 固定密码套件
@@ -107,6 +107,33 @@ discovery_response_signature = Ed25519.Sign(
   "XS Nexus discovery response v1" || response_without_signature
 )
 ```
+
+### 2.8 Relay 注册与响应签名
+
+XSR/1 注册请求携带现有 Controller 节点凭证，并由节点长期身份密钥签名：
+
+```text
+relay_register_request_signature = Ed25519.Sign(
+  node_identity_key,
+  "XSR/1 register request v1" || request_without_signature
+)
+```
+
+Relay 使用独立 Ed25519 身份密钥签发最多 300 秒的短期 Lease，并签名注册响应和 Keepalive Response：
+
+```text
+relay_register_response_signature = Ed25519.Sign(
+  relay_identity_key,
+  "XSR/1 register response v1" || response_without_signature
+)
+
+relay_keepalive_response_signature = Ed25519.Sign(
+  relay_identity_key,
+  "XSR/1 keepalive response v1" || response_without_signature
+)
+```
+
+三个签名域不得互换。Relay 身份公钥只从 Controller 签名配置取得；Lease ID 使用 CSPRNG，作为短期有状态转发能力绑定 Network、Node、Relay、UDP 来源端点、过期时间和重放窗口。Lease ID 不派生、不替代也不能访问 XSP/1 traffic key。
 
 候选广告通过已经完成 challenge 认证的 WebSocket 控制连接发送。节点使用长期身份密钥签名精确紧凑 JSON 字节：
 
@@ -267,6 +294,9 @@ Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，
 - 长期节点私钥：本机受限存储，可轮换；
 - 发现请求与候选广告：复用节点身份签名用途，但由独立域标签隔离，绝不复用 XSP/1 traffic key；
 - 发现响应：复用 Controller Configuration Signing Key，但由独立域标签隔离并绑定精确请求哈希；
+- Relay 身份私钥：只签 XSR/1 注册和 Keepalive 响应，不签节点凭证、配置或 XSP/1 数据；
+- Relay Lease ID：最多 300 秒，仅驻留 Agent/Relay 内存和 UDP 控制消息，不写日志、指标或持久存储；
+- Relay Data：不引入业务密钥；完整内层 XSP/1 密文保持逐字节不变；
 - 临时 X25519 私钥：单次握手，结束后清零；
 - handshake key：Finish 完成后清零；
 - traffic secret 和 key：会话/Epoch 内存；
@@ -285,6 +315,7 @@ Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，
 - `tests/vectors/xsp1/session-v1.json` 与 `generate_session_vector` 锁定双方 Hello、双向 Finish、应用数据包、方向密钥派生和 AAD；
 - `crates/protocol/tests/session.rs` 覆盖 transcript/身份篡改、全零 X25519、Finish/Tag 篡改、重放窗口、Epoch 乱序和旧 Epoch 退休；
 - `tests/vectors/xsp1/discovery-v1.json` 与 `generate_discovery_vector` 锁定 XSD/1 请求/响应、精确请求哈希、观察端点和双方签名；
+- `tests/vectors/xsp1/relay-v1.json` 与 `generate_relay_vector` 锁定 XSR/1 注册、Lease、Data、Keepalive、独立签名域和完整 SHA-256；
 - `scripts/test-protocol-vectors.sh` 验证 canonical 向量及有效、非规范和意外状态 Fuzz seed corpus 一致性。
 
 上述自动化证据不替代密码学组合的形式化分析或独立第三方审计。
@@ -297,5 +328,6 @@ Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，
 - 候选 generation、过期时间和动态配置传播在时钟异常下的安全边界；
 - AEAD PathChallenge/PathResponse 与普通数据共享 traffic key、序列空间和重放窗口的状态机正确性；
 - Relay 元数据与流量分析；
+- XSR/1 Data 使用短期 Lease、来源端点和重放窗口而非逐包外层 MAC 时，对 on-path 注入、流量消耗和故障语义的剩余风险；
 - DoS 预检和签名验证成本；
 - 时钟异常、吊销和离线窗口。

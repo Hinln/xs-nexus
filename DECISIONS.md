@@ -327,3 +327,27 @@
 - 原因：双方主动发送能为普通 Full-cone/Restricted/Port-restricted NAT 建立状态，同时复用既有身份、凭证和会话密钥证明，不扩大匿名 UDP 接口。
 - 代价：每个 Peer 增加主动调度、失败退避和 Keepalive 状态；对称 NAT 或 UDP 永久封锁仍需 M2.3 Relay；真实运营商网络仍需外部门禁测试。
 - 安全影响：未认证来源、伪造 Session ID、错误 Node/Network、Tag 篡改和重放均不能改变活动路径；生产 Keepalive 为 15 秒，测试特性缩短为 1 秒；不会降级到明文、STUN/TURN 或现成 VPN/穿透核心。
+
+---
+
+## ADR-029：Relay 采用独立 XSR/1 短期 Lease envelope
+
+- 状态：接受
+- 日期：2026-07-30
+- 背景：对称 NAT、UDP 策略或长期打洞失败时需要自研 Relay，但 Relay 不得持有 XSP/1 业务密钥、解密虚拟 IP 包、成为匿名反射器或复制 TURN/现成组网协议。
+- 决策：定义项目独立的 `XSR1` v1 固定 UDP 线格式。节点以 Controller 凭证和长期 Ed25519 身份签名 352 字节注册请求；Relay 以独立身份密钥签发最多 300 秒、绑定 Network/Node/Relay/UDP 来源端点的 168 字节短期 Lease。Data envelope 使用 104 字节有限路由头包裹逐字节不变的 XSP/1 datagram；服务端以活动 Lease、来源端点和每 Lease sequence 重放窗口认证转发状态。Register Request、Register Response 和 Keepalive Response 使用三个独立签名域。
+- 原因：把 Relay 可见范围限制为路由元数据和端到端密文，复用现有 Controller 信任根和节点身份，同时通过短期状态、目标活动 Lease、限速与等长转发阻止匿名转发和数据放大。
+- 代价：Relay 路径最大内层 datagram 降为 1396 字节；外层 Data 不逐包执行昂贵公钥签名，必须严格依赖随机 Lease、来源端点、过期和重放窗口；on-path 攻击者仍可观察元数据或实施受限 DoS；Agent 需要注册续租、多 Relay 故障切换和 Direct 回切状态。
+- 安全影响：Relay 没有 XSP/1 traffic key，不能生成目标接受的业务包；Lease ID 使用 CSPRNG、禁止日志和持久化；匿名、错误端点、过期、重放、无目标 Lease、空 payload 和超限报文静默丢弃；真实公网容量与第三方协议审计仍是后续门禁。
+
+---
+
+## ADR-030：UDP 发送失败按路径故障处理而非终止 Agent
+
+- 状态：接受
+- 日期：2026-07-30
+- 背景：严格防火墙、路由切换或暂时不可达会让 UDP `send_to` 返回 `EPERM`、`ENETUNREACH` 等端点相关错误；若维护循环将其升级为进程级故障，Agent 会在本应回退到 Relay 的场景退出。
+- 决策：XSP/1 Direct、Relay 和 Relay 维护报文的单次发送错误记录为“本次未发送”，由现有有界重传、候选回退、Relay 健康和故障切换状态机处理；UDP 接收、本地 socket 创建/绑定、协议状态和持久化错误仍为进程级失败。配置刷新只在候选 kind、endpoint 或 priority 变化时重置未建立会话，单纯过期时间续期不破坏回退进度。
+- 原因：UDP 发送错误通常描述目标路径而非整个本地数据面，路径状态机比进程退出更能提供可用性，同时保持真正的本地 socket 和可信状态故障失败关闭。
+- 代价：发送错误不会立即使路径永久失效，需等待已有重试和健康窗口；日志和指标必须能区分 Direct、Relay 与 Relay maintenance。
+- 安全影响：不降低任何认证、AEAD、重放或来源绑定检查；失败发送不会改为明文，也不会绕过 Relay Lease、候选优先级或路径认证。

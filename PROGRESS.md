@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-29 17:54 UTC  
-当前 Git 提交：M2.2 完成检查点（以本文件所在提交为准）  
+最后更新时间：2026-07-30 11:35 UTC  
+当前 Git 提交：M2.3 完成检查点（以本文件所在提交为准）  
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M2.3 自研 Relay`
+当前里程碑：`M3.1 路由、ACL 与 IPAM 完整化`
 
 ---
 
@@ -46,36 +46,44 @@
 - 同 LAN、Full-cone 类、Restricted、Port-restricted、双端 NAT、公网 IP 重绑定、对称 NAT 无 Direct、UDP 封锁和解封恢复的隔离 namespace/nftables 矩阵；
 - M2.1 候选优先级、`handshake_fallback` 和 AEAD PathChallenge/PathResponse 回归保持通过；
 - M2.2 全量证据 `/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`。
+- 独立 `XSR/1` Relay 协议：352 字节节点注册、168 字节 Relay 签名 Lease、104 字节路由 envelope，以及最多 1396 字节逐字节不变的端到端 XSP/1 密文；
+- Relay 活动凭证与节点签名认证、来源端点和 Lease 绑定、每 Lease sequence 重放窗口、空闲/租约清理、并发/包速率/字节速率/队列上限和无匿名转发；
+- Controller 严格权限 Relay catalog、签名配置下发、优先级和重复端点拒绝，以及 Agent 双 Relay 注册、续租、健康探测和候选接入；
+- Direct 失败后自动 `relay_fallback`、主 Relay 故障后 `relay_failover`，以及 Direct 恢复后的 AEAD `authenticated_path_probe` 回切；
+- Relay 链路抓包验证不包含原始虚拟 IP 包和业务明文标记，伪造外层来源被认证丢弃；
+- UDP 单次发送失败按路径不可达处理，不再终止 Agent；仅候选路由身份变化才重置回退，候选过期时间刷新不会破坏正在进行的握手；
+- M2.3 全量证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z`。
 
 ## 当前工作点
 
-- M2.2 已完成全部计划内实现和验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 或 `1panel-network` 变化；
-- `KI-009` 继续明确隔离 nftables 模型不代表全部运营商 CGNAT、真实公网 IPv6、多出口和长期抖动；
-- M2.3 开始自研 Relay 的认证会话、限速、队列、心跳、多 Relay、故障切换和 Direct 恢复设计。
+- M2.3 已完成全部计划内实现和验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
+- Relay 已具备认证、限速、队列、健康检查和基础错误/字节指标；全局验收中的延迟与丢包指标仍未勾选，不在本里程碑伪造完成；
+- M3.1 开始默认拒绝 ACL、节点/组/标签、协议/端口匹配、双端执行、策略签名与 IPAM 冲突完整化。
 
 ## 下一步
 
-1. 定义 Relay 认证 wire format、会话/目的节点授权、空闲超时、队列和限速边界；
-2. 实现 Relay 无法解密的 XSP/1 密文转发与严格放大限制；
-3. 将 Relay 候选接入 Controller 签名配置和 Agent 路径状态机；
-4. 验证 Direct 不可用时自动 Relay、Relay 故障切换和恢复后 Direct 回切；
-5. 建立 M2.3 namespace/进程矩阵并保持 1Panel 和宿主机网络基线不变。
+1. 读取 M3.1 验收与现有配置/数据面结构，定义默认拒绝策略模型和稳定编码；
+2. 完成节点、组、标签、TCP、UDP、ICMP 与端口规则的 Controller 持久化和签名下发；
+3. 在发送端与接收端同时执行策略，并绑定节点身份、虚拟源 IP 和策略版本；
+4. 完成 `100.88.0.0/16`、活动地址、地址池和重叠子网冲突检查；
+5. 建立 ACL 正负、离线旧策略和 IPAM 并发回归矩阵。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '279,315p' EXECUTION_PLAN.md
-rg -n -C 8 'Relay' ARCHITECTURE.md XSP1_PROTOCOL.md THREAT_MODEL.md
+sed -n '315,370p' EXECUTION_PLAN.md
+rg -n -C 8 'ACL|IPAM|policy|策略|路由' \
+  docs/ARCHITECTURE.md docs/THREAT_MODEL.md crates/core apps/controller apps/agent
 ```
 
 ## 最近测试
 
-- 时间：2026-07-30 09:27 UTC；
+- 时间：2026-07-30 11:35 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m22.sh`；
+- 命令：`./scripts/validate-m23.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`；
-- 覆盖：M2.1 全部验证，以及双方主动认证握手、并发冲突、有界退避、AEAD Keepalive、Full-cone 类、Restricted、Port-restricted、双端 NAT、公网 IP 重绑定、对称 NAT 无 Direct、UDP 封锁/恢复、ShellCheck、秘密扫描，以及 Docker、`1panel-network`、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z`；
+- 覆盖：M2.2 全部回归、XSR/1 协议与 Relay 单测、真实双 Relay fallback/failover、密文抓包、伪造来源拒绝、Direct 回切、速率限制恢复、ShellCheck、秘密扫描、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
 
 ## 当前失败
 
@@ -91,7 +99,7 @@ rg -n -C 8 'Relay' ARCHITECTURE.md XSP1_PROTOCOL.md THREAT_MODEL.md
 
 ## 当前风险
 
-- 自研协议握手、AEAD 数据面、地址发现、认证路径迁移和隔离 NAT 打洞矩阵已实现，但真实运营商网络、长期 Fuzz、Relay 边界和独立第三方审计尚未完成；
+- 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
 - Windows 驱动尚未开发，真实设备尚未接入；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
@@ -107,8 +115,10 @@ cat PROGRESS.md
 ./scripts/validate-m13.sh
 ./scripts/validate-m21.sh
 ./scripts/validate-m22.sh
-sed -n '279,315p' EXECUTION_PLAN.md
-rg -n -C 8 'Relay' ARCHITECTURE.md XSP1_PROTOCOL.md THREAT_MODEL.md
+./scripts/validate-m23.sh
+sed -n '315,370p' EXECUTION_PLAN.md
+rg -n -C 8 'ACL|IPAM|policy|策略|路由' \
+  docs/ARCHITECTURE.md docs/THREAT_MODEL.md crates/core apps/controller apps/agent
 ```
 
 然后读取：

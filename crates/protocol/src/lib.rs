@@ -3,6 +3,7 @@
 mod data;
 mod discovery;
 mod handshake;
+mod relay;
 
 pub use data::{
     DATA_HEADER_LENGTH, DATA_TAG_LENGTH, DataFlags, DataHeader, DataReceiver, DataSender,
@@ -18,6 +19,17 @@ pub use handshake::{
     CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, ClientFinishSent, ClientHandshakeParameters,
     ClientHelloSent, EphemeralPrivateKey, EstablishedSession, HandshakeContext, SERVER_FINISH_TYPE,
     SERVER_HELLO_TYPE, ServerHandshakeParameters, ServerHelloSent,
+};
+pub use relay::{
+    RELAY_DATA_TYPE, RELAY_FRAME_HEADER_LENGTH, RELAY_KEEPALIVE_RESPONSE_LENGTH,
+    RELAY_KEEPALIVE_RESPONSE_TYPE, RELAY_KEEPALIVE_TYPE, RELAY_MAX_FRAME_LENGTH,
+    RELAY_MAX_LEASE_SECONDS, RELAY_REGISTER_REQUEST_LENGTH, RELAY_REGISTER_REQUEST_TYPE,
+    RELAY_REGISTER_RESPONSE_LENGTH, RELAY_REGISTER_RESPONSE_TYPE, RelayFrame,
+    RelayKeepaliveResponse, RelayRegisterRequest, RelayRegisterResponse,
+    VerifiedRelayRegisterRequest, encode_relay_frame, encode_relay_keepalive, parse_relay_frame,
+    parse_relay_keepalive, sign_relay_keepalive_response, sign_relay_register_request,
+    sign_relay_register_response, validate_relay_payload, verify_relay_keepalive_response,
+    verify_relay_register_request, verify_relay_register_response,
 };
 
 use std::net::Ipv4Addr;

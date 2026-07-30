@@ -430,9 +430,90 @@ KeyUpdate 使用当前发送 Epoch 加密。接收方验证后只安装该方向
 
 ## 16. Relay 边界
 
-Relay 使用独立的未来 `XSR/1` envelope，至少包含认证 Relay Session、目的转发槽、长度、序列和 Relay 会话认证 Tag。Relay envelope 的 payload 是完整 XSP/1 UDP payload。Relay 不改变、解密或重新加密内层 XSP/1 包，也不能代表目标节点完成握手。
+M2.3 定义独立 `XSR/1` UDP envelope。它不属于 XSP/1 密码学 transcript，不改变内层 XSP/1 字节，并且不与 TURN、STUN、ICE 或其他产品线格式兼容。
 
-`XSR/1` 具体格式在 M2.3 前单独规范和威胁评审；本文件不预先声明其安全完成。
+### 16.1 公共头
+
+所有多字节整数使用网络字节序。公共头固定 16 字节：
+
+| 偏移 | 长度 | 字段 | 规则 |
+|---:|---:|---|---|
+| 0 | 4 | Magic | ASCII `XSR1` |
+| 4 | 1 | Version | `1` |
+| 5 | 1 | Type | `1` Register Request、`2` Register Response、`3` Data、`4` Keepalive、`5` Keepalive Response |
+| 6 | 2 | Flags | v1 必须为 0 |
+| 8 | 2 | Header Length | 当前消息的固定头长度 |
+| 10 | 2 | Payload Length | 固定控制消息必须为 0；Data 为内层 XSP/1 datagram 长度 |
+| 12 | 4 | Reserved | 必须为 0 |
+
+未知类型、版本、flag、保留字段、非规范长度、空 Data payload、尾随字节和超过 1500 字节的外层 datagram 全部拒绝。Data 固定头为 104 字节，因此 Relay 路径的最大内层 XSP/1 datagram 为 1396 字节。
+
+### 16.2 注册与租约
+
+Register Request 固定 352 字节：
+
+```text
+common[16] || network_id[16] || node_id[16] || relay_id[16] ||
+request_id[16] || client_time_u64[8] || controller_credential[200] ||
+node_ed25519_signature[64]
+```
+
+签名输入为：
+
+```text
+"XSR/1 register request v1" || request_without_signature
+```
+
+Relay 必须验证 Controller 凭证、凭证与 Network/Node 的绑定、节点身份签名、Relay ID、非零随机 Request ID、最多 ±300 秒时间偏差，并在有界缓存中拒绝重复 Request ID。认证失败静默丢弃，不分配长期状态。
+
+Register Response 固定 168 字节：
+
+```text
+common[16] || network_id[16] || node_id[16] || relay_id[16] ||
+request_id[16] || lease_id[16] || expires_at_u64[8] ||
+relay_ed25519_signature[64]
+```
+
+签名输入为：
+
+```text
+"XSR/1 register response v1" || response_without_signature
+```
+
+Lease ID 必须由 CSPRNG 生成、全零禁止、不得记录到日志，且 v1 最长有效期为 300 秒。Agent 只接受来自配置中固定 Relay 端点、由配置中 Relay 身份公钥签名、绑定待处理 Request ID 且未过期的响应。Lease 是短期转发能力，不是 XSP/1 业务密钥。
+
+### 16.3 Data 与 Keepalive
+
+Data 为 `104 + payload_length` 字节：
+
+```text
+common[16] || network_id[16] || relay_id[16] ||
+source_node_id[16] || destination_node_id[16] ||
+lease_id[16] || relay_sequence_u64[8] || exact_xsp1_datagram[payload_length]
+```
+
+Relay 只在以下条件全部成立时转发：
+
+1. Lease 未过期，Network、Relay、Source Node 和 UDP 来源端点与注册状态完全一致；
+2. Destination Node 在同一 Network、同一 Relay 上拥有活动 Lease；
+3. Relay sequence 通过每 Lease 独立的单调滑动窗口，过旧、重复或异常大跳跃拒绝；
+4. payload 具有有界且自洽的 XSP/1 framing；Relay 不尝试验证 XSP/1 签名、AEAD 或业务 IP；
+5. 节点速率、带宽、队列、会话和全局容量均未超限。
+
+Relay 不重写外层 Source/Destination Node，不改变内层字节，转发 datagram 不得大于接收 datagram。即使 Relay 被攻陷，它也只能丢弃、重复、延迟、重排或观察有限元数据；目标 Agent 仍必须独立完成 XSP/1 握手、AEAD、Epoch、重放和 ACL 验证。
+
+Keepalive Request 复用 104 字节 Data 固定头，Destination Node 和 payload 必须全零；其 sequence 使用相同 Lease 重放状态。Keepalive Response 固定 152 字节：
+
+```text
+common[16] || network_id[16] || relay_id[16] || node_id[16] ||
+lease_id[16] || server_time_u64[8] || relay_ed25519_signature[64]
+```
+
+签名域为 `"XSR/1 keepalive response v1"`。只有已认证活动 Lease 才能触发响应；匿名报文、错误端点和过期/重放 sequence 静默丢弃。控制响应受独立速率限制，Relay 不能成为匿名反射器。
+
+### 16.4 路径语义
+
+Relay 成功转发不代表路径已认证。Agent 只有在经该 Relay 收到并验证对端 XSP/1 握手或 AEAD 包后，才把路径标记为可用。Direct 与 Relay 发送完全相同的内层 XSP/1 datagram；Relay 故障时可切换其他 Relay，Direct 恢复后必须通过现有认证路径证明机制回切。
 
 ## 17. 限制与资源上限
 
@@ -470,6 +551,7 @@ tests/vectors/xsp1/data-header-v1.json
 tests/vectors/xsp1/credential-v1.json
 tests/vectors/xsp1/session-v1.json
 tests/vectors/xsp1/discovery-v1.json
+tests/vectors/xsp1/relay-v1.json
 ```
 
 生成器与有效凭证 Fuzz corpus：
@@ -479,10 +561,12 @@ scripts/generate-xsp1-vectors.py
 crates/protocol/examples/generate_credential_vector.rs
 crates/protocol/examples/generate_session_vector.rs
 crates/protocol/examples/generate_discovery_vector.rs
+crates/protocol/examples/generate_relay_vector.rs
 fuzz/corpus/credential/valid-v1.bin
 fuzz/corpus/handshake/*.bin
 fuzz/corpus/data/*.bin
 fuzz/corpus/discovery/*.bin
+fuzz/corpus/relay/*.bin
 ```
 
 凭证向量固定 Ed25519 签名、公钥、Node ID、Role Set 摘要、Key ID 和完整 200 字节编码。Rust 单元测试验证向量签名，并逐字节篡改 200 个位置确认全部拒绝；规范校验器同时验证长度、字段、哈希和 corpus 一致性。
@@ -495,9 +579,10 @@ M1.3 和 M2.1 已锁定以下自动化证据：
 - `fuzz/corpus/handshake` 和 `fuzz/corpus/data` 包含有效消息以及 Magic、版本、类型、flag、长度、保留字段、截断、尾随字节和意外状态种子；
 - X25519 全零结果、签名/Finish/Tag 篡改、非规范编码、重放边界和 Epoch 状态冲突均以失败关闭测试覆盖。
 - `tests/vectors/xsp1/discovery-v1.json` 固定 XSD/1 请求、响应、签名、观察端点和 SHA-256；`fuzz/corpus/discovery` 覆盖有效请求/响应、篡改、截断、时间和请求绑定失败；
+- `tests/vectors/xsp1/relay-v1.json` 固定 XSR/1 注册、短期 Lease、Data envelope、Keepalive、三类签名域和 SHA-256；`fuzz/corpus/relay` 覆盖有效消息、Magic、版本、类型、payload 长度、空 Data、保留字段、签名篡改和截断；
 - Controller/Agent 集成测试覆盖活动凭证检查、响应小于请求、签名候选发布、幂等重试、generation 冲突和动态配置应用；
 - 隔离 namespace 测试覆盖首选候选不可达后的握手回退，以及已建立会话对更高优先级路径的 AEAD Challenge/Response 晋升和双向业务连续性。
 
-这些证据覆盖协议库、真实 Controller/PostgreSQL 和隔离 Linux namespace 中的 Agent UDP/TUN 链路；持续 Fuzz、真实公网/NAT 行为矩阵、Relay 边界和独立第三方审计仍是后续强制验收。
+这些证据覆盖协议库、真实 Controller/PostgreSQL 和隔离 Linux namespace 中的 Agent UDP/TUN/NAT 模型链路。XSR/1 线格式和负向 corpus 已锁定，但 Relay 服务限额、故障切换、Direct 回切、隔离 Relay 矩阵、持续 Fuzz 和独立第三方审计仍需 M2.3 后续验证。
 
 任何协议字段或标签变化都必须更新本规范、密码学设计、威胁模型、测试向量和 Fuzz corpus。

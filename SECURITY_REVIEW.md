@@ -91,6 +91,16 @@
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m2.2-20260730T092547Z`；
 - nftables 模型不能替代运营商 CGNAT、真实公网 IPv6、多出口和长期网络抖动实测，相关限制继续记录于 `KI-009`。
 
+### M2.3 验证状态
+
+- `XSR/1` 注册使用活动 Controller 凭证和节点 Ed25519 身份签名，Relay Lease 绑定 Network、Node、Relay、UDP 来源端点和短期过期时间；
+- Relay Data envelope 只携带有限路由元数据和端到端 XSP/1 密文，Relay 不持有 traffic key，也不能生成目标节点可接受的业务包；
+- 匿名、错误来源端点、过期 Lease、重放、无目标 Lease、空 payload 和超限报文静默丢弃；每来源注册和每 Lease 包/字节/队列资源均有硬上限；
+- 隔离 namespace 已验证 Relay 抓包不包含原始虚拟 IP 包或业务明文标记、伪造来源被拒绝、主备 Relay 切换和 Direct 恢复后的 AEAD 回切；
+- UDP 单次发送失败仅作为路径不可达，不再终止 Agent；候选仅刷新过期时间不会重置正在进行的握手和回退状态；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z`；
+- 第三方协议审计、真实公网容量、延迟/丢包指标和运营商网络实测仍未完成。
+
 ---
 
 ## 4. 控制器

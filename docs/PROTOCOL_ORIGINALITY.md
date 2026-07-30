@@ -10,6 +10,7 @@
 
 - `XSP1` magic、版本和消息类型命名；
 - `XSD1` 地址发现 magic、固定请求/响应线格式、请求哈希绑定和域标签；
+- `XSR1` Relay magic、注册/租约/转发/心跳线格式、短期 Lease 和独立域标签；
 - 96 字节固定数据包头的字段集合、顺序和长度；
 - Network ID、Source Node ID、Destination Node ID、Session ID、Epoch、Sequence 和 Path ID 的组合；
 - `ClientHello → ServerHello → ClientFinish → ServerFinish` 状态机；
@@ -46,7 +47,9 @@ XSP/1 不以兼容以下协议或产品为目标：
 
 ## 4. Relay 边界
 
-Relay envelope 只负责已认证会话的有限路由，不参与 XSP/1 内层握手和数据解密。内层包在 Direct 和 Relay 路径保持一致，Relay 不能替换节点身份、降低算法或生成有效业务包。
+XSR/1 是项目独立定义的固定 UDP envelope，不兼容 TURN ChannelData、STUN attribute、ICE candidate pair 或其他组网产品协议。它只负责已认证短期 Lease 的有限路由，不参与 XSP/1 内层握手和数据解密。内层包在 Direct 和 Relay 路径逐字节保持一致，Relay 不能替换节点身份、降低算法或生成有效业务包。
+
+v1 独立定义 16 字节公共头、352 字节节点签名注册请求、168 字节 Relay 签名 Lease 响应、104 字节 Data/Keepalive 固定头、152 字节 Relay 签名 Keepalive 响应，以及 `"XSR/1 ... v1"` 三个域分离标签。设计依据仅为本项目的认证、无匿名放大、有界队列和不持有业务密钥要求。
 
 ## 5. 独立评审清单
 
@@ -68,4 +71,5 @@ Relay envelope 只负责已认证会话的有限路由，不参与 XSP/1 内层�
 - M1.3 已锁定 RFC 7748、RFC 5869、RFC 8439 原语向量和项目独立的四消息握手、Finish、数据 AEAD 向量；
 - canonical 与负向 Fuzz seed corpus 由项目生成器复现，覆盖 Magic、版本、类型、flag、长度、保留字段、截断、尾随字节和意外状态；
 - M2.1 已锁定项目独立的 `XSD1` 请求/响应向量、发现 Fuzz corpus、签名候选 schema、握手候选回退和认证路径迁移语义；
-- 当前自动化已覆盖 Agent UDP/TUN 隔离 namespace 端到端链路，但不代表协议组合已经通过第三方安全审计，也不代表真实公网/NAT 或 Relay 矩阵已经完成。
+- M2.3 已锁定项目独立的 `XSR1` 注册、Lease、Data、Keepalive 向量及 Relay Fuzz corpus；当前只证明协议编码边界，不代表 Relay 服务矩阵或第三方安全审计完成；
+- 当前自动化已覆盖 Agent UDP/TUN 隔离 namespace 和 NAT 模型端到端链路，但不代表真实公网、运营商 NAT 或 Relay 实网矩阵已经完成。

@@ -39,7 +39,7 @@
 - [x] MUST：篡改包丢弃。
 - [x] MUST：伪造源地址丢弃。
 - [x] MUST：抓包无法看到原始业务负载。
-- [ ] MUST：Relay 无法恢复业务明文。
+- [x] MUST：Relay 无法恢复业务明文。
 - [x] MUST：明确记录未完成第三方安全审计。
 
 ---
@@ -67,9 +67,9 @@
 - [x] MUST：同 LAN 优先。
 - [x] MUST：IPv6 可用时优先合理路径。
 - [x] MUST：UDP 打洞。
-- [ ] MUST：无法直连自动 Relay。
-- [ ] MUST：Relay 故障切换。
-- [ ] MUST：恢复后尝试 Direct。
+- [x] MUST：无法直连自动 Relay。
+- [x] MUST：Relay 故障切换。
+- [x] MUST：恢复后尝试 Direct。
 - [x] MUST：路径变化有真实原因记录。
 - [x] MUST：UDP 被封锁时行为明确。
 
@@ -93,14 +93,14 @@
 
 ## G. Relay
 
-- [ ] MUST：认证节点才可使用。
-- [ ] MUST：限制速率、并发、队列和会话。
-- [ ] MUST：无匿名开放转发。
-- [ ] MUST：防反射放大。
-- [ ] MUST：多 Relay。
-- [ ] MUST：健康检查。
+- [x] MUST：认证节点才可使用。
+- [x] MUST：限制速率、并发、队列和会话。
+- [x] MUST：无匿名开放转发。
+- [x] MUST：防反射放大。
+- [x] MUST：多 Relay。
+- [x] MUST：健康检查。
 - [ ] MUST：监控字节、延迟、丢包和错误。
-- [ ] MUST：不记录业务内容。
+- [x] MUST：不记录业务内容。
 
 ---
 

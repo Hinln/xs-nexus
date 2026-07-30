@@ -1056,7 +1056,7 @@ async fn publish_configuration(
         address_pool,
         discovery_endpoints: state.discovery_public_endpoints.as_ref().clone(),
         nodes,
-        relays: Vec::new(),
+        relays: state.relays.as_ref().clone(),
         policies: Vec::new(),
     })
     .map_err(|_| ApiError::internal())?;

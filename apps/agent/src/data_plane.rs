@@ -25,6 +25,7 @@ use xs_protocol::{
 use crate::{
     candidates::{CandidateManager, normalize_endpoint},
     error::{AgentError, Result},
+    relay::{RelayInbound, RelayManager},
     state::{NodeState, decode_fixed},
     storage::Identity,
 };
@@ -39,6 +40,7 @@ const HANDSHAKE_MAX_ATTEMPTS: u8 = 6;
 const MAX_CONCURRENT_PROACTIVE_HANDSHAKES: usize = 32;
 const MAX_PROACTIVE_HANDSHAKES_PER_TICK: usize = 8;
 const MAX_HANDSHAKE_CANDIDATES_PER_CYCLE: usize = 8;
+const MAX_RELAY_CANDIDATES_PER_PEER: usize = 2;
 #[cfg(not(feature = "privileged-network-tests"))]
 const HANDSHAKE_BACKOFF_BASE: Duration = Duration::from_secs(1);
 #[cfg(feature = "privileged-network-tests")]
@@ -51,7 +53,10 @@ const KEY_UPDATE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const KEY_UPDATE_MAX_ATTEMPTS: u8 = 6;
 const PATH_PROBE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const PATH_PROBE_MAX_ATTEMPTS: u8 = 4;
+#[cfg(not(feature = "privileged-network-tests"))]
 const PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(30);
+#[cfg(feature = "privileged-network-tests")]
+const PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(3);
 #[cfg(not(feature = "privileged-network-tests"))]
 const KEY_UPDATE_PACKET_LIMIT: u64 = 1 << 20;
 #[cfg(feature = "privileged-network-tests")]
@@ -254,6 +259,7 @@ pub struct UdpDataPlane {
     peer_by_endpoint: HashMap<SocketAddr, Ipv4Addr>,
     peer_by_node_id: HashMap<[u8; 16], Ipv4Addr>,
     candidate_manager: CandidateManager,
+    relay_manager: RelayManager,
     status: SharedDataPlaneStatus,
     configuration_version: u64,
 }
@@ -276,8 +282,16 @@ impl UdpDataPlane {
             .map_err(|_| AgentError::ControllerTrust)?,
             identity: Arc::clone(&identity),
         };
+        let relay_manager = RelayManager::new(
+            state,
+            material.network_id,
+            material.node_id,
+            material.credential,
+            Arc::clone(&identity),
+        )?;
+        let relay_candidates = relay_manager.candidates();
         let (local_endpoint, peers_by_virtual_ip, peer_by_endpoint, peer_by_node_id) =
-            build_peer_directory(state, material.node_id)?;
+            build_peer_directory(state, material.node_id, &relay_candidates)?;
         let socket = bind_data_socket(local_endpoint)?;
         let candidate_manager = CandidateManager::new(state, identity)?;
         let status = Arc::new(tokio::sync::RwLock::new(DataPlaneStatus::default()));
@@ -288,6 +302,7 @@ impl UdpDataPlane {
             peer_by_endpoint,
             peer_by_node_id,
             candidate_manager,
+            relay_manager,
             status,
             configuration_version: state.configuration.version,
         };
@@ -311,14 +326,18 @@ impl UdpDataPlane {
     ///
     /// Returns an Agent error when the trusted configuration contains an unusable peer identity.
     pub async fn apply_configuration(&mut self, state: &NodeState) -> Result<()> {
-        let (_, desired, _, _) = build_peer_directory(state, self.material.node_id)?;
+        let failed_relays = self.relay_manager.apply_configuration(state)?;
+        let relay_candidates = self.relay_manager.candidates();
+        let (_, desired, _, _) =
+            build_peer_directory(state, self.material.node_id, &relay_candidates)?;
         let mut updated = HashMap::with_capacity(desired.len());
         let now = Instant::now();
         for (virtual_ip, mut replacement) in desired {
             if let Some(mut existing) = self.peers_by_virtual_ip.remove(&virtual_ip)
                 && existing.node_id == replacement.node_id
             {
-                let candidates_changed = existing.candidates != replacement.candidates;
+                let candidates_changed =
+                    candidate_routes_changed(&existing.candidates, &replacement.candidates);
                 existing.candidates = replacement.candidates;
                 if candidates_changed {
                     existing.pending_path_probe = None;
@@ -350,9 +369,11 @@ impl UdpDataPlane {
             updated.insert(virtual_ip, replacement);
         }
         self.peers_by_virtual_ip = updated;
+        for endpoint in failed_relays {
+            fail_relay_path(&mut self.peers_by_virtual_ip, endpoint);
+        }
         self.rebuild_endpoint_index()?;
         self.configuration_version = state.configuration.version;
-        self.candidate_manager.force_refresh();
         self.synchronize_status().await;
         Ok(())
     }
@@ -366,13 +387,39 @@ impl UdpDataPlane {
         self.socket.local_addr().map_err(|_| AgentError::Network)
     }
 
+    async fn send_xsp(
+        &mut self,
+        endpoint: SocketAddr,
+        destination_node_id: [u8; 16],
+        encoded: &[u8],
+    ) -> Result<bool> {
+        if self.relay_manager.is_relay(endpoint) {
+            let Some(envelope) =
+                self.relay_manager
+                    .wrap(endpoint, destination_node_id, encoded, unix_time()?)?
+            else {
+                return Ok(false);
+            };
+            return Ok(udp_send_succeeded(
+                "relay",
+                endpoint,
+                self.socket.send_to(&envelope, endpoint).await,
+            ));
+        }
+        Ok(udp_send_succeeded(
+            "direct",
+            endpoint,
+            self.socket.send_to(encoded, endpoint).await,
+        ))
+    }
+
     /// Encrypts or queues one raw IPv4 packet read from TUN.
     ///
     /// The returned boolean is true when the packet was dropped.
     ///
     /// # Errors
     ///
-    /// Returns an Agent error when local randomness, protocol state, or UDP transmission fails.
+    /// Returns an Agent error when local randomness or protocol state fails.
     pub async fn forward_tun(&mut self, packet: &[u8]) -> Result<bool> {
         if packet.len() > MAX_ENCRYPTED_PAYLOAD_LENGTH {
             return Ok(true);
@@ -391,6 +438,7 @@ impl UdpDataPlane {
             return Ok(true);
         }
 
+        let established_path = matches!(peer.state, PeerState::Established(_));
         let outbound = if let PeerState::Established(established) = &mut peer.state {
             let Ok(outbound) = established
                 .sender
@@ -414,11 +462,11 @@ impl UdpDataPlane {
         let Some(endpoint) = peer.active_endpoint else {
             return Ok(true);
         };
-        self.socket
-            .send_to(&outbound, endpoint)
-            .await
-            .map_err(|_| AgentError::Network)?;
-        Ok(false)
+        let destination_node_id = peer.node_id;
+        let sent = self
+            .send_xsp(endpoint, destination_node_id, &outbound)
+            .await?;
+        Ok(established_path && !sent)
     }
 
     /// Receives and processes one UDP datagram, returning an authenticated IPv4 packet for TUN.
@@ -443,56 +491,75 @@ impl UdpDataPlane {
                 .handle_discovery_response(source, &datagram[..length]);
             return Ok(None);
         }
-        let source_is_known = self.peer_by_endpoint.contains_key(&source);
-        let peer_ip = if source_is_known {
-            let Some(peer_ip) = self.peer_by_endpoint.get(&source).copied() else {
-                return Ok(None);
+        let now = Instant::now();
+        let unix_now = unix_time()?;
+        let mut relay_payload = None;
+        let (peer_ip, source_is_known, through_relay) =
+            match self
+                .relay_manager
+                .handle_datagram(source, &datagram[..length], now, unix_now)
+            {
+                RelayInbound::Consumed => return Ok(None),
+                RelayInbound::Data {
+                    source_node_id,
+                    payload,
+                } => {
+                    let Some(peer_ip) = self.peer_by_node_id.get(&source_node_id).copied() else {
+                        return Ok(None);
+                    };
+                    relay_payload = Some(payload);
+                    (peer_ip, false, true)
+                }
+                RelayInbound::NotRelay => {
+                    let source_is_known = self.peer_by_endpoint.contains_key(&source);
+                    let peer_ip = if source_is_known {
+                        let Some(peer_ip) = self.peer_by_endpoint.get(&source).copied() else {
+                            return Ok(None);
+                        };
+                        peer_ip
+                    } else {
+                        let Some(peer_ip) = self.rebinding_peer(&datagram[..length]) else {
+                            return Ok(None);
+                        };
+                        peer_ip
+                    };
+                    (peer_ip, source_is_known, false)
+                }
             };
-            peer_ip
-        } else {
-            let Some(peer_ip) = self.rebinding_peer(&datagram[..length]) else {
-                return Ok(None);
-            };
-            peer_ip
-        };
+        let packet = relay_payload
+            .as_deref()
+            .unwrap_or_else(|| &datagram[..length]);
+        let handshake_packet = matches!(
+            packet.get(5).copied(),
+            Some(CLIENT_HELLO_TYPE | SERVER_HELLO_TYPE | CLIENT_FINISH_TYPE | SERVER_FINISH_TYPE)
+        );
         let Some(peer) = self.peers_by_virtual_ip.get_mut(&peer_ip) else {
             return Ok(None);
         };
-        let handshake_packet = matches!(
-            datagram.get(5).copied(),
-            Some(CLIENT_HELLO_TYPE | SERVER_HELLO_TYPE | CLIENT_FINISH_TYPE | SERVER_FINISH_TYPE)
-        );
-        let result = process_datagram(
-            &self.material,
-            peer,
-            source,
-            &datagram[..length],
-            Instant::now(),
-        );
-        let retain_fallback_reason = handshake_packet
+        let result = process_datagram(&self.material, peer, source, packet, now);
+        let retain_fallback_reason = !through_relay
+            && handshake_packet
             && peer.active_endpoint == Some(source)
             && peer.path_reason == Some(PathSelectionReason::HandshakeFallback);
         if result.path_authenticated
             && !retain_fallback_reason
             && (handshake_packet || peer.active_endpoint != Some(source))
         {
-            promote_path(
-                peer,
-                source,
-                if handshake_packet {
-                    authenticated_handshake_reason(peer, source)
-                } else {
-                    PathSelectionReason::AuthenticatedPeerTraffic
-                },
-            );
+            let reason = authenticated_path_reason(peer, source, handshake_packet, through_relay);
+            promote_path(peer, source, reason);
         }
-        let endpoint_index_changed =
-            !source_is_known && result.path_authenticated && peer.active_endpoint == Some(source);
+        let endpoint_index_changed = !through_relay
+            && !source_is_known
+            && result.path_authenticated
+            && peer.active_endpoint == Some(source);
+        let destination_node_id = peer.node_id;
+        if through_relay && result.path_authenticated {
+            self.relay_manager.authenticate_activity(source, now);
+        }
         for outbound in result.outbound {
-            self.socket
-                .send_to(&outbound, source)
-                .await
-                .map_err(|_| AgentError::Network)?;
+            let _ = self
+                .send_xsp(source, destination_node_id, &outbound)
+                .await?;
         }
         if endpoint_index_changed {
             self.rebuild_endpoint_index()?;
@@ -524,6 +591,17 @@ impl UdpDataPlane {
     pub async fn maintain(&mut self, state: &NodeState) -> Result<Option<CandidateAdvertisement>> {
         let now = Instant::now();
         self.prune_expired_candidates()?;
+        let relay_maintenance = self.relay_manager.maintain(now, unix_time()?)?;
+        for endpoint in relay_maintenance.failed_endpoints {
+            fail_relay_path(&mut self.peers_by_virtual_ip, endpoint);
+        }
+        for (endpoint, encoded) in relay_maintenance.outbound {
+            let _ = udp_send_succeeded(
+                "relay_maintenance",
+                endpoint,
+                self.socket.send_to(&encoded, endpoint).await,
+            );
+        }
         let mut retransmissions = Vec::new();
         let mut active_client_handshakes = self
             .peers_by_virtual_ip
@@ -542,14 +620,14 @@ impl UdpDataPlane {
                 RetryAction::Wait => {}
                 RetryAction::Send(encoded) => {
                     if let Some(endpoint) = peer.active_endpoint {
-                        retransmissions.push((endpoint, encoded));
+                        retransmissions.push((endpoint, peer.node_id, encoded));
                     }
                 }
                 RetryAction::Expired => {
                     if advance_handshake_candidate(peer) {
                         if let Some(endpoint) = peer.active_endpoint {
                             let encoded = begin_client_handshake(&self.material, peer, now)?;
-                            retransmissions.push((endpoint, encoded));
+                            retransmissions.push((endpoint, peer.node_id, encoded));
                         }
                     } else {
                         schedule_handshake_retry(peer, now);
@@ -561,10 +639,10 @@ impl UdpDataPlane {
                 && let Some(encoded) = maintain_established(established, now)?
                 && let Some(endpoint) = peer.active_endpoint
             {
-                retransmissions.push((endpoint, encoded));
+                retransmissions.push((endpoint, peer.node_id, encoded));
             }
             if let Some((endpoint, encoded)) = maintain_path_probe(peer, now)? {
-                retransmissions.push((endpoint, encoded));
+                retransmissions.push((endpoint, peer.node_id, encoded));
             }
             if matches!(peer.state, PeerState::Idle)
                 && peer.handshake_candidate_attempts >= MAX_HANDSHAKE_CANDIDATES_PER_CYCLE
@@ -579,19 +657,24 @@ impl UdpDataPlane {
             {
                 let endpoint = peer.active_endpoint.ok_or(AgentError::DataPlane)?;
                 let encoded = begin_client_handshake(&self.material, peer, now)?;
-                retransmissions.push((endpoint, encoded));
+                retransmissions.push((endpoint, peer.node_id, encoded));
                 active_client_handshakes = active_client_handshakes.saturating_add(1);
                 proactive_started = proactive_started.saturating_add(1);
             }
         }
-        for (endpoint, encoded) in retransmissions {
-            self.socket
-                .send_to(&encoded, endpoint)
-                .await
-                .map_err(|_| AgentError::Network)?;
+        for (endpoint, destination_node_id, encoded) in retransmissions {
+            let _ = self
+                .send_xsp(endpoint, destination_node_id, &encoded)
+                .await?;
         }
-        if self.candidate_manager.refresh_due(now) {
-            self.candidate_manager.refresh(&self.socket, state).await?;
+        if self.candidate_manager.refresh_due(now)
+            && let Err(error) = self.candidate_manager.refresh(&self.socket, state).await
+        {
+            eprintln!(
+                "xs-agent data_plane=candidate_refresh error={}",
+                error.code()
+            );
+            return Err(error);
         }
         let advertisement = self.candidate_manager.take_advertisement();
         self.synchronize_status().await;
@@ -626,8 +709,12 @@ impl UdpDataPlane {
             for endpoint in peer
                 .candidates
                 .iter()
+                .filter(|candidate| candidate.kind != EndpointCandidateKind::Relay)
                 .map(|candidate| candidate.endpoint)
-                .chain(peer.active_endpoint)
+                .chain(
+                    peer.active_endpoint
+                        .filter(|endpoint| !self.relay_manager.is_relay(*endpoint)),
+                )
             {
                 if !peer_endpoints.insert(endpoint) {
                     continue;
@@ -669,7 +756,11 @@ impl UdpDataPlane {
     }
 }
 
-fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<PeerDirectory> {
+fn build_peer_directory(
+    state: &NodeState,
+    local_node_id: [u8; 16],
+    relay_candidates: &[EndpointCandidate],
+) -> Result<PeerDirectory> {
     let mut local_endpoint = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
     let mut peers = HashMap::new();
     let mut endpoints = HashMap::new();
@@ -703,9 +794,11 @@ fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<Pe
         if node_ids.insert(node_id, virtual_ip).is_some() {
             return Err(AgentError::DataPlane);
         }
-        let candidates = configured_candidates(node, direct_endpoints);
+        let candidates = configured_candidates(node, direct_endpoints, relay_candidates);
         for candidate in &candidates {
-            if endpoints.insert(candidate.endpoint, virtual_ip).is_some() {
+            if candidate.kind != EndpointCandidateKind::Relay
+                && endpoints.insert(candidate.endpoint, virtual_ip).is_some()
+            {
                 return Err(AgentError::DataPlane);
             }
         }
@@ -736,6 +829,7 @@ fn build_peer_directory(state: &NodeState, local_node_id: [u8; 16]) -> Result<Pe
 fn configured_candidates(
     node: &xs_core::ConfigurationNode,
     direct_endpoints: Vec<SocketAddr>,
+    relay_candidates: &[EndpointCandidate],
 ) -> Vec<EndpointCandidate> {
     let now = Utc::now();
     let mut seen = std::collections::HashSet::new();
@@ -768,6 +862,13 @@ fn configured_candidates(
         );
     }
     candidates.sort_by(|left, right| right.priority.cmp(&left.priority));
+    let relay_limit = relay_candidates.len().min(MAX_RELAY_CANDIDATES_PER_PEER);
+    let direct_limit = MAX_HANDSHAKE_CANDIDATES_PER_CYCLE.saturating_sub(relay_limit);
+    candidates.truncate(direct_limit);
+    for (index, candidate) in candidates.iter_mut().enumerate() {
+        candidate.priority = 20_000_u32.saturating_sub(u32::try_from(index).unwrap_or(u32::MAX));
+    }
+    candidates.extend(relay_candidates.iter().take(relay_limit).cloned());
     candidates
 }
 
@@ -805,6 +906,21 @@ fn peer_has_endpoint(peer: &Peer, endpoint: SocketAddr) -> bool {
     peer.candidates
         .iter()
         .any(|candidate| candidate.endpoint == endpoint)
+}
+
+fn candidate_routes_changed(
+    current: &[EndpointCandidate],
+    replacement: &[EndpointCandidate],
+) -> bool {
+    current.len() != replacement.len()
+        || current
+            .iter()
+            .zip(replacement)
+            .any(|(current, replacement)| {
+                current.kind != replacement.kind
+                    || current.endpoint != replacement.endpoint
+                    || current.priority != replacement.priority
+            })
 }
 
 fn advance_handshake_candidate(peer: &mut Peer) -> bool {
@@ -870,6 +986,61 @@ fn authenticated_handshake_reason(peer: &Peer, source: SocketAddr) -> PathSelect
         PathSelectionReason::HandshakeFallback
     } else {
         PathSelectionReason::AuthenticatedHandshake
+    }
+}
+
+fn authenticated_path_reason(
+    peer: &Peer,
+    source: SocketAddr,
+    handshake_packet: bool,
+    through_relay: bool,
+) -> PathSelectionReason {
+    if through_relay {
+        return if peer.path_reason == Some(PathSelectionReason::RelayFailover) {
+            PathSelectionReason::RelayFailover
+        } else {
+            PathSelectionReason::RelayFallback
+        };
+    }
+    if handshake_packet {
+        authenticated_handshake_reason(peer, source)
+    } else {
+        PathSelectionReason::AuthenticatedPeerTraffic
+    }
+}
+
+fn fail_relay_path(peers: &mut HashMap<Ipv4Addr, Peer>, failed_endpoint: SocketAddr) {
+    let now = Instant::now();
+    for peer in peers.values_mut() {
+        if peer.active_endpoint != Some(failed_endpoint) {
+            continue;
+        }
+        let next_index = peer
+            .candidates
+            .iter()
+            .position(|candidate| candidate.endpoint == failed_endpoint)
+            .map_or(0, |index| index.saturating_add(1));
+        peer.active_endpoint = peer
+            .candidates
+            .iter()
+            .skip(next_index)
+            .find(|candidate| candidate.endpoint != failed_endpoint)
+            .or_else(|| {
+                peer.candidates
+                    .iter()
+                    .find(|candidate| candidate.endpoint != failed_endpoint)
+            })
+            .map(|candidate| candidate.endpoint);
+        peer.path_reason = peer
+            .active_endpoint
+            .map(|_| PathSelectionReason::RelayFailover);
+        peer.pending_path_probe = None;
+        peer.path_probe_retry_after = now;
+        if !matches!(peer.state, PeerState::Established(_)) {
+            peer.state = PeerState::Idle;
+            peer.handshake_candidate_attempts = 0;
+            peer.next_proactive_handshake_at = now;
+        }
     }
 }
 
@@ -1434,6 +1605,20 @@ fn unix_time() -> Result<u64> {
     u64::try_from(Utc::now().timestamp()).map_err(|_| AgentError::DataPlane)
 }
 
+fn udp_send_succeeded(
+    operation: &str,
+    endpoint: SocketAddr,
+    result: std::io::Result<usize>,
+) -> bool {
+    match result {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("xs-agent udp_send={operation} endpoint={endpoint} error={error}");
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1464,5 +1649,33 @@ mod tests {
         }
         let expired = start + HANDSHAKE_RETRY_INTERVAL * u32::from(HANDSHAKE_MAX_ATTEMPTS);
         assert!(matches!(retry.poll(expired), RetryAction::Expired));
+    }
+
+    #[test]
+    fn udp_send_errors_are_non_fatal_unsent_results() {
+        let endpoint = "127.0.0.1:9".parse().expect("valid endpoint");
+        assert!(udp_send_succeeded("direct", endpoint, Ok(128)));
+        assert!(!udp_send_succeeded(
+            "direct",
+            endpoint,
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        ));
+    }
+
+    #[test]
+    fn candidate_expiry_refresh_does_not_reset_route_progress() {
+        let endpoint = "192.0.2.1:443".parse().expect("valid endpoint");
+        let current = vec![EndpointCandidate {
+            kind: EndpointCandidateKind::Mapped,
+            endpoint,
+            priority: 20_000,
+            expires_at: Utc::now() + chrono::Duration::minutes(5),
+        }];
+        let mut replacement = current.clone();
+        replacement[0].expires_at += chrono::Duration::minutes(5);
+        assert!(!candidate_routes_changed(&current, &replacement));
+
+        replacement[0].priority -= 1;
+        assert!(candidate_routes_changed(&current, &replacement));
     }
 }

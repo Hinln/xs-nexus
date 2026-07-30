@@ -29,6 +29,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true
+tempfile = "=3.24.0"
 tokio-tungstenite.workspace = true
 tower.workspace = true
 

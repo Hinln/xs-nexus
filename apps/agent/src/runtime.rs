@@ -16,13 +16,25 @@ use crate::{
 
 const MAX_IPV4_PACKET_BYTES: usize = 65_535;
 
+struct AgentRuntime {
+    config: AgentConfig,
+    network: TunNetwork,
+    data_plane: UdpDataPlane,
+    state: Arc<tokio::sync::RwLock<NodeState>>,
+    health: Arc<AgentHealth>,
+    candidate_sender: watch::Sender<Option<xs_core::CandidateAdvertisement>>,
+    shutdown: watch::Receiver<bool>,
+    control_task: JoinHandle<()>,
+    ipc_task: JoinHandle<Result<()>>,
+}
+
 /// Runs the Linux Agent until shutdown is requested or a required local subsystem fails.
 ///
 /// # Errors
 ///
 /// Returns an Agent error when trusted state cannot be loaded, the TUN lifecycle fails,
 /// or the local management socket terminates unexpectedly.
-pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>) -> Result<()> {
+pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> Result<()> {
     config.validate()?;
     let identity = Arc::new(Identity::load_or_create(&config.identity_path())?);
     let state: NodeState = read_json(&config.node_state_path())?;
@@ -30,7 +42,7 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
     state.validate(&identity, controller_url.as_str())?;
     let plan = NetworkPlan::from_state(&config, &state)?;
     let network = TunNetwork::create(plan.clone(), &config.network_manifest_path()).await?;
-    let mut data_plane = UdpDataPlane::bind(&state, Arc::clone(&identity)).await?;
+    let data_plane = UdpDataPlane::bind(&state, Arc::clone(&identity)).await?;
     let data_plane_status = data_plane.status_handle();
     let state = Arc::new(tokio::sync::RwLock::new(state));
     let health = Arc::new(AgentHealth::new());
@@ -56,71 +68,108 @@ pub async fn run_agent(config: AgentConfig, mut shutdown: watch::Receiver<bool>)
         shutdown.clone(),
     ));
 
-    let mut control_task = control_task;
-    let mut ipc_task = ipc_task;
-    let mut control_completed = false;
-    let mut ipc_completed = false;
-    let mut packet = vec![0_u8; MAX_IPV4_PACKET_BYTES];
-    let mut data_plane_maintenance = tokio::time::interval(std::time::Duration::from_millis(100));
-    data_plane_maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let runtime_result = loop {
-        tokio::select! {
-            result = shutdown.changed() => {
-                if result.is_err() || *shutdown.borrow() {
-                    break Ok(());
-                }
-            }
-            received = network.receive(&mut packet) => {
-                match received {
-                    Ok(0) => break Err(AgentError::Network),
-                    Ok(length) => {
-                        let dropped = data_plane.forward_tun(&packet[..length]).await?;
-                        health.record_tun_packet(dropped);
-                    }
-                    Err(error) => break Err(error),
-                }
-            }
-            received = data_plane.receive() => {
-                match received {
-                    Ok(Some(packet)) => network.send(&packet).await?,
-                    Ok(None) => {}
-                    Err(error) => break Err(error),
-                }
-            }
-            _ = data_plane_maintenance.tick() => {
-                maintain_data_plane(
-                    &mut data_plane,
-                    &state,
-                    &config,
-                    &candidate_sender,
-                ).await?;
-            }
-            result = &mut control_task, if !control_completed => {
-                control_completed = true;
-                if *shutdown.borrow() && result.is_ok() {
-                    break Ok(());
-                }
-                break Err(AgentError::Runtime);
-            }
-            result = &mut ipc_task, if !ipc_completed => {
-                ipc_completed = true;
-                match result {
-                    Ok(Ok(())) if *shutdown.borrow() => break Ok(()),
-                    Ok(Err(error)) => break Err(error),
-                    Err(_) | Ok(Ok(())) => break Err(AgentError::Runtime),
-                }
-            }
-        }
-    };
+    AgentRuntime {
+        config,
+        network,
+        data_plane,
+        state,
+        health,
+        candidate_sender,
+        shutdown,
+        control_task,
+        ipc_task,
+    }
+    .run()
+    .await
+}
 
-    if !control_completed {
-        stop_task(control_task).await;
+impl AgentRuntime {
+    async fn run(mut self) -> Result<()> {
+        let mut control_completed = false;
+        let mut ipc_completed = false;
+        let mut packet = vec![0_u8; MAX_IPV4_PACKET_BYTES];
+        let mut data_plane_maintenance =
+            tokio::time::interval(std::time::Duration::from_millis(100));
+        data_plane_maintenance.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let runtime_result = loop {
+            tokio::select! {
+                result = self.shutdown.changed() => {
+                    if result.is_err() || *self.shutdown.borrow() {
+                        break Ok(());
+                    }
+                }
+                received = self.network.receive(&mut packet) => {
+                    match received {
+                        Ok(0) => break Err(AgentError::Network),
+                        Ok(length) => {
+                            let dropped = match self.data_plane.forward_tun(&packet[..length]).await {
+                                Ok(dropped) => dropped,
+                                Err(error) => {
+                                    report_runtime_error("tun_forward", &error);
+                                    break Err(error);
+                                }
+                            };
+                            self.health.record_tun_packet(dropped);
+                        }
+                        Err(error) => {
+                            report_runtime_error("tun_receive", &error);
+                            break Err(error);
+                        }
+                    }
+                }
+                received = self.data_plane.receive() => {
+                    match received {
+                        Ok(Some(packet)) => {
+                            if let Err(error) = self.network.send(&packet).await {
+                                report_runtime_error("tun_send", &error);
+                                break Err(error);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            report_runtime_error("udp_receive", &error);
+                            break Err(error);
+                        }
+                    }
+                }
+                _ = data_plane_maintenance.tick() => {
+                    if let Err(error) = maintain_data_plane(
+                        &mut self.data_plane,
+                        &self.state,
+                        &self.config,
+                        &self.candidate_sender,
+                    ).await {
+                        report_runtime_error("data_plane_maintenance", &error);
+                        break Err(error);
+                    }
+                }
+                result = &mut self.control_task, if !control_completed => {
+                    control_completed = true;
+                    if *self.shutdown.borrow() && result.is_ok() {
+                        break Ok(());
+                    }
+                    break Err(AgentError::Runtime);
+                }
+                result = &mut self.ipc_task, if !ipc_completed => {
+                    ipc_completed = true;
+                    match result {
+                        Ok(Ok(())) if *self.shutdown.borrow() => break Ok(()),
+                        Ok(Err(error)) => break Err(error),
+                        Err(_) | Ok(Ok(())) => break Err(AgentError::Runtime),
+                    }
+                }
+            }
+        };
+
+        if !control_completed {
+            stop_task(self.control_task).await;
+        }
+        if !ipc_completed {
+            stop_task(self.ipc_task).await;
+        }
+        let network_result = self.network.shutdown().await;
+        runtime_result.and(network_result)
     }
-    if !ipc_completed {
-        stop_task(ipc_task).await;
-    }
-    let network_result = network.shutdown().await;
-    runtime_result.and(network_result)
 }
 
 async fn maintain_data_plane(
@@ -152,4 +201,8 @@ async fn stop_task<T>(mut task: JoinHandle<T>) {
         task.abort();
         let _ = task.await;
     }
+}
+
+fn report_runtime_error(subsystem: &str, error: &AgentError) {
+    eprintln!("xs-agent subsystem={subsystem} error={}", error.code());
 }

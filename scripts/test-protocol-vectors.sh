@@ -7,7 +7,8 @@ cd "$root_dir"
 generated="$(mktemp)"
 session_generated="$(mktemp)"
 discovery_generated="$(mktemp)"
-trap 'rm -f "$generated" "$session_generated" "$discovery_generated"' EXIT
+relay_generated="$(mktemp)"
+trap 'rm -f "$generated" "$session_generated" "$discovery_generated" "$relay_generated"' EXIT
 
 cargo run --quiet -p xs-protocol --example generate_credential_vector >"$generated"
 if ! cmp --silent "$generated" tests/vectors/xsp1/credential-v1.json; then
@@ -110,3 +111,54 @@ for relative, expected in corpora.items():
 PY
 
 printf 'authenticated discovery vectors passed\n'
+
+cargo run --quiet -p xs-protocol --example generate_relay_vector >"$relay_generated"
+if ! cmp --silent "$relay_generated" tests/vectors/xsp1/relay-v1.json; then
+    diff -u tests/vectors/xsp1/relay-v1.json "$relay_generated" || true
+    printf 'relay vector differs from the checked-in file\n' >&2
+    exit 1
+fi
+
+python3 - "$relay_generated" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+vector = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+
+def changed(original, index, *, value=None):
+    malformed = bytearray(original)
+    malformed[index] = value if value is not None else malformed[index] ^ 1
+    return bytes(malformed)
+
+request = bytes.fromhex(vector["register_request_hex"])
+response = bytes.fromhex(vector["register_response_hex"])
+data_frame = bytes.fromhex(vector["data_frame_hex"])
+keepalive = bytes.fromhex(vector["keepalive_hex"])
+keepalive_response = bytes.fromhex(vector["keepalive_response_hex"])
+empty_frame = bytearray(data_frame[:104])
+empty_frame[10:12] = b"\x00\x00"
+corpora = {
+    "fuzz/corpus/relay/register-request-v1.bin": request,
+    "fuzz/corpus/relay/register-response-v1.bin": response,
+    "fuzz/corpus/relay/data-frame-v1.bin": data_frame,
+    "fuzz/corpus/relay/keepalive-v1.bin": keepalive,
+    "fuzz/corpus/relay/keepalive-response-v1.bin": keepalive_response,
+    "fuzz/corpus/relay/register-request-invalid-magic-v1.bin": changed(request, 0),
+    "fuzz/corpus/relay/register-request-invalid-version-v1.bin": changed(request, 4, value=2),
+    "fuzz/corpus/relay/register-request-invalid-type-v1.bin": changed(request, 5, value=2),
+    "fuzz/corpus/relay/register-request-invalid-payload-v1.bin": changed(request, 11, value=1),
+    "fuzz/corpus/relay/register-request-truncated-v1.bin": request[:-1],
+    "fuzz/corpus/relay/register-response-tampered-v1.bin": changed(response, 104),
+    "fuzz/corpus/relay/data-frame-invalid-length-v1.bin": changed(data_frame, 11),
+    "fuzz/corpus/relay/data-frame-empty-v1.bin": bytes(empty_frame),
+    "fuzz/corpus/relay/data-frame-truncated-v1.bin": data_frame[:-1],
+    "fuzz/corpus/relay/keepalive-invalid-destination-v1.bin": changed(keepalive, 64),
+    "fuzz/corpus/relay/keepalive-response-tampered-v1.bin": changed(keepalive_response, 88),
+}
+for relative, expected in corpora.items():
+    if Path(relative).read_bytes() != expected:
+        raise SystemExit(f"Fuzz corpus mismatch: {relative}")
+PY
+
+printf 'authenticated Relay vectors passed\n'

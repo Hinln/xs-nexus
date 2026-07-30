@@ -14,6 +14,9 @@ from pathlib import Path
 ETHERNET_HEADER_LENGTH = 14
 XSP_DATA_HEADER_LENGTH = 96
 XSP_MAGIC = b"XSP1"
+XSR_DATA_HEADER_LENGTH = 104
+XSR_MAGIC = b"XSR1"
+XSR_DATA_TYPE = 0x03
 XSP_PACKET_TYPES = {
     "data": 0x01,
     "keepalive": 0x02,
@@ -270,7 +273,7 @@ def command_icmp(arguments: argparse.Namespace) -> None:
     raise SystemExit("ICMP echo timed out")
 
 
-def parse_xsp_frame(frame: bytes) -> dict[str, object] | None:
+def parse_udp_frame(frame: bytes) -> dict[str, object] | None:
     if len(frame) < ETHERNET_HEADER_LENGTH:
         return None
     offset = ETHERNET_HEADER_LENGTH
@@ -300,13 +303,27 @@ def parse_xsp_frame(frame: bytes) -> dict[str, object] | None:
     if udp_length < 8 or udp_offset + udp_length > ip_end:
         return None
     payload = frame[udp_offset + 8 : udp_offset + udp_length]
-    if len(payload) < XSP_DATA_HEADER_LENGTH or payload[:4] != XSP_MAGIC:
-        return None
     return {
         "source_ip": source_ip,
         "destination_ip": destination_ip,
         "source_port": source_port,
         "destination_port": destination_port,
+        "payload": payload,
+    }
+
+
+def parse_xsp_frame(frame: bytes) -> dict[str, object] | None:
+    udp = parse_udp_frame(frame)
+    if udp is None:
+        return None
+    payload = udp["payload"]
+    if len(payload) < XSP_DATA_HEADER_LENGTH or payload[:4] != XSP_MAGIC:
+        return None
+    return {
+        "source_ip": udp["source_ip"],
+        "destination_ip": udp["destination_ip"],
+        "source_port": udp["source_port"],
+        "destination_port": udp["destination_port"],
         "packet_type": payload[5],
         "epoch": struct.unpack("!I", payload[76:80])[0],
         "sequence": struct.unpack("!Q", payload[80:88])[0],
@@ -314,9 +331,67 @@ def parse_xsp_frame(frame: bytes) -> dict[str, object] | None:
     }
 
 
+def parse_relay_frame(frame: bytes) -> dict[str, object] | None:
+    udp = parse_udp_frame(frame)
+    if udp is None:
+        return None
+    payload = udp["payload"]
+    if (
+        len(payload) < XSR_DATA_HEADER_LENGTH
+        or payload[:4] != XSR_MAGIC
+        or payload[4] != 1
+        or payload[5] != XSR_DATA_TYPE
+        or payload[6:8] != b"\0\0"
+        or struct.unpack("!H", payload[8:10])[0] != XSR_DATA_HEADER_LENGTH
+        or payload[12:16] != b"\0\0\0\0"
+    ):
+        return None
+    inner_length = struct.unpack("!H", payload[10:12])[0]
+    inner = payload[XSR_DATA_HEADER_LENGTH:]
+    if (
+        inner_length != len(inner)
+        or len(inner) < 16
+        or inner[:4] != XSP_MAGIC
+        or inner[4] != 1
+    ):
+        return None
+    return {
+        "source_ip": udp["source_ip"],
+        "destination_ip": udp["destination_ip"],
+        "source_port": udp["source_port"],
+        "destination_port": udp["destination_port"],
+        "sequence": struct.unpack("!Q", payload[96:104])[0],
+        "inner_packet_type": inner[5],
+        "inner_length": inner_length,
+        "payload": payload,
+    }
+
+
 def frame_matches(record: dict[str, object], arguments: argparse.Namespace) -> bool:
     return (
         record["packet_type"] == XSP_PACKET_TYPES[arguments.packet_type]
+        and (arguments.source is None or record["source_ip"] == arguments.source)
+        and (
+            arguments.destination is None
+            or record["destination_ip"] == arguments.destination
+        )
+        and (
+            arguments.source_port is None
+            or record["source_port"] == arguments.source_port
+        )
+        and (
+            arguments.destination_port is None
+            or record["destination_port"] == arguments.destination_port
+        )
+    )
+
+
+def relay_frame_matches(
+    record: dict[str, object], arguments: argparse.Namespace
+) -> bool:
+    return (
+        record["inner_packet_type"]
+        == XSP_PACKET_TYPES[arguments.inner_packet_type]
         and (arguments.source is None or record["source_ip"] == arguments.source)
         and (
             arguments.destination is None
@@ -378,6 +453,44 @@ def command_capture_xsp(arguments: argparse.Namespace) -> None:
     print(json.dumps(records, sort_keys=True))
 
 
+def command_capture_relay(arguments: argparse.Namespace) -> None:
+    deadline = time.monotonic() + arguments.timeout
+    records: list[dict[str, object]] = []
+    payloads: list[bytes] = []
+    with open_packet_socket(arguments.interface, arguments.timeout) as sock:
+        while time.monotonic() < deadline and len(records) < arguments.count:
+            try:
+                frame = sock.recv(65535)
+            except TimeoutError:
+                continue
+            record = parse_relay_frame(frame)
+            if record is None or not relay_frame_matches(record, arguments):
+                continue
+            payload = record.pop("payload")
+            if arguments.forbid_text is not None and arguments.forbid_text.encode() in payload:
+                raise SystemExit("plaintext marker leaked into XSR datagram")
+            if arguments.forbid_file is not None:
+                forbidden = Path(arguments.forbid_file).read_bytes()
+                if forbidden in payload:
+                    raise SystemExit("original virtual IP packet leaked into XSR datagram")
+            records.append(record)
+            payloads.append(payload)
+    if len(records) != arguments.count:
+        raise SystemExit(
+            f"XSR capture timed out: expected={arguments.count} actual={len(records)}"
+        )
+    if arguments.output is not None:
+        if len(payloads) != 1:
+            raise SystemExit("--output requires --count 1")
+        Path(arguments.output).write_bytes(payloads[0])
+    if arguments.metadata is not None:
+        Path(arguments.metadata).write_text(
+            json.dumps(records, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    print(json.dumps(records, sort_keys=True))
+
+
 def command_assert_no_xsp(arguments: argparse.Namespace) -> None:
     deadline = time.monotonic() + arguments.timeout
     with open_packet_socket(arguments.interface, arguments.timeout) as sock:
@@ -392,11 +505,15 @@ def command_assert_no_xsp(arguments: argparse.Namespace) -> None:
     print("no-xsp-observed")
 
 
-def add_endpoint_filters(parser: argparse.ArgumentParser) -> None:
+def add_udp_endpoint_filters(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", type=ipv4)
     parser.add_argument("--destination", type=ipv4)
     parser.add_argument("--source-port", type=port)
     parser.add_argument("--destination-port", type=port)
+
+
+def add_endpoint_filters(parser: argparse.ArgumentParser) -> None:
+    add_udp_endpoint_filters(parser)
     parser.add_argument(
         "--packet-type",
         choices=sorted(XSP_PACKET_TYPES),
@@ -485,6 +602,22 @@ def build_parser() -> argparse.ArgumentParser:
     capture_xsp.add_argument("--forbid-file")
     add_endpoint_filters(capture_xsp)
     capture_xsp.set_defaults(handler=command_capture_xsp)
+
+    capture_relay = subcommands.add_parser("capture-relay")
+    capture_relay.add_argument("--interface", required=True)
+    capture_relay.add_argument("--count", required=True, type=positive)
+    capture_relay.add_argument("--timeout", type=float, default=5.0)
+    capture_relay.add_argument("--output")
+    capture_relay.add_argument("--metadata")
+    capture_relay.add_argument("--forbid-text")
+    capture_relay.add_argument("--forbid-file")
+    capture_relay.add_argument(
+        "--inner-packet-type",
+        choices=sorted(XSP_PACKET_TYPES),
+        default="data",
+    )
+    add_udp_endpoint_filters(capture_relay)
+    capture_relay.set_defaults(handler=command_capture_relay)
 
     assert_no_xsp = subcommands.add_parser("assert-no-xsp")
     assert_no_xsp.add_argument("--interface", required=True)

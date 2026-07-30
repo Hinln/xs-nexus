@@ -125,7 +125,9 @@ PostgreSQL 保存用户、网络、节点、公钥、凭证元数据、Token 哈
 
 ### Relay
 
-只保存短期认证转发会话、有限路由标识、限速计数和聚合指标。不得保存节点长期密钥、业务会话密钥或业务载荷。
+只保存短期认证转发 Lease、Network/Node/Relay 路由标识、绑定 UDP 端点、每 Lease 重放窗口、限速计数、短队列和聚合指标。注册由 Controller 节点凭证与节点身份签名认证；Relay 使用独立身份密钥签发最多 300 秒的 Lease。不得保存节点长期私钥、XSP/1 业务会话密钥、解密后的虚拟 IP 包或业务载荷。
+
+XSR/1 Data envelope 仅包裹完整内层 XSP/1 datagram。Relay 必须逐字节转发，不解密、不重新加密、不替 Agent 认证 Peer，也不执行业务 ACL。匿名、过期 Lease、错误来源端点、重放、目标无活动 Lease和超限报文静默丢弃。
 
 ## 7. 故障行为
 

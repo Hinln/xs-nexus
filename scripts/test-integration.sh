@@ -7,7 +7,7 @@ agent_output=$(cargo run --quiet --package xs-agent -- --version)
 cli_output=$(cargo run --quiet --package xs-cli --bin xs -- --version)
 [[ "$cli_output" == 'xs 0.1.0' ]]
 
-relay_output=$(cargo run --quiet --package xs-relay)
-[[ "$relay_output" == 'xs-relay status=baseline-ready version=0.1.0' ]]
+relay_output=$(cargo run --quiet --package xs-relay -- --version)
+[[ "$relay_output" == 'xs-relay 0.1.0' ]]
 
 printf 'non-database component integration checks passed\n'

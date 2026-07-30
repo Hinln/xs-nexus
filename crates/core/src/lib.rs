@@ -98,7 +98,8 @@ pub struct ConfigurationPayload {
     #[serde(default)]
     pub discovery_endpoints: Vec<SocketAddr>,
     pub nodes: Vec<ConfigurationNode>,
-    pub relays: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub relays: Vec<ConfigurationRelay>,
     pub policies: Vec<serde_json::Value>,
 }
 
@@ -116,6 +117,16 @@ pub struct ConfigurationNode {
     pub credential_not_after: DateTime<Utc>,
     pub role_bitmap: u32,
     pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigurationRelay {
+    pub relay_id_base64: String,
+    pub endpoint: SocketAddr,
+    pub identity_public_key_base64: String,
+    pub priority: u32,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
@@ -213,6 +224,8 @@ pub struct LocalPeerStatus {
 pub enum PathSelectionReason {
     HighestPriority,
     HandshakeFallback,
+    RelayFallback,
+    RelayFailover,
     AuthenticatedHandshake,
     AuthenticatedPeerTraffic,
     AuthenticatedPathProbe,

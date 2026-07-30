@@ -5,7 +5,18 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+axum.workspace = true
+base64.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 xs-core = { path = "../../crates/core" }
+xs-protocol = { path = "../../crates/protocol" }
+zeroize.workspace = true
 
 [lints]
 workspace = true

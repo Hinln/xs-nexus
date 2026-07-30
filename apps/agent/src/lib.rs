@@ -9,6 +9,7 @@ pub mod error;
 pub mod health;
 pub mod ipc;
 pub mod network;
+mod relay;
 pub mod runtime;
 pub mod state;
 pub mod storage;

@@ -288,7 +288,7 @@
 
 ## M2.3 自研 Relay
 
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETED`
 - 前置：M2.2
 - 风险等级：高
 
@@ -316,7 +316,7 @@
 
 ## M3.1 路由、ACL 与 IPAM 完整化
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M2.3
 
 ### 范围

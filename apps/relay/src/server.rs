@@ -1,0 +1,1090 @@
+use std::{
+    collections::{HashMap, VecDeque},
+    io,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+use ed25519_dalek::SigningKey;
+use tokio::{
+    net::UdpSocket,
+    sync::watch,
+    time::{MissedTickBehavior, interval},
+};
+use xs_protocol::{
+    RELAY_DATA_TYPE, RELAY_KEEPALIVE_TYPE, RELAY_MAX_FRAME_LENGTH, RELAY_REGISTER_REQUEST_LENGTH,
+    RELAY_REGISTER_REQUEST_TYPE, RelayKeepaliveResponse, RelayRegisterResponse, parse_relay_frame,
+    parse_relay_keepalive, sign_relay_keepalive_response, sign_relay_register_response,
+    verify_relay_register_request,
+};
+
+use crate::{config::RelayConfig, metrics::RelayMetrics};
+
+const REPLAY_WINDOW_BITS: usize = 1024;
+const REPLAY_WINDOW_WORDS: usize = REPLAY_WINDOW_BITS / 64;
+const MAX_SEQUENCE_ADVANCE: u64 = 1 << 20;
+const RECEIVE_BUFFER_LENGTH: usize = 2048;
+const REQUEST_REPLAY_TTL: Duration = Duration::from_secs(300);
+const SOURCE_WINDOW: Duration = Duration::from_secs(60);
+const TRAFFIC_WINDOW: Duration = Duration::from_secs(1);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
+const FLUSH_INTERVAL: Duration = Duration::from_millis(1);
+const MAX_FLUSH_PER_TICK: usize = 256;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct NodeKey {
+    network_id: [u8; 16],
+    node_id: [u8; 16],
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct RequestKey {
+    node: NodeKey,
+    request_id: [u8; 16],
+}
+
+struct Lease {
+    node: NodeKey,
+    endpoint: SocketAddr,
+    expires_at: u64,
+    last_activity: Instant,
+    replay: ReplayWindow,
+    traffic: TrafficBudget,
+    queue: VecDeque<Vec<u8>>,
+    queued_bytes: usize,
+    queue_scheduled: bool,
+}
+
+struct CachedRegistration {
+    endpoint: SocketAddr,
+    expires: Instant,
+    response: [u8; 168],
+}
+
+struct SourceBudget {
+    window_started: Instant,
+    requests: u16,
+}
+
+struct TrafficBudget {
+    window_started: Instant,
+    packets: u32,
+    bytes: u64,
+}
+
+#[derive(Clone)]
+struct ReplayWindow {
+    highest: Option<u64>,
+    words: [u64; REPLAY_WINDOW_WORDS],
+}
+
+pub struct RelayServer {
+    relay_id: [u8; 16],
+    controller_credential_key: ed25519_dalek::VerifyingKey,
+    identity_key: SigningKey,
+    lease_ttl_seconds: u64,
+    idle_timeout: Duration,
+    max_leases: usize,
+    registration_requests_per_minute: u16,
+    packets_per_lease_per_second: u32,
+    bytes_per_lease_per_second: u64,
+    queue_packets_per_node: usize,
+    queue_bytes_per_node: usize,
+    nodes: HashMap<NodeKey, [u8; 16]>,
+    leases: HashMap<[u8; 16], Lease>,
+    active_queues: VecDeque<[u8; 16]>,
+    registrations: HashMap<RequestKey, CachedRegistration>,
+    registration_order: VecDeque<RequestKey>,
+    source_budgets: HashMap<IpAddr, SourceBudget>,
+    source_order: VecDeque<IpAddr>,
+    metrics: RelayMetrics,
+}
+
+impl RelayServer {
+    #[must_use]
+    pub fn new(config: RelayConfig, metrics: RelayMetrics) -> Self {
+        Self {
+            relay_id: config.relay_id,
+            controller_credential_key: config.controller_credential_key,
+            identity_key: config.identity_key,
+            lease_ttl_seconds: config.lease_ttl_seconds,
+            idle_timeout: Duration::from_secs(config.idle_timeout_seconds),
+            max_leases: config.max_leases,
+            registration_requests_per_minute: config.registration_requests_per_minute,
+            packets_per_lease_per_second: config.packets_per_lease_per_second,
+            bytes_per_lease_per_second: config.bytes_per_lease_per_second,
+            queue_packets_per_node: config.queue_packets_per_node,
+            queue_bytes_per_node: config.queue_bytes_per_node,
+            nodes: HashMap::new(),
+            leases: HashMap::new(),
+            active_queues: VecDeque::new(),
+            registrations: HashMap::new(),
+            registration_order: VecDeque::new(),
+            source_budgets: HashMap::new(),
+            source_order: VecDeque::new(),
+            metrics,
+        }
+    }
+
+    /// Serves authenticated XSR/1 UDP traffic until shutdown.
+    ///
+    /// Invalid and unauthenticated datagrams are silently dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error only when the bound UDP socket receive operation fails.
+    pub async fn serve(
+        mut self,
+        socket: Arc<UdpSocket>,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> io::Result<()> {
+        let mut datagram = [0_u8; RECEIVE_BUFFER_LENGTH];
+        let mut cleanup = interval(CLEANUP_INTERVAL);
+        cleanup.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut flush = interval(FLUSH_INTERVAL);
+        flush.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        return Ok(());
+                    }
+                }
+                _ = cleanup.tick() => {
+                    self.cleanup(Instant::now(), unix_time());
+                }
+                _ = flush.tick() => {
+                    self.flush_queues(&socket);
+                }
+                received = socket.recv_from(&mut datagram) => {
+                    let (length, source) = received?;
+                    self.handle_datagram(&socket, &datagram[..length], source);
+                    self.flush_queues(&socket);
+                }
+            }
+        }
+    }
+
+    fn handle_datagram(&mut self, socket: &UdpSocket, datagram: &[u8], source: SocketAddr) {
+        if datagram.len() < 6
+            || datagram.len() > RELAY_MAX_FRAME_LENGTH
+            || &datagram[0..4] != b"XSR1"
+        {
+            self.metrics.invalid_drop();
+            return;
+        }
+        match datagram[5] {
+            RELAY_REGISTER_REQUEST_TYPE => self.handle_registration(socket, datagram, source),
+            RELAY_DATA_TYPE => self.handle_data(datagram, source),
+            RELAY_KEEPALIVE_TYPE => self.handle_keepalive(socket, datagram, source),
+            _ => self.metrics.invalid_drop(),
+        }
+    }
+
+    fn handle_registration(&mut self, socket: &UdpSocket, datagram: &[u8], source: SocketAddr) {
+        let instant = Instant::now();
+        if datagram.len() != RELAY_REGISTER_REQUEST_LENGTH
+            || !self.allow_registration_source(source.ip(), instant)
+        {
+            self.metrics.registration_rejected();
+            return;
+        }
+        let now = unix_time();
+        let Ok(verified) =
+            verify_relay_register_request(datagram, &self.controller_credential_key, now)
+        else {
+            self.metrics.registration_rejected();
+            return;
+        };
+        if verified.request.relay_id != self.relay_id {
+            self.metrics.registration_rejected();
+            return;
+        }
+        let node = NodeKey {
+            network_id: verified.request.network_id,
+            node_id: verified.request.node_id,
+        };
+        let request_key = RequestKey {
+            node,
+            request_id: verified.request.request_id,
+        };
+        if let Some(cached) = self.registrations.get(&request_key) {
+            if cached.endpoint == source && cached.expires > instant {
+                let _ = socket.try_send_to(&cached.response, source);
+                self.metrics.registration_retry();
+            } else {
+                self.metrics.registration_rejected();
+            }
+            return;
+        }
+        if self.leases.len() >= self.max_leases && !self.nodes.contains_key(&node) {
+            self.metrics.registration_rejected();
+            return;
+        }
+        let Some(lease_id) = self.new_lease_id() else {
+            self.metrics.registration_rejected();
+            return;
+        };
+        let expires_at = now
+            .saturating_add(self.lease_ttl_seconds)
+            .min(verified.credential.not_after);
+        if expires_at <= now {
+            self.metrics.registration_rejected();
+            return;
+        }
+        if let Some(previous) = self.nodes.insert(node, lease_id) {
+            self.leases.remove(&previous);
+        }
+        self.leases.insert(
+            lease_id,
+            Lease {
+                node,
+                endpoint: source,
+                expires_at,
+                last_activity: instant,
+                replay: ReplayWindow::new(),
+                traffic: TrafficBudget::new(instant),
+                queue: VecDeque::new(),
+                queued_bytes: 0,
+                queue_scheduled: false,
+            },
+        );
+        let response = sign_relay_register_response(
+            RelayRegisterResponse {
+                network_id: node.network_id,
+                node_id: node.node_id,
+                relay_id: self.relay_id,
+                request_id: request_key.request_id,
+                lease_id,
+                expires_at,
+            },
+            &self.identity_key,
+        );
+        self.cache_registration(request_key, source, response, instant);
+        self.metrics.set_active_leases(self.leases.len());
+        self.metrics.registration_accepted();
+        let _ = socket.try_send_to(&response, source);
+    }
+
+    fn handle_data(&mut self, datagram: &[u8], source: SocketAddr) {
+        let Ok(frame) = parse_relay_frame(datagram) else {
+            self.metrics.invalid_drop();
+            return;
+        };
+        if frame.relay_id != self.relay_id {
+            self.metrics.authentication_drop();
+            return;
+        }
+        let now = Instant::now();
+        let unix_now = unix_time();
+        let Some(source_lease) = self.leases.get(&frame.lease_id) else {
+            self.metrics.authentication_drop();
+            return;
+        };
+        if !lease_matches(
+            source_lease,
+            frame.network_id,
+            frame.source_node_id,
+            source,
+            unix_now,
+        ) {
+            self.metrics.authentication_drop();
+            return;
+        }
+        if source_lease.replay.precheck(frame.sequence).is_err() {
+            self.metrics.replay_drop();
+            return;
+        }
+        if !source_lease.traffic.can_accept(
+            now,
+            datagram.len(),
+            self.packets_per_lease_per_second,
+            self.bytes_per_lease_per_second,
+        ) {
+            self.metrics.rate_limit_drop();
+            return;
+        }
+        let destination = NodeKey {
+            network_id: frame.network_id,
+            node_id: frame.destination_node_id,
+        };
+        let Some(destination_lease_id) = self.nodes.get(&destination).copied() else {
+            self.metrics.destination_drop();
+            return;
+        };
+        let Some(destination_lease) = self.leases.get(&destination_lease_id) else {
+            self.metrics.destination_drop();
+            return;
+        };
+        if destination_lease.expires_at <= unix_now
+            || destination_lease.queue.len() >= self.queue_packets_per_node
+            || destination_lease
+                .queued_bytes
+                .saturating_add(datagram.len())
+                > self.queue_bytes_per_node
+        {
+            self.metrics.queue_drop();
+            return;
+        }
+        let Some(source_lease) = self.leases.get_mut(&frame.lease_id) else {
+            self.metrics.authentication_drop();
+            return;
+        };
+        if source_lease.replay.commit(frame.sequence).is_err() {
+            self.metrics.replay_drop();
+            return;
+        }
+        source_lease.traffic.commit(now, datagram.len());
+        source_lease.last_activity = now;
+        let Some(destination_lease) = self.leases.get_mut(&destination_lease_id) else {
+            self.metrics.destination_drop();
+            return;
+        };
+        destination_lease.queued_bytes = destination_lease
+            .queued_bytes
+            .saturating_add(datagram.len());
+        destination_lease.queue.push_back(datagram.to_vec());
+        if !destination_lease.queue_scheduled {
+            destination_lease.queue_scheduled = true;
+            self.active_queues.push_back(destination_lease_id);
+        }
+    }
+
+    fn handle_keepalive(&mut self, socket: &UdpSocket, datagram: &[u8], source: SocketAddr) {
+        let Ok(frame) = parse_relay_keepalive(datagram) else {
+            self.metrics.invalid_drop();
+            return;
+        };
+        if frame.relay_id != self.relay_id {
+            self.metrics.authentication_drop();
+            return;
+        }
+        let now = Instant::now();
+        let unix_now = unix_time();
+        let Some(lease) = self.leases.get_mut(&frame.lease_id) else {
+            self.metrics.authentication_drop();
+            return;
+        };
+        if !lease_matches(
+            lease,
+            frame.network_id,
+            frame.source_node_id,
+            source,
+            unix_now,
+        ) {
+            self.metrics.authentication_drop();
+            return;
+        }
+        if lease.replay.precheck(frame.sequence).is_err() {
+            self.metrics.replay_drop();
+            return;
+        }
+        if !lease.traffic.can_accept(
+            now,
+            datagram.len(),
+            self.packets_per_lease_per_second,
+            self.bytes_per_lease_per_second,
+        ) {
+            self.metrics.rate_limit_drop();
+            return;
+        }
+        if lease.replay.commit(frame.sequence).is_err() {
+            self.metrics.replay_drop();
+            return;
+        }
+        lease.traffic.commit(now, datagram.len());
+        lease.last_activity = now;
+        let response = sign_relay_keepalive_response(
+            RelayKeepaliveResponse {
+                network_id: frame.network_id,
+                relay_id: self.relay_id,
+                node_id: frame.source_node_id,
+                lease_id: frame.lease_id,
+                server_time: unix_now,
+            },
+            &self.identity_key,
+        );
+        if socket.try_send_to(&response, source).is_err() {
+            self.metrics.send_drop();
+        } else {
+            self.metrics.keepalive_accepted();
+        }
+    }
+
+    fn flush_queues(&mut self, socket: &UdpSocket) {
+        for _ in 0..MAX_FLUSH_PER_TICK {
+            let Some(lease_id) = self.active_queues.pop_front() else {
+                return;
+            };
+            let Some(lease) = self.leases.get_mut(&lease_id) else {
+                continue;
+            };
+            let Some(datagram) = lease.queue.front() else {
+                lease.queue_scheduled = false;
+                continue;
+            };
+            match socket.try_send_to(datagram, lease.endpoint) {
+                Ok(length) => {
+                    let datagram = lease.queue.pop_front().expect("queue front exists");
+                    lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.len());
+                    if length == datagram.len() {
+                        self.metrics.forwarded(length);
+                    } else {
+                        self.metrics.send_drop();
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    self.active_queues.push_front(lease_id);
+                    return;
+                }
+                Err(_) => {
+                    if let Some(datagram) = lease.queue.pop_front() {
+                        lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.len());
+                    }
+                    self.metrics.send_drop();
+                }
+            }
+            if lease.queue.is_empty() {
+                lease.queue_scheduled = false;
+            } else {
+                self.active_queues.push_back(lease_id);
+            }
+        }
+    }
+
+    fn cleanup(&mut self, now: Instant, unix_now: u64) {
+        let expired = self
+            .leases
+            .iter()
+            .filter_map(|(lease_id, lease)| {
+                (lease.expires_at <= unix_now
+                    || now.saturating_duration_since(lease.last_activity) >= self.idle_timeout)
+                    .then_some((*lease_id, lease.node))
+            })
+            .collect::<Vec<_>>();
+        for (lease_id, node) in expired {
+            self.leases.remove(&lease_id);
+            if self.nodes.get(&node) == Some(&lease_id) {
+                self.nodes.remove(&node);
+            }
+        }
+        while let Some(request) = self.registration_order.front().copied() {
+            if self
+                .registrations
+                .get(&request)
+                .is_some_and(|cached| cached.expires > now)
+            {
+                break;
+            }
+            self.registration_order.pop_front();
+            self.registrations.remove(&request);
+        }
+        self.metrics.set_active_leases(self.leases.len());
+    }
+
+    fn new_lease_id(&self) -> Option<[u8; 16]> {
+        for _ in 0..8 {
+            let mut lease_id = [0_u8; 16];
+            if getrandom::fill(&mut lease_id).is_ok()
+                && lease_id != [0_u8; 16]
+                && !self.leases.contains_key(&lease_id)
+            {
+                return Some(lease_id);
+            }
+        }
+        None
+    }
+
+    fn cache_registration(
+        &mut self,
+        request: RequestKey,
+        endpoint: SocketAddr,
+        response: [u8; 168],
+        now: Instant,
+    ) {
+        let maximum = self.max_leases.saturating_mul(4).max(16);
+        while self.registrations.len() >= maximum {
+            let Some(oldest) = self.registration_order.pop_front() else {
+                break;
+            };
+            self.registrations.remove(&oldest);
+        }
+        self.registration_order.push_back(request);
+        self.registrations.insert(
+            request,
+            CachedRegistration {
+                endpoint,
+                expires: now + REQUEST_REPLAY_TTL,
+                response,
+            },
+        );
+    }
+
+    fn allow_registration_source(&mut self, source: IpAddr, now: Instant) -> bool {
+        if let Some(budget) = self.source_budgets.get_mut(&source) {
+            if now.saturating_duration_since(budget.window_started) >= SOURCE_WINDOW {
+                budget.window_started = now;
+                budget.requests = 1;
+                return true;
+            }
+            if budget.requests >= self.registration_requests_per_minute {
+                return false;
+            }
+            budget.requests = budget.requests.saturating_add(1);
+            return true;
+        }
+        let maximum = self.max_leases.clamp(64, 4096);
+        while self.source_budgets.len() >= maximum {
+            let Some(oldest) = self.source_order.pop_front() else {
+                break;
+            };
+            self.source_budgets.remove(&oldest);
+        }
+        self.source_order.push_back(source);
+        self.source_budgets.insert(
+            source,
+            SourceBudget {
+                window_started: now,
+                requests: 1,
+            },
+        );
+        true
+    }
+}
+
+fn lease_matches(
+    lease: &Lease,
+    network_id: [u8; 16],
+    node_id: [u8; 16],
+    endpoint: SocketAddr,
+    now: u64,
+) -> bool {
+    lease.node.network_id == network_id
+        && lease.node.node_id == node_id
+        && lease.endpoint == endpoint
+        && lease.expires_at > now
+}
+
+impl TrafficBudget {
+    const fn new(now: Instant) -> Self {
+        Self {
+            window_started: now,
+            packets: 0,
+            bytes: 0,
+        }
+    }
+
+    fn can_accept(&self, now: Instant, bytes: usize, packet_limit: u32, byte_limit: u64) -> bool {
+        if now.saturating_duration_since(self.window_started) >= TRAFFIC_WINDOW {
+            return u64::try_from(bytes).is_ok_and(|bytes| bytes <= byte_limit);
+        }
+        self.packets < packet_limit
+            && u64::try_from(bytes)
+                .is_ok_and(|bytes| self.bytes.saturating_add(bytes) <= byte_limit)
+    }
+
+    fn commit(&mut self, now: Instant, bytes: usize) {
+        if now.saturating_duration_since(self.window_started) >= TRAFFIC_WINDOW {
+            self.window_started = now;
+            self.packets = 0;
+            self.bytes = 0;
+        }
+        self.packets = self.packets.saturating_add(1);
+        self.bytes = self
+            .bytes
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+}
+
+impl ReplayWindow {
+    const fn new() -> Self {
+        Self {
+            highest: None,
+            words: [0_u64; REPLAY_WINDOW_WORDS],
+        }
+    }
+
+    fn precheck(&self, sequence: u64) -> Result<(), ()> {
+        let Some(highest) = self.highest else {
+            return (sequence <= MAX_SEQUENCE_ADVANCE).then_some(()).ok_or(());
+        };
+        if sequence > highest {
+            return (sequence - highest <= MAX_SEQUENCE_ADVANCE)
+                .then_some(())
+                .ok_or(());
+        }
+        let offset = usize::try_from(highest - sequence).map_err(|_| ())?;
+        if offset >= REPLAY_WINDOW_BITS || self.bit_is_set(offset) {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn commit(&mut self, sequence: u64) -> Result<(), ()> {
+        self.precheck(sequence)?;
+        match self.highest {
+            None => {
+                self.highest = Some(sequence);
+                self.words[0] = 1;
+            }
+            Some(highest) if sequence > highest => {
+                let distance = usize::try_from(sequence - highest).map_err(|_| ())?;
+                self.shift(distance);
+                self.highest = Some(sequence);
+                self.words[0] |= 1;
+            }
+            Some(highest) => {
+                let offset = usize::try_from(highest - sequence).map_err(|_| ())?;
+                self.words[offset / 64] |= 1_u64 << (offset % 64);
+            }
+        }
+        Ok(())
+    }
+
+    fn bit_is_set(&self, offset: usize) -> bool {
+        self.words[offset / 64] & (1_u64 << (offset % 64)) != 0
+    }
+
+    fn shift(&mut self, distance: usize) {
+        if distance >= REPLAY_WINDOW_BITS {
+            self.words.fill(0);
+            return;
+        }
+        let old = self.words;
+        self.words.fill(0);
+        let word_shift = distance / 64;
+        let bit_shift = distance % 64;
+        for (source, word) in old.into_iter().enumerate() {
+            let target = source + word_shift;
+            if target >= REPLAY_WINDOW_WORDS {
+                break;
+            }
+            self.words[target] |= word << bit_shift;
+            if bit_shift != 0 && target + 1 < REPLAY_WINDOW_WORDS {
+                self.words[target + 1] |= word >> (64 - bit_shift);
+            }
+        }
+    }
+}
+
+fn unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddrV4};
+
+    use ed25519_dalek::VerifyingKey;
+    use tokio::time::{sleep, timeout};
+    use xs_protocol::{
+        CREDENTIAL_LENGTH, CredentialClaims, DATA_HEADER_LENGTH, DATA_TAG_LENGTH, DataFlags,
+        DataHeader, PacketType, RELAY_KEEPALIVE_RESPONSE_LENGTH, RelayFrame, RelayRegisterRequest,
+        encode_relay_frame, encode_relay_keepalive, node_id, role_set_digest, sign_credential,
+        sign_relay_register_request, verify_relay_keepalive_response,
+        verify_relay_register_response,
+    };
+
+    use super::*;
+
+    struct TestContext {
+        relay_endpoint: SocketAddr,
+        network_id: [u8; 16],
+        relay_id: [u8; 16],
+        controller_key: SigningKey,
+        relay_key: SigningKey,
+    }
+
+    struct RegisteredNode {
+        socket: UdpSocket,
+        node_id: [u8; 16],
+        lease_id: [u8; 16],
+    }
+
+    struct TestRelay {
+        context: TestContext,
+        metrics: RelayMetrics,
+        shutdown: watch::Sender<bool>,
+        task: tokio::task::JoinHandle<io::Result<()>>,
+    }
+
+    #[test]
+    fn replay_window_enforces_duplicate_old_and_jump_bounds() {
+        let mut window = ReplayWindow::new();
+        window.commit(0).expect("initial sequence");
+        window.commit(2).expect("future sequence");
+        window.commit(1).expect("reordered sequence");
+        assert!(window.commit(1).is_err());
+        assert!(window.commit(MAX_SEQUENCE_ADVANCE + 3).is_err());
+
+        let mut boundary = ReplayWindow::new();
+        boundary.commit(0).expect("initial sequence");
+        boundary.commit(1023).expect("window edge");
+        assert!(boundary.commit(0).is_err());
+    }
+
+    #[tokio::test]
+    async fn udp_relay_authenticates_forwards_rejects_replay_and_answers_keepalive() {
+        let relay = start_test_relay(100).await;
+        let first = register(&relay.context, 31, [51_u8; 16]).await;
+        let second = register(&relay.context, 32, [52_u8; 16]).await;
+        assert_ne!(first.lease_id, second.lease_id);
+        let inner = assert_forwarding_and_replay(&relay.context, &first, &second).await;
+        assert_keepalive(&relay.context, &first).await;
+        assert_endpoint_spoof_is_rejected(&relay.context, &first, &second, &inner).await;
+
+        sleep(Duration::from_millis(20)).await;
+        let snapshot = relay.metrics.snapshot();
+        assert_eq!(snapshot.active_leases, 2);
+        assert_eq!(snapshot.packets_forwarded, 1);
+        assert_eq!(snapshot.keepalives_accepted, 1);
+        assert!(snapshot.replay_drops >= 1);
+        assert!(snapshot.authentication_drops >= 1);
+        assert_eq!(snapshot.registration_retries, 2);
+        relay.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn udp_relay_enforces_and_recovers_per_lease_packet_rate() {
+        let relay = start_test_relay(1).await;
+        let first = register(&relay.context, 33, [53_u8; 16]).await;
+        let second = register(&relay.context, 34, [54_u8; 16]).await;
+        let inner = framed_xsp_keepalive(relay.context.network_id, first.node_id, second.node_id);
+        let first_frame = relay_frame(&relay.context, &first, &second, 1, &inner);
+        let second_frame = relay_frame(&relay.context, &first, &second, 2, &inner);
+        let mut received = [0_u8; RELAY_MAX_FRAME_LENGTH];
+
+        first
+            .socket
+            .send_to(&first_frame, relay.context.relay_endpoint)
+            .await
+            .expect("send first frame");
+        timeout(
+            Duration::from_secs(1),
+            second.socket.recv_from(&mut received),
+        )
+        .await
+        .expect("first forward timeout")
+        .expect("first frame forwarded");
+        first
+            .socket
+            .send_to(&second_frame, relay.context.relay_endpoint)
+            .await
+            .expect("send rate-limited frame");
+        assert!(
+            timeout(
+                Duration::from_millis(100),
+                second.socket.recv_from(&mut received)
+            )
+            .await
+            .is_err()
+        );
+
+        sleep(TRAFFIC_WINDOW + Duration::from_millis(50)).await;
+        first
+            .socket
+            .send_to(&second_frame, relay.context.relay_endpoint)
+            .await
+            .expect("retry after rate window");
+        timeout(
+            Duration::from_secs(1),
+            second.socket.recv_from(&mut received),
+        )
+        .await
+        .expect("rate recovery timeout")
+        .expect("frame forwarded after reset");
+        assert!(relay.metrics.snapshot().rate_limit_drops >= 1);
+        relay.shutdown().await;
+    }
+
+    fn test_config(
+        relay_id: [u8; 16],
+        controller_credential_key: VerifyingKey,
+        identity_key: SigningKey,
+    ) -> RelayConfig {
+        RelayConfig {
+            listen: SocketAddr::from(([127, 0, 0, 1], 1)),
+            health_listen: SocketAddr::from(([127, 0, 0, 1], 2)),
+            relay_id,
+            controller_credential_key,
+            identity_key,
+            lease_ttl_seconds: 120,
+            idle_timeout_seconds: 60,
+            max_leases: 8,
+            registration_requests_per_minute: 30,
+            packets_per_lease_per_second: 100,
+            bytes_per_lease_per_second: 1_000_000,
+            queue_packets_per_node: 8,
+            queue_bytes_per_node: 16_000,
+        }
+    }
+
+    async fn start_test_relay(packets_per_second: u32) -> TestRelay {
+        let controller_key = SigningKey::from_bytes(&[21_u8; 32]);
+        let relay_key = SigningKey::from_bytes(&[22_u8; 32]);
+        let relay_id = [23_u8; 16];
+        let metrics = RelayMetrics::default();
+        let mut config = test_config(relay_id, controller_key.verifying_key(), relay_key.clone());
+        config.packets_per_lease_per_second = packets_per_second;
+        let server = RelayServer::new(config, metrics.clone());
+        let socket = Arc::new(
+            UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+                .await
+                .expect("bind Relay"),
+        );
+        let relay_endpoint = socket.local_addr().expect("Relay endpoint");
+        let (shutdown, shutdown_rx) = watch::channel(false);
+        let task = tokio::spawn(server.serve(socket, shutdown_rx));
+        TestRelay {
+            context: TestContext {
+                relay_endpoint,
+                network_id: [41_u8; 16],
+                relay_id,
+                controller_key,
+                relay_key,
+            },
+            metrics,
+            shutdown,
+            task,
+        }
+    }
+
+    impl TestRelay {
+        async fn shutdown(self) {
+            self.shutdown.send(true).expect("signal shutdown");
+            self.task
+                .await
+                .expect("Relay task")
+                .expect("Relay shutdown cleanly");
+        }
+    }
+
+    async fn register(
+        context: &TestContext,
+        identity_seed: u8,
+        request_id: [u8; 16],
+    ) -> RegisteredNode {
+        let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind node");
+        let identity_key = SigningKey::from_bytes(&[identity_seed; 32]);
+        let now = unix_time();
+        let node = node_id(&identity_key.verifying_key().to_bytes());
+        let credential = sign_credential(
+            CredentialClaims {
+                network_id: context.network_id,
+                identity_public_key: identity_key.verifying_key().to_bytes(),
+                virtual_ipv4: Ipv4Addr::new(100, 88, 0, identity_seed),
+                serial: u64::from(identity_seed),
+                not_before: now.saturating_sub(1),
+                not_after: now + 600,
+                role_bitmap: 1,
+                role_set_digest: role_set_digest(1, &["linux".to_owned()]).expect("role digest"),
+            },
+            &context.controller_key,
+        );
+        assert_eq!(credential.len(), CREDENTIAL_LENGTH);
+        let request = sign_relay_register_request(
+            RelayRegisterRequest {
+                network_id: context.network_id,
+                node_id: node,
+                relay_id: context.relay_id,
+                request_id,
+                client_time: now,
+                credential,
+            },
+            &identity_key,
+        );
+        socket
+            .send_to(&request, context.relay_endpoint)
+            .await
+            .expect("send registration");
+        let mut response = [0_u8; 168];
+        let (length, source) = timeout(Duration::from_secs(1), socket.recv_from(&mut response))
+            .await
+            .expect("registration timeout")
+            .expect("receive registration");
+        assert_eq!(length, response.len());
+        assert_eq!(source, context.relay_endpoint);
+        let lease_id = verify_relay_register_response(
+            &response,
+            &context.relay_key.verifying_key(),
+            context.network_id,
+            node,
+            context.relay_id,
+            request_id,
+            now,
+        )
+        .expect("valid registration response")
+        .lease_id;
+        socket
+            .send_to(&request, context.relay_endpoint)
+            .await
+            .expect("retry registration");
+        let mut retry = [0_u8; 168];
+        let (retry_length, retry_source) =
+            timeout(Duration::from_secs(1), socket.recv_from(&mut retry))
+                .await
+                .expect("registration retry timeout")
+                .expect("receive registration retry");
+        assert_eq!(retry_length, retry.len());
+        assert_eq!(retry_source, context.relay_endpoint);
+        assert_eq!(retry, response);
+        RegisteredNode {
+            socket,
+            node_id: node,
+            lease_id,
+        }
+    }
+
+    async fn assert_forwarding_and_replay(
+        context: &TestContext,
+        first: &RegisteredNode,
+        second: &RegisteredNode,
+    ) -> Vec<u8> {
+        let inner = framed_xsp_keepalive(context.network_id, first.node_id, second.node_id);
+        let frame = relay_frame(context, first, second, 1, &inner);
+        first
+            .socket
+            .send_to(&frame, context.relay_endpoint)
+            .await
+            .expect("send Relay data");
+        let mut received = [0_u8; RELAY_MAX_FRAME_LENGTH];
+        let (length, source) = timeout(
+            Duration::from_secs(1),
+            second.socket.recv_from(&mut received),
+        )
+        .await
+        .expect("forward timeout")
+        .expect("receive forwarded data");
+        assert_eq!(source, context.relay_endpoint);
+        assert_eq!(&received[..length], frame);
+
+        first
+            .socket
+            .send_to(&frame, context.relay_endpoint)
+            .await
+            .expect("send replay");
+        assert!(
+            timeout(
+                Duration::from_millis(100),
+                second.socket.recv_from(&mut received)
+            )
+            .await
+            .is_err()
+        );
+        inner
+    }
+
+    fn relay_frame(
+        context: &TestContext,
+        source: &RegisteredNode,
+        destination: &RegisteredNode,
+        sequence: u64,
+        inner: &[u8],
+    ) -> Vec<u8> {
+        encode_relay_frame(RelayFrame {
+            network_id: context.network_id,
+            relay_id: context.relay_id,
+            source_node_id: source.node_id,
+            destination_node_id: destination.node_id,
+            lease_id: source.lease_id,
+            sequence,
+            payload: inner,
+        })
+        .expect("Relay frame")
+    }
+
+    async fn assert_keepalive(context: &TestContext, node: &RegisteredNode) {
+        let keepalive = encode_relay_keepalive(
+            context.network_id,
+            context.relay_id,
+            node.node_id,
+            node.lease_id,
+            2,
+        );
+        node.socket
+            .send_to(&keepalive, context.relay_endpoint)
+            .await
+            .expect("send keepalive");
+        let mut response = [0_u8; RELAY_KEEPALIVE_RESPONSE_LENGTH];
+        let (length, source) =
+            timeout(Duration::from_secs(1), node.socket.recv_from(&mut response))
+                .await
+                .expect("keepalive timeout")
+                .expect("receive keepalive");
+        assert_eq!(length, response.len());
+        assert_eq!(source, context.relay_endpoint);
+        verify_relay_keepalive_response(
+            &response,
+            &context.relay_key.verifying_key(),
+            context.network_id,
+            context.relay_id,
+            node.node_id,
+            node.lease_id,
+            unix_time(),
+        )
+        .expect("valid keepalive response");
+    }
+
+    async fn assert_endpoint_spoof_is_rejected(
+        context: &TestContext,
+        first: &RegisteredNode,
+        second: &RegisteredNode,
+        inner: &[u8],
+    ) {
+        let attacker = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind attacker");
+        let spoofed = encode_relay_frame(RelayFrame {
+            network_id: context.network_id,
+            relay_id: context.relay_id,
+            source_node_id: first.node_id,
+            destination_node_id: second.node_id,
+            lease_id: first.lease_id,
+            sequence: 3,
+            payload: inner,
+        })
+        .expect("spoofed frame");
+        attacker
+            .send_to(&spoofed, context.relay_endpoint)
+            .await
+            .expect("send spoofed frame");
+        let mut received = [0_u8; RELAY_MAX_FRAME_LENGTH];
+        assert!(
+            timeout(
+                Duration::from_millis(100),
+                second.socket.recv_from(&mut received)
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    fn framed_xsp_keepalive(
+        network_id: [u8; 16],
+        source_node_id: [u8; 16],
+        destination_node_id: [u8; 16],
+    ) -> Vec<u8> {
+        let header = DataHeader {
+            packet_type: PacketType::Keepalive,
+            flags: DataFlags::NONE,
+            payload_length: 0,
+            network_id,
+            source_node_id,
+            destination_node_id,
+            session_id: [61_u8; 16],
+            key_epoch: 0,
+            sequence: 0,
+            path_id: 0,
+        };
+        let mut packet = Vec::with_capacity(DATA_HEADER_LENGTH + DATA_TAG_LENGTH);
+        packet.extend_from_slice(&header.encode());
+        packet.extend_from_slice(&[0_u8; DATA_TAG_LENGTH]);
+        packet
+    }
+}

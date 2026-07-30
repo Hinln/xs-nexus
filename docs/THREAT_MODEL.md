@@ -85,8 +85,8 @@ flowchart LR
 | T05 | 降级攻击 | 弱算法或旧协议 | v1 固定套件、选择结果进入签名 transcript、未知版本拒绝 | 未来多套件增加复杂度 |
 | T06 | 数据重放或乱序滥用 | 重复操作、资源耗尽 | 每 Epoch 1024 位窗口、64 位序列、先做廉价边界检查 | 大量随机包仍消耗解析资源 |
 | T07 | AEAD 篡改 | 明文注入 | 包头作为 AAD、常量时间 Tag 验证、失败静默丢弃 | 错误统计本身需限速 |
-| T08 | Relay 解密或伪造 | 数据泄露/注入 | 端到端 XSP/1 密文，Relay envelope 与内层身份分离 | Relay 可观察有限元数据和实施 DoS |
-| T09 | Relay 反射放大 | 第三方 DDoS | 认证会话、无匿名转发、响应不大于请求、限速和配额 | 分布式认证节点仍可消耗资源 |
+| T08 | Relay 解密或伪造 | 数据泄露/注入 | XSR/1 只转发逐字节不变的端到端 XSP/1 密文；Agent 独立验证握手、AEAD、Epoch、重放和 ACL | Relay 可观察有限元数据并实施丢包、延迟、重复、重排或 DoS |
+| T09 | Relay 反射放大 | 第三方 DDoS | 节点凭证和身份签名注册、随机短期 Lease、来源端点绑定、目标活动 Lease、转发不增大、匿名失败静默丢弃、限速和配额 | 分布式有效节点或获得活动 Lease 的 on-path 攻击者仍可消耗受限容量 |
 | T10 | 配置回滚或伪造 | 恢复旧权限 | 配置签名、单调版本、最近有效配置、回滚审计 | Controller 签名密钥被攻陷时需紧急根轮换 |
 | T11 | 恶意路由发布 | 流量劫持 | 管理员审批、冲突检测、网关角色、默认路由保护 | 恶意已批准网关可观察其转发流量 |
 | T12 | Controller 被攻陷 | 身份/策略控制失守 | 密钥分层、审计、最小权限、离线更新根、吊销和恢复流程 | 在线签名密钥被盗仍是高影响事件 |
@@ -114,7 +114,9 @@ Controller 默认拒绝默认路由，只有未来明确启用 Exit Node 功能�
 
 ### 7.3 Relay 返回伪造路径成功
 
-Agent 不接受 Relay 对节点身份或内层包有效性的声明。只有对端完成 XSP/1 握手和 AEAD 验证后路径才进入可用状态。
+Agent 不接受 Relay 对节点身份或内层包有效性的声明。XSR/1 Lease 只证明某节点向指定 Relay 完成过签名注册并保持短期 UDP 状态，不证明目标 Peer 或内层包有效。只有对端完成 XSP/1 握手或内层 AEAD 验证后路径才进入可用状态。
+
+Relay Data envelope 不含业务密钥，也不逐包执行外层公钥签名；服务端必须把 Lease、Network、Source Node、UDP 来源端点、过期时间和独立 sequence 重放窗口作为一个不可拆分状态验证。攻击者即使观察或篡改外层元数据，也不能生成目标 Agent 接受的 XSP/1 明文，但仍可能造成受限 DoS，因此每节点带宽、包速率、队列和全局容量必须失败关闭。
 
 ### 7.4 Controller 下发低版本配置
 
@@ -188,6 +190,18 @@ M1.3 还通过两个隔离 Linux namespace 验证 Agent UDP/TUN 双节点链路�
 | 认证路径晋升 | 已建立会话对更高优先级 veth 路径发送加密 PathChallenge，匹配响应后报告 `authenticated_path_probe`，双向 ICMP 持续通过 |
 
 M2.1 全量证据位于 `/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`。隔离拓扑证据不等同于真实公网、全部 NAT 类型、运营商 IPv6 或移动网络切换验证；这些属于 M2.2 和外部环境矩阵。持续 Fuzz、Relay 边界和第三方密码学审计仍未完成。
+
+### 8.4 M2.3 XSR/1 协议边界证据
+
+| 控制 | 自动化证据 |
+|---|---|
+| 注册身份绑定 | 固定 352 字节请求同时验证 Controller 节点凭证、Network/Node/Relay/Request ID、时间和节点 Ed25519 签名 |
+| 短期 Relay 身份 | 固定 168 字节响应由配置固定的 Relay 身份密钥签名，绑定原 Request ID、非零随机 Lease 和最多 300 秒有效期 |
+| 域分离 | Register Request、Register Response 和 Keepalive Response 使用三个独立签名域，跨类型验证失败 |
+| Canonical envelope | Data/Keepalive 严格验证 Magic、版本、类型、flag、长度、保留字段、非零标识、空 payload、自转发、截断和 1500 字节上限 |
+| 向量与 Fuzz seed | `relay-v1.json` 及 `fuzz/corpus/relay` 固定全部五类消息、SHA-256、篡改、错误长度、空 Data、保留字段和截断语料 |
+
+上述证据只锁定协议库边界；服务端来源端点绑定、重放窗口、限速、队列、故障切换、Direct 回切和隔离 Relay 抓包验证仍需 M2.3 集成证据，不得提前视为完成。
 
 ## 9. 不在安全承诺内
 
