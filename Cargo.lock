@@ -3116,6 +3116,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "ipnet",
+ "netlink-sys",
  "reqwest",
  "rtnetlink",
  "serde",
@@ -3181,6 +3182,7 @@ name = "xs-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ipnet",
  "serde",
  "serde_json",
  "uuid",

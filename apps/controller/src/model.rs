@@ -4,9 +4,10 @@ use uuid::Uuid;
 
 pub use xs_core::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
-    CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ControlClientMessage,
-    ControlServerMessage, EndpointCandidate, EndpointCandidateKind, EnrollRequest, EnrollResponse,
-    PortRange, SignedConfiguration,
+    CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ConfigurationSubnetRoute,
+    ControlClientMessage, ControlServerMessage, EndpointCandidate, EndpointCandidateKind,
+    EnrollRequest, EnrollResponse, PortRange, SignedConfiguration, SubnetRouteAdvertisement,
+    SubnetRouteMode, SubnetRouteSuggestion,
 };
 
 #[derive(Debug, Deserialize)]
@@ -116,6 +117,46 @@ pub struct RevokeNodeResponse {
     pub virtual_ip: String,
     pub cooldown_until: DateTime<Utc>,
     pub configuration_version: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubnetRouteApprovalRequest {
+    pub route_id: String,
+    pub gateway_node_id_base64: String,
+    pub prefix: String,
+    pub interface_name: String,
+    pub mode: SubnetRouteMode,
+    pub priority: u32,
+    #[serde(default = "default_route_enabled")]
+    pub enabled: bool,
+}
+
+const fn default_route_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceSubnetRoutesRequest {
+    pub expected_configuration_version: u64,
+    pub routes: Vec<SubnetRouteApprovalRequest>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplaceSubnetRoutesResponse {
+    pub network_id: Uuid,
+    pub configuration_version: u64,
+    pub enabled_routes: usize,
+    pub paused_routes: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubnetRouteSuggestionResponse {
+    pub gateway_node_id_base64: String,
+    pub generation: u64,
+    pub expires_at: DateTime<Utc>,
+    pub suggestions: Vec<SubnetRouteSuggestion>,
 }
 
 #[derive(Debug, Serialize)]

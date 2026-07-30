@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-protocol-vectors test-spec test-network test-e2e test-visual security-check validate-m21 validate-m22 validate-m23 validate-m31 release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-protocol-vectors test-spec test-network test-e2e test-visual security-check validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 release clean
 
 setup:
 >npm ci
@@ -63,6 +63,9 @@ test-agent-relay:
 test-agent-acl:
 >./scripts/test-agent-acl.sh
 
+test-agent-subnet-route:
+>./scripts/test-agent-subnet-route.sh
+
 test-protocol-vectors:
 >./scripts/test-protocol-vectors.sh
 
@@ -97,6 +100,9 @@ validate-m23:
 
 validate-m31:
 >./scripts/validate-m31.sh
+
+validate-m32:
+>./scripts/validate-m32.sh
 
 release:
 >@printf 'Release packaging is not implemented before M9.1\n' >&2

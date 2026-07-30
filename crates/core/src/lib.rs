@@ -10,11 +10,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod acl;
+mod routes;
 
 pub use acl::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
     AclValidationError, PortRange,
 };
+pub use routes::validate_subnet_route_suggestion;
+pub use routes::{ResolvedSubnetRoute, SubnetRoutePolicy, SubnetRouteValidationError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Component {
@@ -111,6 +114,8 @@ pub struct ConfigurationPayload {
     pub relays: Vec<ConfigurationRelay>,
     #[serde(default)]
     pub policies: Vec<AclRule>,
+    #[serde(default)]
+    pub subnet_routes: Vec<ConfigurationSubnetRoute>,
 }
 
 const fn default_policy_version() -> u64 {
@@ -133,6 +138,43 @@ pub struct ConfigurationNode {
     #[serde(default)]
     pub groups: Vec<String>,
     pub tags: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SubnetRouteMode {
+    Routed,
+    Nat,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigurationSubnetRoute {
+    pub route_id: String,
+    pub prefix: String,
+    pub gateway_node_id_base64: String,
+    pub mode: SubnetRouteMode,
+    pub interface_name: String,
+    pub priority: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SubnetRouteSuggestion {
+    pub prefix: String,
+    pub interface_name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SubnetRouteAdvertisement {
+    pub schema_version: u8,
+    pub network_id: Uuid,
+    pub node_id_base64: String,
+    pub generation: u64,
+    pub generated_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub suggestions: Vec<SubnetRouteSuggestion>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -274,6 +316,10 @@ pub enum ControlClientMessage {
     },
     AdvertiseCandidates {
         advertisement: CandidateAdvertisement,
+        signature_base64: String,
+    },
+    AdvertiseSubnetRoutes {
+        advertisement: SubnetRouteAdvertisement,
         signature_base64: String,
     },
 }

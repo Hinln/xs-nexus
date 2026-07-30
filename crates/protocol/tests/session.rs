@@ -355,3 +355,26 @@ fn authenticated_header_and_virtual_source_are_enforced() {
             .is_err()
     );
 }
+
+#[test]
+fn routed_packets_require_the_explicit_policy_guarded_api() {
+    let fixture = fixture();
+    let (client_session, server_session) = complete_handshake();
+    let (mut sender, _) = client_session.into_data_plane().expect("client data plane");
+    let (_, mut receiver) = server_session.into_data_plane().expect("server data plane");
+    let packet = ipv4_packet(
+        fixture.client_context.local_virtual_ip,
+        Ipv4Addr::new(192, 168, 232, 2),
+    );
+
+    assert!(sender.seal_ipv4(DataFlags::NONE, 4, &packet).is_err());
+    let encrypted = sender
+        .seal_routed_ipv4(DataFlags::NONE, 4, &packet)
+        .expect("authorized routed packet");
+    assert!(receiver.open(&encrypted).is_err());
+    let opened = receiver
+        .open_routed(&encrypted)
+        .expect("policy-guarded routed receive");
+    assert_eq!(opened.packet_type, PacketType::Data);
+    assert_eq!(opened.plaintext, packet);
+}

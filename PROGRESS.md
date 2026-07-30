@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-30 19:46 UTC
-当前 Git 提交：M3.1 完成检查点（以本文件所在提交为准）
+最后更新时间：2026-07-30 21:22 UTC
+当前 Git 提交：M3.2 完成检查点（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M3.2 子网路由`
+当前里程碑：`M4.1 Web 控制台功能`
 
 ---
 
@@ -60,37 +60,44 @@
 - 活动虚拟地址唯一、节点吊销、地址冷却复用、地址池重叠拒绝和 Agent 系统路由冲突保护完成；
 - 两个隔离 namespace 的 ICMP/TCP/UDP 允许、发送端拒绝、接收端拒绝和拒绝负载不可见验证完成；
 - M3.1 全量证据 `/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`。
+- Agent 通过 Netlink 发现本地直连私网并只发布节点签名建议，Controller 持久化建议和管理员审批状态；
+- 子网审批支持启用、暂停、撤销、乐观配置版本、纯路由/NAT、优先级、冲突拒绝和审计，只有 enabled 路由进入签名配置；
+- Agent 客户端路由、网关 forwarding、项目独占 nftables NAT 表和 manifest 回滚均由原生 Netlink/netfilter 接口实现；
+- XSP/1 新增显式策略守卫的 routed API，普通会话继续严格绑定虚拟地址，路由流量在加密前和解密后双端执行 Peer/子网/ACL 绑定；
+- 三个隔离 namespace 已验证审批前不可达、纯路由/NAT ICMP/TCP、伪造源拒绝、网关离线撤销、暂停、shutdown 和崩溃恢复；
+- M3.2 全量证据 `/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`。
 
 ## 当前工作点
 
-- M3.1 已完成全部计划内实现和全量验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
-- M3.2 开始子网建议、管理员审批、纯路由/NAT、转发 ACL、冲突优先级和网关离线撤销；
-- 真实 NAS `192.168.0.0/24` 保持人工门禁，本阶段只使用隔离 namespace 和测试网段，不连接或修改 NAS。
+- M3.2 已完成全部计划内实现和全量验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
+- M4.1 开始控制台真实登录、权限、指标、节点、网络、Token、ACL、子网审批、Relay、拓扑、审计、更新和系统状态；
+- 真实 NAS `192.168.0.0/24` 保持人工门禁，不以 namespace 结果替代真实设备验收。
 
 ## 下一步
 
-1. 盘点 Controller 配置、Agent 路由清单和数据面转发边界，定义子网建议、审批和签名配置模型；
-2. 先建立审批前不可达、重叠拒绝、网关离线和卸载清理的失败测试；
-3. 实现子网路由持久化、审批状态、优先级、纯路由/NAT 模式和审计；
-4. 实现 Agent 子网路由安装、转发 ACL、源地址保护、网关健康撤销和幂等恢复；
-5. 在隔离 namespace 中完成批准/拒绝、未授权、纯路由/NAT、离线和清理矩阵。
+1. 盘点现有 React/Vite 控制台、Controller 管理 API、认证缺口和视觉约束；
+2. 先建立真实登录、权限拒绝、加载/空/错误状态和主导航的自动化测试；
+3. 实现控制台 API 客户端、会话、角色权限和全局错误处理，不使用伪造状态；
+4. 按页面顺序接入首页、节点、网络、Token、ACL、子网审批、Relay、拓扑和审计；
+5. 完成响应式、可访问性、Playwright 和 `VISUAL_QA.md` 证据后再声明 M4.1 完成。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '340,390p' EXECUTION_PLAN.md
-rg -n -C 8 'subnet|route|gateway|forward|nat|子网|路由|网关|审批' \
-  docs/ARCHITECTURE.md docs/THREAT_MODEL.md crates/core apps/controller apps/agent
+sed -n '395,455p' EXECUTION_PLAN.md
+sed -n '1,260p' IMPLEMENT.md
+rg --files apps/console apps/controller | sort
+rg -n 'auth|login|admin|token|acl|subnet|relay|audit|fetch|router' apps/console apps/controller
 ```
 
 ## 最近测试
 
-- 时间：2026-07-30 14:00 UTC；
+- 时间：2026-07-30 21:22 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m31.sh`；
+- 命令：`./scripts/validate-m32.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`；
-- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL namespace 网络实验、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`；
+- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
 
 ## 当前失败
 
@@ -124,9 +131,9 @@ cat PROGRESS.md
 ./scripts/validate-m22.sh
 ./scripts/validate-m23.sh
 ./scripts/validate-m31.sh
-sed -n '340,390p' EXECUTION_PLAN.md
-rg -n -C 8 'subnet|route|gateway|forward|nat|子网|路由|网关|审批' \
-  docs/ARCHITECTURE.md docs/THREAT_MODEL.md crates/core apps/controller apps/agent
+./scripts/validate-m32.sh
+sed -n '395,455p' EXECUTION_PLAN.md
+rg --files apps/console apps/controller | sort
 ```
 
 然后读取：

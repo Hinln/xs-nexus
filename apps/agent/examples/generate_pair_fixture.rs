@@ -17,7 +17,8 @@ use xs_agent::{
 };
 use xs_core::{
     AclAction, AclProtocol, AclRule, AclSelector, ConfigurationNode, ConfigurationPayload,
-    EndpointCandidate, EndpointCandidateKind, EnrollResponse, PortRange, SignedConfiguration,
+    ConfigurationSubnetRoute, EndpointCandidate, EndpointCandidateKind, EnrollResponse, PortRange,
+    SignedConfiguration, SubnetRouteMode,
 };
 use xs_protocol::{CredentialClaims, controller_key_id, node_id, role_set_digest, sign_credential};
 
@@ -60,12 +61,23 @@ struct NodeFixture<'a> {
 enum FixturePolicyMode {
     AllowAll,
     AclMatrix,
+    SubnetNone,
+    SubnetRouted,
+    SubnetNat,
 }
 
 #[derive(Clone, Copy)]
 struct FixturePolicyView {
     mode: FixturePolicyMode,
     receiver_view: bool,
+}
+
+struct FixtureConfigurationContext<'a> {
+    network_id: Uuid,
+    generated_at: chrono::DateTime<Utc>,
+    credential_not_after: chrono::DateTime<Utc>,
+    candidate_not_after: chrono::DateTime<Utc>,
+    signing_key: &'a SigningKey,
 }
 
 type FixtureArguments = (
@@ -102,13 +114,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let network_id = Uuid::new_v4();
     let now = Utc::now();
     let not_after = now + Duration::hours(2);
-    let configuration_a = signed_configuration(
+    let candidate_not_after = candidate_not_after(policy_mode, now, not_after)?;
+    let configuration_context = FixtureConfigurationContext {
         network_id,
-        now,
-        not_after,
+        generated_at: now,
+        credential_not_after: not_after,
+        candidate_not_after,
+        signing_key: &configuration_key,
+    };
+    let configuration_a = signed_configuration(
+        &configuration_context,
         &node_a,
         &node_b,
-        &configuration_key,
         FixturePolicyView {
             mode: policy_mode,
             receiver_view: false,
@@ -116,12 +133,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     let configuration_b = if policy_mode == FixturePolicyMode::AclMatrix {
         signed_configuration(
-            network_id,
-            now,
-            not_after,
+            &configuration_context,
             &node_a,
             &node_b,
-            &configuration_key,
             FixturePolicyView {
                 mode: policy_mode,
                 receiver_view: true,
@@ -162,8 +176,33 @@ fn policy_mode() -> Result<FixturePolicyMode, Box<dyn Error>> {
     match env::var("XS_FIXTURE_ACL_MODE").as_deref() {
         Err(env::VarError::NotPresent) | Ok("allow_all") => Ok(FixturePolicyMode::AllowAll),
         Ok("acl_matrix") => Ok(FixturePolicyMode::AclMatrix),
+        Ok("subnet_none") => Ok(FixturePolicyMode::SubnetNone),
+        Ok("subnet_routed") => Ok(FixturePolicyMode::SubnetRouted),
+        Ok("subnet_nat") => Ok(FixturePolicyMode::SubnetNat),
         _ => Err("invalid XS_FIXTURE_ACL_MODE".into()),
     }
+}
+
+fn candidate_not_after(
+    policy_mode: FixturePolicyMode,
+    now: chrono::DateTime<Utc>,
+    default: chrono::DateTime<Utc>,
+) -> Result<chrono::DateTime<Utc>, Box<dyn Error>> {
+    if !matches!(
+        policy_mode,
+        FixturePolicyMode::SubnetNone
+            | FixturePolicyMode::SubnetRouted
+            | FixturePolicyMode::SubnetNat
+    ) {
+        return Ok(default);
+    }
+    let seconds = env::var("XS_FIXTURE_CANDIDATE_TTL_SECONDS")
+        .unwrap_or_else(|_| "30".to_owned())
+        .parse::<i64>()?;
+    if !(5..=300).contains(&seconds) {
+        return Err("invalid XS_FIXTURE_CANDIDATE_TTL_SECONDS".into());
+    }
+    Ok(now + Duration::seconds(seconds))
 }
 
 fn arguments() -> Result<FixtureArguments, Box<dyn Error>> {
@@ -238,12 +277,9 @@ fn create_node(
 }
 
 fn signed_configuration(
-    network_id: Uuid,
-    generated_at: chrono::DateTime<Utc>,
-    credential_not_after: chrono::DateTime<Utc>,
+    context: &FixtureConfigurationContext<'_>,
     node_a: &NodeFixture<'_>,
     node_b: &NodeFixture<'_>,
-    configuration_key: &SigningKey,
     policy_view: FixturePolicyView,
 ) -> Result<SignedConfiguration, Box<dyn Error>> {
     let nodes = [node_a, node_b]
@@ -251,16 +287,34 @@ fn signed_configuration(
         .map(|node| {
             let groups = match policy_view.mode {
                 FixturePolicyMode::AllowAll => vec!["test-nodes".to_owned()],
-                FixturePolicyMode::AclMatrix if node.name == "node-a" => {
+                FixturePolicyMode::AclMatrix
+                | FixturePolicyMode::SubnetNone
+                | FixturePolicyMode::SubnetRouted
+                | FixturePolicyMode::SubnetNat
+                    if node.name == "node-a" =>
+                {
                     vec!["clients".to_owned()]
                 }
                 FixturePolicyMode::AclMatrix => vec!["servers".to_owned()],
+                FixturePolicyMode::SubnetNone
+                | FixturePolicyMode::SubnetRouted
+                | FixturePolicyMode::SubnetNat => vec!["gateways".to_owned()],
             };
+            let subnet_mode = matches!(
+                policy_view.mode,
+                FixturePolicyMode::SubnetNone
+                    | FixturePolicyMode::SubnetRouted
+                    | FixturePolicyMode::SubnetNat
+            );
             ConfigurationNode {
                 node_id_base64: URL_SAFE_NO_PAD.encode(node_id(&node.identity.public_key())),
                 identity_public_key_base64: URL_SAFE_NO_PAD.encode(node.identity.public_key()),
                 virtual_ip: node.virtual_ip.to_string(),
-                direct_endpoints: vec![node.endpoint.to_string()],
+                direct_endpoints: if subnet_mode {
+                    Vec::new()
+                } else {
+                    vec![node.endpoint.to_string()]
+                },
                 candidates: node
                     .candidates
                     .iter()
@@ -269,11 +323,11 @@ fn signed_configuration(
                         kind: EndpointCandidateKind::Static,
                         endpoint: (*endpoint).into(),
                         priority: 200_u32.saturating_sub(u32::try_from(index).unwrap_or(u32::MAX)),
-                        expires_at: credential_not_after,
+                        expires_at: context.candidate_not_after,
                     })
                     .collect(),
                 credential_serial: node.credential_serial,
-                credential_not_after,
+                credential_not_after: context.credential_not_after,
                 role_bitmap: 1,
                 groups,
                 tags: vec!["linux".to_owned()],
@@ -282,32 +336,33 @@ fn signed_configuration(
         .collect();
     let payload = ConfigurationPayload {
         schema_version: 1,
-        network_id,
+        network_id: context.network_id,
         version: 1,
         policy_version: 1,
-        generated_at,
+        generated_at: context.generated_at,
         address_pool: ADDRESS_POOL.to_owned(),
         discovery_endpoints: Vec::new(),
         nodes,
         relays: Vec::new(),
         policies: fixture_policies(policy_view),
+        subnet_routes: fixture_subnet_routes(policy_view, node_b),
     };
     let payload_bytes = serde_json::to_vec(&payload)?;
     let mut signing_input = Vec::with_capacity(CONFIGURATION_DOMAIN.len() + payload_bytes.len());
     signing_input.extend_from_slice(CONFIGURATION_DOMAIN);
     signing_input.extend_from_slice(&payload_bytes);
-    let signature = configuration_key.sign(&signing_input);
+    let signature = context.signing_key.sign(&signing_input);
     Ok(SignedConfiguration {
         version: 1,
         payload_base64: URL_SAFE_NO_PAD.encode(payload_bytes),
         signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
-        signer_key_id: controller_key_id(&configuration_key.verifying_key()),
+        signer_key_id: controller_key_id(&context.signing_key.verifying_key()),
     })
 }
 
 fn fixture_policies(policy_view: FixturePolicyView) -> Vec<AclRule> {
-    if policy_view.mode == FixturePolicyMode::AllowAll {
-        return vec![rule(
+    match policy_view.mode {
+        FixturePolicyMode::AllowAll => vec![rule(
             "allow-test-network",
             1,
             AclAction::Allow,
@@ -315,11 +370,63 @@ fn fixture_policies(policy_view: FixturePolicyView) -> Vec<AclRule> {
             "test-nodes",
             AclProtocol::Any,
             Vec::new(),
-        )];
+        )],
+        FixturePolicyMode::AclMatrix => {
+            let mut rules = acl_deny_rules(policy_view.receiver_view);
+            rules.extend(acl_allow_rules());
+            rules
+        }
+        FixturePolicyMode::SubnetNone => Vec::new(),
+        FixturePolicyMode::SubnetRouted | FixturePolicyMode::SubnetNat => vec![
+            AclRule {
+                id: "allow-client-subnet".to_owned(),
+                priority: 200,
+                action: AclAction::Allow,
+                sources: vec![AclSelector::Group {
+                    name: "clients".to_owned(),
+                }],
+                destinations: vec![AclSelector::Subnet {
+                    cidr: "192.168.232.0/24".to_owned(),
+                }],
+                protocol: AclProtocol::Any,
+                destination_ports: Vec::new(),
+            },
+            AclRule {
+                id: "allow-subnet-client".to_owned(),
+                priority: 190,
+                action: AclAction::Allow,
+                sources: vec![AclSelector::Subnet {
+                    cidr: "192.168.232.0/24".to_owned(),
+                }],
+                destinations: vec![AclSelector::Group {
+                    name: "clients".to_owned(),
+                }],
+                protocol: AclProtocol::Any,
+                destination_ports: Vec::new(),
+            },
+        ],
     }
-    let mut rules = acl_deny_rules(policy_view.receiver_view);
-    rules.extend(acl_allow_rules());
-    rules
+}
+
+fn fixture_subnet_routes(
+    policy_view: FixturePolicyView,
+    gateway: &NodeFixture<'_>,
+) -> Vec<ConfigurationSubnetRoute> {
+    let mode = match policy_view.mode {
+        FixturePolicyMode::SubnetRouted => SubnetRouteMode::Routed,
+        FixturePolicyMode::SubnetNat => SubnetRouteMode::Nat,
+        FixturePolicyMode::AllowAll
+        | FixturePolicyMode::AclMatrix
+        | FixturePolicyMode::SubnetNone => return Vec::new(),
+    };
+    vec![ConfigurationSubnetRoute {
+        route_id: "namespace-subnet-route".to_owned(),
+        prefix: "192.168.232.0/24".to_owned(),
+        gateway_node_id_base64: URL_SAFE_NO_PAD.encode(node_id(&gateway.identity.public_key())),
+        mode,
+        interface_name: "xsm32lanb".to_owned(),
+        priority: 100,
+    }]
 }
 
 fn acl_deny_rules(receiver_view: bool) -> Vec<AclRule> {

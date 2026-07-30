@@ -362,7 +362,7 @@
 
 ## M3.2 子网路由
 
-- 状态：`IN_PROGRESS`
+- 状态：`PASSED`
 - 前置：M3.1
 - 人工门禁：真实 NAS 子网审批
 
@@ -386,11 +386,32 @@
 - 重叠网段被拒绝；
 - 卸载后路由恢复。
 
+### 验证命令
+
+```bash
+./scripts/validate-m32.sh
+```
+
+### 证据
+
+- 全量验证：`/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`
+- Git 检查点：以本节所在提交为准
+
+### 实际结果
+
+- Agent 通过 Netlink 发现本地直连私网，仅生成节点签名建议，未经管理员审批不发布路由；
+- Controller 使用 PostgreSQL 持久化建议和审批状态，支持启用、暂停、撤销、乐观配置版本、纯路由/NAT、优先级和审计；
+- 重叠、默认、保留、虚拟地址池冲突、无建议和过期建议均失败关闭，只将启用路由写入 Controller 签名配置；
+- Agent 客户端路由和网关转发使用 Netlink 管理，NAT 使用项目自有 nftables 表，转发和系统状态均由 manifest 幂等回滚；
+- XSP/1 路由包使用显式策略守卫接口，发送端加密前和接收端认证解密后均绑定 Peer、子网和 ACL，伪造虚拟源地址被拒绝；
+- 三个隔离 namespace 已验证审批前不可达、纯路由/NAT ICMP/TCP、未授权源拒绝、网关离线撤销、暂停和崩溃恢复；
+- 全量回归、真实 PostgreSQL、ShellCheck、秘密扫描、npm audit、Docker、`1panel-network`、默认路由和 nftables 前后基线均通过。
+
 ---
 
 ## M4.1 Web 控制台功能
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M1.1，可与后端阶段并行
 
 ### 页面

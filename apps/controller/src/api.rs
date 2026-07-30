@@ -16,7 +16,7 @@ use crate::{
     error::ApiError,
     model::{
         CreateEnrollmentTokenRequest, CreateNetworkRequest, EnrollRequest, ExplainAclRequest,
-        HealthResponse, ReplaceAclPolicyRequest, RevokeNodeRequest,
+        HealthResponse, ReplaceAclPolicyRequest, ReplaceSubnetRoutesRequest, RevokeNodeRequest,
     },
     state::AppState,
 };
@@ -34,6 +34,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/admin/networks/{network_id}/acl/explain",
             post(explain_acl),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/subnet-route-suggestions",
+            get(list_subnet_route_suggestions),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/subnet-routes",
+            put(replace_subnet_routes),
         )
         .route(
             "/v1/admin/networks/{network_id}/nodes/{node_id_base64}/revoke",
@@ -125,6 +133,29 @@ async fn revoke_node(
     Ok(Json(response))
 }
 
+async fn list_subnet_route_suggestions(
+    State(state): State<AppState>,
+    Path(network_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::model::SubnetRouteSuggestionResponse>>, ApiError> {
+    authenticate_admin(&state, &headers)?;
+    Ok(Json(
+        crate::service::list_subnet_route_suggestions(&state, network_id).await?,
+    ))
+}
+
+async fn replace_subnet_routes(
+    State(state): State<AppState>,
+    Path(network_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<ReplaceSubnetRoutesRequest>,
+) -> Result<Json<crate::model::ReplaceSubnetRoutesResponse>, ApiError> {
+    authenticate_admin(&state, &headers)?;
+    Ok(Json(
+        crate::service::replace_subnet_routes(&state, network_id, request).await?,
+    ))
+}
+
 async fn enroll(
     State(state): State<AppState>,
     Json(request): Json<EnrollRequest>,
@@ -135,8 +166,8 @@ async fn enroll(
 
 async fn control(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
     upgrade
-        .max_message_size(4096)
-        .max_frame_size(4096)
+        .max_message_size(64 * 1024)
+        .max_frame_size(64 * 1024)
         .on_upgrade(move |socket| crate::control::serve(socket, state))
 }
 

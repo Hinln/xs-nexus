@@ -25,7 +25,10 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 use tower::ServiceExt;
 use uuid::Uuid;
 use xs_controller::config::ControllerConfig;
-use xs_core::{CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind};
+use xs_core::{
+    CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind, SubnetRouteAdvertisement,
+    SubnetRouteSuggestion,
+};
 use xs_protocol::{
     CREDENTIAL_LENGTH, DiscoveryRequest, verify_credential, verify_discovery_response,
 };
@@ -34,6 +37,7 @@ const ADMIN_TOKEN: &str = "integration-admin-token-with-32-characters";
 const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
+const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route advertisement v1";
 type ControlSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[tokio::test]
@@ -126,6 +130,14 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         network_id,
         &enrollment,
         &manual_enrollment,
+    )
+    .await;
+    assert_subnet_route_approval_lifecycle(
+        &router,
+        &state.pool,
+        network_id,
+        &enrollment,
+        &identity,
     )
     .await;
 
@@ -482,6 +494,341 @@ async fn assert_revoke_and_cooldown_reuse(
     assert!(active_lease);
 }
 
+async fn assert_subnet_route_approval_lifecycle(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    enrollment: &Value,
+    identity: &SigningKey,
+) {
+    advertise_subnet_route_suggestions(router, network_id, enrollment, identity).await;
+    assert_subnet_route_rejections(router, network_id, enrollment).await;
+    assert_subnet_route_transitions(router, pool, network_id, enrollment).await;
+}
+
+async fn advertise_subnet_route_suggestions(
+    router: &Router,
+    network_id: &str,
+    enrollment: &Value,
+    identity: &SigningKey,
+) {
+    let (mut socket, server) = authenticated_control_socket(router, enrollment, identity).await;
+    let now = Utc::now();
+    let advertisement = SubnetRouteAdvertisement {
+        schema_version: 1,
+        network_id: Uuid::from_str(network_id).expect("network id"),
+        node_id_base64: enrollment["node_id_base64"]
+            .as_str()
+            .expect("gateway node id")
+            .to_owned(),
+        generation: 1,
+        generated_at: now,
+        expires_at: now + chrono::Duration::minutes(10),
+        suggestions: vec![
+            SubnetRouteSuggestion {
+                prefix: "192.168.0.0/16".to_owned(),
+                interface_name: "eth0".to_owned(),
+            },
+            SubnetRouteSuggestion {
+                prefix: "192.168.50.0/24".to_owned(),
+                interface_name: "eth0".to_owned(),
+            },
+        ],
+    };
+    let payload = serde_json::to_vec(&advertisement).expect("serialize route advertisement");
+    let mut signing_input =
+        Vec::with_capacity(SUBNET_ROUTE_ADVERTISEMENT_DOMAIN.len() + payload.len());
+    signing_input.extend_from_slice(SUBNET_ROUTE_ADVERTISEMENT_DOMAIN);
+    signing_input.extend_from_slice(&payload);
+    let signature = identity.sign(&signing_input);
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "advertise_subnet_routes",
+                "advertisement": advertisement,
+                "signature_base64": URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send subnet route advertisement");
+    let response = socket
+        .next()
+        .await
+        .expect("route advertisement response")
+        .expect("valid route advertisement response");
+    let Message::Text(response) = response else {
+        panic!("expected route advertisement text response");
+    };
+    let response: Value = serde_json::from_str(&response).expect("route response JSON");
+    assert_eq!(response["type"], "configuration");
+    assert_eq!(response["configuration"]["version"], 8);
+    socket
+        .close(None)
+        .await
+        .expect("close route control socket");
+    server.abort();
+}
+
+async fn assert_subnet_route_rejections(router: &Router, network_id: &str, enrollment: &Value) {
+    let suggestions_path = format!("/v1/admin/networks/{network_id}/subnet-route-suggestions");
+    let (status, suggestions) = request_json(
+        router,
+        Method::GET,
+        &suggestions_path,
+        None,
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        suggestions[0]["suggestions"]
+            .as_array()
+            .expect("suggestions")
+            .len(),
+        2
+    );
+
+    let routes_path = format!("/v1/admin/networks/{network_id}/subnet-routes");
+    let (status, unapproved) = request_json(
+        router,
+        Method::PUT,
+        &routes_path,
+        Some(json!({
+            "expected_configuration_version": 8,
+            "routes": [{
+                "route_id": "unapproved",
+                "gateway_node_id_base64": enrollment["node_id_base64"],
+                "prefix": "192.168.60.0/24",
+                "interface_name": "eth0",
+                "mode": "routed",
+                "priority": 100
+            }]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(unapproved["error"]["code"], "invalid_request");
+
+    let (status, overlap) = request_json(
+        router,
+        Method::PUT,
+        &routes_path,
+        Some(json!({
+            "expected_configuration_version": 8,
+            "routes": [
+                {
+                    "route_id": "lan-broad",
+                    "gateway_node_id_base64": enrollment["node_id_base64"],
+                    "prefix": "192.168.0.0/16",
+                    "interface_name": "eth0",
+                    "mode": "routed",
+                    "priority": 90
+                },
+                {
+                    "route_id": "lan-primary",
+                    "gateway_node_id_base64": enrollment["node_id_base64"],
+                    "prefix": "192.168.50.0/24",
+                    "interface_name": "eth0",
+                    "mode": "routed",
+                    "priority": 100
+                }
+            ]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(overlap["error"]["code"], "invalid_request");
+}
+
+async fn assert_subnet_route_transitions(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    enrollment: &Value,
+) {
+    let routes_path = format!("/v1/admin/networks/{network_id}/subnet-routes");
+    let enabled = json!({
+        "route_id": "lan-primary",
+        "gateway_node_id_base64": enrollment["node_id_base64"],
+        "prefix": "192.168.50.0/24",
+        "interface_name": "eth0",
+        "mode": "routed",
+        "priority": 100,
+        "enabled": true
+    });
+    let (status, approved) = request_json(
+        router,
+        Method::PUT,
+        &routes_path,
+        Some(json!({
+            "expected_configuration_version": 8,
+            "routes": [enabled.clone()]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(approved["configuration_version"], 9);
+    assert_eq!(approved["enabled_routes"], 1);
+    assert_configuration_subnet_routes(pool, network_id, 1, "routed").await;
+
+    let mut paused = enabled.clone();
+    paused["enabled"] = Value::Bool(false);
+    let (status, paused_response) = request_json(
+        router,
+        Method::PUT,
+        &routes_path,
+        Some(json!({
+            "expected_configuration_version": 9,
+            "routes": [paused]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(paused_response["configuration_version"], 10);
+    assert_eq!(paused_response["paused_routes"], 1);
+    assert_configuration_subnet_routes(pool, network_id, 0, "routed").await;
+
+    let mut nat_enabled = enabled;
+    nat_enabled["mode"] = Value::String("nat".to_owned());
+    let (status, resumed) = request_json(
+        router,
+        Method::PUT,
+        &routes_path,
+        Some(json!({
+            "expected_configuration_version": 10,
+            "routes": [nat_enabled]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resumed["configuration_version"], 11);
+    assert_configuration_subnet_routes(pool, network_id, 1, "nat").await;
+
+    let (status, revoked) = request_json(
+        router,
+        Method::PUT,
+        &routes_path,
+        Some(json!({
+            "expected_configuration_version": 11,
+            "routes": []
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(revoked["configuration_version"], 12);
+    assert_configuration_subnet_routes(pool, network_id, 0, "nat").await;
+    let stored_state: String = sqlx::query_scalar(
+        "SELECT state FROM subnet_routes WHERE network_id = $1 AND route_id = 'lan-primary'",
+    )
+    .bind(Uuid::from_str(network_id).expect("network id"))
+    .fetch_one(pool)
+    .await
+    .expect("stored route state");
+    assert_eq!(stored_state, "revoked");
+}
+
+async fn authenticated_control_socket(
+    router: &Router,
+    enrollment: &Value,
+    identity: &SigningKey,
+) -> (ControlSocket, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind route test controller");
+    let address = listener.local_addr().expect("route listener address");
+    let application = router.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, application)
+            .await
+            .expect("serve route test controller");
+    });
+    let (mut socket, _) = connect_async(format!("ws://{address}/v1/control"))
+        .await
+        .expect("connect route control websocket");
+    let challenge = socket
+        .next()
+        .await
+        .expect("route challenge")
+        .expect("valid route challenge");
+    let Message::Text(challenge) = challenge else {
+        panic!("expected route challenge text");
+    };
+    let challenge: Value = serde_json::from_str(&challenge).expect("route challenge JSON");
+    let challenge = URL_SAFE_NO_PAD
+        .decode(
+            challenge["challenge_base64"]
+                .as_str()
+                .expect("route challenge value"),
+        )
+        .expect("decode route challenge");
+    let node_id = URL_SAFE_NO_PAD
+        .decode(enrollment["node_id_base64"].as_str().expect("node id"))
+        .expect("decode node id");
+    let mut authentication_input =
+        Vec::with_capacity(CONTROL_AUTHENTICATION_DOMAIN.len() + challenge.len() + node_id.len());
+    authentication_input.extend_from_slice(CONTROL_AUTHENTICATION_DOMAIN);
+    authentication_input.extend_from_slice(&challenge);
+    authentication_input.extend_from_slice(&node_id);
+    let signature = identity.sign(&authentication_input);
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "authenticate",
+                "node_id_base64": enrollment["node_id_base64"],
+                "credential_base64": enrollment["credential_base64"],
+                "signature_base64": URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("authenticate route control socket");
+    let authenticated = socket
+        .next()
+        .await
+        .expect("route authenticated response")
+        .expect("valid route authenticated response");
+    let Message::Text(authenticated) = authenticated else {
+        panic!("expected route authenticated text");
+    };
+    let authenticated: Value =
+        serde_json::from_str(&authenticated).expect("route authenticated JSON");
+    assert_eq!(authenticated["type"], "authenticated");
+    assert_eq!(authenticated["configuration"]["version"], 8);
+    (socket, server)
+}
+
+async fn assert_configuration_subnet_routes(
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    expected_count: usize,
+    expected_mode: &str,
+) {
+    let payload: Vec<u8> = sqlx::query_scalar(
+        "SELECT payload FROM configuration_versions
+         WHERE network_id = $1 ORDER BY version DESC LIMIT 1",
+    )
+    .bind(Uuid::from_str(network_id).expect("network id"))
+    .fetch_one(pool)
+    .await
+    .expect("latest route configuration");
+    let payload: Value = serde_json::from_slice(&payload).expect("route configuration JSON");
+    let routes = payload["subnet_routes"].as_array().expect("subnet routes");
+    assert_eq!(routes.len(), expected_count);
+    if let Some(route) = routes.first() {
+        assert_eq!(route["prefix"], "192.168.50.0/24");
+        assert_eq!(route["mode"], expected_mode);
+    }
+}
+
 async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str) {
     let control_audits: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM audit_events WHERE action = 'control.authenticate'",
@@ -489,7 +836,7 @@ async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str)
     .fetch_one(pool)
     .await
     .expect("control audit count");
-    assert_eq!(control_audits, 1);
+    assert_eq!(control_audits, 2);
 
     let stored_use_count: i32 =
         sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
@@ -555,7 +902,8 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE audit_events, configuration_versions, acl_rules,
+        "TRUNCATE audit_events, configuration_versions, subnet_routes,
+                  node_subnet_route_advertisements, acl_rules,
                   node_group_memberships, node_groups, ip_leases, nodes,
                   enrollment_tokens, networks
          RESTART IDENTITY CASCADE",

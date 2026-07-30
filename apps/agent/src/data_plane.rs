@@ -13,7 +13,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::UdpSocket;
 use xs_core::{
     AclPolicy, AclProtocol, CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind,
-    PathSelectionReason,
+    PathSelectionReason, SubnetRoutePolicy,
 };
 use xs_protocol::{
     CLIENT_FINISH_TYPE, CLIENT_HELLO_TYPE, CREDENTIAL_LENGTH, ClientFinishSent,
@@ -86,12 +86,13 @@ struct LocalMaterial {
 
 struct Peer {
     node_id: [u8; 16],
+    node_id_base64: String,
     virtual_ip: Ipv4Addr,
     candidates: Vec<EndpointCandidate>,
     active_endpoint: Option<SocketAddr>,
     path_reason: Option<PathSelectionReason>,
     state: PeerState,
-    queued_packets: VecDeque<Vec<u8>>,
+    queued_packets: VecDeque<QueuedPacket>,
     queued_bytes: usize,
     recent_client_hellos: VecDeque<([u8; 32], Instant)>,
     pending_path_probe: Option<PendingPathProbe>,
@@ -99,6 +100,11 @@ struct Peer {
     next_proactive_handshake_at: Instant,
     handshake_failures: u8,
     handshake_candidate_attempts: usize,
+}
+
+struct QueuedPacket {
+    encoded: Vec<u8>,
+    routed: bool,
 }
 
 enum PeerState {
@@ -262,6 +268,8 @@ pub struct UdpDataPlane {
     candidate_manager: CandidateManager,
     relay_manager: RelayManager,
     acl_policy: AclPolicy,
+    subnet_routes: SubnetRoutePolicy,
+    local_node_id_base64: String,
     status: SharedDataPlaneStatus,
     configuration_version: u64,
     policy_version: u64,
@@ -299,6 +307,8 @@ impl UdpDataPlane {
         let candidate_manager = CandidateManager::new(state, identity)?;
         let acl_policy = AclPolicy::compile(&state.configuration_payload)
             .map_err(|_| AgentError::ControllerTrust)?;
+        let subnet_routes = SubnetRoutePolicy::compile(&state.configuration_payload)
+            .map_err(|_| AgentError::ControllerTrust)?;
         let status = Arc::new(tokio::sync::RwLock::new(DataPlaneStatus::default()));
         let data_plane = Self {
             socket,
@@ -309,6 +319,8 @@ impl UdpDataPlane {
             candidate_manager,
             relay_manager,
             acl_policy,
+            subnet_routes,
+            local_node_id_base64: state.node_id_base64.clone(),
             status,
             configuration_version: state.configuration.version,
             policy_version: state.configuration_payload.policy_version,
@@ -334,6 +346,8 @@ impl UdpDataPlane {
     /// Returns an Agent error when the trusted configuration contains an unusable peer identity.
     pub async fn apply_configuration(&mut self, state: &NodeState) -> Result<()> {
         let acl_policy = AclPolicy::compile(&state.configuration_payload)
+            .map_err(|_| AgentError::ControllerTrust)?;
+        let subnet_routes = SubnetRoutePolicy::compile(&state.configuration_payload)
             .map_err(|_| AgentError::ControllerTrust)?;
         let policy_changed = state.configuration_payload.policy_version != self.policy_version;
         let failed_relays = self.relay_manager.apply_configuration(state)?;
@@ -387,6 +401,7 @@ impl UdpDataPlane {
         }
         self.rebuild_endpoint_index()?;
         self.acl_policy = acl_policy;
+        self.subnet_routes = subnet_routes;
         self.configuration_version = state.configuration.version;
         self.policy_version = state.configuration_payload.policy_version;
         self.synchronize_status().await;
@@ -442,21 +457,43 @@ impl UdpDataPlane {
         let Some(flow) = ipv4_flow(packet) else {
             return Ok(true);
         };
-        if flow.source != self.material.virtual_ip
-            || !self
-                .acl_policy
-                .evaluate(
-                    flow.source,
-                    flow.destination,
-                    flow.protocol,
-                    flow.destination_port,
-                )
-                .allowed
+        if !self
+            .acl_policy
+            .evaluate(
+                flow.source,
+                flow.destination,
+                flow.protocol,
+                flow.destination_port,
+            )
+            .allowed
         {
             return Ok(true);
         }
+        let (destination_peer_ip, routed_packet) =
+            if self.peers_by_virtual_ip.contains_key(&flow.destination) {
+                if flow.source != self.material.virtual_ip
+                    && self
+                        .subnet_routes
+                        .local_gateway_route(&self.local_node_id_base64, flow.source)
+                        .is_none()
+                {
+                    return Ok(true);
+                }
+                (flow.destination, flow.source != self.material.virtual_ip)
+            } else {
+                if flow.source != self.material.virtual_ip {
+                    return Ok(true);
+                }
+                let Some(route) = self
+                    .subnet_routes
+                    .resolve_destination(flow.destination, Utc::now())
+                else {
+                    return Ok(true);
+                };
+                (route.gateway_virtual_ip, true)
+            };
         let now = Instant::now();
-        let Some(peer) = self.peers_by_virtual_ip.get_mut(&flow.destination) else {
+        let Some(peer) = self.peers_by_virtual_ip.get_mut(&destination_peer_ip) else {
             return Ok(true);
         };
         if !matches!(peer.state, PeerState::Established(_)) && peer.active_endpoint.is_none() {
@@ -465,17 +502,23 @@ impl UdpDataPlane {
 
         let established_path = matches!(peer.state, PeerState::Established(_));
         let outbound = if let PeerState::Established(established) = &mut peer.state {
-            let Ok(outbound) = established
-                .sender
-                .seal_ipv4(DataFlags::ACK_ELICITING, 0, packet)
-            else {
+            let outbound = if routed_packet {
+                established
+                    .sender
+                    .seal_routed_ipv4(DataFlags::ACK_ELICITING, 0, packet)
+            } else {
+                established
+                    .sender
+                    .seal_ipv4(DataFlags::ACK_ELICITING, 0, packet)
+            };
+            let Ok(outbound) = outbound else {
                 return Ok(true);
             };
             established.sent_packets_in_epoch = established.sent_packets_in_epoch.saturating_add(1);
             established.last_keepalive_at = now;
             outbound
         } else {
-            if !queue_packet(peer, packet) {
+            if !queue_packet(peer, packet, routed_packet) {
                 return Ok(true);
             }
             if matches!(peer.state, PeerState::Idle) {
@@ -530,16 +573,29 @@ impl UdpDataPlane {
             packet.get(5).copied(),
             Some(CLIENT_HELLO_TYPE | SERVER_HELLO_TYPE | CLIENT_FINISH_TYPE | SERVER_FINISH_TYPE)
         );
-        let Some(peer) = self.peers_by_virtual_ip.get_mut(&peer_ip) else {
+        let Some(peer_node_id_base64) = self
+            .peers_by_virtual_ip
+            .get(&peer_ip)
+            .map(|peer| peer.node_id_base64.clone())
+        else {
             return Ok(None);
         };
-        let result = process_datagram(&self.material, peer, source, packet, now);
+        let allow_routed_data = self
+            .subnet_routes
+            .permits_routed_session(&self.local_node_id_base64, &peer_node_id_base64);
+        let peer = self
+            .peers_by_virtual_ip
+            .get_mut(&peer_ip)
+            .ok_or(AgentError::DataPlane)?;
+        let result = process_datagram(&self.material, peer, source, packet, now, allow_routed_data);
+        let awaiting_path_response = awaiting_path_response(peer, source, handshake_packet);
         let retain_fallback_reason = !through_relay
             && handshake_packet
             && peer.active_endpoint == Some(source)
             && peer.path_reason == Some(PathSelectionReason::HandshakeFallback);
         if result.path_authenticated
             && !retain_fallback_reason
+            && !awaiting_path_response
             && (handshake_packet || peer.active_endpoint != Some(source))
         {
             let reason = authenticated_path_reason(peer, source, handshake_packet, through_relay);
@@ -563,17 +619,23 @@ impl UdpDataPlane {
         }
         let plaintext = result.plaintext.filter(|plaintext| {
             ipv4_flow(plaintext).is_some_and(|flow| {
-                flow.source == peer_ip
-                    && flow.destination == self.material.virtual_ip
-                    && self
-                        .acl_policy
-                        .evaluate(
-                            flow.source,
-                            flow.destination,
-                            flow.protocol,
-                            flow.destination_port,
-                        )
-                        .allowed
+                let identity_bound = (flow.source == peer_ip
+                    && (flow.destination == self.material.virtual_ip
+                        || self
+                            .subnet_routes
+                            .local_gateway_route(&self.local_node_id_base64, flow.destination)
+                            .is_some()))
+                    || (flow.destination == self.material.virtual_ip
+                        && self
+                            .subnet_routes
+                            .source_owned_by_gateway(flow.source, &peer_node_id_base64));
+                let decision = self.acl_policy.evaluate(
+                    flow.source,
+                    flow.destination,
+                    flow.protocol,
+                    flow.destination_port,
+                );
+                identity_bound && decision.allowed
             })
         });
         self.synchronize_status().await;
@@ -827,9 +889,22 @@ fn build_peer_directory(
             })
             .collect::<Result<Vec<_>>>()?;
         if node_id == local_node_id {
-            if let Some(endpoint) = direct_endpoints.first() {
-                local_endpoint = *endpoint;
-            }
+            local_endpoint = direct_endpoints
+                .first()
+                .copied()
+                .or_else(|| {
+                    node.candidates
+                        .iter()
+                        .find(|candidate| {
+                            candidate.expires_at > Utc::now()
+                                && matches!(
+                                    candidate.kind,
+                                    EndpointCandidateKind::Local | EndpointCandidateKind::Static
+                                )
+                        })
+                        .map(|candidate| normalize_endpoint(candidate.endpoint))
+                })
+                .unwrap_or(local_endpoint);
             continue;
         }
         if peers.len() >= MAX_CONFIGURED_PEERS || peers.contains_key(&virtual_ip) {
@@ -851,6 +926,7 @@ fn build_peer_directory(
             virtual_ip,
             Peer {
                 node_id,
+                node_id_base64: node.node_id_base64.clone(),
                 virtual_ip,
                 candidates,
                 active_endpoint,
@@ -1053,6 +1129,14 @@ fn authenticated_path_reason(
     }
 }
 
+fn awaiting_path_response(peer: &Peer, source: SocketAddr, handshake_packet: bool) -> bool {
+    !handshake_packet
+        && peer
+            .pending_path_probe
+            .as_ref()
+            .is_some_and(|pending| pending.endpoint == source)
+}
+
 fn fail_relay_path(peers: &mut HashMap<Ipv4Addr, Peer>, failed_endpoint: SocketAddr) {
     let now = Instant::now();
     for peer in peers.values_mut() {
@@ -1149,14 +1233,17 @@ fn best_probe_target(peer: &Peer) -> Option<SocketAddr> {
         .map(|candidate| candidate.endpoint)
 }
 
-fn queue_packet(peer: &mut Peer, packet: &[u8]) -> bool {
+fn queue_packet(peer: &mut Peer, packet: &[u8], routed: bool) -> bool {
     if peer.queued_packets.len() >= MAX_QUEUED_PACKETS_PER_PEER
         || peer.queued_bytes.saturating_add(packet.len()) > MAX_QUEUED_BYTES_PER_PEER
     {
         return false;
     }
     peer.queued_bytes = peer.queued_bytes.saturating_add(packet.len());
-    peer.queued_packets.push_back(packet.to_vec());
+    peer.queued_packets.push_back(QueuedPacket {
+        encoded: packet.to_vec(),
+        routed,
+    });
     true
 }
 
@@ -1197,13 +1284,16 @@ fn process_datagram(
     source: SocketAddr,
     datagram: &[u8],
     now: Instant,
+    allow_routed_data: bool,
 ) -> ProcessResult {
     match datagram.get(5).copied() {
         Some(CLIENT_HELLO_TYPE) => handle_client_hello(material, peer, datagram, now),
         Some(SERVER_HELLO_TYPE) => handle_server_hello(material, peer, datagram, now),
         Some(CLIENT_FINISH_TYPE) => handle_client_finish(peer, datagram),
         Some(SERVER_FINISH_TYPE) => handle_server_finish(peer, datagram),
-        Some(value) if PacketType::try_from(value).is_ok() => handle_data(peer, source, datagram),
+        Some(value) if PacketType::try_from(value).is_ok() => {
+            handle_data(peer, source, datagram, allow_routed_data)
+        }
         _ => ProcessResult::empty(),
     }
 }
@@ -1362,14 +1452,29 @@ fn handle_server_finish(peer: &mut Peer, datagram: &[u8]) -> ProcessResult {
     }
 }
 
-fn handle_data(peer: &mut Peer, source: SocketAddr, datagram: &[u8]) -> ProcessResult {
+fn handle_data(
+    peer: &mut Peer,
+    source: SocketAddr,
+    datagram: &[u8],
+    allow_routed_data: bool,
+) -> ProcessResult {
     let mut path_probe_succeeded = false;
     let result = {
         let PeerState::Established(established) = &mut peer.state else {
             return ProcessResult::empty();
         };
-        let Ok(opened) = established.receiver.open(datagram) else {
-            return ProcessResult::empty();
+        let opened = match established.receiver.open(datagram) {
+            Ok(opened) => opened,
+            Err(_)
+                if allow_routed_data
+                    && datagram.get(5).copied() == Some(PacketType::Data as u8) =>
+            {
+                let Ok(opened) = established.receiver.open_routed(datagram) else {
+                    return ProcessResult::empty();
+                };
+                opened
+            }
+            Err(_) => return ProcessResult::empty(),
         };
         match opened.packet_type {
             PacketType::Data => ProcessResult {
@@ -1438,7 +1543,12 @@ fn install_session(peer: &mut Peer, session: EstablishedSession) -> Vec<Vec<u8>>
     };
     let mut outbound = Vec::with_capacity(peer.queued_packets.len());
     while let Some(packet) = peer.queued_packets.pop_front() {
-        if let Ok(encoded) = sender.seal_ipv4(DataFlags::ACK_ELICITING, 0, &packet) {
+        let encoded = if packet.routed {
+            sender.seal_routed_ipv4(DataFlags::ACK_ELICITING, 0, &packet.encoded)
+        } else {
+            sender.seal_ipv4(DataFlags::ACK_ELICITING, 0, &packet.encoded)
+        };
+        if let Ok(encoded) = encoded {
             outbound.push(encoded);
         }
     }

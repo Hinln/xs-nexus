@@ -12,6 +12,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Postgres, Row, Transaction};
 use uuid::Uuid;
+use xs_core::{SubnetRoutePolicy, validate_subnet_route_suggestion};
 use xs_protocol::{
     CredentialClaims, controller_key_id, node_id, role_set_digest, sign_credential,
     verify_credential,
@@ -21,11 +22,13 @@ use crate::{
     error::ApiError,
     model::{
         AclAction, AclGroupRequest, AclPolicy, AclProtocol, AclRule, AclSelector,
-        CandidateAdvertisement, ConfigurationNode, ConfigurationPayload,
+        CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ConfigurationSubnetRoute,
         CreateEnrollmentTokenRequest, CreateNetworkRequest, EndpointCandidate,
         EndpointCandidateKind, EnrollRequest, EnrollResponse, EnrollmentTokenResponse,
         ExplainAclRequest, ExplainAclResponse, NetworkResponse, PortRange, ReplaceAclPolicyRequest,
-        ReplaceAclPolicyResponse, RevokeNodeRequest, RevokeNodeResponse, SignedConfiguration,
+        ReplaceAclPolicyResponse, ReplaceSubnetRoutesRequest, ReplaceSubnetRoutesResponse,
+        RevokeNodeRequest, RevokeNodeResponse, SignedConfiguration, SubnetRouteAdvertisement,
+        SubnetRouteApprovalRequest, SubnetRouteMode, SubnetRouteSuggestionResponse,
     },
     state::AppState,
 };
@@ -33,8 +36,11 @@ use crate::{
 const ENROLLMENT_TOKEN_DOMAIN: &[u8] = b"XS Nexus enrollment token v1";
 const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
+const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route advertisement v1";
 const MAX_CANDIDATES_PER_NODE: usize = 16;
 const MAX_CANDIDATE_ADVERTISEMENT_BYTES: usize = 16 * 1024;
+const MAX_SUBNET_SUGGESTIONS_PER_NODE: usize = 32;
+const MAX_SUBNET_ROUTE_ADVERTISEMENT_BYTES: usize = 64 * 1024;
 
 #[derive(FromRow)]
 struct TokenRow {
@@ -78,6 +84,17 @@ struct ConfigurationMetadata {
     version: u64,
     policy_version: u64,
     address_pool: String,
+}
+
+struct PersistedSubnetRoute {
+    route: ConfigurationSubnetRoute,
+    gateway_database_id: Uuid,
+    enabled: bool,
+}
+
+struct PreparedSubnetRoutes {
+    persisted: Vec<PersistedSubnetRoute>,
+    enabled: Vec<ConfigurationSubnetRoute>,
 }
 
 pub(crate) async fn create_network(
@@ -268,16 +285,24 @@ pub(crate) async fn replace_acl_policy(
     let rules = canonical_rules(request.rules);
     let mut transaction = state.pool.begin().await.map_err(internal_database)?;
     lock_network(&mut transaction, network_id).await?;
-    let current_policy_version = sqlx::query_scalar::<_, i64>(
-        "SELECT policy_version FROM networks WHERE id = $1 FOR UPDATE",
+    let network = sqlx::query(
+        "SELECT policy_version, address_pool::text AS address_pool
+         FROM networks WHERE id = $1 FOR UPDATE",
     )
     .bind(network_id)
     .fetch_optional(&mut *transaction)
     .await
     .map_err(internal_database)?
     .ok_or_else(ApiError::not_found)?;
-    let current_policy_version =
-        u64::try_from(current_policy_version).map_err(|_| ApiError::internal())?;
+    let current_policy_version = u64::try_from(
+        network
+            .try_get::<i64, _>("policy_version")
+            .map_err(internal_database)?,
+    )
+    .map_err(|_| ApiError::internal())?;
+    let address_pool = network
+        .try_get::<String, _>("address_pool")
+        .map_err(internal_database)?;
     if current_policy_version != request.expected_policy_version {
         return Err(ApiError::conflict());
     }
@@ -287,7 +312,14 @@ pub(crate) async fn replace_acl_policy(
         .iter()
         .map(|node| (URL_SAFE_NO_PAD.encode(&node.node_id), node.database_id))
         .collect::<HashMap<_, _>>();
-    validate_policy_references(&rules, &groups, &node_database_ids, &policy_nodes)?;
+    let subnet_routes = load_subnet_routes(&mut transaction, network_id).await?;
+    validate_policy_references(
+        &rules,
+        &groups,
+        &node_database_ids,
+        &policy_nodes,
+        &subnet_routes,
+    )?;
     let groups_by_node = groups_by_node(&groups, &node_database_ids)?;
     let next_policy_version = current_policy_version
         .checked_add(1)
@@ -298,6 +330,8 @@ pub(crate) async fn replace_acl_policy(
         &policy_nodes,
         &groups_by_node,
         rules.clone(),
+        address_pool,
+        subnet_routes,
     );
     AclPolicy::compile(&validation_payload).map_err(|_| ApiError::validation())?;
 
@@ -336,6 +370,319 @@ pub(crate) async fn replace_acl_policy(
         policy_version: next_policy_version,
         configuration_version: configuration.version,
     })
+}
+
+pub(crate) async fn list_subnet_route_suggestions(
+    state: &AppState,
+    network_id: Uuid,
+) -> Result<Vec<SubnetRouteSuggestionResponse>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT n.node_id, a.generation, a.payload, a.expires_at
+         FROM node_subnet_route_advertisements a
+         JOIN nodes n ON n.id = a.node_id AND n.network_id = a.network_id
+         WHERE a.network_id = $1
+           AND a.expires_at > now()
+           AND n.revoked_at IS NULL
+         ORDER BY n.node_id",
+    )
+    .bind(network_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_database)?;
+    rows.into_iter()
+        .map(|row| {
+            let node_id = row
+                .try_get::<Vec<u8>, _>("node_id")
+                .map_err(internal_database)?;
+            let advertisement = serde_json::from_slice::<SubnetRouteAdvertisement>(
+                &row.try_get::<Vec<u8>, _>("payload")
+                    .map_err(internal_database)?,
+            )
+            .map_err(|_| ApiError::internal())?;
+            let gateway_node_id_base64 = URL_SAFE_NO_PAD.encode(node_id);
+            if advertisement.network_id != network_id
+                || advertisement.node_id_base64 != gateway_node_id_base64
+            {
+                return Err(ApiError::internal());
+            }
+            Ok(SubnetRouteSuggestionResponse {
+                gateway_node_id_base64,
+                generation: u64::try_from(
+                    row.try_get::<i64, _>("generation")
+                        .map_err(internal_database)?,
+                )
+                .map_err(|_| ApiError::internal())?,
+                expires_at: row
+                    .try_get::<DateTime<Utc>, _>("expires_at")
+                    .map_err(internal_database)?,
+                suggestions: advertisement.suggestions,
+            })
+        })
+        .collect()
+}
+
+pub(crate) async fn replace_subnet_routes(
+    state: &AppState,
+    network_id: Uuid,
+    request: ReplaceSubnetRoutesRequest,
+) -> Result<ReplaceSubnetRoutesResponse, ApiError> {
+    if request.expected_configuration_version == 0 || request.routes.len() > 256 {
+        return Err(ApiError::validation());
+    }
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    lock_network(&mut transaction, network_id).await?;
+    let network = sqlx::query(
+        "SELECT config_version, policy_version, address_pool::text AS address_pool
+         FROM networks
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(network_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    let current_configuration_version = u64::try_from(
+        network
+            .try_get::<i64, _>("config_version")
+            .map_err(internal_database)?,
+    )
+    .map_err(|_| ApiError::internal())?;
+    if current_configuration_version != request.expected_configuration_version {
+        return Err(ApiError::conflict());
+    }
+    let address_pool = network
+        .try_get::<String, _>("address_pool")
+        .map_err(internal_database)?;
+    let policy_version = u64::try_from(
+        network
+            .try_get::<i64, _>("policy_version")
+            .map_err(internal_database)?,
+    )
+    .map_err(|_| ApiError::internal())?;
+    let prepared =
+        prepare_subnet_routes(&mut transaction, network_id, &address_pool, request.routes).await?;
+
+    let nodes = load_configuration_nodes(&mut transaction, network_id).await?;
+    let policies = load_acl_policies(&mut transaction, network_id).await?;
+    let validation_payload = ConfigurationPayload {
+        schema_version: 1,
+        network_id,
+        version: current_configuration_version.saturating_add(1),
+        policy_version,
+        generated_at: Utc::now(),
+        address_pool: address_pool.clone(),
+        discovery_endpoints: state.discovery_public_endpoints.as_ref().clone(),
+        nodes,
+        relays: state.relays.as_ref().clone(),
+        policies,
+        subnet_routes: prepared.enabled.clone(),
+    };
+    SubnetRoutePolicy::compile(&validation_payload).map_err(|_| ApiError::validation())?;
+    AclPolicy::compile(&validation_payload).map_err(|_| ApiError::validation())?;
+
+    persist_subnet_routes(&mut transaction, network_id, &prepared.persisted).await?;
+    let configuration = publish_configuration(&mut transaction, network_id, state).await?;
+    let enabled_count = prepared
+        .persisted
+        .iter()
+        .filter(|route| route.enabled)
+        .count();
+    let paused_count = prepared.persisted.len().saturating_sub(enabled_count);
+    append_audit(
+        &mut transaction,
+        AuditEvent {
+            network_id: Some(network_id),
+            actor_type: "admin",
+            actor_id: "bootstrap-admin",
+            action: "subnet_routes.replace",
+            target_type: "network_subnet_routes",
+            target_id: Some(network_id.to_string()),
+            outcome: "success",
+            metadata: json!({
+                "enabled_routes": enabled_count,
+                "paused_routes": paused_count,
+                "configuration_version": configuration.version,
+            }),
+        },
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    Ok(ReplaceSubnetRoutesResponse {
+        network_id,
+        configuration_version: configuration.version,
+        enabled_routes: enabled_count,
+        paused_routes: paused_count,
+    })
+}
+
+async fn prepare_subnet_routes(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+    address_pool: &str,
+    routes: Vec<SubnetRouteApprovalRequest>,
+) -> Result<PreparedSubnetRoutes, ApiError> {
+    let policy_nodes = load_policy_nodes(transaction, network_id).await?;
+    let node_database_ids = policy_nodes
+        .iter()
+        .map(|node| (URL_SAFE_NO_PAD.encode(&node.node_id), node.database_id))
+        .collect::<HashMap<_, _>>();
+    let suggestions = load_valid_subnet_suggestions(transaction, network_id).await?;
+    let mut route_ids = HashSet::with_capacity(routes.len());
+    let mut active_scopes = HashSet::with_capacity(routes.len());
+    let mut persisted = Vec::with_capacity(routes.len());
+    let mut enabled = Vec::new();
+
+    for route in routes {
+        if !route_ids.insert(route.route_id.clone()) {
+            return Err(ApiError::validation());
+        }
+        let gateway_database_id = node_database_ids
+            .get(&route.gateway_node_id_base64)
+            .copied()
+            .ok_or_else(ApiError::validation)?;
+        let prefix =
+            validate_subnet_route_suggestion(&route.prefix, &route.interface_name, address_pool)
+                .map_err(|_| ApiError::validation())?;
+        let scope = (gateway_database_id, prefix, route.interface_name.clone());
+        if !suggestions.contains(&scope) || !active_scopes.insert(scope) {
+            return Err(ApiError::validation());
+        }
+        let configuration_route = ConfigurationSubnetRoute {
+            route_id: route.route_id,
+            prefix: prefix.to_string(),
+            gateway_node_id_base64: route.gateway_node_id_base64,
+            mode: route.mode,
+            interface_name: route.interface_name,
+            priority: route.priority,
+        };
+        if route.enabled {
+            enabled.push(configuration_route.clone());
+        }
+        persisted.push(PersistedSubnetRoute {
+            route: configuration_route,
+            gateway_database_id,
+            enabled: route.enabled,
+        });
+    }
+    canonical_subnet_routes(&mut enabled)?;
+    Ok(PreparedSubnetRoutes { persisted, enabled })
+}
+
+async fn persist_subnet_routes(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+    routes: &[PersistedSubnetRoute],
+) -> Result<(), ApiError> {
+    sqlx::query(
+        "UPDATE subnet_routes
+         SET state = 'revoked', updated_at = now()
+         WHERE network_id = $1 AND state != 'revoked'",
+    )
+    .bind(network_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    for persisted in routes {
+        let route = &persisted.route;
+        sqlx::query(
+            "INSERT INTO subnet_routes
+             (network_id, route_id, gateway_node_id, prefix, interface_name, mode, priority, state)
+             VALUES ($1, $2, $3, $4::cidr, $5, $6, $7, $8)
+             ON CONFLICT (network_id, route_id) DO UPDATE
+             SET gateway_node_id = EXCLUDED.gateway_node_id,
+                 prefix = EXCLUDED.prefix,
+                 interface_name = EXCLUDED.interface_name,
+                 mode = EXCLUDED.mode,
+                 priority = EXCLUDED.priority,
+                 state = EXCLUDED.state,
+                 updated_at = now()",
+        )
+        .bind(network_id)
+        .bind(&route.route_id)
+        .bind(persisted.gateway_database_id)
+        .bind(&route.prefix)
+        .bind(&route.interface_name)
+        .bind(subnet_route_mode_name(route.mode))
+        .bind(i64::from(route.priority))
+        .bind(if persisted.enabled {
+            "enabled"
+        } else {
+            "paused"
+        })
+        .execute(&mut **transaction)
+        .await
+        .map_err(map_write_error)?;
+    }
+    Ok(())
+}
+
+async fn load_valid_subnet_suggestions(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<HashSet<(Uuid, Ipv4Net, String)>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT a.node_id, a.payload
+         FROM node_subnet_route_advertisements a
+         JOIN nodes n ON n.id = a.node_id AND n.network_id = a.network_id
+         WHERE a.network_id = $1
+           AND a.expires_at > now()
+           AND n.revoked_at IS NULL
+         FOR SHARE OF a, n",
+    )
+    .bind(network_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    let mut suggestions = HashSet::new();
+    for row in rows {
+        let node_id = row
+            .try_get::<Uuid, _>("node_id")
+            .map_err(internal_database)?;
+        let advertisement = serde_json::from_slice::<SubnetRouteAdvertisement>(
+            &row.try_get::<Vec<u8>, _>("payload")
+                .map_err(internal_database)?,
+        )
+        .map_err(|_| ApiError::internal())?;
+        if advertisement.network_id != network_id {
+            return Err(ApiError::internal());
+        }
+        for suggestion in advertisement.suggestions {
+            let prefix = suggestion
+                .prefix
+                .parse::<Ipv4Net>()
+                .map_err(|_| ApiError::internal())?;
+            suggestions.insert((node_id, prefix, suggestion.interface_name));
+        }
+    }
+    Ok(suggestions)
+}
+
+fn canonical_subnet_routes(routes: &mut [ConfigurationSubnetRoute]) -> Result<(), ApiError> {
+    for route in routes.iter() {
+        route
+            .prefix
+            .parse::<Ipv4Net>()
+            .map_err(|_| ApiError::validation())?;
+    }
+    routes.sort_by(|left, right| {
+        let left_prefix = left.prefix.parse::<Ipv4Net>().expect("validated prefix");
+        let right_prefix = right.prefix.parse::<Ipv4Net>().expect("validated prefix");
+        left_prefix
+            .network()
+            .cmp(&right_prefix.network())
+            .then_with(|| left_prefix.prefix_len().cmp(&right_prefix.prefix_len()))
+            .then_with(|| right.priority.cmp(&left.priority))
+            .then_with(|| left.route_id.cmp(&right.route_id))
+    });
+    Ok(())
+}
+
+const fn subnet_route_mode_name(mode: SubnetRouteMode) -> &'static str {
+    match mode {
+        SubnetRouteMode::Routed => "routed",
+        SubnetRouteMode::Nat => "nat",
+    }
 }
 
 async fn persist_acl_policy(
@@ -586,6 +933,7 @@ fn selector_key(selector: &AclSelector) -> String {
         AclSelector::Node { node_id_base64 } => format!("node:{node_id_base64}"),
         AclSelector::Group { name } => format!("group:{name}"),
         AclSelector::Tag { name } => format!("tag:{name}"),
+        AclSelector::Subnet { cidr } => format!("subnet:{cidr}"),
     }
 }
 
@@ -614,6 +962,7 @@ fn validate_policy_references(
     groups: &[AclGroupRequest],
     node_database_ids: &HashMap<String, Uuid>,
     nodes: &[PolicyNodeRow],
+    subnet_routes: &[ConfigurationSubnetRoute],
 ) -> Result<(), ApiError> {
     let group_names = groups
         .iter()
@@ -622,6 +971,10 @@ fn validate_policy_references(
     let tags = nodes
         .iter()
         .flat_map(|node| node.tags.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    let subnets = subnet_routes
+        .iter()
+        .map(|route| route.prefix.as_str())
         .collect::<HashSet<_>>();
     for selector in rules
         .iter()
@@ -632,6 +985,7 @@ fn validate_policy_references(
             AclSelector::Node { node_id_base64 } => node_database_ids.contains_key(node_id_base64),
             AclSelector::Group { name } => group_names.contains(name.as_str()),
             AclSelector::Tag { name } => tags.contains(name.as_str()),
+            AclSelector::Subnet { cidr } => subnets.contains(cidr.as_str()),
         };
         if !valid {
             return Err(ApiError::validation());
@@ -662,6 +1016,8 @@ fn policy_validation_payload(
     nodes: &[PolicyNodeRow],
     groups_by_node: &HashMap<Uuid, Vec<String>>,
     policies: Vec<AclRule>,
+    address_pool: String,
+    subnet_routes: Vec<ConfigurationSubnetRoute>,
 ) -> ConfigurationPayload {
     let nodes = nodes
         .iter()
@@ -693,11 +1049,12 @@ fn policy_validation_payload(
         version: policy_version,
         policy_version,
         generated_at: Utc::now(),
-        address_pool: "100.88.0.0/16".to_owned(),
+        address_pool,
         discovery_endpoints: Vec::new(),
         nodes,
         relays: Vec::new(),
         policies,
+        subnet_routes,
     }
 }
 
@@ -1333,6 +1690,186 @@ pub(crate) async fn advertise_candidates(
     Ok(configuration)
 }
 
+pub(crate) async fn advertise_subnet_routes(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    advertisement: SubnetRouteAdvertisement,
+    signature_base64: &str,
+) -> Result<SignedConfiguration, ApiError> {
+    let payload = serde_json::to_vec(&advertisement).map_err(|_| ApiError::validation())?;
+    if payload.len() > MAX_SUBNET_ROUTE_ADVERTISEMENT_BYTES {
+        return Err(ApiError::validation());
+    }
+    let signature = decode_array::<64>(signature_base64).map_err(|()| ApiError::unauthorized())?;
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    let node = sqlx::query(
+        "SELECT n.id, n.identity_public_key, net.address_pool::text AS address_pool
+         FROM nodes n
+         JOIN networks net ON net.id = n.network_id
+         WHERE n.network_id = $1 AND n.node_id = $2 AND n.revoked_at IS NULL
+         FOR UPDATE OF n",
+    )
+    .bind(authenticated.network_id)
+    .bind(authenticated.node_id.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::unauthorized)?;
+    let node_database_id = node.try_get::<Uuid, _>("id").map_err(internal_database)?;
+    let address_pool = node
+        .try_get::<String, _>("address_pool")
+        .map_err(internal_database)?;
+    validate_subnet_route_advertisement(authenticated, &advertisement, &address_pool)?;
+    let public_key = node
+        .try_get::<Vec<u8>, _>("identity_public_key")
+        .map_err(internal_database)?;
+    let verifying_key = VerifyingKey::from_bytes(
+        &public_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| ApiError::internal())?,
+    )
+    .map_err(|_| ApiError::internal())?;
+    let mut signing_input =
+        Vec::with_capacity(SUBNET_ROUTE_ADVERTISEMENT_DOMAIN.len() + payload.len());
+    signing_input.extend_from_slice(SUBNET_ROUTE_ADVERTISEMENT_DOMAIN);
+    signing_input.extend_from_slice(&payload);
+    verifying_key
+        .verify_strict(&signing_input, &Signature::from_bytes(&signature))
+        .map_err(|_| ApiError::unauthorized())?;
+
+    if subnet_route_advertisement_is_duplicate(
+        &mut transaction,
+        node_database_id,
+        advertisement.generation,
+        &payload,
+        &signature,
+    )
+    .await?
+    {
+        transaction.rollback().await.map_err(internal_database)?;
+        return latest_configuration(state, authenticated.network_id).await;
+    }
+    sqlx::query(
+        "INSERT INTO node_subnet_route_advertisements
+         (node_id, network_id, generation, payload, signature, expires_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (node_id) DO UPDATE
+         SET network_id = EXCLUDED.network_id,
+             generation = EXCLUDED.generation,
+             payload = EXCLUDED.payload,
+             signature = EXCLUDED.signature,
+             expires_at = EXCLUDED.expires_at,
+             updated_at = now()",
+    )
+    .bind(node_database_id)
+    .bind(authenticated.network_id)
+    .bind(i64::try_from(advertisement.generation).map_err(|_| ApiError::validation())?)
+    .bind(&payload)
+    .bind(signature.as_slice())
+    .bind(advertisement.expires_at)
+    .execute(&mut *transaction)
+    .await
+    .map_err(map_write_error)?;
+    append_audit(
+        &mut transaction,
+        AuditEvent {
+            network_id: Some(authenticated.network_id),
+            actor_type: "node",
+            actor_id: &authenticated.node_id_base64,
+            action: "subnet_routes.suggest",
+            target_type: "node",
+            target_id: Some(authenticated.node_id_base64.clone()),
+            outcome: "success",
+            metadata: json!({
+                "generation": advertisement.generation,
+                "suggestion_count": advertisement.suggestions.len(),
+                "expires_at": advertisement.expires_at,
+            }),
+        },
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    latest_configuration(state, authenticated.network_id).await
+}
+
+async fn subnet_route_advertisement_is_duplicate(
+    transaction: &mut Transaction<'_, Postgres>,
+    node_id: Uuid,
+    generation: u64,
+    payload: &[u8],
+    signature: &[u8; 64],
+) -> Result<bool, ApiError> {
+    let current = sqlx::query(
+        "SELECT generation, payload, signature
+         FROM node_subnet_route_advertisements
+         WHERE node_id = $1
+         FOR UPDATE",
+    )
+    .bind(node_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    let Some(current) = current else {
+        return Ok(false);
+    };
+    let current_generation = u64::try_from(
+        current
+            .try_get::<i64, _>("generation")
+            .map_err(internal_database)?,
+    )
+    .map_err(|_| ApiError::internal())?;
+    let duplicate = current_generation == generation
+        && current
+            .try_get::<Vec<u8>, _>("payload")
+            .map_err(internal_database)?
+            == payload
+        && current
+            .try_get::<Vec<u8>, _>("signature")
+            .map_err(internal_database)?
+            == signature;
+    if current_generation >= generation && !duplicate {
+        return Err(ApiError::conflict());
+    }
+    Ok(duplicate)
+}
+
+fn validate_subnet_route_advertisement(
+    authenticated: &AuthenticatedNode,
+    advertisement: &SubnetRouteAdvertisement,
+    address_pool: &str,
+) -> Result<(), ApiError> {
+    let now = Utc::now();
+    if advertisement.schema_version != 1
+        || advertisement.network_id != authenticated.network_id
+        || advertisement.node_id_base64 != authenticated.node_id_base64
+        || advertisement.generation == 0
+        || advertisement.suggestions.len() > MAX_SUBNET_SUGGESTIONS_PER_NODE
+        || advertisement.generated_at < now - Duration::minutes(5)
+        || advertisement.generated_at > now + Duration::minutes(5)
+        || advertisement.expires_at <= now + Duration::seconds(30)
+        || advertisement.expires_at > now + Duration::minutes(15)
+        || advertisement.suggestions.windows(2).any(|pair| {
+            (&pair[0].prefix, &pair[0].interface_name) >= (&pair[1].prefix, &pair[1].interface_name)
+        })
+    {
+        return Err(ApiError::validation());
+    }
+    let mut scopes = HashSet::with_capacity(advertisement.suggestions.len());
+    for suggestion in &advertisement.suggestions {
+        let prefix = validate_subnet_route_suggestion(
+            &suggestion.prefix,
+            &suggestion.interface_name,
+            address_pool,
+        )
+        .map_err(|_| ApiError::validation())?;
+        if !scopes.insert((prefix, suggestion.interface_name.as_str())) {
+            return Err(ApiError::validation());
+        }
+    }
+    Ok(())
+}
+
 async fn candidate_advertisement_is_duplicate(
     transaction: &mut Transaction<'_, Postgres>,
     node_id: Uuid,
@@ -1546,6 +2083,7 @@ async fn publish_configuration(
     let metadata = next_configuration_metadata(transaction, network_id).await?;
     let nodes = load_configuration_nodes(transaction, network_id).await?;
     let policies = load_acl_policies(transaction, network_id).await?;
+    let subnet_routes = load_subnet_routes(transaction, network_id).await?;
     let configuration_payload = ConfigurationPayload {
         schema_version: 1,
         network_id,
@@ -1557,6 +2095,7 @@ async fn publish_configuration(
         nodes,
         relays: state.relays.as_ref().clone(),
         policies,
+        subnet_routes,
     };
     AclPolicy::compile(&configuration_payload).map_err(|_| ApiError::internal())?;
     let (payload, signature, key_id) = encode_configuration(state, &configuration_payload)?;
@@ -1737,6 +2276,63 @@ async fn load_acl_policies(
             })
         })
         .collect()
+}
+
+async fn load_subnet_routes(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<Vec<ConfigurationSubnetRoute>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT r.route_id, r.prefix::text AS prefix, n.node_id,
+                r.interface_name, r.mode, r.priority
+         FROM subnet_routes r
+         JOIN nodes n
+           ON n.network_id = r.network_id AND n.id = r.gateway_node_id
+         WHERE r.network_id = $1
+           AND r.state = 'enabled'
+           AND n.revoked_at IS NULL
+         ORDER BY network(r.prefix), masklen(r.prefix), r.priority DESC, r.route_id",
+    )
+    .bind(network_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(internal_database)?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(ConfigurationSubnetRoute {
+                route_id: row
+                    .try_get::<String, _>("route_id")
+                    .map_err(internal_database)?,
+                prefix: row
+                    .try_get::<String, _>("prefix")
+                    .map_err(internal_database)?,
+                gateway_node_id_base64: URL_SAFE_NO_PAD.encode(
+                    row.try_get::<Vec<u8>, _>("node_id")
+                        .map_err(internal_database)?,
+                ),
+                interface_name: row
+                    .try_get::<String, _>("interface_name")
+                    .map_err(internal_database)?,
+                mode: parse_subnet_route_mode(
+                    &row.try_get::<String, _>("mode")
+                        .map_err(internal_database)?,
+                )?,
+                priority: u32::try_from(
+                    row.try_get::<i64, _>("priority")
+                        .map_err(internal_database)?,
+                )
+                .map_err(|_| ApiError::internal())?,
+            })
+        })
+        .collect()
+}
+
+fn parse_subnet_route_mode(value: &str) -> Result<SubnetRouteMode, ApiError> {
+    match value {
+        "routed" => Ok(SubnetRouteMode::Routed),
+        "nat" => Ok(SubnetRouteMode::Nat),
+        _ => Err(ApiError::internal()),
+    }
 }
 
 fn encode_configuration(

@@ -12,6 +12,7 @@ use crate::{
     network::{NetworkPlan, TunNetwork},
     state::NodeState,
     storage::{Identity, read_json, write_json},
+    subnet_routes::SubnetRouteDiscovery,
 };
 
 const MAX_IPV4_PACKET_BYTES: usize = 65_535;
@@ -23,6 +24,8 @@ struct AgentRuntime {
     state: Arc<tokio::sync::RwLock<NodeState>>,
     health: Arc<AgentHealth>,
     candidate_sender: watch::Sender<Option<xs_core::CandidateAdvertisement>>,
+    subnet_route_sender: watch::Sender<Option<xs_core::SubnetRouteAdvertisement>>,
+    subnet_route_discovery: SubnetRouteDiscovery,
     shutdown: watch::Receiver<bool>,
     control_task: JoinHandle<()>,
     ipc_task: JoinHandle<Result<()>>,
@@ -47,6 +50,11 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
     let state = Arc::new(tokio::sync::RwLock::new(state));
     let health = Arc::new(AgentHealth::new());
     let (candidate_sender, candidate_receiver) = watch::channel(None);
+    let (subnet_route_sender, subnet_route_receiver) = watch::channel(None);
+    let subnet_route_discovery = {
+        let state = state.read().await;
+        SubnetRouteDiscovery::new(&state, plan.interface_name().to_owned())?
+    };
 
     let control_task = tokio::spawn(run_control_loop(
         config.clone(),
@@ -54,6 +62,7 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
         Arc::clone(&state),
         Arc::clone(&health),
         candidate_receiver,
+        subnet_route_receiver,
         shutdown.clone(),
     ));
     let ipc_task = tokio::spawn(run_ipc_server(
@@ -75,6 +84,8 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
         state,
         health,
         candidate_sender,
+        subnet_route_sender,
+        subnet_route_discovery,
         shutdown,
         control_task,
         ipc_task,
@@ -134,10 +145,13 @@ impl AgentRuntime {
                 }
                 _ = data_plane_maintenance.tick() => {
                     if let Err(error) = maintain_data_plane(
+                        &mut self.network,
                         &mut self.data_plane,
                         &self.state,
                         &self.config,
                         &self.candidate_sender,
+                        &mut self.subnet_route_discovery,
+                        &self.subnet_route_sender,
                     ).await {
                         report_runtime_error("data_plane_maintenance", &error);
                         break Err(error);
@@ -173,15 +187,19 @@ impl AgentRuntime {
 }
 
 async fn maintain_data_plane(
+    network: &mut TunNetwork,
     data_plane: &mut UdpDataPlane,
     state: &tokio::sync::RwLock<NodeState>,
     config: &AgentConfig,
     candidate_sender: &watch::Sender<Option<xs_core::CandidateAdvertisement>>,
+    subnet_route_discovery: &mut SubnetRouteDiscovery,
+    subnet_route_sender: &watch::Sender<Option<xs_core::SubnetRouteAdvertisement>>,
 ) -> Result<()> {
     let snapshot = state.read().await.clone();
     if data_plane.configuration_version() != snapshot.configuration.version {
         data_plane.apply_configuration(&snapshot).await?;
     }
+    network.reconcile_subnet_routes(&snapshot).await?;
     if let Some(advertisement) = data_plane.maintain(&snapshot).await? {
         {
             let mut state = state.write().await;
@@ -189,6 +207,15 @@ async fn maintain_data_plane(
             write_json(&config.node_state_path(), &*state)?;
         }
         candidate_sender.send_replace(Some(advertisement));
+    }
+    if subnet_route_discovery.refresh_due(std::time::Instant::now()) {
+        let advertisement = subnet_route_discovery.refresh().await?;
+        {
+            let mut state = state.write().await;
+            state.subnet_route_generation = advertisement.generation;
+            write_json(&config.node_state_path(), &*state)?;
+        }
+        subnet_route_sender.send_replace(Some(advertisement));
     }
     Ok(())
 }

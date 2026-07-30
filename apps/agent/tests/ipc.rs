@@ -207,10 +207,12 @@ fn fixture_state() -> NodeState {
             nodes: vec![local_node, peer_node],
             relays: Vec::new(),
             policies: Vec::new(),
+            subnet_routes: Vec::new(),
         },
         configuration_sha256: "7f76e8d8f19d3c1d8fcd65767889d66f592b37b5cd45d5ef7ac38dcaf8268efb"
             .to_owned(),
         credential_serial: 1,
         candidate_generation: 0,
+        subnet_route_generation: 0,
     }
 }

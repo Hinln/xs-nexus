@@ -47,6 +47,8 @@ pub struct NodeState {
     pub credential_serial: u64,
     #[serde(default)]
     pub candidate_generation: u64,
+    #[serde(default)]
+    pub subnet_route_generation: u64,
 }
 
 impl NodeState {
@@ -118,6 +120,7 @@ impl NodeState {
             configuration_sha256,
             credential_serial: claims.serial,
             candidate_generation: 0,
+            subnet_route_generation: 0,
         })
     }
 
@@ -529,6 +532,7 @@ mod tests {
             }],
             relays: Vec::new(),
             policies: Vec::new(),
+            subnet_routes: Vec::new(),
         };
         let payload_bytes = serde_json::to_vec(&payload).expect("serialize configuration");
         let mut signing_input = CONFIGURATION_DOMAIN.to_vec();

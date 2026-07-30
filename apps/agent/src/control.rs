@@ -10,6 +10,7 @@ use tokio_tungstenite::{
 };
 use xs_core::{
     CandidateAdvertisement, ControlClientMessage, ControlServerMessage, SignedConfiguration,
+    SubnetRouteAdvertisement,
 };
 
 use crate::{
@@ -22,7 +23,8 @@ use crate::{
 
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
-const CONTROL_MESSAGE_LIMIT: usize = 4096;
+const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route advertisement v1";
+const CONTROL_MESSAGE_LIMIT: usize = 64 * 1024;
 
 pub async fn run_control_loop(
     config: AgentConfig,
@@ -30,6 +32,7 @@ pub async fn run_control_loop(
     state: Arc<tokio::sync::RwLock<NodeState>>,
     health: Arc<AgentHealth>,
     mut candidates: watch::Receiver<Option<CandidateAdvertisement>>,
+    mut subnet_routes: watch::Receiver<Option<SubnetRouteAdvertisement>>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
@@ -43,6 +46,7 @@ pub async fn run_control_loop(
             &state,
             &health,
             &mut candidates,
+            &mut subnet_routes,
             &mut shutdown,
         )
         .await
@@ -72,6 +76,7 @@ async fn control_session(
     state: &tokio::sync::RwLock<NodeState>,
     health: &AgentHealth,
     candidates: &mut watch::Receiver<Option<CandidateAdvertisement>>,
+    subnet_routes: &mut watch::Receiver<Option<SubnetRouteAdvertisement>>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<()> {
     let websocket_config = WebSocketConfig::default()
@@ -86,48 +91,15 @@ async fn control_session(
     .map_err(|_| AgentError::Control)?
     .map_err(|_| AgentError::Control)?;
 
-    let challenge = match timeout(Duration::from_secs(10), receive_json(&mut socket)).await {
-        Ok(Ok(ControlServerMessage::Challenge { challenge_base64 })) => {
-            decode_fixed::<32>(&challenge_base64)?
-        }
-        _ => return Err(AgentError::Control),
-    };
-    let (node_id_base64, credential_base64, node_id) = {
-        let state = state.read().await;
-        (
-            state.node_id_base64.clone(),
-            state.credential_base64.clone(),
-            decode_fixed::<16>(&state.node_id_base64)?,
-        )
-    };
-    let mut authentication_input =
-        Vec::with_capacity(CONTROL_AUTHENTICATION_DOMAIN.len() + challenge.len() + node_id.len());
-    authentication_input.extend_from_slice(CONTROL_AUTHENTICATION_DOMAIN);
-    authentication_input.extend_from_slice(&challenge);
-    authentication_input.extend_from_slice(&node_id);
-    let signature = identity.signing_key().sign(&authentication_input);
-    send_json(
-        &mut socket,
-        &ControlClientMessage::Authenticate {
-            node_id_base64: node_id_base64.clone(),
-            credential_base64,
-            signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
-        },
-    )
-    .await?;
-
-    let initial = match timeout(Duration::from_secs(10), receive_json(&mut socket)).await {
-        Ok(Ok(ControlServerMessage::Authenticated {
-            node_id_base64: authenticated_node_id,
-            configuration,
-        })) if authenticated_node_id == node_id_base64 => configuration,
-        _ => return Err(AgentError::Control),
-    };
-    apply_configuration(state, identity, initial, &config.node_state_path()).await?;
+    authenticate_control(config, &mut socket, identity, state).await?;
     health.set_controller_connected(true);
     let initial_advertisement = candidates.borrow().clone();
     if let Some(advertisement) = initial_advertisement {
         send_candidate_advertisement(&mut socket, identity, advertisement).await?;
+    }
+    let initial_subnet_routes = subnet_routes.borrow().clone();
+    if let Some(advertisement) = initial_subnet_routes {
+        send_subnet_route_advertisement(&mut socket, identity, advertisement).await?;
     }
 
     let mut synchronization =
@@ -156,6 +128,15 @@ async fn control_session(
                     send_candidate_advertisement(&mut socket, identity, advertisement).await?;
                 }
             }
+            changed = subnet_routes.changed() => {
+                if changed.is_err() {
+                    return Err(AgentError::Control);
+                }
+                let advertisement = subnet_routes.borrow_and_update().clone();
+                if let Some(advertisement) = advertisement {
+                    send_subnet_route_advertisement(&mut socket, identity, advertisement).await?;
+                }
+            }
             incoming = receive_json(&mut socket) => {
                 match incoming? {
                     ControlServerMessage::Configuration { configuration } => {
@@ -171,6 +152,55 @@ async fn control_session(
             }
         }
     }
+}
+
+async fn authenticate_control<S>(
+    config: &AgentConfig,
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    identity: &Identity,
+    state: &tokio::sync::RwLock<NodeState>,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let challenge = match timeout(Duration::from_secs(10), receive_json(socket)).await {
+        Ok(Ok(ControlServerMessage::Challenge { challenge_base64 })) => {
+            decode_fixed::<32>(&challenge_base64)?
+        }
+        _ => return Err(AgentError::Control),
+    };
+    let (node_id_base64, credential_base64, node_id) = {
+        let state = state.read().await;
+        (
+            state.node_id_base64.clone(),
+            state.credential_base64.clone(),
+            decode_fixed::<16>(&state.node_id_base64)?,
+        )
+    };
+    let mut authentication_input =
+        Vec::with_capacity(CONTROL_AUTHENTICATION_DOMAIN.len() + challenge.len() + node_id.len());
+    authentication_input.extend_from_slice(CONTROL_AUTHENTICATION_DOMAIN);
+    authentication_input.extend_from_slice(&challenge);
+    authentication_input.extend_from_slice(&node_id);
+    let signature = identity.signing_key().sign(&authentication_input);
+    send_json(
+        socket,
+        &ControlClientMessage::Authenticate {
+            node_id_base64: node_id_base64.clone(),
+            credential_base64,
+            signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+        },
+    )
+    .await?;
+
+    let initial = match timeout(Duration::from_secs(10), receive_json(socket)).await {
+        Ok(Ok(ControlServerMessage::Authenticated {
+            node_id_base64: authenticated_node_id,
+            configuration,
+        })) if authenticated_node_id == node_id_base64 => configuration,
+        _ => return Err(AgentError::Control),
+    };
+    apply_configuration(state, identity, initial, &config.node_state_path()).await
 }
 
 async fn send_candidate_advertisement<S>(
@@ -190,6 +220,30 @@ where
     send_json(
         socket,
         &ControlClientMessage::AdvertiseCandidates {
+            advertisement,
+            signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+        },
+    )
+    .await
+}
+
+async fn send_subnet_route_advertisement<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    identity: &Identity,
+    advertisement: SubnetRouteAdvertisement,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let payload = serde_json::to_vec(&advertisement).map_err(|_| AgentError::Control)?;
+    let mut signing_input =
+        Vec::with_capacity(SUBNET_ROUTE_ADVERTISEMENT_DOMAIN.len() + payload.len());
+    signing_input.extend_from_slice(SUBNET_ROUTE_ADVERTISEMENT_DOMAIN);
+    signing_input.extend_from_slice(&payload);
+    let signature = identity.signing_key().sign(&signing_input);
+    send_json(
+        socket,
+        &ControlClientMessage::AdvertiseSubnetRoutes {
             advertisement,
             signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
         },

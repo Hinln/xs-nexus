@@ -220,6 +220,25 @@ impl DataSender {
         self.seal(PacketType::Data, flags, path_id, packet)
     }
 
+    /// Encrypts a routed IPv4 packet after validating its canonical framing.
+    ///
+    /// The caller must authorize and bind the inner source and destination to
+    /// the authenticated subnet-routing policy before calling this method.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidProtocolMessage` for malformed, fragmented, oversized,
+    /// invalid-flag, or sequence-exhausted packets.
+    pub fn seal_routed_ipv4(
+        &mut self,
+        flags: DataFlags,
+        path_id: u32,
+        packet: &[u8],
+    ) -> Result<Vec<u8>, InvalidProtocolMessage> {
+        validate_ipv4_packet(packet)?;
+        self.seal(PacketType::Data, flags, path_id, packet)
+    }
+
     /// Encrypts a bounded authenticated control payload.
     ///
     /// # Errors
@@ -336,6 +355,28 @@ impl DataReceiver {
     ///
     /// Returns `InvalidProtocolMessage` for any framing, identity, epoch, replay, tag, or payload failure.
     pub fn open(&mut self, encoded: &[u8]) -> Result<OpenedPacket, InvalidProtocolMessage> {
+        self.open_with_routed_addresses(encoded, false)
+    }
+
+    /// Authenticates and decrypts a routed packet without requiring the inner
+    /// addresses to equal the two peers' virtual addresses.
+    ///
+    /// The caller must authorize and bind decrypted routed addresses to the
+    /// authenticated peer and current subnet-routing policy before forwarding.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidProtocolMessage` for any framing, identity, epoch,
+    /// replay, tag, payload, or IPv4 structure failure.
+    pub fn open_routed(&mut self, encoded: &[u8]) -> Result<OpenedPacket, InvalidProtocolMessage> {
+        self.open_with_routed_addresses(encoded, true)
+    }
+
+    fn open_with_routed_addresses(
+        &mut self,
+        encoded: &[u8],
+        allow_routed_addresses: bool,
+    ) -> Result<OpenedPacket, InvalidProtocolMessage> {
         if encoded.len() < DATA_HEADER_LENGTH + DATA_TAG_LENGTH
             || encoded.len() > MAX_DATAGRAM_LENGTH
         {
@@ -383,11 +424,15 @@ impl DataReceiver {
             .map_err(|_| InvalidProtocolMessage)?;
         validate_payload(header.packet_type, &plaintext)?;
         if header.packet_type == PacketType::Data {
-            validate_ipv4(
-                &plaintext,
-                self.source_virtual_ip,
-                self.destination_virtual_ip,
-            )?;
+            if allow_routed_addresses {
+                validate_ipv4_packet(&plaintext)?;
+            } else {
+                validate_ipv4(
+                    &plaintext,
+                    self.source_virtual_ip,
+                    self.destination_virtual_ip,
+                )?;
+            }
         }
         state.replay.commit(header.sequence)?;
         Ok(OpenedPacket {
@@ -633,6 +678,14 @@ fn validate_ipv4(
     expected_source: Ipv4Addr,
     expected_destination: Ipv4Addr,
 ) -> Result<(), InvalidProtocolMessage> {
+    let (source, destination) = validate_ipv4_packet(packet)?;
+    if source != expected_source || destination != expected_destination {
+        return Err(InvalidProtocolMessage);
+    }
+    Ok(())
+}
+
+fn validate_ipv4_packet(packet: &[u8]) -> Result<(Ipv4Addr, Ipv4Addr), InvalidProtocolMessage> {
     if packet.len() < 20 || packet[0] >> 4 != 4 {
         return Err(InvalidProtocolMessage);
     }
@@ -645,12 +698,10 @@ fn validate_ipv4(
         || header_length > packet.len()
         || total_length != packet.len()
         || fragment & 0x3fff != 0
-        || source != expected_source
-        || destination != expected_destination
     {
         return Err(InvalidProtocolMessage);
     }
-    Ok(())
+    Ok((source, destination))
 }
 
 fn array<const LENGTH: usize>(bytes: &[u8]) -> Result<[u8; LENGTH], InvalidProtocolMessage> {

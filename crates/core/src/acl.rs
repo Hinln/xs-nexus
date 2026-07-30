@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::ConfigurationPayload;
+use crate::{ConfigurationPayload, SubnetRoutePolicy};
 
 const MAX_RULES: usize = 4096;
 const MAX_SELECTORS_PER_SIDE: usize = 32;
@@ -36,6 +36,7 @@ pub enum AclSelector {
     Node { node_id_base64: String },
     Group { name: String },
     Tag { name: String },
+    Subnet { cidr: String },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -96,15 +97,26 @@ pub enum AclValidationError {
 
 #[derive(Clone, Debug)]
 struct AclSubject {
-    node_id_base64: String,
-    groups: HashSet<String>,
-    tags: HashSet<String>,
+    kind: AclSubjectKind,
+}
+
+#[derive(Clone, Debug)]
+enum AclSubjectKind {
+    Node {
+        node_id_base64: String,
+        groups: HashSet<String>,
+        tags: HashSet<String>,
+    },
+    Subnet {
+        cidr: String,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub struct AclPolicy {
     rules: Vec<AclRule>,
     subjects: HashMap<Ipv4Addr, AclSubject>,
+    subnet_subjects: Vec<(ipnet::Ipv4Net, AclSubject)>,
 }
 
 impl AclPolicy {
@@ -133,14 +145,36 @@ impl AclPolicy {
                     .insert(
                         virtual_ip,
                         AclSubject {
-                            node_id_base64: node.node_id_base64.clone(),
-                            groups: node.groups.iter().cloned().collect(),
-                            tags: node.tags.iter().cloned().collect(),
+                            kind: AclSubjectKind::Node {
+                                node_id_base64: node.node_id_base64.clone(),
+                                groups: node.groups.iter().cloned().collect(),
+                                tags: node.tags.iter().cloned().collect(),
+                            },
                         },
                     )
                     .is_some()
             {
                 return Err(AclValidationError::DuplicateNode);
+            }
+        }
+        let subnet_routes = SubnetRoutePolicy::compile(configuration)
+            .map_err(|_| AclValidationError::InvalidSelector)?;
+        let mut subnet_subjects = Vec::new();
+        let mut seen_subnets = HashSet::new();
+        for route in &configuration.subnet_routes {
+            let prefix = route
+                .prefix
+                .parse::<ipnet::Ipv4Net>()
+                .map_err(|_| AclValidationError::InvalidSelector)?;
+            if seen_subnets.insert(prefix) {
+                subnet_subjects.push((
+                    prefix,
+                    AclSubject {
+                        kind: AclSubjectKind::Subnet {
+                            cidr: route.prefix.clone(),
+                        },
+                    },
+                ));
             }
         }
 
@@ -157,12 +191,13 @@ impl AclPolicy {
             if !rule_ids.insert(rule.id.as_str()) {
                 return Err(AclValidationError::DuplicateRule);
             }
-            validate_rule(rule)?;
+            validate_rule(rule, &subnet_routes)?;
         }
 
         Ok(Self {
             rules: configuration.policies.clone(),
             subjects,
+            subnet_subjects,
         })
     }
 
@@ -174,10 +209,10 @@ impl AclPolicy {
         protocol: AclProtocol,
         destination_port: Option<u16>,
     ) -> AclDecision {
-        let Some(source_subject) = self.subjects.get(&source) else {
+        let Some(source_subject) = self.subject(source) else {
             return denied(AclDecisionReason::UnknownSource);
         };
-        let Some(destination_subject) = self.subjects.get(&destination) else {
+        let Some(destination_subject) = self.subject(destination) else {
             return denied(AclDecisionReason::UnknownDestination);
         };
 
@@ -197,9 +232,20 @@ impl AclPolicy {
         }
         denied(AclDecisionReason::DefaultDeny)
     }
+
+    fn subject(&self, address: Ipv4Addr) -> Option<&AclSubject> {
+        self.subjects.get(&address).or_else(|| {
+            self.subnet_subjects
+                .iter()
+                .find_map(|(prefix, subject)| prefix.contains(&address).then_some(subject))
+        })
+    }
 }
 
-fn validate_rule(rule: &AclRule) -> Result<(), AclValidationError> {
+fn validate_rule(
+    rule: &AclRule,
+    subnet_routes: &SubnetRoutePolicy,
+) -> Result<(), AclValidationError> {
     if rule.priority == 0
         || !valid_acl_name(&rule.id)
         || rule.sources.is_empty()
@@ -212,8 +258,8 @@ fn validate_rule(rule: &AclRule) -> Result<(), AclValidationError> {
     {
         return Err(AclValidationError::InvalidRule);
     }
-    validate_selectors(&rule.sources)?;
-    validate_selectors(&rule.destinations)?;
+    validate_selectors(&rule.sources, subnet_routes)?;
+    validate_selectors(&rule.destinations, subnet_routes)?;
 
     let mut previous_end = None;
     for range in &rule.destination_ports {
@@ -228,7 +274,10 @@ fn validate_rule(rule: &AclRule) -> Result<(), AclValidationError> {
     Ok(())
 }
 
-fn validate_selectors(selectors: &[AclSelector]) -> Result<(), AclValidationError> {
+fn validate_selectors(
+    selectors: &[AclSelector],
+    subnet_routes: &SubnetRoutePolicy,
+) -> Result<(), AclValidationError> {
     let any_count = selectors
         .iter()
         .filter(|selector| matches!(selector, AclSelector::Any))
@@ -250,6 +299,15 @@ fn validate_selectors(selectors: &[AclSelector]) -> Result<(), AclValidationErro
             AclSelector::Tag { name } if valid_tag(name) => {
                 format!("tag:{name}")
             }
+            AclSelector::Subnet { cidr } => {
+                let prefix = cidr
+                    .parse::<ipnet::Ipv4Net>()
+                    .map_err(|_| AclValidationError::InvalidSelector)?;
+                if cidr != &prefix.to_string() || !subnet_routes.contains_prefix(prefix) {
+                    return Err(AclValidationError::InvalidSelector);
+                }
+                format!("subnet:{cidr}")
+            }
             _ => return Err(AclValidationError::InvalidSelector),
         };
         if !canonical.insert(key) {
@@ -262,9 +320,23 @@ fn validate_selectors(selectors: &[AclSelector]) -> Result<(), AclValidationErro
 fn selectors_match(selectors: &[AclSelector], subject: &AclSubject) -> bool {
     selectors.iter().any(|selector| match selector {
         AclSelector::Any => true,
-        AclSelector::Node { node_id_base64 } => node_id_base64 == &subject.node_id_base64,
-        AclSelector::Group { name } => subject.groups.contains(name),
-        AclSelector::Tag { name } => subject.tags.contains(name),
+        AclSelector::Node { node_id_base64 } => matches!(
+            &subject.kind,
+            AclSubjectKind::Node { node_id_base64: subject_node_id, .. }
+                if node_id_base64 == subject_node_id
+        ),
+        AclSelector::Group { name } => matches!(
+            &subject.kind,
+            AclSubjectKind::Node { groups, .. } if groups.contains(name)
+        ),
+        AclSelector::Tag { name } => matches!(
+            &subject.kind,
+            AclSubjectKind::Node { tags, .. } if tags.contains(name)
+        ),
+        AclSelector::Subnet { cidr } => matches!(
+            &subject.kind,
+            AclSubjectKind::Subnet { cidr: subject_cidr } if cidr == subject_cidr
+        ),
     })
 }
 
@@ -344,7 +416,9 @@ mod tests {
     use chrono::Utc;
     use uuid::Uuid;
 
-    use crate::{ConfigurationNode, ConfigurationPayload};
+    use crate::{
+        ConfigurationNode, ConfigurationPayload, ConfigurationSubnetRoute, SubnetRouteMode,
+    };
 
     use super::*;
 
@@ -378,6 +452,7 @@ mod tests {
             ],
             relays: Vec::new(),
             policies: rules,
+            subnet_routes: Vec::new(),
         }
     }
 
@@ -520,6 +595,96 @@ mod tests {
         )];
         assert_eq!(
             AclPolicy::compile(&unsorted).expect_err("selector must fail"),
+            AclValidationError::InvalidSelector
+        );
+    }
+
+    #[test]
+    fn approved_subnet_is_an_explicit_bidirectional_acl_subject() {
+        let subnet = AclSelector::Subnet {
+            cidr: "192.168.50.0/24".to_owned(),
+        };
+        let node_a = AclSelector::Node {
+            node_id_base64: "node-a".to_owned(),
+        };
+        let mut configuration = policy(vec![
+            rule(
+                "allow-node-to-subnet",
+                200,
+                AclAction::Allow,
+                vec![node_a.clone()],
+                vec![subnet.clone()],
+                AclProtocol::Icmp,
+                Vec::new(),
+            ),
+            rule(
+                "allow-subnet-to-node",
+                100,
+                AclAction::Allow,
+                vec![subnet],
+                vec![node_a],
+                AclProtocol::Icmp,
+                Vec::new(),
+            ),
+        ]);
+        configuration.subnet_routes = vec![ConfigurationSubnetRoute {
+            route_id: "lan-primary".to_owned(),
+            prefix: "192.168.50.0/24".to_owned(),
+            gateway_node_id_base64: "node-b".to_owned(),
+            mode: SubnetRouteMode::Routed,
+            interface_name: "eth0".to_owned(),
+            priority: 100,
+        }];
+        let policy = AclPolicy::compile(&configuration).expect("valid subnet policy");
+
+        assert!(
+            policy
+                .evaluate(
+                    "100.88.0.16".parse().expect("node source"),
+                    "192.168.50.25".parse().expect("subnet destination"),
+                    AclProtocol::Icmp,
+                    None,
+                )
+                .allowed
+        );
+        assert!(
+            policy
+                .evaluate(
+                    "192.168.50.25".parse().expect("subnet source"),
+                    "100.88.0.16".parse().expect("node destination"),
+                    AclProtocol::Icmp,
+                    None,
+                )
+                .allowed
+        );
+        assert_eq!(
+            policy
+                .evaluate(
+                    "100.88.0.16".parse().expect("node source"),
+                    "192.168.60.25".parse().expect("unknown subnet"),
+                    AclProtocol::Icmp,
+                    None,
+                )
+                .reason,
+            AclDecisionReason::UnknownDestination
+        );
+    }
+
+    #[test]
+    fn policy_rejects_unapproved_subnet_selector() {
+        let configuration = policy(vec![rule(
+            "unapproved-subnet",
+            1,
+            AclAction::Allow,
+            vec![AclSelector::Any],
+            vec![AclSelector::Subnet {
+                cidr: "192.168.99.0/24".to_owned(),
+            }],
+            AclProtocol::Icmp,
+            Vec::new(),
+        )]);
+        assert_eq!(
+            AclPolicy::compile(&configuration).expect_err("subnet must be approved"),
             AclValidationError::InvalidSelector
         );
     }

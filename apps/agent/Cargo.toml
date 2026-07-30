@@ -28,6 +28,7 @@ xs-core = { path = "../../crates/core" }
 xs-protocol = { path = "../../crates/protocol" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+netlink-sys.workspace = true
 rtnetlink.workspace = true
 tokio-tun.workspace = true
 

@@ -24,7 +24,10 @@ use xs_agent::{
     storage::{Identity, read_json},
 };
 use xs_controller::config::ControllerConfig;
-use xs_core::{CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind};
+use xs_core::{
+    CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind, SubnetRouteAdvertisement,
+    SubnetRouteSuggestion,
+};
 
 const ADMIN_TOKEN: &str = "agent-integration-admin-token-32-characters";
 
@@ -98,6 +101,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     let shared_state = Arc::new(RwLock::new(initial_state));
     let health = Arc::new(AgentHealth::new());
     let (candidate_tx, candidate_rx) = watch::channel(None);
+    let (subnet_route_tx, subnet_route_rx) = watch::channel(None);
     let (control_shutdown_tx, control_shutdown_rx) = watch::channel(false);
     let control = tokio::spawn(run_control_loop(
         config.clone(),
@@ -105,6 +109,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
         Arc::clone(&shared_state),
         Arc::clone(&health),
         candidate_rx,
+        subnet_route_rx,
         control_shutdown_rx,
     ));
     wait_until_connected(&health).await;
@@ -114,6 +119,14 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     assert_updated_state(&config, &identity, &shared_state).await;
 
     advertise_local_candidate(&candidate_tx, &shared_state).await;
+    advertise_subnet_route_suggestion(
+        &client,
+        &config.controller_url,
+        network_id,
+        &subnet_route_tx,
+        &shared_state,
+    )
+    .await;
 
     control_shutdown_tx
         .send(true)
@@ -125,6 +138,72 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     let _ = server_shutdown_tx.send(());
     server.await.expect("server joins");
     controller_state.pool.close().await;
+}
+
+async fn advertise_subnet_route_suggestion(
+    client: &Client,
+    base: &str,
+    network_id: &str,
+    subnet_route_tx: &watch::Sender<Option<SubnetRouteAdvertisement>>,
+    shared_state: &RwLock<NodeState>,
+) {
+    let now = Utc::now();
+    let local_state = shared_state.read().await.clone();
+    subnet_route_tx
+        .send(Some(SubnetRouteAdvertisement {
+            schema_version: 1,
+            network_id: local_state.network_id,
+            node_id_base64: local_state.node_id_base64.clone(),
+            generation: local_state.subnet_route_generation.saturating_add(1),
+            generated_at: now,
+            expires_at: now + chrono::Duration::minutes(10),
+            suggestions: vec![SubnetRouteSuggestion {
+                prefix: "192.168.210.0/24".to_owned(),
+                interface_name: "eth0".to_owned(),
+            }],
+        }))
+        .expect("publish subnet route suggestion");
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let response = client
+                .get(format!(
+                    "{base}v1/admin/networks/{network_id}/subnet-route-suggestions"
+                ))
+                .bearer_auth(ADMIN_TOKEN)
+                .send()
+                .await
+                .expect("list subnet route suggestions");
+            assert_eq!(response.status(), StatusCode::OK);
+            let suggestions: Value = response.json().await.expect("suggestion response JSON");
+            if suggestions.as_array().is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["gateway_node_id_base64"] == local_state.node_id_base64
+                        && item["suggestions"].as_array().is_some_and(|suggestions| {
+                            suggestions.iter().any(|suggestion| {
+                                suggestion["prefix"] == "192.168.210.0/24"
+                                    && suggestion["interface_name"] == "eth0"
+                            })
+                        })
+                })
+            }) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("Controller persists signed subnet suggestion");
+
+    assert!(
+        shared_state
+            .read()
+            .await
+            .configuration_payload
+            .subnet_routes
+            .is_empty(),
+        "an Agent suggestion must not self-approve a route"
+    );
 }
 
 async fn advertise_local_candidate(

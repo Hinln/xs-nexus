@@ -143,7 +143,7 @@ async fn handle_authenticated_message(
     message: Message,
 ) -> bool {
     match message {
-        Message::Text(text) if text.len() <= 4096 => {
+        Message::Text(text) if text.len() <= 64 * 1024 => {
             handle_authenticated_text(socket, state, authenticated, &text).await
         }
         Message::Ping(payload) => socket.send(Message::Pong(payload)).await.is_ok(),
@@ -195,6 +195,23 @@ async fn handle_authenticated_text(
             .await
             else {
                 send_error(socket, "candidate_advertisement_rejected").await;
+                return false;
+            };
+            ControlServerMessage::Configuration { configuration }
+        }
+        ControlClientMessage::AdvertiseSubnetRoutes {
+            advertisement,
+            signature_base64,
+        } => {
+            let Ok(configuration) = crate::service::advertise_subnet_routes(
+                state,
+                authenticated,
+                advertisement,
+                &signature_base64,
+            )
+            .await
+            else {
+                send_error(socket, "subnet_route_advertisement_rejected").await;
                 return false;
             };
             ControlServerMessage::Configuration { configuration }
