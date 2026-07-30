@@ -27,7 +27,24 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
     {
         return;
     }
+    state.mark_node_online(authenticated.node_id).await;
+    if crate::service::record_control_connected(&state, &authenticated.node_id)
+        .await
+        .is_err()
+    {
+        tracing::warn!(event = "control_presence_write_failed", state = "connected");
+    }
     serve_authenticated_loop(&mut socket, &state, &authenticated).await;
+    if state.mark_node_offline(authenticated.node_id).await
+        && crate::service::record_control_disconnected(&state, &authenticated.node_id)
+            .await
+            .is_err()
+    {
+        tracing::warn!(
+            event = "control_presence_write_failed",
+            state = "disconnected"
+        );
+    }
 }
 
 async fn send_challenge(socket: &mut WebSocket, challenge: &[u8; 32]) -> Result<(), axum::Error> {

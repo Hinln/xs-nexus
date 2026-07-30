@@ -98,6 +98,18 @@
 - `scripts/validate-m32.sh` 汇总全部既有回归、M3.2 测试、格式化、Clippy、构建、秘密扫描、ShellCheck、npm audit，以及 Docker、`1panel-network`、默认路由和 nftables 前后基线；
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`。
 
+### M4.1/M4.2 自动化覆盖
+
+- `apps/controller/tests/controller_db.rs` 使用真实 PostgreSQL 覆盖 Argon2id 用户、统一无效登录、登录限速、安全 Cookie、CSRF 轮换、会话撤销、用户创建、审计员越权拒绝、快照脱敏和实时控制连接上下线；
+- 管理快照只返回数据库与当前进程实际状态，未接入的路径、Relay 健康、流量、延迟、更新和备份能力均返回带原因的 `unavailable`，测试明确禁止秘密/hash 字段和伪造指标；
+- `apps/console/tests/console.spec.ts` 覆盖登录、16 个页面、空/403/503、审计员只读、页面无横向溢出、跳转链接、节点详情焦点恢复与 404；
+- `apps/console/tests/visual.spec.ts` 使用固定数据和 Chromium，在 1440×900、1920×1080、1280×720、1024×768、768×1024、390×844 下生成登录、全部页面、节点详情和 404 截图；
+- 桌面状态矩阵额外覆盖所有页面空态、大量节点、长 IPv6、离线、部分服务不可用、加载、无权限和服务错误，共生成 135 张截图；
+- 浏览器测试监听 Console、Page Error 和 4xx/5xx；登录 401、权限 403、预期 503 被精确断言，其余错误必须为零；
+- `scripts/validate-m42.sh` 汇总全部历史网络回归、真实 PostgreSQL、前端单元/构建/E2E/视觉、秘密扫描、ShellCheck、npm audit，以及 Docker、`1panel-network`、默认路由和 nftables 前后基线；
+- 固定浏览器：Playwright `1.62.1`，Chromium for Testing `151.0.7922.34`；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`；截图：`/srv/xs-nexus/artifacts/visual/m4.1`。
+
 ---
 
 ## 3. 协议负向测试

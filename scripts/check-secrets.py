@@ -19,6 +19,7 @@ REFERENCE_SECRET_NAMES = {
     "SESSION_SECRET",
 }
 PSEUDOCODE_ASSIGNMENT_VALUES = {"HKDF-Expand("}
+SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".go", ".h", ".hpp", ".js", ".jsx", ".py", ".rs", ".ts", ".tsx"}
 PLACEHOLDERS = {
     "CHANGE_ME",
     "EXAMPLE",
@@ -84,7 +85,7 @@ def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
     findings: list[Finding] = []
     private_header = re.compile(rb"-----BEGIN (?:OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----")
     credential_uri = re.compile(rb"(?i)(?:postgres(?:ql)?|mysql|redis)://[^\s/@:]+:[^\s/@]+@")
-    rust_literal = re.compile(rb"^(?:b?[\"']|(?:br|r)#*\")")
+    source_literal = re.compile(rb"^(?:b?[\"'`]|(?:br|r)#*\")")
     assignment = re.compile(
         rb"(?i)(?:pass"
         rb"word|passwd|sec"
@@ -119,17 +120,16 @@ def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
                         and b"=" not in line
                         and line.rstrip().endswith(b",")
                     )
-                    rust_nonliteral_assignment = (
-                        path.suffix == ".rs"
-                        and re.search(rb"\blet(?:\s+mut)?\s+", line) is not None
-                        and rust_literal.match(raw_value) is None
+                    source_nonliteral_assignment = (
+                        path.suffix in SOURCE_SUFFIXES
+                        and source_literal.match(raw_value) is None
                     )
                     if (
                         value not in PLACEHOLDERS
                         and len(value) >= 8
                         and value not in PSEUDOCODE_ASSIGNMENT_VALUES
                         and not rust_type_annotation
-                        and not rust_nonliteral_assignment
+                        and not source_nonliteral_assignment
                     ):
                         findings.append(Finding(relative, line_number, "secret-assignment"))
 

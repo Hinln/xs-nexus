@@ -125,6 +125,18 @@
 - 备份加密；
 - 审计不可被普通管理员删除。
 
+### M4.1/M4.2 验证状态
+
+- 初始管理员只在用户表为空时于 PostgreSQL advisory lock 内创建，密码只以 Argon2id PHC 哈希保存，不记录输入值；
+- 登录对存在和不存在用户执行密码工作，统一返回无效凭据；每用户/来源 15 分钟最多 5 次失败，成功后清理失败记录；
+- 会话和 CSRF 使用独立 32 字节 CSPRNG 值，数据库仅保存域分离 SHA-256 摘要；Cookie 为 HttpOnly、SameSite=Strict，生产默认 Secure；
+- 会话有绝对到期、每用户最多 10 个、注销撤销和 CSRF 轮换；管理写操作同时要求有效会话角色和 CSRF；
+- 管理员、操作员和审计员权限全部在 Controller 强制执行，浏览器隐藏按钮不是授权边界；Bootstrap bearer Token 仍只供服务端自动化使用；
+- 快照和用户 API 不返回密码、会话、CSRF、Token、私钥或 hash；Enrollment Token 明文仍只在创建响应中出现一次；
+- 节点在线状态来自当前进程已认证控制连接，不以最近候选、固定夹具或数据库时间伪造；未接入指标显式不可用；
+- 浏览器主流程覆盖安全 Cookie、CSRF、越权、注销、Console/Page Error 和未解释 4xx/5xx；秘密扫描和 npm audit 通过；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`。
+
 ---
 
 ## 5. Relay

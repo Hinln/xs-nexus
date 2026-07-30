@@ -23,6 +23,10 @@ pub struct ControllerConfig {
     pub database_url: String,
     pub database_schema: String,
     pub admin_token_hash: [u8; 32],
+    pub console_bootstrap_username: Option<String>,
+    pub console_bootstrap_password: Option<Zeroizing<String>>,
+    pub console_cookie_secure: bool,
+    pub console_session_ttl_seconds: u64,
     pub credential_signing_key: SigningKey,
     pub config_signing_key: SigningKey,
     pub credential_ttl_seconds: u64,
@@ -41,6 +45,12 @@ pub enum ConfigError {
     Schema,
     #[error("ADMIN_API_TOKEN must contain at least 32 characters")]
     AdminToken,
+    #[error("CONSOLE_BOOTSTRAP_USERNAME and CONSOLE_BOOTSTRAP_PASSWORD must form a valid pair")]
+    ConsoleBootstrap,
+    #[error("CONSOLE_COOKIE_SECURE must be true or false")]
+    ConsoleCookieSecure,
+    #[error("CONSOLE_SESSION_TTL_SECONDS must be between 900 and 86400")]
+    ConsoleSessionTtl,
     #[error("invalid NODE_CREDENTIAL_TTL_SECONDS")]
     CredentialTtl,
     #[error("unable to inspect signing key file")]
@@ -90,6 +100,38 @@ impl ControllerConfig {
         let admin_token_hash = Sha256::digest(admin_token.as_bytes()).into();
         drop(admin_token);
 
+        let console_bootstrap_password = env::var("CONSOLE_BOOTSTRAP_PASSWORD")
+            .ok()
+            .map(Zeroizing::new);
+        let configured_console_username = env::var("CONSOLE_BOOTSTRAP_USERNAME").ok();
+        let console_bootstrap_username = match (
+            configured_console_username,
+            console_bootstrap_password.as_ref(),
+        ) {
+            (Some(username), Some(password))
+                if valid_console_username(&username) && valid_console_password(password) =>
+            {
+                Some(username)
+            }
+            (None, Some(password)) if valid_console_password(password) => Some("admin".to_owned()),
+            (None, None) => None,
+            _ => return Err(ConfigError::ConsoleBootstrap),
+        };
+        let console_cookie_secure = env::var("CONSOLE_COOKIE_SECURE")
+            .map(|value| match value.as_str() {
+                "true" => Ok(true),
+                "false" => Ok(false),
+                _ => Err(ConfigError::ConsoleCookieSecure),
+            })
+            .unwrap_or(Ok(true))?;
+        let console_session_ttl_seconds = env::var("CONSOLE_SESSION_TTL_SECONDS")
+            .unwrap_or_else(|_| "28800".to_owned())
+            .parse::<u64>()
+            .map_err(|_| ConfigError::ConsoleSessionTtl)?;
+        if !(900..=86_400).contains(&console_session_ttl_seconds) {
+            return Err(ConfigError::ConsoleSessionTtl);
+        }
+
         let credential_signing_key =
             load_signing_key(Path::new(&required("CREDENTIAL_SIGNING_KEY_PATH")?))?;
         let config_signing_key =
@@ -118,12 +160,29 @@ impl ControllerConfig {
             database_url,
             database_schema,
             admin_token_hash,
+            console_bootstrap_username,
+            console_bootstrap_password,
+            console_cookie_secure,
+            console_session_ttl_seconds,
             credential_signing_key,
             config_signing_key,
             credential_ttl_seconds,
             relays,
         })
     }
+}
+
+fn valid_console_username(username: &str) -> bool {
+    (3..=64).contains(&username.len())
+        && username.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+        })
+}
+
+fn valid_console_password(password: &str) -> bool {
+    (12..=128).contains(&password.chars().count())
 }
 
 fn required(name: &'static str) -> Result<String, ConfigError> {

@@ -12,6 +12,7 @@
 | 依赖 | 锁定版本 | 用途 | 许可证 |
 |---|---:|---|---|
 | axum | 0.8.9 | Controller HTTP/WebSocket | MIT |
+| argon2 | 0.5.3 | 控制台密码 Argon2id 哈希与验证 | Apache-2.0 OR MIT |
 | base64 | 0.23.0 | Base64URL wire encoding | MIT OR Apache-2.0 |
 | chacha20poly1305 | 0.10.1 | XSP/1 Finish 与数据 AEAD | Apache-2.0 OR MIT |
 | chrono | 0.4.45 | UTC 时间与数据库时间 | MIT OR Apache-2.0 |
@@ -57,6 +58,7 @@
 | TypeScript | 7.0.2 | 类型检查 | Apache-2.0 | 否 |
 | Vite | 8.1.5 | Console 构建 | MIT | 否 |
 | `@vitejs/plugin-react` | 6.0.4 | React 构建插件 | MIT | 否 |
+| `@playwright/test` | 1.62.1 | 固定 Chromium 的端到端与视觉回归 | Apache-2.0 | 否 |
 | Vitest | 4.1.10 | 前端单元测试 | MIT | 否 |
 | `@types/react` | 19.2.17 | TypeScript 类型 | MIT | 否 |
 | `@types/react-dom` | 19.2.3 | TypeScript 类型 | MIT | 否 |
@@ -71,6 +73,7 @@
 | GCC/Clang/CMake/Make | 本地和未来驱动构建 | 构建工具 |
 | Docker Compose | 服务编排 | 运行环境工具 |
 | Alpine `3.22` | 基线 profile 的网络配置探针 | 当前只解析配置，尚未发布 |
+| Chromium for Testing 151.0.7922.34 | Playwright 固定浏览器渲染 | 仅测试缓存，不进入应用产物 |
 | `actions/checkout@v4` | CI 源码检出 | GitHub Actions |
 | `actions/setup-node@v4` | CI Node 工具链 | GitHub Actions |
 | `dtolnay/rust-toolchain@stable` | CI Rust 工具链 | GitHub Actions |

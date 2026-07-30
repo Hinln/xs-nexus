@@ -44,6 +44,21 @@ def main() -> int:
             raise RuntimeError("Rust literal assignment was not detected")
 
         dynamic.unlink()
+        typescript = root / "dynamic.ts"
+        typescript.write_bytes(
+            b"const " + sensitive_name + b" = response.sessionToken;\n"
+        )
+        if scanner.scan(root, {}):
+            raise RuntimeError("TypeScript non-literal assignment produced a false positive")
+
+        typescript.write_bytes(
+            b"const " + sensitive_name + b" = \"not-a-production-value\";\n"
+        )
+        findings = scanner.scan(root, {})
+        if [finding.rule for finding in findings] != ["secret-assignment"]:
+            raise RuntimeError("TypeScript literal assignment was not detected")
+
+        typescript.unlink()
         config = root / "config.yml"
         config.write_bytes(b"api_" + b"sec" + b"ret: not-a-production-value\n")
         findings = scanner.scan(root, {})

@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { bootstrapMessage } from "./status";
+import { pageStateMessage, type PageDataState } from "./status";
 
-describe("bootstrapMessage", () => {
-  it("明确声明 Controller 尚未配置", () => {
-    expect(bootstrapMessage("controller-unconfigured")).toContain("不会伪造");
+describe("pageStateMessage", () => {
+  it.each<[PageDataState, string]>([
+    ["loading", "正在读取"],
+    ["empty", "没有可显示"],
+    ["error", "未能完成"],
+    ["forbidden", "没有访问权限"],
+  ])("为 %s 提供明确状态", (state, expected) => {
+    expect(pageStateMessage(state)).toContain(expected);
   });
 });

@@ -34,6 +34,20 @@ impl ApiError {
     }
 
     #[must_use]
+    pub const fn forbidden() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "forbidden", "permission denied")
+    }
+
+    #[must_use]
+    pub const fn rate_limited() -> Self {
+        Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "request rate limit exceeded",
+        )
+    }
+
+    #[must_use]
     pub const fn validation() -> Self {
         Self::new(
             StatusCode::BAD_REQUEST,

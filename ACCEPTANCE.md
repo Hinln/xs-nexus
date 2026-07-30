@@ -110,21 +110,23 @@
 
 ## H. Web 控制台
 
-- [ ] MUST：真实登录和权限。
-- [ ] MUST：首页真实指标。
-- [ ] MUST：节点管理。
-- [ ] MUST：网络和地址池。
-- [ ] MUST：Token。
-- [ ] MUST：ACL。
-- [ ] MUST：子网审批。
-- [ ] MUST：Relay。
-- [ ] MUST：拓扑。
-- [ ] MUST：审计日志。
-- [ ] MUST：更新管理。
-- [ ] MUST：加载、空、错误、无权限状态。
-- [ ] MUST：Playwright 主流程通过。
-- [ ] MUST：视觉验收通过。
-- [ ] MUST：无未解释浏览器错误。
+- [x] MUST：真实登录和权限。
+- [x] MUST：首页真实指标。
+- [x] MUST：节点管理。
+- [x] MUST：网络和地址池。
+- [x] MUST：Token。
+- [x] MUST：ACL。
+- [x] MUST：子网审批。
+- [x] MUST：Relay。
+- [x] MUST：拓扑。
+- [x] MUST：审计日志。
+- [x] MUST：更新管理。
+- [x] MUST：加载、空、错误、无权限状态。
+- [x] MUST：Playwright 主流程通过。
+- [x] MUST：视觉验收通过。
+- [x] MUST：无未解释浏览器错误。
+
+M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更新发布、备份恢复、路径、流量、延迟和 Relay 指标均以不可用状态及原因展示，不以固定值满足验收。证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`。
 
 ---
 

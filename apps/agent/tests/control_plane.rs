@@ -255,6 +255,10 @@ fn controller_config() -> ControllerConfig {
         database_schema: std::env::var("XS_TEST_AGENT_DATABASE_SCHEMA")
             .unwrap_or_else(|_| "xs_nexus_agent_test".to_owned()),
         admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
+        console_bootstrap_username: None,
+        console_bootstrap_password: None,
+        console_cookie_secure: true,
+        console_session_ttl_seconds: 28_800,
         credential_signing_key: SigningKey::from_bytes(&[21_u8; 32]),
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
         credential_ttl_seconds: 86_400,

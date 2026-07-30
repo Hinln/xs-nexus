@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-30 21:22 UTC
-当前 Git 提交：M3.2 完成检查点（以本文件所在提交为准）
+最后更新时间：2026-07-30 22:38 UTC
+当前 Git 提交：M4.2 完成检查点（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M4.1 Web 控制台功能`
+当前里程碑：`M5.1 Linux 安装、升级、回滚和卸载`
 
 ---
 
@@ -66,38 +66,44 @@
 - XSP/1 新增显式策略守卫的 routed API，普通会话继续严格绑定虚拟地址，路由流量在加密前和解密后双端执行 Peer/子网/ACL 绑定；
 - 三个隔离 namespace 已验证审批前不可达、纯路由/NAT ICMP/TCP、伪造源拒绝、网关离线撤销、暂停、shutdown 和崩溃恢复；
 - M3.2 全量证据 `/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`。
+- Controller 控制台用户、Argon2id 密码、登录限速、HttpOnly/SameSite 会话、CSRF 轮换、注销撤销和 administrator/operator/auditor 服务端授权；
+- 管理快照接入真实网络、节点、Token、组、ACL、子网、Relay、拓扑、用户、审计、告警和系统能力，任何未接入路径/流量/延迟/健康指标均显式“未采集”；
+- 节点在线状态只由当前进程已认证活跃控制连接决定，连接断开会实时移除并记录数据库时间；
+- React 控制台完成登录、首页、节点详情、网络、地址池、Token、组、路由审批、Relay、ACL、用户、审计、告警、更新、设置、备份和 404；
+- 6 项 Playwright 主流程、6 个固定视口、135 张截图、空/错误/无权限/大量数据/长 IPv6/离线/部分服务异常和键盘焦点恢复均通过；
+- M4.1/M4.2 全量证据 `/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`，截图 `/srv/xs-nexus/artifacts/visual/m4.1`。
 
 ## 当前工作点
 
-- M3.2 已完成全部计划内实现和全量验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
-- M4.1 开始控制台真实登录、权限、指标、节点、网络、Token、ACL、子网审批、Relay、拓扑、审计、更新和系统状态；
+- M4.1 和 M4.2 已完成全部计划内实现、浏览器人工抽查和全量验证，宿主机无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
+- M5.1 开始盘点现有构建产物、systemd 单元、状态目录和恢复语义，设计 Linux 安装、升级、失败回滚和卸载流程；
 - 真实 NAS `192.168.0.0/24` 保持人工门禁，不以 namespace 结果替代真实设备验收。
 
 ## 下一步
 
-1. 盘点现有 React/Vite 控制台、Controller 管理 API、认证缺口和视觉约束；
-2. 先建立真实登录、权限拒绝、加载/空/错误状态和主导航的自动化测试；
-3. 实现控制台 API 客户端、会话、角色权限和全局错误处理，不使用伪造状态；
-4. 按页面顺序接入首页、节点、网络、Token、ACL、子网审批、Relay、拓扑和审计；
-5. 完成响应式、可访问性、Playwright 和 `VISUAL_QA.md` 证据后再声明 M4.1 完成。
+1. 完整读取 M5.1 安装、升级、回滚、卸载和发布签名要求；
+2. 盘点现有 Linux 二进制、systemd 单元、用户、目录、权限和配置迁移边界；
+3. 设计固定版本清单、平台/架构绑定、哈希与签名验证以及原子版本切换；
+4. 实现安装、重复安装、升级、失败回滚、身份保留、卸载和诊断脚本；
+5. 在隔离目录和 transient systemd 环境运行实际生命周期测试，不触碰 1Panel 资源。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '395,455p' EXECUTION_PLAN.md
-sed -n '1,260p' IMPLEMENT.md
-rg --files apps/console apps/controller | sort
-rg -n 'auth|login|admin|token|acl|subnet|relay|audit|fetch|router' apps/console apps/controller
+sed -n '465,505p' EXECUTION_PLAN.md
+rg -n 'install|upgrade|rollback|uninstall|systemd|signature|manifest' IMPLEMENT.md ACCEPTANCE.md RELEASE_CHECKLIST.md RECOVERY_RUNBOOK.md
+rg --files deploy scripts apps | sort
+sed -n '1,260p' deploy/systemd/xs-agent.service
 ```
 
 ## 最近测试
 
-- 时间：2026-07-30 21:22 UTC；
+- 时间：2026-07-30 22:37 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m32.sh`；
+- 命令：`./scripts/validate-m42.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`；
-- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`；
+- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、6 项 Playwright E2E、135 张视觉截图、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
 
 ## 当前失败
 
@@ -132,8 +138,9 @@ cat PROGRESS.md
 ./scripts/validate-m23.sh
 ./scripts/validate-m31.sh
 ./scripts/validate-m32.sh
-sed -n '395,455p' EXECUTION_PLAN.md
-rg --files apps/console apps/controller | sort
+./scripts/validate-m42.sh
+sed -n '465,505p' EXECUTION_PLAN.md
+rg --files deploy scripts apps | sort
 ```
 
 然后读取：

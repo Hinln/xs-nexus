@@ -32,8 +32,10 @@ use xs_core::{
 use xs_protocol::{
     CREDENTIAL_LENGTH, DiscoveryRequest, verify_credential, verify_discovery_response,
 };
+use zeroize::Zeroizing;
 
 const ADMIN_TOKEN: &str = "integration-admin-token-with-32-characters";
+const CONSOLE_PASSWORD: &str = "integration-console-password-42";
 const CONFIGURATION_DOMAIN: &[u8] = b"XS Nexus configuration v1";
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
@@ -51,6 +53,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         .await
         .expect("controller database initializes");
     reset_database(&state.pool).await;
+    assert_console_authentication_and_permissions(&router, &state.pool).await;
     let (discovery_shutdown, discovery_shutdown_rx) = watch::channel(false);
     let discovery_state = state.clone();
     let discovery_server = tokio::spawn(async move {
@@ -140,6 +143,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         &identity,
     )
     .await;
+    assert_console_snapshot(&router).await;
 
     assert_control_audit_and_token_use(&state.pool, &token_id).await;
 
@@ -893,6 +897,10 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
         database_url,
         database_schema,
         admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
+        console_bootstrap_username: Some("admin".to_owned()),
+        console_bootstrap_password: Some(Zeroizing::new(CONSOLE_PASSWORD.to_owned())),
+        console_cookie_secure: true,
+        console_session_ttl_seconds: 28_800,
         credential_signing_key: SigningKey::from_bytes(&[21_u8; 32]),
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
         credential_ttl_seconds: 86_400,
@@ -902,7 +910,8 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE audit_events, configuration_versions, subnet_routes,
+        "TRUNCATE console_login_attempts, console_sessions, audit_events,
+                  configuration_versions, subnet_routes,
                   node_subnet_route_advertisements, acl_rules,
                   node_group_memberships, node_groups, ip_leases, nodes,
                   enrollment_tokens, networks
@@ -915,6 +924,348 @@ async fn reset_database(pool: &sqlx::PgPool) {
         .execute(pool)
         .await
         .expect("reset credential serial");
+    sqlx::query("DELETE FROM console_users WHERE username != 'admin'")
+        .execute(pool)
+        .await
+        .expect("remove non-bootstrap console users");
+}
+
+struct BrowserSession {
+    cookie: String,
+    csrf_token: String,
+}
+
+async fn assert_console_authentication_and_permissions(router: &Router, pool: &sqlx::PgPool) {
+    assert_login_rate_limit(router).await;
+    let mut administrator =
+        login_console_user(router, "admin", CONSOLE_PASSWORD, "administrator").await;
+    refresh_console_session(router, &mut administrator, "admin").await;
+    create_auditor(router, &administrator).await;
+    assert_administrator_csrf_and_network(router, &administrator).await;
+
+    let auditor = login_console_user(
+        router,
+        "auditor",
+        "integration-viewer-password-42",
+        "auditor",
+    )
+    .await;
+    assert_auditor_permissions(router, &auditor).await;
+    assert_authentication_storage(pool).await;
+    logout_console_user(router, &administrator).await;
+}
+
+async fn assert_login_rate_limit(router: &Router) {
+    for _ in 0..5 {
+        let (status, _, response) = browser_request(
+            router,
+            Method::POST,
+            "/v1/auth/login",
+            Some(json!({"username": "missing-user", "password": "incorrect-password"})),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(response["error"]["code"], "unauthorized");
+    }
+    let (status, _, response) = browser_request(
+        router,
+        Method::POST,
+        "/v1/auth/login",
+        Some(json!({"username": "missing-user", "password": "incorrect-password"})),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response["error"]["code"], "rate_limited");
+}
+
+async fn login_console_user(
+    router: &Router,
+    username: &str,
+    password: &str,
+    expected_role: &str,
+) -> BrowserSession {
+    let (status, headers, login) = browser_request(
+        router,
+        Method::POST,
+        "/v1/auth/login",
+        Some(json!({"username": username, "password": password})),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(login["user"]["username"], username);
+    assert_eq!(login["user"]["role"], expected_role);
+    let csrf_token = login["csrf_token"].as_str().expect("CSRF token").to_owned();
+    assert!(csrf_token.len() >= 32);
+    let set_cookie = headers
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .expect("session cookie");
+    assert!(set_cookie.contains("xs_nexus_session="));
+    assert!(set_cookie.contains("HttpOnly"));
+    assert!(set_cookie.contains("SameSite=Strict"));
+    assert!(set_cookie.contains("Secure"));
+    BrowserSession {
+        cookie: set_cookie
+            .split(';')
+            .next()
+            .expect("cookie pair")
+            .to_owned(),
+        csrf_token,
+    }
+}
+
+async fn refresh_console_session(
+    router: &Router,
+    session: &mut BrowserSession,
+    expected_username: &str,
+) {
+    let (status, _, response) = browser_request(
+        router,
+        Method::GET,
+        "/v1/auth/session",
+        None,
+        Some(&session.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["user"]["username"], expected_username);
+    response["csrf_token"]
+        .as_str()
+        .expect("rotated CSRF token")
+        .clone_into(&mut session.csrf_token);
+}
+
+async fn create_auditor(router: &Router, administrator: &BrowserSession) {
+    let (status, _, viewer) = browser_request(
+        router,
+        Method::POST,
+        "/v1/admin/users",
+        Some(json!({
+            "username": "auditor",
+            "display_name": "审计员",
+            "password": "integration-viewer-password-42",
+            "role": "auditor"
+        })),
+        Some(&administrator.cookie),
+        Some(&administrator.csrf_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(viewer["username"], "auditor");
+    assert_eq!(viewer["role"], "auditor");
+}
+
+async fn assert_administrator_csrf_and_network(router: &Router, administrator: &BrowserSession) {
+    let request = json!({
+        "name": "console-network",
+        "address_pool": "100.89.0.0/24",
+        "reserved_addresses": 16
+    });
+    let (status, _, _) = browser_request(
+        router,
+        Method::POST,
+        "/v1/admin/networks",
+        Some(request.clone()),
+        Some(&administrator.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, network) = browser_request(
+        router,
+        Method::POST,
+        "/v1/admin/networks",
+        Some(request),
+        Some(&administrator.cookie),
+        Some(&administrator.csrf_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(network["address_pool"], "100.89.0.0/24");
+}
+
+async fn assert_auditor_permissions(router: &Router, auditor: &BrowserSession) {
+    let (status, _, networks) = browser_request(
+        router,
+        Method::GET,
+        "/v1/admin/networks",
+        None,
+        Some(&auditor.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(networks.as_array().is_some_and(|items| !items.is_empty()));
+
+    let (status, _, response) = browser_request(
+        router,
+        Method::POST,
+        "/v1/admin/networks",
+        Some(json!({
+            "name": "auditor-must-fail",
+            "address_pool": "100.90.0.0/24",
+            "reserved_addresses": 16
+        })),
+        Some(&auditor.cookie),
+        Some(&auditor.csrf_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(response["error"]["code"], "forbidden");
+}
+
+async fn assert_authentication_storage(pool: &sqlx::PgPool) {
+    let password_hash: String =
+        sqlx::query_scalar("SELECT password_hash FROM console_users WHERE username = 'admin'")
+            .fetch_one(pool)
+            .await
+            .expect("stored password hash");
+    assert!(password_hash.starts_with("$argon2id$"));
+    assert!(!password_hash.contains(CONSOLE_PASSWORD));
+    let token_hash_length: i32 = sqlx::query_scalar(
+        "SELECT octet_length(token_hash) FROM console_sessions WHERE revoked_at IS NULL LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("stored session hash");
+    assert_eq!(token_hash_length, 32);
+}
+
+async fn logout_console_user(router: &Router, session: &BrowserSession) {
+    let (status, _, _) = browser_request(
+        router,
+        Method::POST,
+        "/v1/auth/logout",
+        None,
+        Some(&session.cookie),
+        Some(&session.csrf_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _, _) = browser_request(
+        router,
+        Method::GET,
+        "/v1/auth/session",
+        None,
+        Some(&session.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+async fn assert_console_snapshot(router: &Router) {
+    let (status, unauthorized) =
+        request_json(router, Method::GET, "/v1/admin/console", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(unauthorized["error"]["code"], "unauthorized");
+
+    let (status, snapshot) = request_json(
+        router,
+        Method::GET,
+        "/v1/admin/console",
+        None,
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(snapshot["collected_at"].is_string());
+    assert_eq!(snapshot["dashboard"]["online_nodes"], 0);
+    assert!(
+        snapshot["dashboard"]["offline_nodes"]
+            .as_u64()
+            .is_some_and(|count| count > 0)
+    );
+    assert_eq!(
+        snapshot["dashboard"]["direct_nodes"]["status"],
+        "unavailable"
+    );
+    assert!(snapshot["dashboard"]["direct_nodes"]["value"].is_null());
+    assert!(
+        snapshot["networks"]
+            .as_array()
+            .is_some_and(|items| items.len() >= 2)
+    );
+    assert!(
+        snapshot["nodes"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert!(
+        snapshot["enrollment_tokens"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert!(
+        snapshot["acl_rules"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert!(
+        snapshot["subnet_routes"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert!(
+        snapshot["audit_events"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert_eq!(snapshot["system"]["database"]["value"], "ok");
+    let encoded = serde_json::to_string(&snapshot).expect("serialize console snapshot");
+    assert!(!encoded.contains("token_hash"));
+    assert!(!encoded.contains("password_hash"));
+    assert!(!encoded.contains(CONSOLE_PASSWORD));
+}
+
+async fn browser_request(
+    router: &Router,
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+    cookie: Option<&str>,
+    csrf_token: Option<&str>,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let mut builder = Request::builder().method(method).uri(path);
+    if let Some(cookie) = cookie {
+        builder = builder.header(header::COOKIE, cookie);
+    }
+    if let Some(csrf_token) = csrf_token {
+        builder = builder.header("x-csrf-token", csrf_token);
+    }
+    let body = if let Some(body) = body {
+        builder = builder.header(header::CONTENT_TYPE, "application/json");
+        Body::from(serde_json::to_vec(&body).expect("serialize browser body"))
+    } else {
+        Body::empty()
+    };
+    let response = router
+        .clone()
+        .oneshot(builder.body(body).expect("browser request"))
+        .await
+        .expect("browser router response");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect browser response")
+        .to_bytes();
+    let value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).expect("browser JSON response")
+    };
+    (status, headers, value)
 }
 
 async fn create_token(router: &Router, network_id: &str, max_uses: u16) -> (String, String) {
@@ -1265,9 +1616,39 @@ async fn verify_websocket_control(
     assert_eq!(synchronized["version"], 4);
 
     advertise_candidates_and_verify(&mut socket, enrollment, identity, discovery_address).await;
+    assert_console_online_count(router, 1).await;
 
     socket.close(None).await.expect("close websocket");
+    timeout(Duration::from_secs(2), async {
+        loop {
+            if console_online_count(router).await == 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("control disconnect updates console presence");
     server.abort();
+}
+
+async fn assert_console_online_count(router: &Router, expected: u64) {
+    assert_eq!(console_online_count(router).await, expected);
+}
+
+async fn console_online_count(router: &Router) -> u64 {
+    let (status, snapshot) = request_json(
+        router,
+        Method::GET,
+        "/v1/admin/console",
+        None,
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    snapshot["dashboard"]["online_nodes"]
+        .as_u64()
+        .expect("online node count")
 }
 
 async fn advertise_candidates_and_verify(

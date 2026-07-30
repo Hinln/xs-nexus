@@ -119,7 +119,29 @@ Docker：
 
 ---
 
-## 6. 计划域名
+## 6. 控制台认证环境变量
+
+Controller 首次启动且 `console_users` 为空时，可通过以下变量创建唯一的初始管理员：
+
+```text
+CONSOLE_BOOTSTRAP_USERNAME=admin
+CONSOLE_BOOTSTRAP_PASSWORD=<至少 12 字符的临时强密码>
+CONSOLE_COOKIE_SECURE=true
+CONSOLE_SESSION_TTL_SECONDS=28800
+```
+
+- 密码只从进程环境读取并以 Argon2id PHC 哈希持久化，不得写入仓库或镜像；
+- 已存在控制台用户后，Bootstrap 变量不会覆盖用户或密码；
+- HTTPS 部署必须保持 `CONSOLE_COOKIE_SECURE=true`；仅本机无 TLS 自动化测试可显式设为 `false`；
+- `CONSOLE_SESSION_TTL_SECONDS` 允许 900–86400 秒，默认 28800 秒；
+- 浏览器使用 HttpOnly、SameSite=Strict Cookie，写操作还必须提供当前会话的 CSRF 令牌；
+- `ADMIN_API_TOKEN` 只用于服务端自动化，不得传递给浏览器或保存到 Web Storage。
+
+真实 Bootstrap 密码属于临时凭据，完成首个管理员登录和用户创建后应从部署环境移除并轮换。
+
+---
+
+## 7. 计划域名
 
 建议：
 
@@ -130,7 +152,7 @@ Docker：
 
 ---
 
-## 7. 虚拟地址池
+## 8. 虚拟地址池
 
 首选：
 
@@ -142,7 +164,7 @@ Docker：
 
 ---
 
-## 8. 临时凭据处置
+## 9. 临时凭据处置
 
 开发和测试完成后统一轮换：
 

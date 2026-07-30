@@ -1,18 +1,17 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, StatusCode},
     response::Response,
     routing::{get, post, put},
 };
-use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
 };
 
 use crate::{
+    auth::{self, Permission},
     error::ApiError,
     model::{
         CreateEnrollmentTokenRequest, CreateNetworkRequest, EnrollRequest, ExplainAclRequest,
@@ -25,7 +24,18 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
-        .route("/v1/admin/networks", post(create_network))
+        .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/session", get(auth::current_session))
+        .route("/v1/auth/logout", post(auth::logout))
+        .route(
+            "/v1/admin/users",
+            get(auth::list_users).post(auth::create_user),
+        )
+        .route("/v1/admin/console", get(console_snapshot))
+        .route(
+            "/v1/admin/networks",
+            get(list_networks).post(create_network),
+        )
         .route("/v1/admin/enrollment-tokens", post(create_enrollment_token))
         .route(
             "/v1/admin/networks/{network_id}/acl",
@@ -84,9 +94,25 @@ async fn create_network(
     headers: HeaderMap,
     Json(request): Json<CreateNetworkRequest>,
 ) -> Result<(StatusCode, Json<crate::model::NetworkResponse>), ApiError> {
-    authenticate_admin(&state, &headers)?;
-    let response = crate::service::create_network(&state, request).await?;
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    let response = crate::service::create_network(&state, request, &actor).await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn list_networks(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::model::NetworkResponse>>, ApiError> {
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
+    Ok(Json(crate::service::list_networks(&state).await?))
+}
+
+async fn console_snapshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<crate::console::ConsoleSnapshot>, ApiError> {
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
+    Ok(Json(crate::console::snapshot(&state).await?))
 }
 
 async fn create_enrollment_token(
@@ -94,8 +120,8 @@ async fn create_enrollment_token(
     headers: HeaderMap,
     Json(request): Json<CreateEnrollmentTokenRequest>,
 ) -> Result<(StatusCode, Json<crate::model::EnrollmentTokenResponse>), ApiError> {
-    authenticate_admin(&state, &headers)?;
-    let response = crate::service::create_enrollment_token(&state, request).await?;
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    let response = crate::service::create_enrollment_token(&state, request, &actor).await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -105,8 +131,8 @@ async fn replace_acl_policy(
     headers: HeaderMap,
     Json(request): Json<ReplaceAclPolicyRequest>,
 ) -> Result<Json<crate::model::ReplaceAclPolicyResponse>, ApiError> {
-    authenticate_admin(&state, &headers)?;
-    let response = crate::service::replace_acl_policy(&state, network_id, request).await?;
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    let response = crate::service::replace_acl_policy(&state, network_id, request, &actor).await?;
     Ok(Json(response))
 }
 
@@ -116,7 +142,7 @@ async fn explain_acl(
     headers: HeaderMap,
     Json(request): Json<ExplainAclRequest>,
 ) -> Result<Json<crate::model::ExplainAclResponse>, ApiError> {
-    authenticate_admin(&state, &headers)?;
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
     let response = crate::service::explain_acl(&state, network_id, request).await?;
     Ok(Json(response))
 }
@@ -127,9 +153,9 @@ async fn revoke_node(
     headers: HeaderMap,
     Json(request): Json<RevokeNodeRequest>,
 ) -> Result<Json<crate::model::RevokeNodeResponse>, ApiError> {
-    authenticate_admin(&state, &headers)?;
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response =
-        crate::service::revoke_node(&state, network_id, &node_id_base64, request).await?;
+        crate::service::revoke_node(&state, network_id, &node_id_base64, request, &actor).await?;
     Ok(Json(response))
 }
 
@@ -138,7 +164,7 @@ async fn list_subnet_route_suggestions(
     Path(network_id): Path<uuid::Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<crate::model::SubnetRouteSuggestionResponse>>, ApiError> {
-    authenticate_admin(&state, &headers)?;
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
     Ok(Json(
         crate::service::list_subnet_route_suggestions(&state, network_id).await?,
     ))
@@ -150,9 +176,9 @@ async fn replace_subnet_routes(
     headers: HeaderMap,
     Json(request): Json<ReplaceSubnetRoutesRequest>,
 ) -> Result<Json<crate::model::ReplaceSubnetRoutesResponse>, ApiError> {
-    authenticate_admin(&state, &headers)?;
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     Ok(Json(
-        crate::service::replace_subnet_routes(&state, network_id, request).await?,
+        crate::service::replace_subnet_routes(&state, network_id, request, &actor).await?,
     ))
 }
 
@@ -173,22 +199,4 @@ async fn control(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Re
 
 async fn not_found() -> ApiError {
     ApiError::not_found()
-}
-
-fn authenticate_admin(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or_else(ApiError::unauthorized)?;
-    if token.chars().count() < 32 || token.len() > 256 {
-        return Err(ApiError::unauthorized());
-    }
-
-    let candidate: [u8; 32] = Sha256::digest(token.as_bytes()).into();
-    if bool::from(candidate.ct_eq(&state.admin_token_hash)) {
-        Ok(())
-    } else {
-        Err(ApiError::unauthorized())
-    }
 }

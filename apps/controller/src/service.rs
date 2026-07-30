@@ -19,6 +19,7 @@ use xs_protocol::{
 };
 
 use crate::{
+    auth::ManagementActor,
     error::ApiError,
     model::{
         AclAction, AclGroupRequest, AclPolicy, AclProtocol, AclRule, AclSelector,
@@ -57,6 +58,16 @@ struct TokenRow {
 struct NetworkAllocationRow {
     address_pool: String,
     reserved_addresses: i32,
+}
+
+#[derive(FromRow)]
+struct NetworkListRow {
+    id: Uuid,
+    name: String,
+    address_pool: String,
+    reserved_addresses: i32,
+    config_version: i64,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(FromRow)]
@@ -100,6 +111,7 @@ struct PreparedSubnetRoutes {
 pub(crate) async fn create_network(
     state: &AppState,
     request: CreateNetworkRequest,
+    actor: &ManagementActor,
 ) -> Result<NetworkResponse, ApiError> {
     let name = validate_name(&request.name)?;
     let pool = Ipv4Net::from_str(&request.address_pool).map_err(|_| ApiError::validation())?;
@@ -154,8 +166,8 @@ pub(crate) async fn create_network(
         &mut transaction,
         AuditEvent {
             network_id: Some(network_id),
-            actor_type: "admin",
-            actor_id: "bootstrap-admin",
+            actor_type: actor.actor_type(),
+            actor_id: actor.actor_id(),
             action: "network.create",
             target_type: "network",
             target_id: Some(network_id.to_string()),
@@ -178,9 +190,36 @@ pub(crate) async fn create_network(
     })
 }
 
+pub(crate) async fn list_networks(state: &AppState) -> Result<Vec<NetworkResponse>, ApiError> {
+    let rows = sqlx::query_as::<_, NetworkListRow>(
+        "SELECT id, name, address_pool::text AS address_pool, reserved_addresses,
+                config_version, created_at
+         FROM networks
+         ORDER BY lower(name), id",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal_database)?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(NetworkResponse {
+                id: row.id,
+                name: row.name,
+                address_pool: row.address_pool,
+                reserved_addresses: u32::try_from(row.reserved_addresses)
+                    .map_err(|_| ApiError::internal())?,
+                config_version: u64::try_from(row.config_version)
+                    .map_err(|_| ApiError::internal())?,
+                created_at: row.created_at,
+            })
+        })
+        .collect()
+}
+
 pub(crate) async fn create_enrollment_token(
     state: &AppState,
     request: CreateEnrollmentTokenRequest,
+    actor: &ManagementActor,
 ) -> Result<EnrollmentTokenResponse, ApiError> {
     if !(60..=604_800).contains(&request.expires_in_seconds)
         || !(1..=100).contains(&request.max_uses)
@@ -234,7 +273,7 @@ pub(crate) async fn create_enrollment_token(
     .bind(i64::from(request.default_role_bitmap))
     .bind(&request.default_tags)
     .bind(requested_virtual_ip.map(|address| address.to_string()))
-    .bind("bootstrap-admin")
+    .bind(actor.actor_id())
     .execute(&mut *transaction)
     .await;
     if let Err(error) = inserted {
@@ -245,8 +284,8 @@ pub(crate) async fn create_enrollment_token(
         &mut transaction,
         AuditEvent {
             network_id: Some(request.network_id),
-            actor_type: "admin",
-            actor_id: "bootstrap-admin",
+            actor_type: actor.actor_type(),
+            actor_id: actor.actor_id(),
             action: "enrollment_token.create",
             target_type: "enrollment_token",
             target_id: Some(token_id.to_string()),
@@ -274,6 +313,7 @@ pub(crate) async fn replace_acl_policy(
     state: &AppState,
     network_id: Uuid,
     request: ReplaceAclPolicyRequest,
+    actor: &ManagementActor,
 ) -> Result<ReplaceAclPolicyResponse, ApiError> {
     if request.expected_policy_version == 0
         || request.groups.len() > 256
@@ -350,8 +390,8 @@ pub(crate) async fn replace_acl_policy(
         &mut transaction,
         AuditEvent {
             network_id: Some(network_id),
-            actor_type: "admin",
-            actor_id: "bootstrap-admin",
+            actor_type: actor.actor_type(),
+            actor_id: actor.actor_id(),
             action: "acl.replace",
             target_type: "network_acl",
             target_id: Some(network_id.to_string()),
@@ -425,6 +465,7 @@ pub(crate) async fn replace_subnet_routes(
     state: &AppState,
     network_id: Uuid,
     request: ReplaceSubnetRoutesRequest,
+    actor: &ManagementActor,
 ) -> Result<ReplaceSubnetRoutesResponse, ApiError> {
     if request.expected_configuration_version == 0 || request.routes.len() > 256 {
         return Err(ApiError::validation());
@@ -493,8 +534,8 @@ pub(crate) async fn replace_subnet_routes(
         &mut transaction,
         AuditEvent {
             network_id: Some(network_id),
-            actor_type: "admin",
-            actor_id: "bootstrap-admin",
+            actor_type: actor.actor_type(),
+            actor_id: actor.actor_id(),
             action: "subnet_routes.replace",
             target_type: "network_subnet_routes",
             target_id: Some(network_id.to_string()),
@@ -812,6 +853,7 @@ pub(crate) async fn revoke_node(
     network_id: Uuid,
     node_id_base64: &str,
     request: RevokeNodeRequest,
+    actor: &ManagementActor,
 ) -> Result<RevokeNodeResponse, ApiError> {
     if !(60..=604_800).contains(&request.ip_cooldown_seconds) {
         return Err(ApiError::validation());
@@ -860,8 +902,8 @@ pub(crate) async fn revoke_node(
         &mut transaction,
         AuditEvent {
             network_id: Some(network_id),
-            actor_type: "admin",
-            actor_id: "bootstrap-admin",
+            actor_type: actor.actor_type(),
+            actor_id: actor.actor_id(),
             action: "node.revoke",
             target_type: "node",
             target_id: Some(database_id.to_string()),
@@ -1588,6 +1630,36 @@ pub(crate) async fn authenticate_control(
         node_id_base64: node_id_base64.to_owned(),
         node_id: claimed_node_id,
     })
+}
+
+pub(crate) async fn record_control_connected(
+    state: &AppState,
+    node_id: &[u8; 16],
+) -> Result<(), ApiError> {
+    sqlx::query(
+        "UPDATE nodes SET last_control_connected_at = now(), updated_at = now()
+         WHERE node_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(node_id.as_slice())
+    .execute(&state.pool)
+    .await
+    .map_err(internal_database)?;
+    Ok(())
+}
+
+pub(crate) async fn record_control_disconnected(
+    state: &AppState,
+    node_id: &[u8; 16],
+) -> Result<(), ApiError> {
+    sqlx::query(
+        "UPDATE nodes SET last_control_disconnected_at = now(), updated_at = now()
+         WHERE node_id = $1",
+    )
+    .bind(node_id.as_slice())
+    .execute(&state.pool)
+    .await
+    .map_err(internal_database)?;
+    Ok(())
 }
 
 pub(crate) async fn advertise_candidates(
