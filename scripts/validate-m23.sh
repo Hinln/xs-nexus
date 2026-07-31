@@ -71,7 +71,20 @@ python3 -m py_compile scripts/xsp-network-probe.py
 shellcheck scripts/*.sh
 npm audit --audit-level=high
 
-docker compose --profile baseline -f deploy/docker/compose.yaml config \
+env \
+    XS_RELEASE_REVISION="$(git rev-parse HEAD)" \
+    XS_CONTROLLER_IMAGE=validation/controller \
+    XS_MIGRATION_IMAGE=validation/controller \
+    XS_RELAY_IMAGE=validation/relay \
+    XS_CONSOLE_IMAGE=validation/console \
+    XS_DB_TOOLS_IMAGE=validation/db-tools \
+    XS_CONTROLLER_SECRETS_DIR=/nonexistent/controller \
+    XS_RELAY_SECRETS_DIR=/nonexistent/relay \
+    XS_BACKUP_DIR=/nonexistent/backup \
+    XS_DATABASE_SCHEMA=xs_nexus_validation \
+    XS_DISCOVERY_PUBLIC_ENDPOINT=127.0.0.1:42000 \
+    XS_RELAY_ID_BASE64=AAAAAAAAAAAAAAAAAAAAAQ \
+    docker compose --profile baseline -f deploy/docker/compose.yaml config \
     | grep -A4 '^networks:' \
     | grep -F 'external: true'
 network_definition=$(docker network inspect 1panel-network --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}')
