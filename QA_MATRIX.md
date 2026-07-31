@@ -227,6 +227,7 @@
 - 2026-07-31 完整 M6.1 聚合验证通过：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`。包含 workspace Clippy/单测、真实 Agent 控制面回归、C Release 与 ASan/UBSan、MSVC target check/Clippy、Windows 源码门禁、SBOM/秘密扫描、npm audit 和宿主网络状态前后比较。
 - 镜像 SBOM 模型测试覆盖 image/Dockerfile 映射、Debian/apk 包解析、Alpine virtual metapackage、缺失包字段、路径穿越、许可证材料落盘、CycloneDX 与 provenance subject。正式验证入口会构建四个当前提交镜像、双生成比较、拒绝 revision mismatch，并比较宿主网络状态；漏洞数据库报告和缺失许可证全文仍不在当前覆盖内。
 - 运行证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T180211Z` 已实际构建四镜像并识别 344 个包，生成两套逐字节一致的 manifest/CycloneDX/provenance/license materials；revision mismatch 负向测试通过，宿主 Docker 容器和网络、`1panel-network`、默认路由、nftables 与失败服务均保持不变。
+- 漏洞扫描入口要求固定 scanner 版本/哈希、manifest 路径边界、tag→image ID 再验证、隔离数据库、每镜像 JSON 与 summary hash，并比较宿主网络状态；当前仅完成 ShellCheck、秘密和源码检查，正式数据库扫描结果待下一检查点执行。
 - 严格 manifest 增加 JSON round-trip、未知字段/尾随数据/超限拒绝、不安全地址、非规范 route order、缺失资源幂等恢复、exact route/address 清理选择与外部重叠拒绝；累计 15 项模型测试。仍未覆盖 NTFS 私有持久化、进程中止窗口和 Windows 实际恢复。
 - 受保护 manifest 平台边界增加私有读取、原子写入和验证删除源码路径；恢复执行测试证明逆序尝试全部 exact route、随后地址删除，并同时保留所有失败。累计 16 项模型测试，`windows-private-storage` 与 `windows-route-manager` 均通过 MSVC target check/Clippy；仍未覆盖真实 NTFS、杀进程窗口和 IP Helper 残留。
 - `make test-windows-agent-routing` 增加 Agent Cargo/module/config/准备顺序、Preparing/Active、恢复/清理、runtime 未接入和禁止 unsafe/后台线程/子进程源码门禁，并复用 16 项模型与两个 Windows crate 交叉检查；该门禁不替代完整 Agent Windows 链接或 VM 执行。

@@ -121,6 +121,7 @@
 - Agent 网络准备的公开 API 已收紧为 `recover_for_session`/`prepare_for_session`，只能从同一 `XsnetDeviceSession<Win32DeviceTransport>` 读取 authoritative LUID；接受裸 `u64` 的内部入口不再公开。routing/transport 专项测试、workspace Clippy、MSVC target check 和源码门禁通过，runtime 仍无引用。
 - 运行时镜像供应链工具已实现：直接从 exact Docker rootfs 解析 dpkg/apk 安装数据库，绑定 image ID、revision label、Dockerfile hash、包 PURL、许可证材料与 provenance；包含映射/包字段/路径穿越/revision mismatch 负向门禁和四镜像双生成验证入口。工具单测及四个既有镜像试运行通过；当前提交镜像的正式证据将在干净检查点后生成。
 - 当前提交四个镜像的供应链验证已通过，证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T180211Z`：Controller 106 包/120 份材料、Relay 106/120、Console 71/6、db-tools 61/1，共 344 个 OS 包。四个 image ID、revision label、Dockerfile hash、CycloneDX 和 provenance 均绑定；双生成逐字节一致，错误 revision 被拒绝，容器/网络/`1panel-network`/默认路由/nftables 前后不变。漏洞报告和缺失全文仍未完成。
+- 新增 digest-bound 漏洞扫描入口：固定 Grype v0.116.1 与官方 archive SHA-256，只接受仓库证据目录，重新核对四个本地 image IDs，使用隔离数据库输出逐镜像 JSON、工具/数据库哈希和 severity/fixable 汇总；扫描发现不会被自动忽略或当成通过豁免。正式扫描将在该脚本形成干净检查点后执行。
 - Agent 新增 Windows-only 准备编排：启动前恢复 stale manifest，写 Preparing 后才执行地址/DAD/路由，成功后原子写 Active；shutdown 全部精确清理成功后才删除 manifest。独立源码门禁固定顺序、禁止 unsafe/线程/子进程、禁止 runtime 引用，并加入 `make test-windows-agent-routing` 与 M6.1 全量入口。完整 Windows Agent 仍因 SDK/`ring/lib.exe` 阻塞且模块未接入 runtime，不宣称可用。
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
