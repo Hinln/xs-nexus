@@ -228,49 +228,78 @@ def command_tcp_client(arguments: argparse.Namespace) -> None:
 def command_icmp(arguments: argparse.Namespace) -> None:
     payload = arguments.payload.encode()
     identifier = os.getpid() & 0xFFFF
-    header = struct.pack("!BBHHH", 8, 0, 0, identifier, arguments.sequence)
-    packet = (
-        struct.pack(
-            "!BBHHH",
-            8,
-            0,
-            checksum(header + payload),
-            identifier,
-            arguments.sequence,
-        )
-        + payload
-    )
-    deadline = time.monotonic() + arguments.timeout
+    samples = []
     with socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP) as sock:
         sock.setblocking(False)
-        sock.sendto(packet, (arguments.destination, 0))
-        while time.monotonic() < deadline:
-            ready, _, _ = select.select(
-                [sock],
-                [],
-                [],
-                min(0.2, max(0.0, deadline - time.monotonic())),
+        for offset in range(arguments.count):
+            sequence = arguments.sequence + offset
+            if sequence > 65535:
+                raise SystemExit("ICMP sequence exceeds 65535")
+            header = struct.pack("!BBHHH", 8, 0, 0, identifier, sequence)
+            packet = (
+                struct.pack(
+                    "!BBHHH",
+                    8,
+                    0,
+                    checksum(header + payload),
+                    identifier,
+                    sequence,
+                )
+                + payload
             )
-            if not ready:
-                continue
-            response, address = sock.recvfrom(65535)
-            header_length = (response[0] & 0x0F) * 4
-            icmp = response[header_length:]
-            if len(icmp) < 8:
-                continue
-            packet_type, code, _, response_id, sequence = struct.unpack(
-                "!BBHHH", icmp[:8]
-            )
-            if (
-                packet_type == 0
-                and code == 0
-                and response_id == identifier
-                and sequence == arguments.sequence
-                and icmp[8:] == payload
-            ):
-                print(f"icmp-ok peer={address[0]}")
-                return
-    raise SystemExit("ICMP echo timed out")
+            started = time.perf_counter_ns()
+            deadline = time.monotonic() + arguments.timeout
+            sock.sendto(packet, (arguments.destination, 0))
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select(
+                    [sock],
+                    [],
+                    [],
+                    min(0.2, max(0.0, deadline - time.monotonic())),
+                )
+                if not ready:
+                    continue
+                response, address = sock.recvfrom(65535)
+                header_length = (response[0] & 0x0F) * 4
+                icmp = response[header_length:]
+                if len(icmp) < 8:
+                    continue
+                packet_type, code, _, response_id, response_sequence = struct.unpack(
+                    "!BBHHH", icmp[:8]
+                )
+                if (
+                    packet_type == 0
+                    and code == 0
+                    and response_id == identifier
+                    and response_sequence == sequence
+                    and icmp[8:] == payload
+                ):
+                    samples.append((time.perf_counter_ns() - started) / 1_000_000)
+                    break
+            else:
+                raise SystemExit(f"ICMP echo timed out at sample {offset + 1}")
+            if offset + 1 < arguments.count and arguments.interval > 0:
+                time.sleep(arguments.interval)
+    ordered = sorted(samples)
+    percentile = lambda value: ordered[min(len(ordered) - 1, round((len(ordered) - 1) * value))]
+    report = {
+        "peer": address[0],
+        "count": len(samples),
+        "min_ms": ordered[0],
+        "average_ms": sum(ordered) / len(ordered),
+        "p50_ms": percentile(0.50),
+        "p95_ms": percentile(0.95),
+        "max_ms": ordered[-1],
+    }
+    if arguments.output is not None:
+        Path(arguments.output).write_text(
+            json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+    print(
+        "icmp-ok "
+        f"peer={report['peer']} count={report['count']} "
+        f"average_ms={report['average_ms']:.3f} p95_ms={report['p95_ms']:.3f}"
+    )
 
 
 def parse_udp_frame(frame: bytes) -> dict[str, object] | None:
@@ -590,6 +619,9 @@ def build_parser() -> argparse.ArgumentParser:
     icmp.add_argument("--payload", required=True)
     icmp.add_argument("--sequence", type=positive, default=1)
     icmp.add_argument("--timeout", type=float, default=3.0)
+    icmp.add_argument("--count", type=positive, default=1)
+    icmp.add_argument("--interval", type=float, default=0.05)
+    icmp.add_argument("--output")
     icmp.set_defaults(handler=command_icmp)
 
     capture_xsp = subcommands.add_parser("capture-xsp")

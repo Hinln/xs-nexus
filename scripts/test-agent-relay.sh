@@ -31,6 +31,12 @@ PROXY_A_PID=
 PROXY_B_PID=
 CAPTURE_PID=
 COLLECT_PID=
+RTT_EVIDENCE_DIR=${RTT_EVIDENCE_DIR:-}
+
+if [[ -n $RTT_EVIDENCE_DIR ]]; then
+    mkdir -p "$RTT_EVIDENCE_DIR"
+    chmod 0700 "$RTT_EVIDENCE_DIR"
+fi
 
 cleanup() {
     local status=$?
@@ -663,6 +669,16 @@ wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" rel
 
 virtual_ip_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-a/state/node-state.json")
 virtual_ip_b=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-b/state/node-state.json")
+if [[ -n $RTT_EVIDENCE_DIR ]]; then
+    ip netns exec "$NETNS_A" "$PROBE" icmp \
+        --destination "$virtual_ip_b" \
+        --payload xs-m73-relay-rtt \
+        --sequence 100 \
+        --count 30 \
+        --interval 0.05 \
+        --timeout 3 \
+        --output "$RTT_EVIDENCE_DIR/relay.json"
+fi
 marker=xs-m23-relay-ciphertext
 ip netns exec "$NETNS_B" "$PROBE" collect-udp \
     --bind "$virtual_ip_b" \
@@ -730,6 +746,16 @@ wait_relay_metric "$RELAY_HEALTH_2" packets_forwarded 1
 
 unblock_direct
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" authenticated_path_probe
+if [[ -n $RTT_EVIDENCE_DIR ]]; then
+    ip netns exec "$NETNS_A" "$PROBE" icmp \
+        --destination "$virtual_ip_b" \
+        --payload xs-m73-direct-rtt \
+        --sequence 200 \
+        --count 30 \
+        --interval 0.05 \
+        --timeout 3 \
+        --output "$RTT_EVIDENCE_DIR/direct.json"
+fi
 ip netns exec "$NETNS_A" "$PROBE" icmp \
     --destination "$virtual_ip_b" \
     --payload xs-m23-direct-restored \
