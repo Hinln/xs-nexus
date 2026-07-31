@@ -172,7 +172,8 @@ sudo ./installers/linux/xs-nexus-installer.sh rollback --version <已安装版�
 - 安装前快照；
 - 准备安全模式；
 - 记录设备实例；
-- 使用 `installers/windows/install-xsnet-test.ps1`，显式传入测试 signer thumbprint 和本机 WDK Microsoft-signed DevGen；DevGen 不随项目分发；
+- 使用 `installers/windows/install-xsnet-test.ps1`，显式传入测试 signer thumbprint、构建清单中的四段 `DriverVer` 和本机 WDK Microsoft-signed DevGen；DevGen 不随项目分发；
+- 当前不支持原地升级或热降级；替换测试包前先停止 Agent、确认独占 handle 已关闭、使用受限状态精确卸载，并保留 VM 快照。任何步骤失败都恢复快照，不手工选择未知 `oem#.inf`；
 - 安装失败脚本只回滚本次发现的 `Root\XSNET` 设备和精确 `oem#.inf`；
 - 正常卸载使用 `installers/windows/uninstall-xsnet-test.ps1`，残留设备或 driver-store package 会保留状态并返回失败；
 - 完整 VM 流程使用 `scripts/windows/invoke-xsnet-test-vm-stage.ps1`，同一运行目录依次执行 Initialize、Install、EnableVerifier、重启、CollectVerifier、DisableVerifier、重启、Uninstall；脚本不自动重启，也不验证快照是否真实存在；

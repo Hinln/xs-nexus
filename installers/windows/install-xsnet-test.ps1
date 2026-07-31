@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory)][string]$PackageDirectory,
     [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{40,128}$')]
     [string]$ExpectedSignerThumbprint,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')]
+    [string]$ExpectedDriverVersion,
     [Parameter(Mandatory)][string]$DevGenPath,
     [switch]$AllowTestSignedPackage
 )
@@ -36,6 +38,11 @@ if (Compare-Object $expectedFiles $actualFiles) {
     throw 'driver package must contain exactly xsnet.inf, xsnet.cat, and xsnet.dll'
 }
 $thumbprint = ($ExpectedSignerThumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
+$driverVersion = Get-XsnetInfDriverVersion -Path (Join-Path $package 'xsnet.inf')
+if ($driverVersion -cne $ExpectedDriverVersion) {
+    throw 'xsnet INF DriverVer does not match the expected package version'
+}
+$abiVersion = Get-XsnetAbiVersion
 Assert-XsnetSignature -Path (Join-Path $package 'xsnet.cat') -ExpectedThumbprint $thumbprint
 Assert-XsnetSignature -Path (Join-Path $package 'xsnet.dll') -ExpectedThumbprint $thumbprint
 $devgen = Assert-XsnetDevGen -Path $DevGenPath
@@ -53,7 +60,8 @@ try {
         (Join-Path $package 'xsnet.inf')
     ) | Out-Null
     $packages = @(Get-XsnetDriverPackages)
-    if ($packages.Count -ne 1 -or $packages[0].Driver -notmatch '^oem[0-9]+\.inf$') {
+    if ($packages.Count -ne 1 -or $packages[0].Driver -notmatch '^oem[0-9]+\.inf$' -or
+        $packages[0].Version.ToString() -cne $driverVersion) {
         throw 'unable to identify the staged xsnet driver package'
     }
     $publishedInf = $packages[0].Driver
@@ -80,7 +88,9 @@ try {
         throw 'xsnet device did not reach a healthy Net-class state'
     }
     $state = [ordered]@{
-        schema = 1
+        schema = 2
+        abi_version = $abiVersion
+        driver_version = $driverVersion
         hardware_id = 'Root\XSNET'
         published_inf = $publishedInf
         device_instance_ids = @($devices | ForEach-Object InstanceId)

@@ -608,3 +608,15 @@
 - 原因：工具来源、包内容、设备状态、重启边界和证据完整性都可独立失败关闭；不自动重启使崩溃、网络和 Verifier 结果能在继续前人工保存，阶段目录也不会覆盖首次失败。
 - 代价：脚本不能替代快照 API、场景测试或人工确认，执行步骤更多；快照 ID 只是操作员断言，正式 M6.2 仍必须补充互通、睡眠、网络切换、Agent crash、异常 IOCTL、蓝屏和重复安装证据。
 - 安全影响：脚本不下载工具、不创建证书、不修改 BCD/信任/测试签名策略、不自动重启、不删除未知设备或驱动包，也不把 CollectVerifier 描述为验收通过；正式签名和生产安装器继续由独立门禁处理。
+
+---
+
+## ADR-052：首版 Windows 只允许 exact ABI v1 和 clean-install 测试替换
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：ABI v1 的 32 字节 header 必须先解析，驱动之后才能读取 Hello payload 中的版本范围，因此当前 Hello 不能跨 header version 协商。测试安装器也没有经过 Windows 验证的原子升级或旧包回滚事务。
+- 决策：Agent、驱动和安装状态共同固定 ABI v1；Agent 的 header、Hello minimum 和 maximum 都发送 v1，不静默扩大范围。INF `DriverVer` 只表示包身份，构建清单记录四段 driver version、ABI `1..1` 和 IPv4 capability；安装器要求显式期望版本，在 staging 前后核对 INF 与 driver-store，并把 driver version/ABI 写入安装状态 schema 2，未知或旧 schema 失败关闭。测试包替换只允许停止 Agent、关闭 handle、精确卸载后的 clean install，失败依赖快照恢复。
+- 原因：把运行时协议兼容、包身份和安装事务分开后，不会因产品版本相近就连接不兼容 ABI，也不会把尚未实现的热升级或降级路径写成可用能力。
+- 代价：任何 ABI 变化都需要新的显式 discovery/compatibility 设计和 VM 矩阵；测试包升级步骤较慢，无法证明最终用户无缝升级。
+- 安全影响：未知 ABI、错误 INF 版本、staged package 漂移和既有模糊状态都失败关闭；回滚不能选择未记录 `oem#.inf`、未知 signer 或不同 ABI。生产升级与回滚仍为未完成门禁。

@@ -4,6 +4,8 @@
 
 The safe transport contract is implemented in `apps/agent/src/windows_xsnet.rs`. The Win32 device transport is not implemented or compiled. This document is a build and review specification, not Windows execution evidence.
 
+Runtime version and package replacement rules are defined in `WINDOWS_XSNET_COMPATIBILITY.md`. The current transport contract is eligible only for exact ABI v1; no cross-ABI fallback or hot upgrade is implied.
+
 ## Boundary
 
 The Win32 implementation must live in a dedicated target-specific module or crate. It may only enumerate the `GUID_DEVINTERFACE_XSNET` interface, own one exclusive device handle, issue the six fixed IOCTLs, return owned response bytes, cancel or close the handle, and classify the result. It must not parse protocol state, inspect packets, perform cryptography, manage routes, log payloads, or retain borrowed request buffers.

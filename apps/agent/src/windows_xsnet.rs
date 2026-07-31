@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 const ABI_MAGIC: u32 = 0x314e_5358;
-const ABI_VERSION: u16 = 1;
+pub const XSNET_ABI_VERSION: u16 = 1;
 const HEADER_SIZE: usize = 32;
 const HEADER_SIZE_U16: u16 = 32;
 const MAX_PAYLOAD: usize = 1_048_576;
@@ -150,8 +150,8 @@ impl XsnetClient {
     pub fn prepare_hello(&mut self) -> Result<PreparedRequest, ClientError> {
         self.require_state(&[ClientState::Opened])?;
         let mut payload = vec![0_u8; 16];
-        write_u16(&mut payload, 0, ABI_VERSION);
-        write_u16(&mut payload, 2, ABI_VERSION);
+        write_u16(&mut payload, 0, XSNET_ABI_VERSION);
+        write_u16(&mut payload, 2, XSNET_ABI_VERSION);
         write_u32(&mut payload, 4, CAPABILITY_IPV4);
         self.prepare(
             MessageType::Hello,
@@ -449,7 +449,7 @@ fn encode_message(
     }
     let mut message = vec![0_u8; HEADER_SIZE + payload.len()];
     write_u32(&mut message, 0, ABI_MAGIC);
-    write_u16(&mut message, 4, ABI_VERSION);
+    write_u16(&mut message, 4, XSNET_ABI_VERSION);
     write_u16(&mut message, 6, HEADER_SIZE_U16);
     write_u32(&mut message, 8, message_type as u32);
     write_u32(&mut message, 16, payload_length);
@@ -509,7 +509,7 @@ fn decode_transmit_response(
 ) -> Result<Vec<Vec<u8>>, ClientError> {
     if response.len() < HEADER_SIZE
         || read_u32(response, 0) != Some(ABI_MAGIC)
-        || read_u16(response, 4) != Some(ABI_VERSION)
+        || read_u16(response, 4) != Some(XSNET_ABI_VERSION)
         || read_u16(response, 6) != Some(HEADER_SIZE_U16)
         || read_u32(response, 8) != Some(MessageType::TransmitBatch as u32)
         || read_u32(response, 12) != Some(0)
@@ -750,7 +750,10 @@ mod tests {
         let mut client = XsnetClient::opened();
         let request = client.prepare_hello().expect("hello");
         assert_eq!(&request.buffered_input[0..4], &ABI_MAGIC.to_le_bytes());
-        assert_eq!(&request.buffered_input[4..6], &ABI_VERSION.to_le_bytes());
+        assert_eq!(
+            &request.buffered_input[4..6],
+            &XSNET_ABI_VERSION.to_le_bytes()
+        );
         assert_eq!(
             &request.buffered_input[6..8],
             &HEADER_SIZE_U16.to_le_bytes()
@@ -758,6 +761,14 @@ mod tests {
         assert_eq!(read_u32(&request.buffered_input, 8), Some(1));
         assert_eq!(read_u32(&request.buffered_input, 16), Some(16));
         assert_eq!(read_u64(&request.buffered_input, 24), Some(1));
+        assert_eq!(
+            &request.buffered_input[HEADER_SIZE..HEADER_SIZE + 2],
+            &XSNET_ABI_VERSION.to_le_bytes()
+        );
+        assert_eq!(
+            &request.buffered_input[HEADER_SIZE + 2..HEADER_SIZE + 4],
+            &XSNET_ABI_VERSION.to_le_bytes()
+        );
     }
 
     #[test]

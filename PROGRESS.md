@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 02:15 UTC
-当前 Git 提交：M6.1 Windows 测试包与 VM 编排检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 02:27 UTC
+当前 Git 提交：M6.1 Windows exact ABI 与安装兼容检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -98,39 +98,44 @@
 - 新增只面向快照 VM 的测试包构建脚本，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先签 DLL 再生成 catalog 并签 catalog、`10_GE_X64`、SHA-256 test signing、精确三文件 allowlist 和哈希清单；不创建证书、不修改 BCD、信任或测试签名策略。
 - 新增 Initialize/Install/EnableVerifier/CollectVerifier/DisableVerifier/Uninstall 六阶段 VM 编排，要求可识别 VM、相同快照声明、阶段不可覆盖、Verifier 前后人工重启、精确设备状态、卸载零残留和最终证据哈希；CollectVerifier 明确不包含场景结果或验收声明。
 - Windows VM 工作流静态回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`；Windows PowerShell 5.1 parser 对两份新增脚本零语法错误，远端 ABI Release/ASan/UBSan、源码、安装器、VM 门禁和秘密扫描通过，宿主路由、规范化 nftables、完整 `1panel-network`、namespace 和 TUN 前后不变。
+- Windows Agent、C 驱动头和安装状态现共同固定 exact ABI v1；Hello 的消息头、minimum 和 maximum 均为 v1，明确不把 payload version range 冒充跨 header-version 协商。
+- 测试包清单记录 INF 四段 `DriverVer`、ABI `1..1` 与 IPv4 capability；安装器要求显式期望 `DriverVer`，在 staging 前后分别核对 INF 与 driver-store 版本，并把 driver version/ABI 写入受限状态；VM 后续阶段持续复核该状态。
+- `docs/WINDOWS_XSNET_COMPATIBILITY.md` 明确测试安装器只支持 clean install/uninstall，替换包必须停止 Agent、关闭 handle、精确卸载并依赖 VM 快照恢复；没有实现或声称热升级、热降级或生产回滚。
+- 兼容与回滚边界证据为 `/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`，覆盖 workspace 单测、Agent 全目标 Clippy、兼容/安装/VM/源码门禁、C Release/ASan/UBSan、秘密扫描和宿主前后基线。
 
 ## 当前工作点
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、测试包构建和 VM 分阶段采证边界；下一步实现并审计最小 Windows transport；
+- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步仍是最小 Windows transport，但当前没有可编译 Windows Rust/SDK 环境；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 
 ## 下一步
 
-1. 在可编译 Windows target 的环境实现并审计最小 Win32 transport；
-2. 复核安装升级期间的 Agent/driver 版本兼容和回滚边界；
-3. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
+1. 获得可编译 Windows Rust target/SDK 后实现并审计最小 Win32 transport；
+2. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
+3. 在 VM 中验证 exact ABI 拒绝、重复 clean install 和快照回滚，再设计生产升级事务；
 4. 保持 M6.2 驱动签名人工门禁，不提前进入依赖核心完成的 M7。
 
 ## 下一条准确命令
 
 ```bash
 git status --short --branch
+command -v rustup || true
+rustc --print target-libdir --target x86_64-pc-windows-msvc 2>&1 || true
 sed -n '1,260p' docs/WINDOWS_XSNET_TRANSPORT.md
-sed -n '1,320p' apps/agent/src/windows_xsnet.rs
-rg -n 'windows|unsafe|cfg|DeviceIoControl|XsnetTransport' Cargo.toml apps/agent
+sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 ```
 
 ## 最近测试
 
-- 时间：2026-07-31 02:14 UTC；
+- 时间：2026-07-31 02:26 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`make test-windows-xsnet-vm-scripts`、`make test-windows-xsnet-installer`、`make test-windows-xsnet-source`、`make test-windows-xsnet-abi`、`make security-check`、`python3 -m py_compile scripts/validate-windows-xsnet-vm.py`、`git diff --check`；
+- 命令：`cargo fmt --all -- --check`、`make test-unit`、Agent 全目标 Clippy、`make test-windows-xsnet-compatibility`、安装器/VM/源码门禁、`make test-windows-xsnet-abi`、`make security-check`、Python bytecode 检查和 `git diff --check`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`；
-- 覆盖：测试包/VM 编排源码门禁、UMDF/INF/IOCTL 源码不变量、五组 Clang Release 严格告警测试、五组 GCC ASan/UBSan 测试、720 种 teardown 交错、安装器不变量、秘密扫描、Git whitespace、精确 namespace/TUN、默认路由、去计数器 nftables 结构、失败服务和完整只读 `1panel-network` 前后比较。
+- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`；
+- 覆盖：exact ABI v1、Hello 三处版本固定、INF/driver-store/状态版本一致、clean-install 边界、workspace 单测、Agent Clippy、UMDF/INF/IOCTL 源码不变量、五组 Clang Release 和 GCC ASan/UBSan、720 种 teardown、秘密扫描、Git whitespace、namespace/TUN、默认路由、规范化 nftables、失败服务和完整 `1panel-network` 前后比较。
 
 ## 当前失败
 
@@ -147,6 +152,7 @@ rg -n 'windows|unsafe|cfg|DeviceIoControl|XsnetTransport' Cargo.toml apps/agent
 - 当前实现：有界 IPv4 队列、TX 空请求/RX framed 请求、同步 direct-I/O、协商深度、SetLink 门禁与 NetAdapterCx TX/RX 系统缓冲区复制源码已完成；Windows 部分尚未经过 WDK 编译或执行；
 - 测试安装准备：已加入只面向快照 VM 的 PowerShell 构建、安装、卸载和六阶段采证脚本，固定 signer thumbprint、Microsoft-signed WDK 工具、精确状态回滚、双重人工重启和残留拒绝；尚未在 Windows 执行；
 - 安装器验证：`make test-windows-xsnet-installer` 与 `make test-windows-xsnet-vm-scripts` 通过；先前模块/安装/卸载脚本和本轮两份新增脚本均由本地 Windows PowerShell parser 零语法错误解析；未运行 MSBuild、InfVerif、Inf2Cat、SignTool、设备安装、卸载或 Verifier 命令；
+- 兼容验证：`make test-windows-xsnet-compatibility` 通过，静态强制 Rust/C/安装状态 ABI 都为 v1、INF 只有一个四段 `DriverVer`、构建清单固定 ABI/capability、安装前后核对 driver version 且测试安装器拒绝既有 xsnet；未执行真实版本替换或回滚；
 - 不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏。
 
 ## 外部阻塞
@@ -161,6 +167,7 @@ rg -n 'windows|unsafe|cfg|DeviceIoControl|XsnetTransport' Cargo.toml apps/agent
 
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
 - Windows 驱动源码尚未经过 WDK 编译和 VM 执行，真实设备尚未接入；
+- Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
 - 临时凭据后续必须轮换。

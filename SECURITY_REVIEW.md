@@ -234,6 +234,8 @@
 - 测试包构建脚本要求全路径 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、有效私钥及 code-signing EKU、全新非重解析输出目录、Release x64、禁用工程自动签名、先签 DLL 再生成并签名 `10_GE_X64` catalog，以及显式 SHA-256 test signing；脚本不创建证书、不修改信任或 BCD，只输出精确三文件包、工具日志和哈希清单；
 - VM 编排要求管理员、Windows 11 26100+、可识别虚拟机、一次性运行目录和显式快照声明；各阶段不可覆盖，Verifier 使用 standard + oneboot，启用和禁用后都必须观察到人工重启，卸载前后要求精确设备/driver-store 状态。快照 ID 仅记录操作员断言，CollectVerifier 明确不包含场景结果或验收声明；
 - 测试包与 VM 工作流静态回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`；秘密扫描和 Linux 便携测试通过，宿主默认路由、去计数器 nftables 结构、完整 `1panel-network`、namespace 和 TUN 前后不变；该证据不包含 Windows 执行结果；
+- 运行时兼容固定 exact ABI v1：消息 header 与 Hello min/max 都为 v1，避免把无法跨 header 解析的 Hello 错当版本协商；`DriverVer` 只表示包身份，构建清单、预期输入、INF、staged driver-store 和受限状态必须一致，不能替代 ABI 检查；
+- 测试安装器只允许零既有设备/包的 clean install，不实现热替换、热降级或生产回滚；受限状态 schema 2 强制 ABI/driver version，未知或旧结构拒绝。失败恢复仍是精确卸载和快照。静态/便携证据为 `/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`，真实升级事务保持未验证；
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
 - 2026-07-31 生命周期模型加入后连续三轮源码、五组 Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；后续 transport 回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`。direct-I/O、ring 和全部 PowerShell 工作流仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 

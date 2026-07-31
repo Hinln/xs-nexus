@@ -12,6 +12,8 @@ param(
     [string]$PackageDirectory,
     [ValidatePattern('^[0-9A-Fa-f]{40,128}$')]
     [string]$ExpectedSignerThumbprint,
+    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')]
+    [string]$ExpectedDriverVersion,
     [string]$DevGenPath,
     [switch]$ConfirmDisposableVm,
     [switch]$ConfirmSnapshotAvailable
@@ -155,13 +157,18 @@ function Get-BootTimeUtc {
 function Assert-ExactHealthyXsnet {
     $devices = @(Get-XsnetDevices)
     $packages = @(Get-XsnetDriverPackages)
+    $state = Read-XsnetInstallState
     if ($devices.Count -ne 1 -or $devices[0].Status -ne 'OK' -or
-        $devices[0].Class -ne 'Net' -or $packages.Count -ne 1) {
+        $devices[0].Class -ne 'Net' -or $packages.Count -ne 1 -or
+        $packages[0].Driver -cne $state.published_inf -or
+        $packages[0].Version.ToString() -cne $state.driver_version -or
+        $state.abi_version -ne (Get-XsnetAbiVersion)) {
         throw 'xsnet state is not exactly one healthy Net device and one driver package'
     }
     return [ordered]@{
         device = $devices[0]
         package = $packages[0]
+        state = $state
     }
 }
 
@@ -236,12 +243,14 @@ switch ($Stage) {
         $null = Assert-CompletedStage -Name '00-initialize'
         if ([string]::IsNullOrWhiteSpace($PackageDirectory) -or
             [string]::IsNullOrWhiteSpace($ExpectedSignerThumbprint) -or
+            [string]::IsNullOrWhiteSpace($ExpectedDriverVersion) -or
             [string]::IsNullOrWhiteSpace($DevGenPath)) {
-            throw 'Install requires package, signer thumbprint, and DevGen path'
+            throw 'Install requires package, driver version, signer thumbprint, and DevGen path'
         }
         $stageDirectory = New-StageDirectory -Name '10-install'
         & $installer -PackageDirectory $PackageDirectory `
             -ExpectedSignerThumbprint $ExpectedSignerThumbprint -DevGenPath $DevGenPath `
+            -ExpectedDriverVersion $ExpectedDriverVersion `
             -AllowTestSignedPackage -Confirm:$false *>&1 | Tee-Object `
             -LiteralPath (Join-Path $stageDirectory 'install.log')
         $installed = Assert-ExactHealthyXsnet
@@ -249,6 +258,8 @@ switch ($Stage) {
         Complete-Stage -Directory $stageDirectory -Details @{
             device_instance_id = [string]$installed.device.InstanceId
             published_inf = [string]$installed.package.Driver
+            driver_version = [string]$installed.state.driver_version
+            abi_version = [int]$installed.state.abi_version
         }
     }
     'EnableVerifier' {

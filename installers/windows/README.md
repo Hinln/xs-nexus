@@ -23,6 +23,7 @@ pwsh -File .\scripts\windows\build-xsnet-test-package.ps1 `
 pwsh -File .\installers\windows\install-xsnet-test.ps1 `
   -PackageDirectory C:\xsnet-package `
   -ExpectedSignerThumbprint <TEST_CERT_THUMBPRINT> `
+  -ExpectedDriverVersion <MANIFEST_DRIVER_VERSION> `
   -DevGenPath <WDK_TOOLS_PATH>\devgen.exe `
   -AllowTestSignedPackage
 
@@ -33,8 +34,8 @@ Use `scripts/windows/invoke-xsnet-test-vm-stage.ps1` to preserve an append-only 
 
 The workflow refuses non-VM hosts, pre-existing xsnet state, reused stage directories, missing required reboots, unhealthy or ambiguous device state, and uninstall residuals. It never restarts the VM automatically. `CollectVerifier` captures Verifier settings, system errors, adapters, routes, devices, and driver inventory but explicitly does not claim the required scenarios or M6.2 acceptance. Successful final uninstall writes `evidence-sha256.json` over the collected files.
 
-The installer rejects an existing xsnet device/package, unexpected files, directories, reparse points, invalid signatures, signer mismatch, non-Microsoft DevGen, unsupported OS builds, unhealthy devices, and ambiguous driver-store results. Failure attempts bounded removal of the exact xsnet device and staged `oem#.inf`.
+The installer rejects an existing xsnet device/package, unexpected files, directories, reparse points, invalid signatures, signer mismatch, INF `DriverVer` mismatch, staged driver-store version mismatch, non-Microsoft DevGen, unsupported OS builds, unhealthy devices, and ambiguous driver-store results. Failure attempts bounded removal of the exact xsnet device and staged `oem#.inf`.
 
-Successful installation stores only package hashes, signer thumbprint, exact device instance IDs, published INF name, and timestamp under `%ProgramData%\XS Nexus`. The state directory ACL grants full access only to LocalSystem and built-in Administrators. Uninstall removes only those recorded objects and keeps state if any xsnet residual remains.
+Successful installation stores only ABI v1, the four-part driver version, package hashes, signer thumbprint, exact device instance IDs, published INF name, and timestamp under `%ProgramData%\XS Nexus`. The state directory ACL grants full access only to LocalSystem and built-in Administrators. Uninstall removes only those recorded objects and keeps state if any xsnet residual remains. The test workflow is clean-install only; compatibility and rollback boundaries are defined in `docs/WINDOWS_XSNET_COMPATIBILITY.md`.
 
 No Windows execution result exists until `BLK-001` is resolved. Run MSBuild, InfVerif, catalog generation, test signing, installation, uninstall, repeated lifecycle, traffic, network switching, reboot, sleep, crash, malformed IOCTL, Driver Verifier, and residual checks in the VM and preserve the output.

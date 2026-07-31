@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 
 $script:XsnetHardwareId = 'Root\XSNET'
 $script:XsnetStatePath = Join-Path $env:ProgramData 'XS Nexus\xsnet-test-install.json'
+$script:XsnetAbiVersion = 1
 
 function Assert-XsnetTestHost {
     if (-not [Environment]::Is64BitOperatingSystem) {
@@ -62,6 +63,29 @@ function Assert-XsnetDevGen {
     return $resolved
 }
 
+function Get-XsnetAbiVersion {
+    return $script:XsnetAbiVersion
+}
+
+function Get-XsnetInfDriverVersion {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'xsnet INF must be a real file'
+    }
+    $matches = @(Get-Content -LiteralPath $item.FullName | Where-Object {
+        $_ -match '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+    })
+    if ($matches.Count -ne 1) {
+        throw 'xsnet INF must contain exactly one four-part DriverVer'
+    }
+    return [regex]::Match(
+        $matches[0],
+        '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+    ).Groups['Version'].Value
+}
+
 function Get-XsnetDevices {
     $devices = @()
     foreach ($device in @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue)) {
@@ -117,7 +141,9 @@ function Read-XsnetInstallState {
         throw 'xsnet state file cannot be a reparse point'
     }
     $state = Get-Content -LiteralPath $script:XsnetStatePath -Raw | ConvertFrom-Json
-    if ($state.schema -ne 1 -or $state.hardware_id -ne $script:XsnetHardwareId -or
+    if ($state.schema -ne 2 -or $state.hardware_id -ne $script:XsnetHardwareId -or
+        $state.abi_version -ne $script:XsnetAbiVersion -or
+        $state.driver_version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' -or
         $state.published_inf -notmatch '^oem[0-9]+\.inf$') {
         throw 'xsnet test installation state is invalid'
     }

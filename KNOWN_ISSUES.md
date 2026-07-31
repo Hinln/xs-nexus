@@ -229,7 +229,7 @@
 - 首次发现：2026-07-31
 - 影响：`installers/windows` 可在快照 VM 验证测试签名驱动生命周期，但依赖微软禁止重分发和生产使用的本机 WDK DevGen，不能作为最终用户安装器或 RC 分发物。
 - 临时缓解：脚本名称、README、状态和参数均标记 test-only；必须显式提供测试 signer thumbprint 和 Microsoft-signed DevGen 路径，不下载、不打包、不修改 BCD，不允许既有 xsnet 状态。
-- 已完成缓解：安装失败和卸载只操作精确记录的 `Root\XSNET` instance 与 `oem#.inf`，20 秒有界等待，设备或 driver-store 残留返回失败并保留状态。测试包构建固定本机 Microsoft-signed WDK 工具、测试 signer、精确 allowlist 和哈希；VM 编排固定不可复用阶段、双重重启、Verifier oneboot、系统基线和最终证据哈希，但均尚未在 VM 执行。
+- 已完成缓解：安装失败和卸载只操作精确记录的 `Root\XSNET` instance 与 `oem#.inf`，20 秒有界等待，设备或 driver-store 残留返回失败并保留状态。测试包构建固定本机 Microsoft-signed WDK 工具、测试 signer、精确 allowlist、INF `DriverVer`、ABI `1..1` 和哈希；安装前后核对期望/INF/driver-store 版本，受限状态记录 exact ABI v1。VM 编排固定不可复用阶段、双重重启、Verifier oneboot、系统基线和最终证据哈希，但均尚未在 VM 执行。
 - 计划：Windows VM 驱动验证通过后，为正式签名包实现受支持的软件设备创建、升级、回滚和企业部署路径，并单独执行安装器威胁建模。
 - 解除条件：不依赖不可分发测试工具的正式安装器完成签名、干净安装、重复安装、升级、失败回滚、卸载、重启和零残留验收。
 

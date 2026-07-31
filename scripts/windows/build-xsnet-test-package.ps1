@@ -118,6 +118,16 @@ Invoke-NativeTool -Path $msbuild -Arguments @(
 
 $builtDll = Resolve-RealPath -Path (Join-Path $buildOutput 'xsnet.dll')
 $builtInf = Resolve-RealPath -Path (Join-Path $buildOutput 'xsnet.inf')
+$driverVersionLines = @(Get-Content -LiteralPath $builtInf | Where-Object {
+    $_ -match '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+})
+if ($driverVersionLines.Count -ne 1) {
+    throw 'built INF must contain exactly one four-part DriverVer'
+}
+$driverVersion = [regex]::Match(
+    $driverVersionLines[0],
+    '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+).Groups['Version'].Value
 Copy-Item -LiteralPath $builtDll -Destination (Join-Path $package 'xsnet.dll')
 Copy-Item -LiteralPath $builtInf -Destination (Join-Path $package 'xsnet.inf')
 
@@ -162,6 +172,10 @@ $manifest = [ordered]@{
     test_only = $true
     target = 'Windows 11 24H2 x64'
     os_identifier = '10_GE_X64'
+    driver_version = $driverVersion
+    abi_min = 1
+    abi_max = 1
+    capabilities = @('ipv4')
     signer_thumbprint = $thumbprint
     generated_at_utc = [DateTime]::UtcNow.ToString('O')
     files = [ordered]@{}
