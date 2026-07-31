@@ -240,7 +240,7 @@
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
 - Win32 transport 现隔离为 `no_std + alloc` crate：默认 deny unsafe，仅 `platform.rs` 允许五个精确 unsafe 块；只调用 Configuration Manager、`CreateFileW`、`DeviceIoControl` 和 `CloseHandle`，使用唯一 GUID 路径、读写权限、零共享、同步 I/O、已初始化自有缓冲区和 u32 长度门禁。所有 Win32 失败、异常字节数或 direct 输入变异均归类 Indeterminate，不读取通用错误码推断“未提交”；
 - transport crate 已实际通过 `x86_64-pc-windows-msvc` core/alloc target check 和交叉 Clippy，证据 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`；完整 Agent 的 Windows 编译在 `ring` 需要 SDK C 头处失败并保留证据，不能从最小 crate 推断链接、运行或设备安全；
-- 空 TX 与满 RX 在驱动端当前以失败状态立即完成，但 Win32 transport 在没有 VM 证据前将所有失败调用保守归类 Indeterminate；因此未把通用错误码推断为权威 Rejected，也未启用轮询线程、后台重试或 Agent runtime。单步会话与全量 Linux 门禁证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033111Z`；
+- 空 TX 与满 RX 在驱动端当前以失败状态立即完成，但 Win32 transport 在没有 VM 证据前将所有失败调用保守归类 Indeterminate；因此未把通用错误码推断为权威 Rejected，也未启用轮询线程、后台重试或 Agent runtime。18 个 Agent xsnet 测试覆盖失败启动释放、无效 RX/Drop 零 I/O 和显式 shutdown 重试；源码门禁强制配置先于设备打开/IOCTL，并在 VM 前禁止 runtime 引用、线程、sleep 和 session Drop I/O。全量 Linux 门禁证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033841Z`；
 - 2026-07-31 生命周期模型加入后连续三轮源码、五组 Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；后续 transport 回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`。direct-I/O、ring 和全部 PowerShell 工作流仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 
 ---

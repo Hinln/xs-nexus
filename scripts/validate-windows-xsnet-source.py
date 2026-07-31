@@ -222,6 +222,12 @@ def validate_portable_tests() -> None:
 
 
 def validate_agent_client() -> None:
+    agent = (
+        ROOT / "apps" / "agent" / "src" / "windows_xsnet.rs"
+    ).read_text(encoding="utf-8")
+    runtime = (ROOT / "apps" / "agent" / "src" / "runtime.rs").read_text(
+        encoding="utf-8"
+    )
     transport = (ROOT / "crates" / "windows-transport" / "src" / "lib.rs").read_text(
         encoding="utf-8"
     )
@@ -246,10 +252,44 @@ def validate_agent_client() -> None:
             "0x8337_e00e",
             "0x8337_e011",
             "pub struct Win32DeviceTransport",
+            "pub struct XsnetDeviceSession",
+            "validate_session_configuration",
+            "device_session_invalid_configuration_performs_no_io_and_drops_transport",
+            "device_session_startup_failure_stops_and_drops_transport",
+            "device_session_drop_does_not_issue_device_io",
+            "device_session_rejects_invalid_rx_before_transport",
+            "device_session_shutdown_rejection_requires_explicit_retry",
             "xs_windows_transport::Request::new",
             "xs_windows_transport::Outcome::Indeterminate",
         ],
     )
+    try:
+        session_impl = agent.split(
+            "impl<T: XsnetTransport> XsnetDeviceSession<T> {", 1
+        )[1].split("impl XsnetDeviceSession<Win32DeviceTransport> {", 1)[0]
+        open_impl = agent.split(
+            "impl XsnetDeviceSession<Win32DeviceTransport> {", 1
+        )[1].split("\n}\n\n#[derive(Debug)]", 1)[0]
+        session_validation = session_impl.index("validate_session_configuration")
+        first_ioctl = session_impl.index("prepare_hello")
+        open_validation = open_impl.index("validate_session_configuration")
+        device_open = open_impl.index("Win32DeviceTransport::open")
+    except (IndexError, ValueError):
+        fail("xsnet session validation/open ordering is not statically recognizable")
+    if session_validation > first_ioctl:
+        fail("xsnet session must validate configuration before its first IOCTL")
+    if open_validation > device_open:
+        fail("xsnet session must validate configuration before opening the device")
+    for forbidden in (
+        "thread::spawn",
+        "tokio::spawn",
+        "tokio::time::sleep",
+        "Drop for XsnetDeviceSession",
+    ):
+        if forbidden in agent:
+            fail(f"xsnet Agent session contains forbidden background behavior: {forbidden}")
+    if "windows_xsnet" in runtime:
+        fail("xsnet session must remain outside Agent runtime before WDK/VM validation")
     require_text(
         ROOT / "apps" / "agent" / "src" / "lib.rs",
         ["pub mod windows_xsnet;"],

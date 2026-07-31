@@ -822,6 +822,10 @@ fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
 
     use super::*;
 
@@ -884,6 +888,42 @@ mod tests {
                 ScriptedOutcome::Indeterminate => TransportOutcome::Indeterminate,
             }
         }
+    }
+
+    #[derive(Debug)]
+    struct TrackedTransport {
+        inner: ScriptedTransport,
+        calls: Arc<AtomicUsize>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl XsnetTransport for TrackedTransport {
+        fn execute(&mut self, request: &PreparedRequest) -> TransportOutcome {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.inner.execute(request)
+        }
+    }
+
+    impl Drop for TrackedTransport {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn tracked_transport(
+        outcomes: impl IntoIterator<Item = ScriptedOutcome>,
+    ) -> (TrackedTransport, Arc<AtomicUsize>, Arc<AtomicBool>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        (
+            TrackedTransport {
+                inner: ScriptedTransport::new(outcomes),
+                calls: Arc::clone(&calls),
+                dropped: Arc::clone(&dropped),
+            },
+            calls,
+            dropped,
+        )
     }
 
     fn started_session(
@@ -1170,6 +1210,105 @@ mod tests {
                 MessageType::Detach,
             ]
         );
+    }
+
+    #[test]
+    fn device_session_invalid_configuration_performs_no_io_and_drops_transport() {
+        let (transport, calls, dropped) = tracked_transport([]);
+
+        assert!(matches!(
+            XsnetDeviceSession::start(transport, 1200, 2, 2),
+            Err(ExecutionError::Client(ClientError::InvalidPacket))
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn device_session_startup_failure_stops_and_drops_transport() {
+        let (transport, calls, dropped) = tracked_transport([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Rejected(0xc000_0059),
+        ]);
+
+        assert!(matches!(
+            XsnetDeviceSession::start(transport, 1400, 2, 2),
+            Err(ExecutionError::Rejected(0xc000_0059))
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn device_session_drop_does_not_issue_device_io() {
+        let (transport, calls, dropped) = tracked_transport([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+        ]);
+        let session = XsnetDeviceSession::start(transport, 1400, 2, 2).expect("device session");
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+
+        drop(session);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn device_session_rejects_invalid_rx_before_transport() {
+        let mut session = started_session([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+        ]);
+        let oversized = packet(1401);
+        let packet_one = packet(32);
+        let packet_two = packet(40);
+        let packet_three = packet(48);
+
+        assert_eq!(
+            session.enqueue_receive(&[oversized.as_slice()]),
+            Err(ExecutionError::Client(ClientError::InvalidPacket))
+        );
+        assert_eq!(
+            session.enqueue_receive(&[
+                packet_one.as_slice(),
+                packet_two.as_slice(),
+                packet_three.as_slice(),
+            ]),
+            Err(ExecutionError::Client(ClientError::InvalidPacket))
+        );
+        assert_eq!(session.transport.requests.len(), 3);
+        assert_eq!(session.next_sequence(), 4);
+    }
+
+    #[test]
+    fn device_session_shutdown_rejection_requires_explicit_retry() {
+        let mut session = started_session([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Rejected(0x8000_0011),
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+        ]);
+
+        assert_eq!(
+            session.shutdown(),
+            Err(ExecutionError::Rejected(0x8000_0011))
+        );
+        assert_eq!(session.state(), ClientState::LinkUp);
+        assert_eq!(session.next_sequence(), 4);
+        assert_eq!(session.transport.requests.len(), 4);
+
+        session.shutdown().expect("explicit shutdown retry");
+        assert_eq!(session.state(), ClientState::Negotiated);
+        assert_eq!(session.next_sequence(), 6);
+        assert_eq!(session.transport.requests.len(), 6);
+        assert_eq!(session.transport.requests[3].sequence(), 4);
+        assert_eq!(session.transport.requests[4].sequence(), 4);
+        assert_eq!(session.transport.requests[5].sequence(), 5);
     }
 
     #[cfg(not(windows))]

@@ -242,7 +242,7 @@
 - 首次发现：2026-07-31
 - 影响：隔离 Win32 transport 已实现并通过最小 Windows target 编译，但完整 Agent 因缺少 SDK C 头尚未链接，且没有在 Windows 调用设备枚举、独占 handle 或 `DeviceIoControl`；驱动的空 TX/满 RX 目前以失败状态完成，而通用 Win32 错误尚不能证明 request 未提交，因此仍不能安全启用持续收发。
 - 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果；平台 crate 不把任何 Win32 失败映射为 Rejected，所有未知结果、异常字节数、direct 输入变异和畸形成功响应强制重连。`XsnetDeviceSession` 每个方法只执行一个请求，不轮询、不后台重试、不在 Drop 中 I/O，且不接入 runtime。Agent 保持全局禁止 unsafe。
-- 已完成缓解：13 个 Agent xsnet 测试和 2 个 transport crate 测试覆盖 ABI/IOCTL、状态、单步会话、配置先于设备打开校验、协商 buffer 上限、拒绝/毒化、LinkDown/Detach、buffer mapping、长度、接口列表与非 Windows 拒绝；五个 unsafe 块被源码门禁固定；`x86_64-pc-windows-msvc` core/alloc check 和交叉 Clippy 实际通过，最新证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033111Z`。
+- 已完成缓解：18 个 Agent xsnet 测试和 2 个 transport crate 测试覆盖 ABI/IOCTL、状态、单步会话、配置先于设备打开校验、协商 buffer 上限、拒绝/毒化、失败启动释放、无效 RX/Drop 零 I/O、显式 shutdown 重试、LinkDown/Detach、buffer mapping、长度、接口列表与非 Windows 拒绝；源码门禁在 VM 验证前禁止 runtime 接入、后台线程、sleep 和 session Drop I/O，五个 unsafe 块保持隔离；`x86_64-pc-windows-msvc` core/alloc check 和交叉 Clippy 实际通过，最新证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033841Z`。
 - 计划：在具备 Windows Rust 标准库、SDK 和 WDK 的受控环境编译链接完整 Agent/驱动，随后进入 `BLK-001` VM 设备枚举、六 IOCTL、空 TX/满 RX 精确状态、取消与生命周期验收；只有获得权威 no-commit 证据或新增明确唤醒协议后才接入 runtime。
 - 解除条件：完整 Windows Agent 与驱动通过编译、unsafe 复核、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。
 
