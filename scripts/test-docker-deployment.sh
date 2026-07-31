@@ -288,6 +288,12 @@ controller_image_after_failed_activation=$(docker inspect "$(compose ps -q contr
 wait_for_http "http://127.0.0.1:$CONTROLLER_PORT/health/ready"
 
 "$STACK" --env-file "$ENVIRONMENT_FILE" status >/dev/null
+if [[ ${XS_STABILITY_DURATION_SECONDS:-0} -gt 0 ]]; then
+    XS_COMPOSE_PROJECT_NAME=xs-nexus-dev \
+    XS_CONTROLLER_HTTP_PORT=$CONTROLLER_PORT \
+    XS_CONSOLE_HTTP_PORT=$CONSOLE_PORT \
+        "$ROOT_DIR/scripts/test-runtime-stability.sh" "$ENVIRONMENT_FILE"
+fi
 "$STACK" --env-file "$ENVIRONMENT_FILE" down
 reset_schema
 
