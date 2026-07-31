@@ -219,3 +219,16 @@
 - 临时缓解：M6.1 首版只面向 Windows 11 24H2 UMDF NetAdapterCx，不向 Windows 10 分发、不伪造构建或兼容结果；共享 ABI 与用户态 Agent 保持可复用。
 - 计划：完成 Windows 11 VM 门禁后，在独立 Windows 10 VM 评估最小 clean-room NDIS miniport 路径或由项目所有者正式调整 Windows 10 支持范围；任何新路径必须复用同一安全 ABI 并重新执行驱动审计。
 - 解除条件：Windows 10 获得受支持的实现路径并完成 WDK 构建、测试签名、安装卸载、收发、异常生命周期和 Driver Verifier，或正式任务书明确移除 Windows 10 强制范围。
+
+---
+
+## KI-017 Windows 当前安装编排仅限 WDK 测试 VM
+
+- 严重度：高
+- 状态：开放
+- 首次发现：2026-07-31
+- 影响：`installers/windows` 可在快照 VM 验证测试签名驱动生命周期，但依赖微软禁止重分发和生产使用的本机 WDK DevGen，不能作为最终用户安装器或 RC 分发物。
+- 临时缓解：脚本名称、README、状态和参数均标记 test-only；必须显式提供测试 signer thumbprint 和 Microsoft-signed DevGen 路径，不下载、不打包、不修改 BCD，不允许既有 xsnet 状态。
+- 已完成缓解：安装失败和卸载只操作精确记录的 `Root\XSNET` instance 与 `oem#.inf`，20 秒有界等待，设备或 driver-store 残留返回失败并保留状态。
+- 计划：Windows VM 驱动验证通过后，为正式签名包实现受支持的软件设备创建、升级、回滚和企业部署路径，并单独执行安装器威胁建模。
+- 解除条件：不依赖不可分发测试工具的正式安装器完成签名、干净安装、重复安装、升级、失败回滚、卸载、重启和零残留验收。

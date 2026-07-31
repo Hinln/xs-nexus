@@ -21,7 +21,7 @@
   - Relay；
   - Console；
   - 驱动代码和交叉构建准备。
-- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，固定驱动/Agent 边界、ABI v1 和单 owner 状态机，并以 Clang Release、ASan/UBSan 实际验证平台无关长度、包批次、版本、sequence、MTU、队列深度和 cleanup 模型。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
+- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码和测试专用安装/卸载脚本；Clang Release、ASan/UBSan 与源码不变量验证已通过。安装器固定 signer thumbprint，只接受 Microsoft-signed WDK DevGen 并在失败时按精确状态回滚；尚未在 Windows 执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
 - 解除步骤：用户提供可测试 VM，Codex执行安装和验证。
 
 ---

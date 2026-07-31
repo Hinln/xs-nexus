@@ -134,6 +134,8 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 - 结果：通过；
 - 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence、单 owner、协商顺序、MTU/队列、link、批次和 cleanup 负向测试，以及有界队列的原子入队、背压、小输出、部分出队、环绕和 payload 清零；
 - 当前实现：有界 IPv4 队列、TX 空请求/RX framed 请求、同步 direct-I/O、协商深度、SetLink 门禁与 NetAdapterCx TX/RX 系统缓冲区复制源码已完成；Windows 部分尚未经过 WDK 编译或执行；
+- 测试安装准备：已加入只面向快照 VM 的 PowerShell 安装/卸载脚本，固定 signer thumbprint、Microsoft-signed WDK DevGen、精确状态回滚和残留拒绝；尚未在 Windows 执行；
+- 安装器验证：`make test-windows-xsnet-installer` 通过，本地 Windows PowerShell parser 对三份脚本零语法错误；未运行设备安装、卸载或签名命令；
 - 不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏。
 
 ## 外部阻塞

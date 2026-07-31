@@ -548,3 +548,15 @@
 - 原因：微软 ring 规则明确允许 RX 的 `Layer2TypeNull`，这与任务书要求的 L3 虚拟接口和 Linux TUN 边界一致，不把 ARP 或 Ethernet 策略塞进最小驱动。
 - 代价：Windows TCP/IP 对 `IF_TYPE_TUNNEL`、IP media 与 UMDF NetAdapterCx 2.5 的实际绑定和路由行为仍必须在 Windows 11 VM 验证；若 WDK 或系统拒绝该组合，必须保存证据并重新评估，而不能静默改为伪 Ethernet。
 - 安全影响：驱动拒绝 IPv6、截断头、非法 IHL 和总长度不一致包；不可信 Agent 不能通过合法批次描述符注入非规范 L3 payload。
+
+---
+
+## ADR-047：M6.1 只提供快照 VM 测试安装器并外部引用 WDK DevGen
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：PnPUtil 可以暂存并更新匹配设备，但不能创建不存在的 ROOT 测试设备；微软 DevGen 能创建/删除测试设备，却明确禁止重新分发和生产使用。
+- 决策：仓库只提供测试 VM PowerShell 编排，不携带 DevGen。安装要求 Windows 11 26100+ 管理员、显式测试 signer thumbprint、本机有效 Microsoft-signed WDK DevGen，以及精确 INF/CAT/DLL allowlist；使用 PnPUtil 暂存、DevGen 创建 `Root\XSNET`，成功后保存受限状态。失败和卸载只操作精确设备实例与 `oem#.inf`，并以零残留为成功条件。
+- 原因：满足 M6.1/M6.2 测试签名安装准备，同时遵守微软工具许可，不把测试工具或 test-signing 配置伪装成生产安装器。
+- 代价：脚本依赖测试 VM 已安装 WDK，不能用于最终用户分发；生产软件设备创建、正式签名、升级和回滚仍需独立实现与门禁。
+- 安全影响：拒绝路径扩展、重解析点、额外文件、未知 signer、非 Microsoft DevGen、既有模糊状态和无限等待；脚本不下载代码、不改 BCD、不绕过执行策略。

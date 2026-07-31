@@ -230,6 +230,8 @@
 - `scripts/validate-windows-xsnet-source.py` 固定 Windows 11 24H2、UMDF 2.33、NetAdapterCx 2.5、x64、测试签名元数据、仅 LocalSystem SDDL、独立 UMDF host、拒绝内核客户端/未知 file object/直接硬件访问、direct/buffered IOCTL 和关键生命周期回调；
 - TX/RX queue callback 已缓存 ring collection 和必需的虚拟地址扩展，限定 Passive 执行，按一包一 fragment 在系统缓冲区与私有有界队列间复制；TX 不修改只读描述符，RX 填充 `Layer2TypeNull` 和 IPv4 layout，畸形 ring 数据会断链；
 - TX direct-I/O 使用空 payload 请求和 framed 输出；RX direct-I/O 使用 framed direct 输入。请求同步完成且不挂起，空/满/小缓冲/未启动先失败，成功才推进 sequence；SetLink 要求双队列 started，stop/cancel 退回 Attached 并断链；固定 64 包和协商深度同时生效；
+- `scripts/validate-windows-xsnet-installer.py` 静态检查测试安装器的管理员门禁、Windows build 下限、精确三文件包、重解析点拒绝、signer thumbprint、Microsoft-signed WDK DevGen、PnPUtil、精确状态、20 秒有界等待、失败回滚和残留拒绝；
+- 本地 Windows PowerShell parser 已对模块、安装和卸载脚本执行零语法错误解析；未调用脚本、PnPUtil、DevGen 或设备 API，该结果不能替代 PowerShell 7.4/WDK VM 执行；
 - 当前结果只证明平台无关模型和源码文本不变量；direct-I/O 与 ring 代码未由 WDK 编译或执行。MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---

@@ -226,8 +226,9 @@
 - 平台无关数据平面模型使用每方向 64 包固定上限、规范原始 IPv4 version/IHL/总长度、协商 MTU 校验和原子批次入队；容量不足或输出过小时不部分修改队列，出队和 reset 对完整固定槽清零，避免失败请求泄漏陈旧 payload；
 - ring 回调只在 Passive packet queue 生命周期中访问 NetAdapterCx 系统分配缓冲区，要求虚拟地址扩展、连续的一包一 fragment 和合法 capacity/offset/length；TX 只读 packet/fragment，RX 明确填充原始 IPv4 `Layer2TypeNull` layout，异常描述符停止消费并断链；
 - direct-I/O 使用同步非挂起请求，不把 NetAdapterCx ring 或私有槽映射给 Agent；TX 空请求与 RX framed 请求方向固定，空/满/小缓冲/队列未启动在状态机前失败，因此包和 sequence 均不前移；固定硬上限与协商队列深度同时执行；
+- 测试安装器只在管理员 Windows 11 26100+ 接受精确 INF/CAT/DLL、有效且匹配显式 thumbprint 的 signer 和本机 Microsoft-signed WDK DevGen；不下载或分发 DevGen，不修改 BCD/测试签名模式，不通过 ExecutionPolicy Bypass；状态 ACL 仅 LocalSystem/Administrators，卸载只操作记录的 ROOT instance 与 `oem#.inf`，残留失败关闭；
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
-- direct-I/O 与 ring 源码尚未由 WDK 编译，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入仍未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
+- direct-I/O、ring 和 PowerShell 安装器尚未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入仍未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 
 ---
 
