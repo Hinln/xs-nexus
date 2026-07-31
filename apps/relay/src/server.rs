@@ -51,9 +51,14 @@ struct Lease {
     last_activity: Instant,
     replay: ReplayWindow,
     traffic: TrafficBudget,
-    queue: VecDeque<Vec<u8>>,
+    queue: VecDeque<QueuedDatagram>,
     queued_bytes: usize,
     queue_scheduled: bool,
+}
+
+struct QueuedDatagram {
+    bytes: Vec<u8>,
+    enqueued_at: Instant,
 }
 
 struct CachedRegistration {
@@ -159,6 +164,7 @@ impl RelayServer {
                 }
                 received = socket.recv_from(&mut datagram) => {
                     let (length, source) = received?;
+                    self.metrics.received(length);
                     self.handle_datagram(&socket, &datagram[..length], source);
                     self.flush_queues(&socket);
                 }
@@ -344,7 +350,10 @@ impl RelayServer {
         destination_lease.queued_bytes = destination_lease
             .queued_bytes
             .saturating_add(datagram.len());
-        destination_lease.queue.push_back(datagram.to_vec());
+        destination_lease.queue.push_back(QueuedDatagram {
+            bytes: datagram.to_vec(),
+            enqueued_at: now,
+        });
         if !destination_lease.queue_scheduled {
             destination_lease.queue_scheduled = true;
             self.active_queues.push_back(destination_lease_id);
@@ -424,12 +433,13 @@ impl RelayServer {
                 lease.queue_scheduled = false;
                 continue;
             };
-            match socket.try_send_to(datagram, lease.endpoint) {
+            match socket.try_send_to(&datagram.bytes, lease.endpoint) {
                 Ok(length) => {
                     let datagram = lease.queue.pop_front().expect("queue front exists");
-                    lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.len());
-                    if length == datagram.len() {
-                        self.metrics.forwarded(length);
+                    lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.bytes.len());
+                    if length == datagram.bytes.len() {
+                        self.metrics
+                            .forwarded(length, datagram.enqueued_at.elapsed());
                     } else {
                         self.metrics.send_drop();
                     }
@@ -440,7 +450,8 @@ impl RelayServer {
                 }
                 Err(_) => {
                     if let Some(datagram) = lease.queue.pop_front() {
-                        lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.len());
+                        lease.queued_bytes =
+                            lease.queued_bytes.saturating_sub(datagram.bytes.len());
                     }
                     self.metrics.send_drop();
                 }
@@ -740,10 +751,16 @@ mod tests {
         sleep(Duration::from_millis(20)).await;
         let snapshot = relay.metrics.snapshot();
         assert_eq!(snapshot.active_leases, 2);
+        assert!(snapshot.packets_received >= 7);
+        assert!(snapshot.bytes_received > 0);
         assert_eq!(snapshot.packets_forwarded, 1);
+        assert!(snapshot.bytes_forwarded > 0);
+        assert_eq!(snapshot.forwarding_latency_samples, 1);
+        assert!(snapshot.forwarding_latency_microseconds_average.is_some());
         assert_eq!(snapshot.keepalives_accepted, 1);
         assert!(snapshot.replay_drops >= 1);
         assert!(snapshot.authentication_drops >= 1);
+        assert!(snapshot.packets_dropped >= 2);
         assert_eq!(snapshot.registration_retries, 2);
         relay.shutdown().await;
     }

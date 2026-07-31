@@ -116,6 +116,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         active_leases = snapshot.active_leases,
         packets_forwarded = snapshot.packets_forwarded,
         bytes_forwarded = snapshot.bytes_forwarded,
+        packets_dropped = snapshot.packets_dropped,
+        io_errors = snapshot.io_errors,
+        forwarding_latency_microseconds_average = snapshot.forwarding_latency_microseconds_average,
+        forwarding_latency_microseconds_max = snapshot.forwarding_latency_microseconds_max,
     );
     Ok(())
 }
