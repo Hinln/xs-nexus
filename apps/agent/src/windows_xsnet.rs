@@ -144,6 +144,135 @@ pub enum ExecutionError {
     ReconnectRequired,
 }
 
+#[derive(Debug, Error)]
+pub enum DeviceSessionOpenError {
+    #[error(transparent)]
+    Open(#[from] xs_windows_transport::OpenError),
+    #[error(transparent)]
+    Initialize(#[from] ExecutionError),
+}
+
+#[derive(Debug)]
+pub struct XsnetDeviceSession<T> {
+    client: XsnetClient,
+    transport: T,
+    transmit_output_capacity: usize,
+}
+
+impl<T: XsnetTransport> XsnetDeviceSession<T> {
+    /// Negotiates one already-open transport and raises the virtual link without retrying.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first client, driver, or transport error. A failed startup consumes and drops
+    /// the transport so that an indeterminate handle cannot be reused.
+    pub fn start(
+        transport: T,
+        mtu: u32,
+        transmit_depth: u16,
+        receive_depth: u16,
+    ) -> Result<Self, ExecutionError> {
+        let transmit_output_capacity =
+            validate_session_configuration(mtu, transmit_depth, receive_depth)?;
+        let mut session = Self {
+            client: XsnetClient::opened(),
+            transport,
+            transmit_output_capacity,
+        };
+        let hello = session.client.prepare_hello()?;
+        session.execute(&hello)?;
+        let attach = session
+            .client
+            .prepare_attach(mtu, transmit_depth, receive_depth)?;
+        session.execute(&attach)?;
+        let link_up = session.client.prepare_set_link(true)?;
+        session.execute(&link_up)?;
+        Ok(session)
+    }
+
+    #[must_use]
+    pub const fn state(&self) -> ClientState {
+        self.client.state()
+    }
+
+    #[must_use]
+    pub const fn next_sequence(&self) -> u64 {
+        self.client.next_sequence()
+    }
+
+    /// Executes exactly one bounded driver-to-Agent dequeue request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an explicit rejection without retrying, or poisons the session when completion is
+    /// indeterminate or malformed.
+    pub fn dequeue_transmit(&mut self) -> Result<Vec<Vec<u8>>, ExecutionError> {
+        let request = self
+            .client
+            .prepare_transmit(self.transmit_output_capacity)?;
+        self.execute(&request)
+    }
+
+    /// Executes exactly one bounded Agent-to-driver enqueue request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid packet batch, an explicit rejection, or an indeterminate
+    /// completion. The method never retries or splits a rejected batch.
+    pub fn enqueue_receive(&mut self, packets: &[&[u8]]) -> Result<(), ExecutionError> {
+        let request = self.client.prepare_receive(packets)?;
+        self.execute(&request).map(|_| ())
+    }
+
+    /// Lowers the link when necessary and sends one detach request per call without retrying.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first client, driver, or transport error. A caller may issue another explicit
+    /// shutdown after a definitive rejection, but must replace an indeterminate session.
+    pub fn shutdown(&mut self) -> Result<(), ExecutionError> {
+        match self.client.state() {
+            ClientState::LinkUp => {
+                let link_down = self.client.prepare_set_link(false)?;
+                self.execute(&link_down)?;
+            }
+            ClientState::Negotiated | ClientState::Attached => {}
+            ClientState::Opened | ClientState::ReconnectRequired => {
+                return Err(ClientError::BadState.into());
+            }
+        }
+        let detach = self.client.prepare_detach()?;
+        self.execute(&detach).map(|_| ())
+    }
+
+    fn execute(&mut self, request: &PreparedRequest) -> Result<Vec<Vec<u8>>, ExecutionError> {
+        self.client.execute_prepared(&mut self.transport, request)
+    }
+}
+
+impl XsnetDeviceSession<Win32DeviceTransport> {
+    /// Opens the unique xsnet interface and performs one fail-closed startup sequence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an open or initialization error. This method does not retry device discovery or
+    /// any IOCTL.
+    pub fn open(
+        mtu: u32,
+        transmit_depth: u16,
+        receive_depth: u16,
+    ) -> Result<Self, DeviceSessionOpenError> {
+        validate_session_configuration(mtu, transmit_depth, receive_depth)
+            .map_err(ExecutionError::from)?;
+        Ok(Self::start(
+            Win32DeviceTransport::open()?,
+            mtu,
+            transmit_depth,
+            receive_depth,
+        )?)
+    }
+}
+
 #[derive(Debug)]
 pub struct XsnetClient {
     state: ClientState,
@@ -209,12 +338,7 @@ impl XsnetClient {
         receive_depth: u16,
     ) -> Result<PreparedRequest, ClientError> {
         self.require_state(&[ClientState::Negotiated])?;
-        if !(1280..=MAX_PACKET_SIZE_U32).contains(&mtu)
-            || !(1..=MAX_PACKETS_U16).contains(&transmit_depth)
-            || !(1..=MAX_PACKETS_U16).contains(&receive_depth)
-        {
-            return Err(ClientError::InvalidPacket);
-        }
+        validate_attach_limits(mtu, transmit_depth, receive_depth)?;
         let mut payload = vec![0_u8; 16];
         write_u32(&mut payload, 0, mtu);
         write_u16(&mut payload, 4, transmit_depth);
@@ -458,6 +582,43 @@ impl XsnetClient {
     }
 }
 
+fn validate_attach_limits(
+    mtu: u32,
+    transmit_depth: u16,
+    receive_depth: u16,
+) -> Result<(), ClientError> {
+    if !(1280..=MAX_PACKET_SIZE_U32).contains(&mtu)
+        || !(1..=MAX_PACKETS_U16).contains(&transmit_depth)
+        || !(1..=MAX_PACKETS_U16).contains(&receive_depth)
+    {
+        return Err(ClientError::InvalidPacket);
+    }
+    Ok(())
+}
+
+fn validate_session_configuration(
+    mtu: u32,
+    transmit_depth: u16,
+    receive_depth: u16,
+) -> Result<usize, ClientError> {
+    validate_attach_limits(mtu, transmit_depth, receive_depth)?;
+    transmit_output_capacity(mtu, transmit_depth)
+}
+
+fn transmit_output_capacity(mtu: u32, transmit_depth: u16) -> Result<usize, ClientError> {
+    let mtu = usize::try_from(mtu).map_err(|_| ClientError::InvalidPacket)?;
+    let depth = usize::from(transmit_depth);
+    let capacity = HEADER_SIZE
+        .checked_add(8)
+        .and_then(|value| value.checked_add(depth.checked_mul(8)?))
+        .and_then(|value| value.checked_add(depth.checked_mul(mtu)?))
+        .ok_or(ClientError::InvalidPacket)?;
+    if capacity > HEADER_SIZE + MAX_PAYLOAD {
+        return Err(ClientError::InvalidPacket);
+    }
+    Ok(capacity)
+}
+
 const fn ctl_code(function: u32, method: u32) -> u32 {
     (DEVICE_TYPE << 16) | (IOCTL_ACCESS << 14) | (function << 2) | method
 }
@@ -660,6 +821,8 @@ fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use super::*;
 
     fn packet(length: usize) -> Vec<u8> {
@@ -679,6 +842,55 @@ mod tests {
         fn execute(&mut self, _request: &PreparedRequest) -> TransportOutcome {
             self.0.clone()
         }
+    }
+
+    #[derive(Clone, Debug)]
+    enum ScriptedOutcome {
+        Success,
+        Transmit(Vec<Vec<u8>>),
+        Rejected(u32),
+        Indeterminate,
+    }
+
+    #[derive(Debug)]
+    struct ScriptedTransport {
+        outcomes: VecDeque<ScriptedOutcome>,
+        requests: Vec<PreparedRequest>,
+    }
+
+    impl ScriptedTransport {
+        fn new(outcomes: impl IntoIterator<Item = ScriptedOutcome>) -> Self {
+            Self {
+                outcomes: outcomes.into_iter().collect(),
+                requests: Vec::new(),
+            }
+        }
+    }
+
+    impl XsnetTransport for ScriptedTransport {
+        fn execute(&mut self, request: &PreparedRequest) -> TransportOutcome {
+            self.requests.push(request.clone());
+            match self.outcomes.pop_front().expect("scripted outcome") {
+                ScriptedOutcome::Success => TransportOutcome::Success(Vec::new()),
+                ScriptedOutcome::Transmit(packets) => {
+                    let packet_refs = packets.iter().map(Vec::as_slice).collect::<Vec<_>>();
+                    let payload = encode_packet_batch(&packet_refs, 1400).expect("TX batch");
+                    TransportOutcome::Success(
+                        encode_message(MessageType::TransmitBatch, request.sequence(), &payload)
+                            .expect("TX response"),
+                    )
+                }
+                ScriptedOutcome::Rejected(status) => TransportOutcome::Rejected(status),
+                ScriptedOutcome::Indeterminate => TransportOutcome::Indeterminate,
+            }
+        }
+    }
+
+    fn started_session(
+        outcomes: impl IntoIterator<Item = ScriptedOutcome>,
+    ) -> XsnetDeviceSession<ScriptedTransport> {
+        XsnetDeviceSession::start(ScriptedTransport::new(outcomes), 1400, 2, 2)
+            .expect("device session")
     }
 
     fn complete_handshake(client: &mut XsnetClient) {
@@ -837,6 +1049,138 @@ mod tests {
             Err(ExecutionError::Client(ClientError::InvalidResponse))
         );
         assert_eq!(malformed_client.state(), ClientState::ReconnectRequired);
+    }
+
+    #[test]
+    fn device_session_starts_and_executes_bounded_packet_steps() {
+        let outbound = packet(32);
+        let inbound_one = packet(40);
+        let inbound_two = packet(48);
+        let mut session = started_session([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Transmit(vec![outbound.clone()]),
+            ScriptedOutcome::Success,
+        ]);
+
+        assert_eq!(session.state(), ClientState::LinkUp);
+        assert_eq!(session.next_sequence(), 4);
+        assert_eq!(
+            session.dequeue_transmit().expect("TX dequeue"),
+            vec![outbound]
+        );
+        session
+            .enqueue_receive(&[inbound_one.as_slice(), inbound_two.as_slice()])
+            .expect("RX enqueue");
+
+        assert_eq!(session.next_sequence(), 6);
+        assert_eq!(session.transport.requests.len(), 5);
+        assert_eq!(
+            session
+                .transport
+                .requests
+                .iter()
+                .map(|request| request.message_type)
+                .collect::<Vec<_>>(),
+            vec![
+                MessageType::Hello,
+                MessageType::Attach,
+                MessageType::SetLink,
+                MessageType::TransmitBatch,
+                MessageType::ReceiveBatch,
+            ]
+        );
+        assert_eq!(
+            session.transport.requests[3].direct_output_capacity(),
+            HEADER_SIZE + 8 + (2 * 8) + (2 * 1400)
+        );
+        assert!(session.transport.requests[4].buffered_input().is_empty());
+        assert!(!session.transport.requests[4].direct_input().is_empty());
+    }
+
+    #[test]
+    fn device_session_does_not_retry_authoritative_rejection() {
+        let mut session = started_session([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Rejected(0x8000_001a),
+        ]);
+
+        assert_eq!(
+            session.dequeue_transmit(),
+            Err(ExecutionError::Rejected(0x8000_001a))
+        );
+        assert_eq!(session.state(), ClientState::LinkUp);
+        assert_eq!(session.next_sequence(), 4);
+        assert_eq!(session.transport.requests.len(), 4);
+    }
+
+    #[test]
+    fn device_session_poisoning_requires_handle_replacement() {
+        let mut session = started_session([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Indeterminate,
+        ]);
+
+        assert_eq!(
+            session.dequeue_transmit(),
+            Err(ExecutionError::ReconnectRequired)
+        );
+        assert_eq!(session.state(), ClientState::ReconnectRequired);
+        assert_eq!(session.transport.requests.len(), 4);
+        assert_eq!(
+            session.enqueue_receive(&[packet(32).as_slice()]),
+            Err(ExecutionError::Client(ClientError::BadState))
+        );
+        assert_eq!(session.transport.requests.len(), 4);
+    }
+
+    #[test]
+    fn device_session_shutdown_orders_link_down_and_idempotent_detach() {
+        let mut session = started_session([
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+            ScriptedOutcome::Success,
+        ]);
+
+        session.shutdown().expect("first shutdown");
+        assert_eq!(session.state(), ClientState::Negotiated);
+        session.shutdown().expect("repeated detach");
+        assert_eq!(session.state(), ClientState::Negotiated);
+        assert_eq!(
+            session
+                .transport
+                .requests
+                .iter()
+                .map(|request| request.message_type)
+                .collect::<Vec<_>>(),
+            vec![
+                MessageType::Hello,
+                MessageType::Attach,
+                MessageType::SetLink,
+                MessageType::SetLink,
+                MessageType::Detach,
+                MessageType::Detach,
+            ]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn device_session_rejects_invalid_configuration_before_opening() {
+        assert!(matches!(
+            XsnetDeviceSession::<Win32DeviceTransport>::open(1200, 2, 2),
+            Err(DeviceSessionOpenError::Initialize(ExecutionError::Client(
+                ClientError::InvalidPacket
+            )))
+        ));
     }
 
     #[cfg(not(windows))]

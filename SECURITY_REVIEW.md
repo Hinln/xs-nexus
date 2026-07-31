@@ -228,8 +228,9 @@
 - direct-I/O 使用同步非挂起请求，不把 NetAdapterCx ring 或私有槽映射给 Agent；TX 空请求与 RX framed 请求方向固定，空/满/小缓冲/队列未启动在状态机前失败，因此包和 sequence 均不前移；固定硬上限与协商队列深度同时执行；
 - 固定种子压力测试在 Clang Release 和 GCC ASan/UBSan 下分别覆盖每域 30,000 次任意字节解析、消息写入、会话调用与队列操作；被拒绝的会话请求必须逐字段保持状态，失败队列操作必须保持元数据和完整 64 槽字节，六类有效消息逐字节变异未发现越界、未定义行为或失败状态提交；
 - 生命周期 harness 按单一 wait lock 的串行临界区穷举六类 teardown 的全部 720 种顺序；活动请求在取消胜出或完成胜出路径中只结算一次，cleanup、睡眠、移除和重复取消保持断链，旧 owner 不在恢复后自动复活。模型不持有跨回调 request/ring 引用，也不替代 WDF 引用计数或实际调度验证；
-- Rust Agent ABI 客户端只允许单飞请求；驱动明确拒绝时保持状态并复用同一 sequence，任何无法确定驱动是否已提交的传输结果都会毒化 handle 并要求重新打开。Attach 参数和 sequence 只在成功响应验证后提交，TX 响应再次校验固定头、精确长度、规范批次、协商 MTU/深度和原始 IPv4；当前没有 Windows API transport，不伪造 `DeviceIoControl` 执行证据；
-- `XsnetTransport` 隐藏请求字段并只提供只读 buffer 访问，将 OS 结果固定为 Success/Rejected/Indeterminate；只有具有权威未提交证明的状态才可 Rejected，首版 Win32 失败默认 Indeterminate。未来 `unsafe` 必须位于独立 target-specific 边界，不能降低 Agent 或 workspace 的全局禁用规则；完整规范见 `docs/WINDOWS_XSNET_TRANSPORT.md`；
+- Rust Agent ABI 客户端只允许单飞请求；驱动明确拒绝时保持状态和 sequence，任何无法确定驱动是否已提交的传输结果都会毒化 handle 并要求重新打开。Attach 参数和 sequence 只在成功响应验证后提交，TX 响应再次校验固定头、精确长度、规范批次、协商 MTU/深度和原始 IPv4；
+- `XsnetDeviceSession` 在任何 I/O 前校验 MTU/深度，以协商上限推导 TX buffer，启动只执行 Hello/Attach/SetLink，每次收发只执行一个请求且不自动重试，shutdown 按 LinkDown/Detach 排序并允许重复 Detach；权威拒绝保留状态，不确定或畸形完成强制替换 handle，Drop 不执行设备 I/O；
+- `XsnetTransport` 隐藏请求字段并只提供只读 buffer 访问，将 OS 结果固定为 Success/Rejected/Indeterminate；只有具有权威未提交证明的状态才可 Rejected，首版 Win32 失败默认 Indeterminate。隔离 target-specific crate 承担全部五个 `unsafe` 块，不降低 Agent 或 workspace 的全局禁用规则；完整规范见 `docs/WINDOWS_XSNET_TRANSPORT.md`；
 - 测试安装器只在管理员 Windows 11 26100+ 接受精确 INF/CAT/DLL、有效且匹配显式 thumbprint 的 signer 和本机 Microsoft-signed WDK DevGen；不下载或分发 DevGen，不修改 BCD/测试签名模式，不通过 ExecutionPolicy Bypass；状态 ACL 仅 LocalSystem/Administrators，卸载只操作记录的 ROOT instance 与 `oem#.inf`，残留失败关闭；
 - 测试包构建脚本要求全路径 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、有效私钥及 code-signing EKU、全新非重解析输出目录、Release x64、禁用工程自动签名、先签 DLL 再生成并签名 `10_GE_X64` catalog，以及显式 SHA-256 test signing；脚本不创建证书、不修改信任或 BCD，只输出精确三文件包、工具日志和哈希清单；
 - VM 编排要求管理员、Windows 11 26100+、可识别虚拟机、一次性运行目录和显式快照声明；各阶段不可覆盖，Verifier 使用 standard + oneboot，启用和禁用后都必须观察到人工重启，卸载前后要求精确设备/driver-store 状态。快照 ID 仅记录操作员断言，CollectVerifier 明确不包含场景结果或验收声明；
@@ -239,6 +240,7 @@
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
 - Win32 transport 现隔离为 `no_std + alloc` crate：默认 deny unsafe，仅 `platform.rs` 允许五个精确 unsafe 块；只调用 Configuration Manager、`CreateFileW`、`DeviceIoControl` 和 `CloseHandle`，使用唯一 GUID 路径、读写权限、零共享、同步 I/O、已初始化自有缓冲区和 u32 长度门禁。所有 Win32 失败、异常字节数或 direct 输入变异均归类 Indeterminate，不读取通用错误码推断“未提交”；
 - transport crate 已实际通过 `x86_64-pc-windows-msvc` core/alloc target check 和交叉 Clippy，证据 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`；完整 Agent 的 Windows 编译在 `ring` 需要 SDK C 头处失败并保留证据，不能从最小 crate 推断链接、运行或设备安全；
+- 空 TX 与满 RX 在驱动端当前以失败状态立即完成，但 Win32 transport 在没有 VM 证据前将所有失败调用保守归类 Indeterminate；因此未把通用错误码推断为权威 Rejected，也未启用轮询线程、后台重试或 Agent runtime。单步会话与全量 Linux 门禁证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033111Z`；
 - 2026-07-31 生命周期模型加入后连续三轮源码、五组 Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；后续 transport 回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`。direct-I/O、ring 和全部 PowerShell 工作流仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 
 ---

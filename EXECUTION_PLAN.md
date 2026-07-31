@@ -557,7 +557,7 @@
 - 安装和卸载脚本；
 - 未实机测试时明确标记。
 
-当前已完成跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 `no_std + alloc` Win32 transport、严格测试安装器、显式 MSBuild/InfVerif/Inf2Cat/SignTool 测试包构建脚本、六阶段快照 VM 采证编排，以及 exact ABI v1/INF DriverVer/driver-store/安装状态 schema 2 一致性门禁。transport 使用 `windows-sys` 实际通过 MSVC target check 与交叉 Clippy，但完整 Agent 因缺少 Windows SDK C 头无法编译，且没有 WDK/VM；测试安装仍只支持 clean install/uninstall，不声称热升级或生产回滚。最新自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`；M6.1 保持 `IN_PROGRESS`，M6.2 保持 `BLOCKED_EXTERNAL`。
+当前已完成跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 `no_std + alloc` Win32 transport、无后台重试的 `XsnetDeviceSession` 单步适配层、严格测试安装器、显式 MSBuild/InfVerif/Inf2Cat/SignTool 测试包构建脚本、六阶段快照 VM 采证编排，以及 exact ABI v1/INF DriverVer/driver-store/安装状态 schema 2 一致性门禁。transport 使用 `windows-sys` 实际通过 MSVC target check 与交叉 Clippy，Agent 适配层验证有界启动/TX/RX/失败/Detach；但空 TX/满 RX 的 Win32 失败尚无权威拒绝映射，适配层不接入 runtime，完整 Agent 也因缺少 Windows SDK C 头无法编译，且没有 WDK/VM。测试安装仍只支持 clean install/uninstall，不声称热升级或生产回滚。最新自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033111Z`；M6.1 保持 `IN_PROGRESS`，M6.2 保持 `BLOCKED_EXTERNAL`。
 
 ---
 

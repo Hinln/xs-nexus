@@ -644,3 +644,15 @@
 - 原因：无需伪造 SDK/WDK 即可真实编译 Windows API 绑定和所有 unsafe 路径，同时保持 Agent、协议、密码学、路由和包解析完全安全 Rust；固定块数让新增 unsafe 必须显式修改门禁与评审。
 - 代价：最小 crate check 不能证明完整 Agent 链接、Windows loader、设备 ACL、真实 buffer 映射、取消、PnP/power 或驱动行为；`RUSTC_BOOTSTRAP=1 -Z build-std` 只作为当前 Linux 准备门禁，正式构建仍需固定 Windows 工具链。
 - 安全影响：接口列表必须恰有一个规范 `\\?\` 路径，handle 读写且零共享、非 overlapped；所有长度先转 u32，输出预初始化，RX 使用自有副本并检测写入；任何 Win32 失败或异常成功都为 Indeterminate，不复用 sequence。
+
+---
+
+## ADR-055：Windows Agent 会话先采用显式单步 I/O，不引入后台轮询重试
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：xsnet 驱动当前让空 TX 和满 RX 以失败状态同步完成；首版 Win32 transport 为避免在驱动可能已提交后复用 sequence，把所有失败 `DeviceIoControl` 保守归类为 Indeterminate。若 Agent 在此基础上轮询 TX 或自动重试 RX，健康空闲会话会被毒化，或者需要无证据地把通用 Win32 错误解释为权威未提交。
+- 决策：新增安全 Rust `XsnetDeviceSession`，启动前验证 MTU/双向深度并由协商值推导 TX 输出容量，随后各执行一次 Hello、Attach 和 SetLink。每个数据方法只执行一次有界 TX dequeue 或 RX enqueue，不拆批、不循环、不睡眠、不重试；权威 Rejected 保持状态和 sequence 供调用方显式处理，Indeterminate 或畸形成功强制替换 handle。shutdown 只按需执行 LinkDown，再执行一个 Detach；重复 shutdown 仅重复幂等 Detach，Drop 不执行 I/O。适配层在空 TX/满 RX 和取消矩阵经 WDK/VM 验证前不接入 runtime。
+- 原因：单步边界可在 Linux fake transport 中完整验证，又不削弱 ADR-050 的 no-commit 证明要求；把“如何等待驱动有包”和“哪些 Win32 状态可安全重试”留给真实 Windows 证据，而不是把猜测固化为后台线程。
+- 代价：当前完整 Windows Agent 仍不能自动泵送包，M6.1/M6.2 不完成；VM 阶段必须证明精确错误映射或设计显式唤醒协议，之后再实现有界调度与 Tokio 阻塞边界。
+- 安全影响：没有隐藏重试、序列猜测、跨 handle 状态继承、无界 channel 或析构期设备调用；任何不确定完成立即失败关闭，普通物理网络不由该未启用适配层修改。

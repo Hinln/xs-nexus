@@ -13,6 +13,8 @@ trap 'rm -rf -- "$TARGET_DIR"' EXIT INT TERM
 
 cd "$ROOT_DIR"
 export CARGO_NET_OFFLINE=true
+cargo test --locked -p xs-agent --lib windows_xsnet::tests
+
 export CARGO_TARGET_DIR="$TARGET_DIR"
 export RUSTC_BOOTSTRAP=1
 
@@ -26,4 +28,4 @@ cargo clippy --locked \
     -p xs-windows-transport \
     -- -D warnings
 
-printf 'xsnet Win32 transport MSVC target check passed\n'
+printf 'xsnet Agent session and Win32 transport MSVC target checks passed\n'

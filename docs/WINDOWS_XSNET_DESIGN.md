@@ -92,9 +92,9 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `tests/lifecycle_test.c` 以驱动当前锁序建立可移植生命周期 harness：file cleanup、packet queue stop/cancel、D0 exit、hardware release 和同步 I/O stop 都先进入同一个 session/私有队列临界区；请求不挂起，不保留跨回调 WDFREQUEST；NetAdapterCx ring 指针只随其 WDF queue context 存活，不进入 session 或 Agent。模型穷举六类 teardown 的全部 720 种顺序，并分别验证取消胜出和完成胜出，因此每个活动请求只归属一次完成路径。睡眠、移除和 Agent cleanup 均断链并清空 owner/包状态；恢复后旧 owner 不会自动复活，必须重新打开并协商。该 harness 只验证锁内状态和动作幂等，不模拟 WDF 对象引用、真实线程调度、PnP/power 回调顺序或 Windows 网络栈。
 
-`apps/agent/src/windows_xsnet.rs` 实现无 `unsafe` 的 Agent 侧 ABI 客户端模型：固定 IOCTL、头和批次编码与 C 合约向量互校，单飞请求在成功后才提交 sequence/状态/Attach 参数；明确驱动拒绝保持原状态并允许同 sequence 重试，传输结果不确定则进入 `ReconnectRequired`，禁止猜测 sequence。TX 响应重新执行精确头、MTU、深度、连续描述符和 IPv4 校验。当前模块未接入 Windows 设备枚举或 `DeviceIoControl`，后者仍需独立、最小且可审计的平台 transport 与 Windows 构建门禁。
+`apps/agent/src/windows_xsnet.rs` 实现无 `unsafe` 的 Agent 侧 ABI 客户端模型和 `XsnetDeviceSession`：固定 IOCTL、头和批次编码与 C 合约向量互校，单飞请求在成功后才提交 sequence/状态/Attach 参数；明确驱动拒绝保持原状态并允许调用方显式决定是否重试，传输结果不确定则进入 `ReconnectRequired`，禁止猜测 sequence。会话启动严格执行 Hello/Attach/SetLink，TX 输出容量由协商 MTU/深度推导，每个收发方法只执行一个有界请求，shutdown 按 LinkDown/Detach 排序且不在 Drop 中执行 I/O。TX 响应重新执行精确头、MTU、深度、连续描述符和 IPv4 校验。
 
-安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。首版 Win32 transport 的句柄、同步 I/O、buffer 映射、错误分类和 `unsafe` 隔离规则固定在 `docs/WINDOWS_XSNET_TRANSPORT.md`。当前主机没有 Windows Rust 标准库或可交叉验证的 Win32 环境，因此不提交无法编译的 FFI 实现。
+安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。隔离 `no_std + alloc` Win32 transport 已通过 `x86_64-pc-windows-msvc` core/alloc 构建和交叉 Clippy，使用唯一接口、独占同步 handle、六个 IOCTL 和五个受限 `unsafe` 块。完整 Agent 仍缺少 Windows SDK/WDK 链接与 VM 证据；空 TX/满 RX 的失败结果当前不能安全映射为 Rejected，因此会话适配层不接入运行时，不添加后台轮询或自动重试。完整边界见 `docs/WINDOWS_XSNET_TRANSPORT.md`。
 
 ## 6. 队列和资源上限
 

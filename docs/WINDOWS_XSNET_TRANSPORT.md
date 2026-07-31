@@ -2,7 +2,7 @@
 
 ## Status
 
-The safe transport contract is implemented in `apps/agent/src/windows_xsnet.rs`. The isolated `no_std + alloc` Win32 boundary is implemented in `crates/windows-transport` and compiles for `x86_64-pc-windows-msvc` with `windows-sys`; the Agent adapter maps it to `XsnetTransport`. This is source and cross-target compile evidence only: the complete Agent is not linked for Windows, and no device, WDK, VM, cancellation, PnP, or packet I/O has executed.
+The safe transport contract and fail-closed `XsnetDeviceSession` adapter are implemented in `apps/agent/src/windows_xsnet.rs`. The isolated `no_std + alloc` Win32 boundary is implemented in `crates/windows-transport` and compiles for `x86_64-pc-windows-msvc` with `windows-sys`; the Agent adapter maps it to `XsnetTransport`. This is source, Linux test, and cross-target compile evidence only: the complete Agent is not linked for Windows, the session adapter is not enabled by the runtime, and no device, WDK, VM, cancellation, PnP, or packet I/O has executed.
 
 Runtime version and package replacement rules are defined in `WINDOWS_XSNET_COMPATIBILITY.md`. The current transport contract is eligible only for exact ABI v1; no cross-ABI fallback or hot upgrade is implied.
 
@@ -30,6 +30,14 @@ The existing Agent crate remains `#![forbid(unsafe_code)]`. The transport crate 
 
 The first release must not use overlapped I/O, completion ports, shared memory, background retries, or a writable mapped ring. Those mechanisms require a new cancellation and ownership design before implementation.
 
+## Agent session adapter
+
+`XsnetDeviceSession` owns exactly one `XsnetClient` and one transport. Startup validates MTU and both queue depths before I/O, derives the TX output capacity from the negotiated MTU and depth, and executes exactly one Hello, Attach, and SetLink-up request. Each data method executes exactly one bounded TX dequeue or RX enqueue request; it does not split, loop, sleep, or retry. A definitive rejection preserves state and sequence for an explicit caller decision, while an indeterminate result or malformed successful response poisons the session and requires handle replacement.
+
+Shutdown sends SetLink-down only from LinkUp and then one Detach. Repeated shutdown from Negotiated sends only another idempotent Detach. No destructor performs I/O, and no background worker owns or silently reopens the handle.
+
+The adapter is intentionally not connected to `runtime.rs`. The current driver reports empty TX and full RX as failed synchronous requests, while the initial Win32 boundary conservatively classifies every failed `DeviceIoControl` as Indeterminate. Mapping translated Win32 errors to authoritative no-commit rejections without WDK/VM evidence would violate the sequence contract; polling would therefore poison a healthy idle session. Runtime enablement requires the rejection and cancellation matrix in the required validation section, not a speculative retry loop.
+
 ## Buffer mapping
 
 - Hello, Attach, SetLink, and Detach use the canonical framed message as the buffered input and require zero output bytes.
@@ -55,6 +63,7 @@ Before the Win32 transport can be enabled by the Windows runtime, all of the fol
 - repeat the completed unsafe source audit in the pinned Windows build environment;
 - run ABI/IOCTL fixed vectors against the built driver;
 - inject every documented driver rejection and verify sequence reuse only for proven no-commit statuses;
+- prove the exact empty-TX and full-RX Win32 results, then define a bounded wakeup or explicit-rejection strategy without background retry ambiguity;
 - cancel and remove the device around every IOCTL and verify reconnect without double completion;
 - run Agent crash, sleep/resume, network switch, repeated install/uninstall, and Driver Verifier in a snapshot VM;
 - confirm ordinary physical networking remains available without the Agent and after every failure.
