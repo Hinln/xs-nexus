@@ -221,6 +221,29 @@ def validate_portable_tests() -> None:
     )
 
 
+def validate_agent_client() -> None:
+    require_text(
+        ROOT / "apps" / "agent" / "src" / "windows_xsnet.rs",
+        [
+            "const ABI_MAGIC: u32 = 0x314e_5358;",
+            "const DEVICE_TYPE: u32 = 0x8337;",
+            "pub struct XsnetClient",
+            "ClientState::ReconnectRequired",
+            "complete_rejected",
+            "complete_indeterminate",
+            "decode_transmit_response",
+            "encode_packet_batch",
+            "constants_and_header_match_driver_contract",
+            "0x8337_e00e",
+            "0x8337_e011",
+        ],
+    )
+    require_text(
+        ROOT / "apps" / "agent" / "src" / "lib.rs",
+        ["pub mod windows_xsnet;"],
+    )
+
+
 def main() -> int:
     try:
         validate_project()
@@ -228,6 +251,7 @@ def main() -> int:
         validate_ioctl()
         validate_sources()
         validate_portable_tests()
+        validate_agent_client()
     except (AssertionError, OSError, element_tree.ParseError) as error:
         print(f"xsnet source validation failed: {error}", file=sys.stderr)
         return 1

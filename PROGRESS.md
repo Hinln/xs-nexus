@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 01:41 UTC
-当前 Git 提交：M6.1 生命周期交错检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 01:53 UTC
+当前 Git 提交：M6.1 Windows Agent ABI 客户端检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -92,18 +92,19 @@
 - 已实现 NetAdapterCx 有界 ring 复制、同步 direct-I/O 请求、双队列 SetLink 门禁、协商深度限制和停止/取消断链，并加入快照测试 VM 专用的严格安装/卸载脚本；Windows 源码和脚本均未执行真实 WDK/设备操作。
 - 固定种子压力测试分别执行 30,000 轮任意消息、写入、批次、会话和队列操作，并对六类有效消息逐字节变异；2026-07-31 三轮严格回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`。
 - 生命周期 harness 穷举 cleanup、双队列 cancel、D0 exit、hardware release 和 I/O stop 的全部 720 种顺序，验证取消/完成单次归属、睡眠后重新认证、队列重启和重复 teardown 幂等；三轮证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`。
+- Rust Agent 侧 ABI 客户端完成固定 IOCTL/字节布局、单飞请求、成功后提交、已知拒绝重试、不确定结果强制重连及 TX/RX 规范 IPv4 批次校验；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`，尚未实现 Windows API transport。
 
 ## 当前工作点
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力和 teardown 交错模型；下一步继续完成 Windows Agent ABI 客户端；
+- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型和 Rust Agent ABI 客户端；下一步准备最小 Windows transport/构建边界；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 
 ## 下一步
 
-1. 补充 Windows Agent ABI 客户端与失败恢复测试；
+1. 设计最小 Windows 设备 transport 与安全 `unsafe` 隔离边界；
 2. 准备 WDK 测试签名命令和 VM 验收脚本，但不声称 Linux 能编译驱动；
 3. 复核安装升级期间的 Agent/driver 版本兼容和回滚边界；
 4. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
@@ -120,11 +121,11 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 
 ## 最近测试
 
-- 时间：2026-07-31 01:41 UTC；
+- 时间：2026-07-31 01:53 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：连续三轮 `make test-windows-xsnet-source && make test-windows-xsnet-abi && make test-windows-xsnet-installer`，随后秘密扫描与宿主边界复核；
+- 命令：`make test-unit`、`make test-agent-control`、Agent 全目标 Clippy、Windows 源码/ABI/安装器门禁和秘密扫描；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
+- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`；
 - 覆盖：UMDF/INF/IOCTL 源码不变量、五组 Clang Release 严格告警测试、五组 GCC ASan/UBSan 测试、720 种 teardown 交错、测试安装器不变量、秘密扫描、Git whitespace、精确 namespace/TUN 残留、默认路由、nftables、失败服务和只读 `1panel-network` 属性复核。
 
 ## 当前失败
@@ -138,6 +139,7 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 - 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence、单 owner、协商顺序、MTU/队列、link、批次和 cleanup 负向测试，以及有界队列的原子入队、背压、小输出、部分出队、环绕和 payload 清零；
 - 压力覆盖：固定种子每域 30,000 轮任意输入或状态操作，所有失败会话操作逐字段保持原状态，失败队列操作保持元数据和完整 64 槽字节，六类有效消息逐字节变异；
 - 生命周期覆盖：单一 wait lock 语义下穷举六类 teardown 的 720 种顺序，验证 cleanup、queue cancel、I/O stop、睡眠和移除的断链、单次请求结算与幂等恢复；不冒充 WDF/VM 实测；
+- Agent 客户端覆盖：6 个 Rust 测试验证 ABI/IOCTL 固定向量、单飞、成功提交、拒绝重试、未知结果强制重连、规范批次和畸形响应失败关闭；
 - 当前实现：有界 IPv4 队列、TX 空请求/RX framed 请求、同步 direct-I/O、协商深度、SetLink 门禁与 NetAdapterCx TX/RX 系统缓冲区复制源码已完成；Windows 部分尚未经过 WDK 编译或执行；
 - 测试安装准备：已加入只面向快照 VM 的 PowerShell 安装/卸载脚本，固定 signer thumbprint、Microsoft-signed WDK DevGen、精确状态回滚和残留拒绝；尚未在 Windows 执行；
 - 安装器验证：`make test-windows-xsnet-installer` 通过，本地 Windows PowerShell parser 对三份脚本零语法错误；未运行设备安装、卸载或签名命令；

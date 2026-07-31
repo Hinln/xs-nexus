@@ -236,6 +236,7 @@
 - 本地 Windows PowerShell parser 已对模块、安装和卸载脚本执行零语法错误解析；未调用脚本、PnPUtil、DevGen 或设备 API，该结果不能替代 PowerShell 7.4/WDK VM 执行；
 - 2026-07-31 连续三轮源码门禁、四组 Release/ASan/UBSan 测试和安装器门禁均通过；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`；
 - 生命周期模型加入后再次连续三轮通过五组 Release/ASan/UBSan、源码与安装器门禁；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
+- `apps/agent/src/windows_xsnet.rs` 的 6 个测试覆盖 C ABI/IOCTL 固定向量、完整 Hello/Attach/SetLink/TX 流程、规范 IPv4 批次、单飞请求、已知拒绝复用 sequence、未知结果强制重连和畸形响应失败关闭；完整 workspace 单测、真实 PostgreSQL Agent 控制面、Clippy、五组 C 测试和安装器门禁证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`；
 - 当前结果只证明平台无关模型和源码文本不变量；direct-I/O 与 ring 代码未由 WDK 编译或执行。MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---

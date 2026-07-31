@@ -92,6 +92,8 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `tests/lifecycle_test.c` 以驱动当前锁序建立可移植生命周期 harness：file cleanup、packet queue stop/cancel、D0 exit、hardware release 和同步 I/O stop 都先进入同一个 session/私有队列临界区；请求不挂起，不保留跨回调 WDFREQUEST；NetAdapterCx ring 指针只随其 WDF queue context 存活，不进入 session 或 Agent。模型穷举六类 teardown 的全部 720 种顺序，并分别验证取消胜出和完成胜出，因此每个活动请求只归属一次完成路径。睡眠、移除和 Agent cleanup 均断链并清空 owner/包状态；恢复后旧 owner 不会自动复活，必须重新打开并协商。该 harness 只验证锁内状态和动作幂等，不模拟 WDF 对象引用、真实线程调度、PnP/power 回调顺序或 Windows 网络栈。
 
+`apps/agent/src/windows_xsnet.rs` 实现无 `unsafe` 的 Agent 侧 ABI 客户端模型：固定 IOCTL、头和批次编码与 C 合约向量互校，单飞请求在成功后才提交 sequence/状态/Attach 参数；明确驱动拒绝保持原状态并允许同 sequence 重试，传输结果不确定则进入 `ReconnectRequired`，禁止猜测 sequence。TX 响应重新执行精确头、MTU、深度、连续描述符和 IPv4 校验。当前模块未接入 Windows 设备枚举或 `DeviceIoControl`，后者仍需独立、最小且可审计的平台 transport 与 Windows 构建门禁。
+
 ## 6. 队列和资源上限
 
 - 每方向最多 64 个待处理包和 1 MiB Agent 请求；

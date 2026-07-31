@@ -572,3 +572,15 @@
 - 原因：有限状态交错能在 Linux Release 与 ASan/UBSan 中持续验证 fail-closed、单次完成和幂等不变量，同时明确隔离无法模拟的 WDF 调度、对象引用与 Windows 网络栈。
 - 代价：模型依赖当前单锁和同步 I/O 架构；若以后引入挂起请求、多个锁或共享环，必须先重写模型和锁序证明。即使 720 种顺序全部通过，仍不能替代 WDK 编译、Driver Verifier、Agent crash、PnP/power 或睡眠实测。
 - 安全影响：teardown 任意顺序都不能保留活动 link、重复完成请求或自动复活旧 owner；真实 WDF 对象生命周期和回调竞态继续由 `BLK-001` 人工门禁阻塞。
+
+---
+
+## ADR-049：Windows Agent 先实现纯 Rust ABI 提交模型，平台 transport 独立门禁
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：workspace 全局禁止 `unsafe`，当前 Linux 主机也没有 Windows SDK；直接加入无法编译验证的 Win32 FFI 会绕过既有安全门禁，但 Agent 仍需先固定 sequence、失败恢复和批次边界。
+- 决策：先实现无 `unsafe` 的纯 Rust `XsnetClient`，固定 C ABI/IOCTL 向量并把请求分为成功、明确拒绝和结果不确定三类；只有成功提交状态和 sequence，明确拒绝可原 sequence 重试，未知结果必须重开 handle。设备枚举、句柄 ACL 验证和 `DeviceIoControl` 放入后续独立最小 transport，不在当前模块伪实现。
+- 原因：协议状态和不可信字节可在现有主机完整测试、Clippy 和真实 Agent 回归中验证，同时把未来 FFI 审计面限制为无策略 transport。
+- 代价：当前 Windows Agent 仍不能打开设备或收发包，M6.1/M6.2 和 `ACCEPTANCE.md` K 项不完成；未来 transport 必须证明取消、overlapped/sync 语义和句柄恢复与本模型一致。
+- 安全影响：不确定结果绝不猜测驱动 sequence，畸形响应不会提交客户端状态；Win32 `unsafe` 不扩散到协议和数据面逻辑。
