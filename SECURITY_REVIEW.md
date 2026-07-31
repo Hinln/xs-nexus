@@ -344,3 +344,9 @@
 - Console 与 db-tools 构建使用 `apk upgrade --no-cache`，旧扫描中带明确修复版本的 Alpine OpenSSL、expat、libxml2、curl/libcurl 等发现已从 fixable 集合移除。
 - 精确提交 `2eefae9` 的最终扫描只剩 Critical 2 和 High 6，Grype 当前未给出供应商修复版本。Controller/Relay 各为 glibc 1 Critical/2 High，Console 为 TIFF 2 High，db-tools 无 Critical/High。它们不是自动接受项，Release Candidate 前必须逐项确认可达性、供应商状态、基础镜像升级/替换方案和期限。
 - Controller/Relay 使用固定 digest distroless、无 shell/包管理器；Console 已移除 curl 及其反向依赖链。该最小化通过完整 Docker 生命周期，不依赖容器内调试 shell。
+## 12. Relay 指标数据最小化（2026-07-31）
+
+- 指标只包含全局累计计数、字节数和从进入内存队列到 UDP send 成功的时长；不包含 XSP/1 密文、业务明文、节点 ID、网络 ID、端点或 lease ID。
+- 丢弃按 invalid/authentication/replay/rate-limit/queue/destination/send 分类，并提供可审计总数；不把不可观测的公网 UDP 丢失推断为零或精确比例。
+- 延迟使用单调 `Instant`，只在完整 datagram 成功发送后提交样本；失败发送计入 drop 与 I/O error，不污染成功延迟。
+- 指标端点与 health listener 共用，Compose 不向宿主或公网发布该 TCP 端口；Controller 集成前仍需定义认证、采集边界和保留策略。

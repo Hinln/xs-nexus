@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 03:41 UTC
-当前 Git 提交：M6.1 Agent 单步设备会话检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 18:57 UTC
+当前 Git 提交：`b80d780ab2788f9913b4b80997a220c099c40f0f`（以本文件后续文档提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -238,4 +238,12 @@ make clean
 - 新镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z`；绑定精确提交与四个 image ID，双生成一致，宿主 Docker/网络/默认路由/nftables 不变。
 - 后续最小化提交：`f50b08f`、`d6db189`、`2eefae9`。Controller/Relay 已切换到固定 digest distroless，Console 删除 curl 包链，证据生成器严格支持 distroless `status.d` 包元数据。
 - 最终证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z`。Grype 0.116.1 总计 Critical 2、High 6、Medium 18、Negligible 24，`total_fixable_findings` 为空。最初扫描为 Critical 44、High 115；当前可修复项已清零，但残余发现未获豁免。
+
+## 2026-07-31 最新 M6.1 与 Relay 遥测回归
+
+- 最新 M6.1 聚合验证绑定提交 `9559b398aabdf5f5bce311a1311aa43f648e3bcb`，证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`；Windows 路由事务、IP Helper 源码、可信 LUID、Agent 准备编排、MSVC target check、C Release/ASan/UBSan、workspace/控制面/供应链门禁全部通过。仍不代表 WDK 或 Windows 实机结果。
+- 聚合验证先捕获健康检查测试对单次 TCP read 的错误假设，失败证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T183943Z`；测试服务器改为有界读取完整 HTTP 头后通过，没有放宽产品断言。
+- Relay `/metrics` 现在公开有界累计接收/转发包和字节、分类丢弃总数、I/O 错误，以及队列转发延迟样本、平均微秒和最大微秒；不记录业务内容、节点身份或 payload。
+- 最新 M2.3 聚合验证绑定提交 `b80d780ab2788f9913b4b80997a220c099c40f0f`，证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`；真实双 Relay fallback/failover/Direct 恢复测试同时断言字节、丢弃和延迟指标。
+- 首轮 M2.3 在全部功能测试通过后因 Compose validator 缺少强制 revision 输入失败，证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185001Z`；验证器补齐完整测试专用变量后原样重跑通过。
 - 下一项不受外部门禁的工作：对 2 个 glibc Critical、4 个 glibc High 与 2 个 TIFF High 形成可审计 disposition，并持续检查受支持基础镜像更新；Windows runtime 接入继续由 `BLK-001` 阻塞。

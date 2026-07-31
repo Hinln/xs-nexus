@@ -353,3 +353,9 @@
 - distroless/Console 进一步最小化后再次运行完整 Docker 生命周期：通过；无 shell 的 Controller/Relay 仍能迁移、启动、健康检查和回滚。
 - distroless `status.d` 正向解析、普通 Debian status、md5sums 排除和不完整身份负向测试：通过。
 - 最终供应链证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z`：通过；最终 Critical 2、High 6，当前可修复项为 0。
+## 10. Relay 可观测性回归（2026-07-31）
+
+- 单元测试验证接收/转发字节、分类与总丢弃、发送 I/O 错误、延迟样本/平均/最大值的稳定快照。
+- 真实 UDP Relay 测试验证认证注册、逐字节密文转发、重放和端点伪造拒绝后，指标与实际事件一致。
+- `test-agent-relay.sh` 在双 Relay fallback、主 Relay 故障切换和 Direct 恢复场景中从真实 `/metrics` 断言 `packets_received`、`bytes_received`、`packets_forwarded`、`bytes_forwarded`、`forwarding_latency_samples` 和 `packets_dropped`。
+- 完整命令：`make validate-m23`；结果通过；证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`。

@@ -107,8 +107,10 @@
 - [x] MUST：防反射放大。
 - [x] MUST：多 Relay。
 - [x] MUST：健康检查。
-- [ ] MUST：监控字节、延迟、丢包和错误。
+- [x] MUST：监控字节、延迟、丢包和错误。
 - [x] MUST：不记录业务内容。
+
+证据：Relay `/metrics` 提供接收/转发字节、分类与总丢弃、I/O 错误、队列转发延迟样本/平均/最大值；真实双 Relay fallback、密文、failover 和 Direct 恢复聚合证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`。这里的“丢包”仅指 Relay 可观测的协议、认证、重放、限速、队列、目的地和发送丢弃，不伪称测得公网链路中不可观测的 UDP 丢失。
 
 ---
 
