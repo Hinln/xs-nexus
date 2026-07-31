@@ -258,3 +258,15 @@
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final` 验证 321 个 Cargo、110 个 npm、许可证策略、禁用依赖、确定性双格式输出和宿主基线不变。
 - 计划：在 M7.2/M9.1 对每个 digest 固定的最终镜像生成 OS 包 SBOM、许可证文本集合、漏洞报告和构建来源证明，并与源码 SBOM 合并到发布清单。
 - 解除条件：所有最终镜像 digest、OS 包、应用依赖、许可证文本、漏洞处置和来源证明可从固定提交重建并由 Release Checklist 验证。
+
+---
+
+## KI-020 Windows 路由管理尚未接入 IP Helper 和 DAD
+
+- 严重度：高
+- 状态：开放
+- 首次发现：2026-07-31
+- 影响：当前只有平台无关的精确所有权与 additions-first 事务模型，不能读取、创建或删除 Windows 地址/路由，也不能证明虚拟地址完成 DAD；Agent runtime 不得据此宣称 Windows 网络已可用。
+- 临时缓解：新 crate 不接入 runtime，不包含系统写入或 unsafe；默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭。
+- 计划：隔离 IP Helper FFI，确保 `GetIpForwardTable2` 表无条件释放，验证 LUID、规范前缀、on-link 下一跳、metric 和精确删除；实现非持久地址创建、DAD 等待、有界超时、失败补偿、manifest 原子持久化和 rollback 失败显式结果。
+- 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。

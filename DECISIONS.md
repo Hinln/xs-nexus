@@ -692,3 +692,15 @@
 - 原因：固定名称消除配置注入，复用 Agent shutdown 保持 console/service 行为一致；一次性通知无轮询、sleep 或后台重试，状态锁关闭 STOP/RUNNING 竞争；安装事务、服务身份和运行时生命周期分离后，可由未来签名安装器独立实现与回滚。
 - 代价：最小 MSVC target check 不能证明 SCM callback 线程、30 秒 wait hint、LocalSystem token、事件日志、关机顺序或重复启停；完整 Agent 仍因缺少 Windows SDK 无法链接，服务创建、升级和卸载尚未实现。
 - 安全影响：Agent 保持无 unsafe；无效名称、重复初始化、锁毒化、dispatcher 失败、panic 和 runtime 失败均失败关闭。当前源码准备不完成 M6.1/M6.2，真实 SCM、LocalSystem、ACL 和卸载零残留继续由 `BLK-001` 门禁。
+
+---
+
+## ADR-059：Windows 路由先建立可验证的精确所有权事务模型
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Windows IP Helper 路由表属于全局主机状态。若只按前缀删除、先删后加、允许默认路由或把任意同接口路由视为项目所有，配置失败可能破坏普通网络；原生表还必须在有界复制后由 `FreeMibTable` 释放。
+- 决策：新增隔离 `xs-windows-route-manager` crate。项目路由固定非零 interface LUID、规范 IPv4 `/1..=/30`、on-link `0.0.0.0` 下一跳和 metric 32；拒绝默认、保留和任何非项目系统路由重叠。可信 manifest 必须与系统中的精确 route key 和项目所有权同时一致。reconcile 只生成 additions-first 计划，创建失败按逆序精确补偿，全部添加成功后才删除 manifest 中不再需要的精确旧路由；系统表超过 4096 条失败关闭。
+- 原因：把所有权、冲突和事务顺序做成纯安全 Rust，可在接触 IP Helper FFI 前穷举失败边界，并阻止后续平台层使用模糊前缀或接口级清理。
+- 代价：当前只完成事务核心，尚未实现 `GetIpForwardTable2`、`CreateIpForwardEntry2`、`DeleteIpForwardEntry2`、地址 DAD、manifest 持久化或 Windows 执行；不能描述为真实路由管理。
+- 安全影响：默认路由、外部路由重叠、所有权漂移、重复记录、零 LUID 和无界系统快照均在任何系统写入前被拒绝。真实 FFI 必须保持表释放、精确错误映射和 rollback 失败显式上报。

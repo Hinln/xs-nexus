@@ -3274,6 +3274,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "xs-windows-route-manager"
+version = "0.1.0"
+dependencies = [
+ "ipnet",
+]
+
+[[package]]
 name = "xs-windows-service"
 version = "0.1.0"
 dependencies = [

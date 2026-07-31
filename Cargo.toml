@@ -8,6 +8,7 @@ members = [
   "crates/protocol",
   "crates/windows-local-ipc",
   "crates/windows-private-storage",
+  "crates/windows-route-manager",
   "crates/windows-service",
   "crates/windows-transport",
 ]

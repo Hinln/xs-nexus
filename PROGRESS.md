@@ -116,6 +116,8 @@
 
 ## 当前工作点
 
+- Windows 路由管理准备已开始：新增隔离 `xs-windows-route-manager` 事务核心，固定 LUID/on-link/metric、4096 条系统表上限、外部重叠拒绝、manifest 精确所有权、additions-first 与逆序补偿；5 个单测和 Clippy 通过。尚无 IP Helper FFI、地址 DAD、持久化或 runtime 接入。
+
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
 - M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器、私有存储和 Service/SCM 边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步是不依赖实机的 Windows 路由管理准备，以及完整 Agent Windows 编译链接与 VM 执行，当前缺少 Windows SDK/WDK/VM；
@@ -125,7 +127,7 @@
 
 ## 下一步
 
-1. 继续实现不依赖实机的 Windows 路由管理边界；获得 Windows SDK 环境后编译链接完整 Agent，并复核隔离 unsafe、SCM 停止、命名管道/存储 DACL、句柄 ABI 和同步阻塞边界；
+1. 为 Windows 路由事务核心增加隔离 IP Helper FFI：有界复制 `GetIpForwardTable2` 并无条件 `FreeMibTable`，精确 Create/Delete、地址创建与 DAD 状态读取；获得 Windows SDK 环境后编译链接完整 Agent；
 2. 获得 Windows VM 后执行设备枚举、六 IOCTL、空 TX/满 RX 精确状态、取消、WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
 3. 只有权威 no-commit 映射或显式唤醒协议得到证据后，才把有界 Windows 包调度接入 Agent runtime；
 4. 在 VM 中验证 exact ABI 拒绝、重复 clean install 和快照回滚，再设计生产升级事务；
