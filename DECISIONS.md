@@ -596,3 +596,15 @@
 - 原因：保守分类防止在驱动可能已提交后复用 sequence；同步所有权与当前驱动一次完成模型一致，并把未来审计面限制为设备枚举、handle 和六个 IOCTL。
 - 代价：部分本可安全重试的 OS 错误首版也会重连；没有 Windows 编译环境前只完成契约和规范，不声称可打开设备。
 - 安全影响：任何模糊失败和畸形成功响应都会关闭逻辑会话，旧 sequence 不跨 handle；无依据的错误码映射不能绕过该规则。
+
+---
+
+## ADR-051：Windows 测试包与 VM 验收采用显式工具链和不可复用分阶段证据
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：当前 Linux 主机无法执行 WDK、测试签名或 Driver Verifier，但等待 VM 后再临时拼接命令会扩大误签名、误装到日常电脑、自动重启丢证和把部分结果误报为验收的风险。
+- 决策：测试包构建必须显式传入 Microsoft-signed MSBuild、InfVerif、Inf2Cat 和 SignTool，使用 Release x64、`SignMode=Off`、InfVerif `/w /v`，先嵌入签名 DLL、再生成 `10_GE_X64` catalog、最后签名 catalog，并使用显式 SHA-256 test signer 和全新输出目录。VM 验收拆成 Initialize、Install、EnableVerifier、CollectVerifier、DisableVerifier、Uninstall 六个不可复用阶段；要求 Windows 11 26100+、管理员、可识别虚拟机、同一快照声明和 Verifier 前后人工重启，最终对证据文件生成 SHA-256 清单。
+- 原因：工具来源、包内容、设备状态、重启边界和证据完整性都可独立失败关闭；不自动重启使崩溃、网络和 Verifier 结果能在继续前人工保存，阶段目录也不会覆盖首次失败。
+- 代价：脚本不能替代快照 API、场景测试或人工确认，执行步骤更多；快照 ID 只是操作员断言，正式 M6.2 仍必须补充互通、睡眠、网络切换、Agent crash、异常 IOCTL、蓝屏和重复安装证据。
+- 安全影响：脚本不下载工具、不创建证书、不修改 BCD/信任/测试签名策略、不自动重启、不删除未知设备或驱动包，也不把 CollectVerifier 描述为验收通过；正式签名和生产安装器继续由独立门禁处理。

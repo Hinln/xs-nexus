@@ -178,7 +178,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更�
 - [ ] MUST：Agent 崩溃不破坏普通网络。
 - [ ] MUST：未完成项目不可标记完成。
 
-当前仅有平台无关 ABI/会话/有界 IPv4 队列、任意输入压力和 720 种 teardown 交错模型测试，以及 UMDF 源码不变量、测试安装器静态检查和 PowerShell 语法解析。源码已加入同步 direct-I/O、SetLink 双队列门禁和系统缓冲区 TX/RX ring 复制；测试安装器尚未操作任何设备。生命周期 harness 不等于 Agent crash、PnP/power 或 WDF 调度实测；`xsnet.vcxproj`、INF、DriverEntry、file object、IOCTL、PnP/power 与 ring API 尚未经过 WDK、InfVerif、签名或 VM；所有 K 项保持未勾选。Windows 10 官方支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
+当前仅有平台无关 ABI/会话/有界 IPv4 队列、任意输入压力和 720 种 teardown 交错模型测试，以及 UMDF 源码不变量、测试安装器、测试包构建与六阶段 VM 编排静态检查和 PowerShell 语法解析。源码已加入同步 direct-I/O、SetLink 双队列门禁和系统缓冲区 TX/RX ring 复制；构建脚本固定 MSBuild Release x64、InfVerif `/w /v`、Inf2Cat `10_GE_X64`、SHA-256 test signing 和精确三文件包；VM 编排固定快照声明、显式双重重启、Driver Verifier oneboot、系统基线、零残留与证据哈希。上述 PowerShell 均未执行设备、WDK 或 Verifier 操作，采证脚本也明确不声称场景验收。生命周期 harness 不等于 Agent crash、PnP/power 或 WDF 调度实测；`xsnet.vcxproj`、INF、DriverEntry、file object、IOCTL、PnP/power 与 ring API 尚未经过 WDK、InfVerif、签名或 VM；所有 K 项保持未勾选。Windows 10 官方支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
 
 ---
 

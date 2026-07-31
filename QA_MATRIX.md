@@ -238,6 +238,10 @@
 - 生命周期模型加入后再次连续三轮通过五组 Release/ASan/UBSan、源码与安装器门禁；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
 - `apps/agent/src/windows_xsnet.rs` 的 6 个测试覆盖 C ABI/IOCTL 固定向量、完整 Hello/Attach/SetLink/TX 流程、规范 IPv4 批次、单飞请求、已知拒绝复用 sequence、未知结果强制重连和畸形响应失败关闭；完整 workspace 单测、真实 PostgreSQL Agent 控制面、Clippy、五组 C 测试和安装器门禁证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`；
 - 第 7 个 transport 分类测试覆盖权威拒绝保留状态、不确定结果强制重连和畸形成功响应毒化；完整回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`。Win32 transport 仍未实现，`docs/WINDOWS_XSNET_TRANSPORT.md` 的设备枚举、同步 buffer 映射、取消和 `unsafe` 审计只能在 Windows 构建与 VM 中验收；
+- `scripts/windows/build-xsnet-test-package.ps1` 只在显式确认的 Windows 11 26100+ 管理员测试 VM 中运行，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先嵌入签名 DLL 再生成并签名 `10_GE_X64` catalog、SHA-256 test signer 和精确 INF/CAT/DLL allowlist；不修改 BCD、信任根或测试签名策略；
+- `scripts/windows/invoke-xsnet-test-vm-stage.ps1` 以 Initialize/Install/EnableVerifier/CollectVerifier/DisableVerifier/Uninstall 六个不可复用阶段保存系统、网卡、路由、设备、驱动、Verifier 和错误事件证据；要求相同 VM/快照声明、Verifier 前后两次人工重启、精确健康状态和卸载零残留，最终生成 SHA-256 证据清单；
+- `scripts/validate-windows-xsnet-vm.py` 禁止下载、BCD、执行策略绕过、自动重启、无限等待和验收伪声明；本地 Windows PowerShell parser 已对两份新增脚本零语法错误解析。以上仅证明源码门禁，未执行 WDK、签名、Verifier 或任何设备操作；
+- 测试包与 VM 工作流最终自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`，包含 ABI Release/ASan/UBSan、源码、安装器、VM 门禁、秘密扫描以及默认路由、规范化 nftables、完整 `1panel-network`、namespace/TUN 前后比较；
 - 当前结果只证明平台无关模型和源码文本不变量；direct-I/O 与 ring 代码未由 WDK 编译或执行。MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---

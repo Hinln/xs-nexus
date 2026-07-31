@@ -557,6 +557,8 @@
 - 安装和卸载脚本；
 - 未实机测试时明确标记。
 
+当前已完成跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、严格测试安装器、显式 MSBuild/InfVerif/Inf2Cat/SignTool 测试包构建脚本，以及六阶段快照 VM 采证编排。构建和 VM 脚本均仅通过静态门禁与本地 PowerShell 语法解析，未执行 WDK、签名、设备安装或 Driver Verifier；自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`，M6.1 保持 `IN_PROGRESS`，M6.2 保持 `BLOCKED_EXTERNAL`。
+
 ---
 
 ## M6.2 Windows 测试虚拟机验收

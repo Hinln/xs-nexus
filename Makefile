@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-docker-deployment test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-protocol-vectors test-spec test-network test-e2e test-visual security-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-docker-deployment test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-protocol-vectors test-spec test-network test-e2e test-visual security-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 release clean
 
 setup:
 >npm ci
@@ -80,6 +80,9 @@ test-windows-xsnet-source:
 
 test-windows-xsnet-installer:
 >./scripts/validate-windows-xsnet-installer.py
+
+test-windows-xsnet-vm-scripts:
+>./scripts/validate-windows-xsnet-vm.py
 
 test-protocol-vectors:
 >./scripts/test-protocol-vectors.sh

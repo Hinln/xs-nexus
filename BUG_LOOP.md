@@ -167,6 +167,9 @@ Bug 集中修复阶段只有满足以下条件才通过：
 
 ## M6.1 当前已闭环缺陷
 
+- 提交前差异审计发现测试包构建脚本先运行 Inf2Cat、随后才给 UMDF DLL 做嵌入签名，后签名会改变 DLL 并使 catalog 中的文件哈希失效；顺序改为先签 `xsnet.dll`、再生成 catalog、最后签 `xsnet.cat`，并在 Python 门禁中强制三者源码顺序，未把无效 catalog 留给 VM 阶段发现。
+- 新增测试包构建脚本首次 PowerShell 解析失败，因为双引号字符串中的 `$LASTEXITCODE:` 被解释为无效驱动器变量；改为 `${LASTEXITCODE}:` 后重新对全部新增脚本执行本机 PowerShell AST 解析，并加入独立源码门禁，未绕过错误或降低严格模式。
+- 首次 VM 工作流证据命令由 Windows PowerShell stdin 注入 UTF-8 BOM，远端 Bash 把 `set` 读成未知命令，且直接哈希 nftables 会因运行时计数器增长产生假变化；保留失败采证目录 `artifacts/qa/m6.1-vm-workflow-20260731T021028Z`，改用 base64 无 BOM 传输并对 nftables 删除 handle/packet/byte 计数后做结构比较，签名顺序修复后的最终证据 `artifacts/qa/m6.1-vm-workflow-20260731T021432Z` 通过。项目测试本身未跳过或放宽。
 - Windows Agent 客户端完整回归首次直接调用 `cargo test -p xs-agent`，绕过项目为真实 PostgreSQL 集成测试注入仓库外连接的 `scripts/test-agent-control.sh`，因此按设计因缺少 `XS_TEST_DATABASE_URL` 失败；改用 `Makefile` 正式入口 `make test-unit` 与 `make test-agent-control` 后真实控制面测试通过，未跳过或修改测试。
 - 新增生命周期测试首轮遗漏了仓库测试翻译单元统一使用的 `NDEBUG` 撤销，导致 Clang Release 假绿而 ASan/UBSan 实际执行断言并失败；补齐同一断言门禁并把模式加入源码验证器。随后穷举交错发现 queue cancel 胜出分支断链后仍保留活动请求；模型现将该分支单次取消，另保留 request completion 胜出分支验证不会重复取消，没有删除、跳过或弱化断言。
 - ABI 测试首次以 Release 构建时 `NDEBUG` 移除了标准 `assert`，使断言变量变成未使用并由 `-Werror` 阻止构建；测试翻译单元现显式重新启用断言，随后同一 Release 配置和 ASan/UBSan 配置均必须执行测试，不降级为 Debug-only。

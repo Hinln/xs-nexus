@@ -175,6 +175,9 @@ sudo ./installers/linux/xs-nexus-installer.sh rollback --version <已安装版�
 - 使用 `installers/windows/install-xsnet-test.ps1`，显式传入测试 signer thumbprint 和本机 WDK Microsoft-signed DevGen；DevGen 不随项目分发；
 - 安装失败脚本只回滚本次发现的 `Root\XSNET` 设备和精确 `oem#.inf`；
 - 正常卸载使用 `installers/windows/uninstall-xsnet-test.ps1`，残留设备或 driver-store package 会保留状态并返回失败；
+- 完整 VM 流程使用 `scripts/windows/invoke-xsnet-test-vm-stage.ps1`，同一运行目录依次执行 Initialize、Install、EnableVerifier、重启、CollectVerifier、DisableVerifier、重启、Uninstall；脚本不自动重启，也不验证快照是否真实存在；
+- Verifier 启用后若蓝屏、无法启动或普通网络异常，不继续执行安装脚本；保存 dump/事件后从已声明快照恢复。若能登录但测试中止，先执行 `verifier.exe /reset` 并重启，再使用精确状态卸载脚本；
+- 不手工删除未知设备、驱动包、网卡、路由或注册表项；自动卸载返回残留时保存运行目录和 `%ProgramData%\XS Nexus` 状态，恢复快照并登记 P0/P1；
 - 蓝屏后回滚快照；
 - 不在日常电脑执行首轮测试。
 

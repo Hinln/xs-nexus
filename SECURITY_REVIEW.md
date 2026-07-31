@@ -231,8 +231,11 @@
 - Rust Agent ABI 客户端只允许单飞请求；驱动明确拒绝时保持状态并复用同一 sequence，任何无法确定驱动是否已提交的传输结果都会毒化 handle 并要求重新打开。Attach 参数和 sequence 只在成功响应验证后提交，TX 响应再次校验固定头、精确长度、规范批次、协商 MTU/深度和原始 IPv4；当前没有 Windows API transport，不伪造 `DeviceIoControl` 执行证据；
 - `XsnetTransport` 隐藏请求字段并只提供只读 buffer 访问，将 OS 结果固定为 Success/Rejected/Indeterminate；只有具有权威未提交证明的状态才可 Rejected，首版 Win32 失败默认 Indeterminate。未来 `unsafe` 必须位于独立 target-specific 边界，不能降低 Agent 或 workspace 的全局禁用规则；完整规范见 `docs/WINDOWS_XSNET_TRANSPORT.md`；
 - 测试安装器只在管理员 Windows 11 26100+ 接受精确 INF/CAT/DLL、有效且匹配显式 thumbprint 的 signer 和本机 Microsoft-signed WDK DevGen；不下载或分发 DevGen，不修改 BCD/测试签名模式，不通过 ExecutionPolicy Bypass；状态 ACL 仅 LocalSystem/Administrators，卸载只操作记录的 ROOT instance 与 `oem#.inf`，残留失败关闭；
+- 测试包构建脚本要求全路径 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、有效私钥及 code-signing EKU、全新非重解析输出目录、Release x64、禁用工程自动签名、先签 DLL 再生成并签名 `10_GE_X64` catalog，以及显式 SHA-256 test signing；脚本不创建证书、不修改信任或 BCD，只输出精确三文件包、工具日志和哈希清单；
+- VM 编排要求管理员、Windows 11 26100+、可识别虚拟机、一次性运行目录和显式快照声明；各阶段不可覆盖，Verifier 使用 standard + oneboot，启用和禁用后都必须观察到人工重启，卸载前后要求精确设备/driver-store 状态。快照 ID 仅记录操作员断言，CollectVerifier 明确不包含场景结果或验收声明；
+- 测试包与 VM 工作流静态回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`；秘密扫描和 Linux 便携测试通过，宿主默认路由、去计数器 nftables 结构、完整 `1panel-network`、namespace 和 TUN 前后不变；该证据不包含 Windows 执行结果；
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
-- 2026-07-31 生命周期模型加入后连续三轮源码、五组 Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；direct-I/O、ring 和 PowerShell 安装器仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
+- 2026-07-31 生命周期模型加入后连续三轮源码、五组 Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；后续 transport 回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`。direct-I/O、ring 和全部 PowerShell 工作流仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 
 ---
 
