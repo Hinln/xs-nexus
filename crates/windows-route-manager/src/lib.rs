@@ -3,6 +3,7 @@
 use std::{collections::HashSet, net::Ipv4Addr};
 
 use ipnet::Ipv4Net;
+use serde::{Deserialize, Serialize};
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
@@ -27,12 +28,173 @@ pub enum DadState {
     Unknown(i32),
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RouteKey {
     pub prefix: Ipv4Net,
     pub interface_luid: u64,
     pub next_hop: Ipv4Addr,
     pub metric: u32,
+}
+
+pub const NETWORK_MANIFEST_SCHEMA: u8 = 1;
+pub const MAX_MANIFEST_BYTES: usize = 65_536;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestState {
+    Preparing,
+    Active,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkManifest {
+    pub schema_version: u8,
+    pub state: ManifestState,
+    pub interface_luid: u64,
+    pub address: Ipv4Addr,
+    pub prefix_length: u8,
+    pub routes: Vec<RouteKey>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManifestError {
+    Size,
+    Encoding,
+    Schema,
+    UnsafeAddress,
+    UnsafeRoute,
+    DuplicateRoute,
+    RouteOrder,
+    OwnershipDrift,
+}
+
+impl NetworkManifest {
+    /// Builds a canonical manifest for one exact interface/address/route ownership set.
+    ///
+    /// # Errors
+    ///
+    /// Rejects unsafe addresses, routes that do not match the LUID/project shape, duplicates, or
+    /// non-canonical route ordering.
+    pub fn new(
+        state: ManifestState,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+        routes: Vec<RouteKey>,
+    ) -> Result<Self, ManifestError> {
+        let manifest = Self {
+            schema_version: NETWORK_MANIFEST_SCHEMA,
+            state,
+            interface_luid,
+            address,
+            prefix_length,
+            routes,
+        };
+        manifest.validate()?;
+        Ok(manifest)
+    }
+
+    /// Serializes one validated manifest with a fixed maximum size.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid state, serialization failure, or output above [`MAX_MANIFEST_BYTES`].
+    pub fn encode(&self) -> Result<Vec<u8>, ManifestError> {
+        self.validate()?;
+        let bytes = serde_json::to_vec(self).map_err(|_| ManifestError::Encoding)?;
+        if bytes.len() > MAX_MANIFEST_BYTES {
+            return Err(ManifestError::Size);
+        }
+        Ok(bytes)
+    }
+
+    /// Parses and validates one bounded strict manifest.
+    ///
+    /// # Errors
+    ///
+    /// Rejects oversized input, unknown fields, trailing data, schema drift, and unsafe ownership.
+    pub fn decode(bytes: &[u8]) -> Result<Self, ManifestError> {
+        if bytes.is_empty() || bytes.len() > MAX_MANIFEST_BYTES {
+            return Err(ManifestError::Size);
+        }
+        let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+        let manifest = Self::deserialize(&mut deserializer).map_err(|_| ManifestError::Encoding)?;
+        deserializer.end().map_err(|_| ManifestError::Encoding)?;
+        manifest.validate()?;
+        Ok(manifest)
+    }
+
+    fn validate(&self) -> Result<(), ManifestError> {
+        if self.schema_version != NETWORK_MANIFEST_SCHEMA {
+            return Err(ManifestError::Schema);
+        }
+        if self.interface_luid == 0
+            || !(1..=30).contains(&self.prefix_length)
+            || !safe_host_address(self.address, self.prefix_length)
+        {
+            return Err(ManifestError::UnsafeAddress);
+        }
+        let mut previous = None;
+        let mut unique = HashSet::with_capacity(self.routes.len());
+        for route in &self.routes {
+            if !route.is_project_shape(self.interface_luid) {
+                return Err(ManifestError::UnsafeRoute);
+            }
+            if !unique.insert(*route) {
+                return Err(ManifestError::DuplicateRoute);
+            }
+            let order = route_order(route);
+            if previous.is_some_and(|value| value >= order) {
+                return Err(ManifestError::RouteOrder);
+            }
+            previous = Some(order);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryPlan {
+    pub routes: Vec<RouteKey>,
+    pub delete_address: bool,
+}
+
+/// Builds an exact cleanup plan from a trusted manifest and current bounded system snapshot.
+///
+/// # Errors
+///
+/// Rejects manifest drift and any system route overlapping a recorded prefix unless it is the
+/// exact project-owned route key. Missing recorded resources are safe and require no broad cleanup.
+pub fn plan_recovery(
+    manifest: &NetworkManifest,
+    system: &[SystemRoute],
+    exact_address_present: bool,
+) -> Result<RecoveryPlan, ManifestError> {
+    manifest.validate()?;
+    if system.len() > MAX_SYSTEM_ROUTES {
+        return Err(ManifestError::Size);
+    }
+    let mut routes = Vec::new();
+    for recorded in &manifest.routes {
+        for current in system
+            .iter()
+            .filter(|current| overlaps(current.key.prefix, recorded.prefix))
+        {
+            if current.key == *recorded && current.project_owned {
+                routes.push(*recorded);
+            } else {
+                return Err(ManifestError::OwnershipDrift);
+            }
+        }
+    }
+    routes.sort_by_key(route_order);
+    routes.dedup();
+    Ok(RecoveryPlan {
+        routes,
+        delete_address: exact_address_present,
+    })
 }
 
 impl RouteKey {
@@ -384,6 +546,18 @@ fn overlaps(left: Ipv4Net, right: Ipv4Net) -> bool {
     left.contains(&right.network()) || right.contains(&left.network())
 }
 
+fn safe_host_address(address: Ipv4Addr, prefix_length: u8) -> bool {
+    let Ok(network) = Ipv4Net::new(address, prefix_length) else {
+        return false;
+    };
+    address != network.network()
+        && address != network.broadcast()
+        && !address.is_unspecified()
+        && !address.is_loopback()
+        && !address.is_link_local()
+        && !address.is_multicast()
+}
+
 fn reserved(prefix: Ipv4Net) -> bool {
     [
         "0.0.0.0/8",
@@ -468,6 +642,17 @@ mod tests {
 
     fn prefix(value: &str) -> Ipv4Net {
         value.parse().expect("valid prefix")
+    }
+
+    fn manifest(routes: Vec<RouteKey>) -> NetworkManifest {
+        NetworkManifest::new(
+            ManifestState::Preparing,
+            7,
+            Ipv4Addr::new(100, 88, 0, 10),
+            16,
+            routes,
+        )
+        .expect("manifest")
     }
 
     #[test]
@@ -716,6 +901,97 @@ mod tests {
                 },
                 address_cleanup: Some("address-cleanup"),
             })
+        );
+    }
+
+    #[test]
+    fn manifest_round_trip_is_strict_and_bounded() {
+        let route = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("route");
+        let manifest = manifest(vec![route]);
+        let bytes = manifest.encode().expect("encode");
+        assert_eq!(NetworkManifest::decode(&bytes), Ok(manifest));
+        let mut unknown = bytes;
+        unknown.pop();
+        unknown.extend_from_slice(br#",\"unknown\":true}"#);
+        assert_eq!(
+            NetworkManifest::decode(&unknown),
+            Err(ManifestError::Encoding)
+        );
+        assert_eq!(
+            NetworkManifest::decode(&vec![b'x'; MAX_MANIFEST_BYTES + 1]),
+            Err(ManifestError::Size)
+        );
+    }
+
+    #[test]
+    fn manifest_rejects_unsafe_address_and_unsorted_routes() {
+        let first = RouteKey::project(prefix("192.168.20.0/24"), 7).expect("first");
+        let second = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("second");
+        assert_eq!(
+            NetworkManifest::new(
+                ManifestState::Preparing,
+                7,
+                Ipv4Addr::new(100, 88, 0, 0),
+                24,
+                Vec::new(),
+            ),
+            Err(ManifestError::UnsafeAddress)
+        );
+        assert_eq!(
+            NetworkManifest::new(
+                ManifestState::Preparing,
+                7,
+                Ipv4Addr::new(100, 88, 0, 10),
+                16,
+                vec![first, second],
+            ),
+            Err(ManifestError::RouteOrder)
+        );
+    }
+
+    #[test]
+    fn recovery_deletes_only_exact_recorded_resources() {
+        let route = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("route");
+        let manifest = manifest(vec![route]);
+        assert_eq!(
+            plan_recovery(
+                &manifest,
+                &[SystemRoute {
+                    key: route,
+                    project_owned: true,
+                }],
+                true,
+            ),
+            Ok(RecoveryPlan {
+                routes: vec![route],
+                delete_address: true,
+            })
+        );
+        assert_eq!(
+            plan_recovery(&manifest, &[], false),
+            Ok(RecoveryPlan {
+                routes: Vec::new(),
+                delete_address: false,
+            })
+        );
+    }
+
+    #[test]
+    fn recovery_rejects_foreign_overlap_instead_of_deleting_it() {
+        let route = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("route");
+        let manifest = manifest(vec![route]);
+        let foreign = SystemRoute {
+            key: RouteKey {
+                prefix: prefix("192.168.0.0/16"),
+                interface_luid: 9,
+                next_hop: Ipv4Addr::new(192, 0, 2, 1),
+                metric: 5,
+            },
+            project_owned: false,
+        };
+        assert_eq!(
+            plan_recovery(&manifest, &[foreign], true),
+            Err(ManifestError::OwnershipDrift)
         );
     }
 }
