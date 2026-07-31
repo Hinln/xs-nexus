@@ -275,8 +275,9 @@
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 
 - 状态：OPEN
-- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z/vulnerabilities/summary.json`。
-- 当前结果：Critical 2、High 6；`total_fixable_findings` 为空。Controller/Relay 各 Critical 1、High 2，Console High 2，db-tools 无 Critical/High。
-- 已完成缓解：删除 Controller/Relay 的 curl 运行时依赖并切换到固定 digest distroless，升级 Console/db-tools 的 Alpine 包并从 Console 删除 curl 包链；相对最初扫描 Critical 从 44 降至 2、High 从 115 降至 6，所有当时有明确修复版本的发现已清零。
-- 剩余风险：扫描器的 `not-fixed`/`wont-fix` 不是安全豁免；尚未逐项证明不可达或完成风险接受。
-- 解除条件：基础镜像升级或替换后重扫，或对剩余 glibc/TIFF Critical/High 建立有证据、带期限的 disposition；RC 前不得隐藏或自动忽略。
+- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z/vulnerabilities/summary.json`。
+- 当前结果：Critical 2、High 4；`total_fixable_findings` 为空。Controller/Relay 各 Critical 1、High 2，Console 与 db-tools 无 Critical/High。
+- 已完成缓解：Controller/Relay 删除 curl 并切换固定 digest distroless；Console/db-tools 升级 Alpine 包；Console 删除 curl 和未使用的 `nginx-module-image-filter`/TIFF 包链。相对最初扫描 Critical 从 44 降至 2、High 从 115 降至 4，当前有明确修复版本的发现为 0。
+- 有界 disposition：剩余项仅为 glibc `CVE-2026-5435`、`CVE-2026-5450`、`CVE-2026-5928`。源码和精确镜像二进制均不引用对应 `ns_printrrf`/`ns_sprintrr`/`fp_nquery`、`scanf` family 或 `ungetwc` API；`make verify-image-vulnerability-disposition` 会拒绝新增 Critical/High、可修复版本、包/API 漂移。该结论只降低当前调用面的可达性，不等于修复或永久豁免。
+- 复核期限：2026-08-31，或基础镜像 digest、glibc 版本、扫描数据库/结果、二进制导入集合任一变化时立即重扫和重做 disposition；RC 前必须再次复核。
+- 解除条件：基础镜像提供修复并升级重扫为 0，或由项目所有者在期限内正式接受剩余风险；扫描报告不得隐藏或自动忽略。

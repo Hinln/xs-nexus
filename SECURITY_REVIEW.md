@@ -344,6 +344,8 @@
 - Console 与 db-tools 构建使用 `apk upgrade --no-cache`，旧扫描中带明确修复版本的 Alpine OpenSSL、expat、libxml2、curl/libcurl 等发现已从 fixable 集合移除。
 - 精确提交 `2eefae9` 的最终扫描只剩 Critical 2 和 High 6，Grype 当前未给出供应商修复版本。Controller/Relay 各为 glibc 1 Critical/2 High，Console 为 TIFF 2 High，db-tools 无 Critical/High。它们不是自动接受项，Release Candidate 前必须逐项确认可达性、供应商状态、基础镜像升级/替换方案和期限。
 - Controller/Relay 使用固定 digest distroless、无 shell/包管理器；Console 已移除 curl 及其反向依赖链。该最小化通过完整 Docker 生命周期，不依赖容器内调试 shell。
+- Console 未使用 NGINX image-filter 功能，最终镜像已删除该模块及 TIFF 包链；新扫描中 Console 无 Critical/High。
+- 剩余 glibc 三项采用到期日为 2026-08-31 的有界 disposition：当前源码与精确 Controller/Relay 二进制不引用受影响 API，自动门禁拒绝报告集合、修复状态或导入面的变化。此结论不是漏洞修复；基础镜像或扫描结果变化时必须立即重做，RC 前仍需正式复核。
 ## 12. Relay 指标数据最小化（2026-07-31）
 
 - 指标只包含全局累计计数、字节数和从进入内存队列到 UDP send 成功的时长；不包含 XSP/1 密文、业务明文、节点 ID、网络 ID、端点或 lease ID。

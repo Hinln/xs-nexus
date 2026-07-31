@@ -246,4 +246,5 @@ make clean
 - Relay `/metrics` 现在公开有界累计接收/转发包和字节、分类丢弃总数、I/O 错误，以及队列转发延迟样本、平均微秒和最大微秒；不记录业务内容、节点身份或 payload。
 - 最新 M2.3 聚合验证绑定提交 `b80d780ab2788f9913b4b80997a220c099c40f0f`，证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`；真实双 Relay fallback/failover/Direct 恢复测试同时断言字节、丢弃和延迟指标。
 - 首轮 M2.3 在全部功能测试通过后因 Compose validator 缺少强制 revision 输入失败，证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185001Z`；验证器补齐完整测试专用变量后原样重跑通过。
-- 下一项不受外部门禁的工作：对 2 个 glibc Critical、4 个 glibc High 与 2 个 TIFF High 形成可审计 disposition，并持续检查受支持基础镜像更新；Windows runtime 接入继续由 `BLK-001` 阻塞。
+- Console 已删除未使用的 `nginx-module-image-filter` 与 TIFF 包链，完整 Docker 生命周期通过；提交 `ca7d2c2e026385b6e8f4432de7942b672be71d3a` 的供应链与漏洞证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`。结果降为 Critical 2、High 4、Medium 16、Negligible 24，Console/db-tools 无 Critical/High，当前可修复项为 0。
+- 剩余 glibc 三个 CVE 已建立可执行 disposition 门禁：精确匹配报告、拒绝可修复项/新增 High 或 Critical，并从镜像提取 Controller/Relay 二进制验证不导入受影响 API；复核期限为 2026-08-31，基础镜像、glibc、扫描结果或二进制导入变化会提前触发复核。Windows runtime 接入继续由 `BLK-001` 阻塞。

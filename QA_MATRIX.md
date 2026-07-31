@@ -353,6 +353,8 @@
 - distroless/Console 进一步最小化后再次运行完整 Docker 生命周期：通过；无 shell 的 Controller/Relay 仍能迁移、启动、健康检查和回滚。
 - distroless `status.d` 正向解析、普通 Debian status、md5sums 排除和不完整身份负向测试：通过。
 - 最终供应链证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z`：通过；最终 Critical 2、High 6，当前可修复项为 0。
+- Console 删除未使用 image-filter/TIFF 包链后，`make test-docker-deployment` 与 `make validate-image-supply-chain` 通过；新证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z` 为 Critical 2、High 4，Console/db-tools 无 Critical/High。
+- `make verify-image-vulnerability-disposition EVIDENCE_DIR=/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`：通过；严格匹配剩余三个 glibc CVE，拒绝 fixable/集合漂移，并验证 Controller/Relay 精确镜像二进制不导入受影响 API。
 ## 10. Relay 可观测性回归（2026-07-31）
 
 - 单元测试验证接收/转发字节、分类与总丢弃、发送 I/O 错误、延迟样本/平均/最大值的稳定快照。
