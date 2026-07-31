@@ -272,3 +272,11 @@
 - 临时缓解：新 crate 不接入 runtime；unsafe 只存在于 Windows 平台模块。默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key。
 - 计划：当前 IP Helper FFI、表释放、精确路由、非持久地址、DAD 有界等待、联合失败补偿、严格 manifest、受保护原子持久化、精确恢复执行及 Agent Windows-only 生命周期准备已完成源码门禁；LUID 现由同一独占 xsnet handle 的版本化 identity query 从 `NetAdapterGetNetLuid` 获取并严格校验，不使用名称或全局枚举。下一步在获得 WDK/VM 后真实编译链接和执行，不提前接入 runtime。
 - 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。
+## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
+
+- 状态：OPEN
+- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z/vulnerabilities/summary.json`。
+- 当前结果：Critical 22、High 45；`total_fixable_findings` 为空。Controller/Relay 各 Critical 7、High 17，Console Critical 8、High 11，db-tools 无 Critical/High。
+- 已完成缓解：删除 Controller/Relay 的 curl 运行时依赖，升级 Console/db-tools 的 Alpine 包；相对上一轮 Critical 从 44 降至 22、High 从 115 降至 45，所有当时有明确修复版本的发现已清零。
+- 剩余风险：扫描器的 `not-fixed`/`wont-fix` 不是安全豁免；尚未逐项证明不可达或完成风险接受。
+- 解除条件：基础镜像升级或替换后重扫，或对每个残余 Critical/High 建立有证据、带期限的 disposition；RC 前不得隐藏或自动忽略。

@@ -337,3 +337,9 @@
 - P0/P1 安全问题未关闭；
 - 没有恢复和吊销验证；
 - 自研密码协议未经独立审计但文档声称已安全。
+## 11. 运行时健康检查与漏洞收敛复核（2026-07-31）
+
+- Controller/Relay 镜像不再携带 `curl`；健康检查由同一受限非 root 二进制访问固定 loopback 端口，不读取环境目标、不接受 CLI 地址、不访问容器外网络。
+- 探测器有连接/读写超时、8 KiB 响应上限、完整 HTTP 头和 HTTP 200 门禁；异常响应失败关闭，测试覆盖拒绝、超时、非 200、畸形和超限输入。
+- Console 与 db-tools 构建使用 `apk upgrade --no-cache`，旧扫描中带明确修复版本的 Alpine OpenSSL、expat、libxml2、curl/libcurl 等发现已从 fixable 集合移除。
+- 精确提交 `9b727d4` 的新扫描仍有 Critical 22 和 High 45，但 Grype 当前未给出供应商修复版本。它们不是自动接受项，Release Candidate 前必须逐项确认可达性、供应商状态、基础镜像升级/替换方案和期限。

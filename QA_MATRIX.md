@@ -343,3 +343,10 @@
 - Direct/Relay；
 - 睡眠恢复；
 - 卸载。
+## 9. 运行时镜像漏洞回归（2026-07-31）
+
+- 固定 loopback 健康探测单测覆盖：成功 200、非 200、畸形头、超大头、连接拒绝、读超时、非 loopback 和非法路径；通过。
+- 严格命令解析覆盖 Controller/Relay 的未知命令及带参数 `healthcheck`；通过。
+- `make test-docker-deployment` 真实重建四镜像，并验证迁移、三服务健康、安全属性、备份恢复和失败回滚；通过。
+- `make validate-image-supply-chain`：通过；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z`。
+- `make scan-image-vulnerabilities EVIDENCE_DIR=/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z`：通过；所有当前有供应商修复版本的发现为 0，残余 Critical/High 保留报告等待 disposition。

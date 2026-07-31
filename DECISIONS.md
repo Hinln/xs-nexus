@@ -730,3 +730,14 @@
 - 原因：不依赖生成期网络、第三方扫描器或容器内可执行工具，能够审计最小运行时镜像本身，并避免 tag 漂移、包管理器命令缺失和容器入口点差异。许可证缺失的 Alpine dot-prefixed generated dependency metapackage 保留为 virtual package，不伪造许可证。
 - 代价：最小镜像未必携带每个声明许可证的全文，必须在 RC 前补齐。漏洞扫描使用临时下载的固定 Grype v0.116.1，先校验官方 archive SHA-256，再使用隔离数据库扫描 manifest 中重新核对过 image ID 的本地镜像；这会引入生成期网络和漏洞库时点，报告必须保存工具/数据库状态，不能与确定性 rootfs SBOM 混为一谈。
 - 安全影响：错误 revision、非 SHA-256 image ID、缺少 OCI 标签、未知包数据库、非虚拟包缺失许可证、超限 rootfs/文件/包数、路径穿越、重复 PURL、已有输出目录和 Dockerfile 映射漂移全部失败关闭；验证前后比较容器、Docker 网络、`1panel-network`、默认路由和 nftables。漏洞脚本只接受仓库 `artifacts/qa` 内证据，重新比较 tag 当前 ID 与 manifest，固定 scanner archive hash，在私有 staging 完成全部报告后发布；发现项不自动豁免。
+## ADR-062：容器健康检查由运行时二进制执行固定本地探测
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Controller 和 Relay 运行时镜像为 Compose 健康检查安装 `curl`，扩大了 Debian 运行时包与漏洞面；健康检查本身只需要访问各容器内固定的 loopback readiness 地址。
+- 决策：在 `xs-core` 中提供无额外依赖的有界 HTTP/1.x 探测器；Controller 和 Relay 各自只公开无参数 `healthcheck` 子命令，并固定访问 `127.0.0.1:8080` 或 `127.0.0.1:8081`。探测设置连接、读写超时，限制响应头为 8 KiB，要求完整头部和 HTTP 200。Compose 直接执行二进制，不再安装或调用 `curl`。Alpine 运行时镜像在构建时执行 `apk upgrade --no-cache`，使已发布修复进入精确镜像。
+- 原因：固定目标避免配置注入和外部网络探测；有界同步 I/O 足以满足 Docker 健康检查，同时减少运行时依赖和可修复漏洞。
+- 代价：探测器不是通用 HTTP 客户端，不支持 TLS、重定向、代理或可配置目标；它只用于容器内部 readiness。
+- 安全影响：非 loopback、畸形路径、连接拒绝、超时、非 200、畸形响应和超大响应全部失败关闭。残余基础镜像发现仍需显式处置，不能因当前无修复版本而自动豁免。
+
+---

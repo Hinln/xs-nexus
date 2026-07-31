@@ -230,3 +230,11 @@ make clean
 ```
 
 该命令只删除项目 Rust 构建目录和控制台 `dist`，不操作 Docker、1Panel、网络或外部秘密。
+## 2026-07-31 运行时镜像漏洞收敛检查点
+
+- 实现提交：`9b727d424e9968b0dcec2c7f8553ea0d79057961`（`fix(supply-chain): remove runtime curl dependency`）。
+- Controller/Relay 已增加固定 loopback、无参数、超时和 8 KiB 响应上限的二进制 `healthcheck`；运行时 Debian 镜像删除 `curl`，Console/db-tools 在构建时应用当前 Alpine 安全更新。
+- `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace --lib --bins`、`make test-docker-deployment` 和 `make security-check` 通过。
+- 新镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z`；绑定精确提交与四个 image ID，双生成一致，宿主 Docker/网络/默认路由/nftables 不变。
+- Grype 0.116.1 新扫描总计 Critical 22、High 45、Medium 120、Low 12、Negligible 120、Unknown 32，`total_fixable_findings` 为空。旧扫描为 Critical 44、High 115，且有修复版本 Critical 4、High 42；当前可修复项已清零，但残余发现未获豁免。
+- 下一项不受外部门禁的工作：对残余 Debian/Alpine 基础镜像发现逐项形成可审计 disposition，并评估更小或更新的受支持基础镜像；Windows runtime 接入继续由 `BLK-001` 阻塞。
