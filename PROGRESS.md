@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 00:26 UTC
-当前 Git 提交：M5.2 完成检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 00:35 UTC
+当前 Git 提交：M6.1 ABI/架构中间检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -84,21 +84,26 @@
 - PostgreSQL 18 运维工具完成备份、清单校验、篡改拒绝、精确 schema 恢复、恢复前安全备份和失败回滚；
 - M5.2 生命周期测试覆盖实际构建、迁移、健康、持久化、备份恢复、迁移失败保护和错误镜像回滚；
 - M5.2 全量证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，最终无项目容器、网络、namespace、TUN、nftables、默认路由或 `1panel-network` 变化。
+- 按微软官方支持边界确定 Windows 10/11 首版采用最小 KMDF + NetAdapterCx；UMDF NetAdapterCx 仅适用于 Windows 11 24H2 及以后，不作为首版共同实现；
+- 固定 `xsnet` 内核职责为虚拟 NIC、队列、受控 LocalSystem IPC 和生命周期，密码学、ACL、路由、NAT、Relay、身份和秘密全部留在用户态；
+- 实现 ABI v1 固定小端消息头和规范包批次解析器，拒绝未知版本/类型/flag、非精确长度、零 sequence、间隙、重叠、隐藏尾部和超限包；
+- `make test-windows-xsnet-abi` 已在 Clang 21 Release `-Werror` 和 GCC 15 ASan/UBSan 两套配置实际通过；该结果不代表 WDK 构建或 Windows 实机通过。
 
 ## 当前工作点
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
 - M6.1 开始盘点 Windows 驱动规范、WDK 门禁、Linux 可完成的静态设计和可构建边界；
+- 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 
 ## 下一步
 
-1. 完整读取 M6.1 驱动架构、IOCTL、队列、生命周期、安全和构建要求；
-2. 检查仓库现有 Windows 目录、可用交叉工具和 WDK/VM 人工门禁；
-3. 固定 `xsnet` 最小职责、用户态边界、数据格式、状态机和威胁模型；
-4. 实现所有不依赖真实 WDK/VM 的源码、静态验证和负向测试；
-5. 将无法在 Linux 证明的构建、签名、Driver Verifier 和实机结果写入 `BLOCKERS.md`。
+1. 按设计补齐 KMDF/NetAdapterCx DriverEntry、DeviceAdd、file object 和 queue 源码骨架；
+2. 编写仅授予 LocalSystem 的 INF、IOCTL access 位和 PnP/power 回调；
+3. 增加 ABI 随机畸形输入、sequence 状态机和取消/cleanup 模型测试；
+4. 准备 WDK 工程、测试签名和安装/卸载脚本，但不声称 Linux 能编译驱动；
+5. 获得 Windows VM 后执行 WDK 构建、安装、Driver Verifier 和异常生命周期验收。
 
 ## 下一条准确命令
 
@@ -121,6 +126,13 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 ## 当前失败
 
 无未解决测试失败。
+
+## M6.1 当前验证
+
+- 命令：`make test-windows-xsnet-abi`；
+- 结果：通过；
+- 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence 负向测试和规范包批次边界；
+- 不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏。
 
 ## 外部阻塞
 

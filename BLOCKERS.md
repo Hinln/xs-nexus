@@ -7,6 +7,7 @@
 ## BLK-001 Windows 测试环境
 
 - 状态：阻塞 Windows 实机验收
+- 当前环境核对：开发服务器仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK、测试签名模式或 Windows VM；因此不能生成或声称测试签名驱动包。
 - 需要：
   - Windows 11 测试 VM；
   - 快照；
@@ -20,6 +21,7 @@
   - Relay；
   - Console；
   - 驱动代码和交叉构建准备。
+- 已完成的不受阻塞工作：选择覆盖 Windows 10/11 的最小 KMDF NetAdapterCx 架构，固定内核/用户态边界和 ABI v1，并以 Clang Release、ASan/UBSan 实际验证平台无关长度与包批次解析器。
 - 解除步骤：用户提供可测试 VM，Codex执行安装和验证。
 
 ---

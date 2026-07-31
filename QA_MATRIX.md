@@ -220,6 +220,13 @@
 - 卸载后重装；
 - 无残留设备和路由。
 
+### M6.1 当前自动化覆盖
+
+- `drivers/windows-xsnet/src/abi.c` 不依赖 Windows 结构体布局，逐字段读取固定小端头和批次描述符；
+- `drivers/windows-xsnet/tests/abi_test.c` 覆盖正确消息、截断、Magic、版本、header、flag、payload 上限、精确总长度、零 sequence、空/超限批次、描述符长度、间隙、短包和隐藏尾部；
+- `scripts/test-windows-xsnet-abi.sh` 在 Clang 21 Release `-Wall -Wextra -Wpedantic -Werror` 与 GCC 15 ASan/UBSan 配置编译运行；
+- 当前结果只证明平台无关 ABI 解析器；WDK 编译、测试签名、VM 安装、NetAdapterCx 收发、PnP/power 和 Driver Verifier 全部保持未完成。
+
 ---
 
 ## 6. 控制面

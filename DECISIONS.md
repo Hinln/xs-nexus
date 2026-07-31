@@ -500,3 +500,15 @@
 - 原因：把数据状态和进程状态分开验证，使迁移失败不替换健康服务、镜像失败不破坏已有 schema、恢复失败仍有明确逆操作。
 - 代价：部署和恢复需要私有宿主备份目录、额外磁盘和短暂停止 Controller；破坏性迁移仍需前向兼容分阶段设计。
 - 安全影响：Secret 文件权限、归档大小/SHA-256/格式、目标 schema 和 PostgreSQL 主版本均失败关闭；备份静态加密和异机复制仍由 `KI-015` 跟踪。
+
+---
+
+## ADR-043：Windows 10/11 首版采用最小 KMDF NetAdapterCx 和版本化 direct-I/O ABI
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：任务要求同时支持 Windows 10/11；微软 UMDF NetAdapterCx 仅从 Windows 11 24H2 开始，无法覆盖完整范围。驱动又必须保持最小内核攻击面和严格用户态边界。
+- 决策：首版使用独立 KMDF + NetAdapterCx，只实现虚拟 NIC、队列和 LocalSystem Agent IPC。控制请求使用 buffered I/O，包批次使用 direct I/O，禁止 `METHOD_NEITHER`、`FILE_ANY_ACCESS` 和共享可写环。ABI 使用固定小端字节布局、精确长度、非零单调 sequence、规范连续包批次和硬资源上限。
+- 原因：KMDF 覆盖目标系统；WDF/NetAdapterCx 提供明确对象和队列生命周期；先验证小型 ABI 可在没有 WDK 时发现整数、长度和规范编码缺陷。
+- 代价：仍需 WDK、测试签名和 Windows VM 才能实现并证明实际 NetAdapterCx 收发；direct I/O 可能比共享环有更多请求开销，性能数据出来前不引入更复杂共享内存。
+- 安全影响：设备 ACL 仅允许 LocalSystem，单 owner 会话和状态机限制调用顺序；身份、密码学、ACL、NAT、Relay、路由策略和秘密全部留在用户态。

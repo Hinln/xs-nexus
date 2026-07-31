@@ -216,6 +216,14 @@
 - 崩溃转储无密钥；
 - 不允许任意本地进程注入数据包。
 
+### M6.1 当前验证状态
+
+- 已选择覆盖 Windows 10/11 的最小 KMDF NetAdapterCx 边界，驱动设计不包含密码学、身份、ACL、路由、NAT、Relay、更新或秘密；
+- 设备设计只允许 LocalSystem 和单 Agent owner，禁止 `FILE_ANY_ACCESS`、`METHOD_NEITHER` 和共享可写环；
+- ABI v1 使用固定字节布局、精确总长度、非零 sequence、1 MiB/64 包/9000 字节硬上限和无间隙规范批次；
+- 平台无关解析器已通过 Release 严格告警与 ASan/UBSan；Release 首轮断言被 `NDEBUG` 移除的问题已失败并修复；
+- WDK、INF ACL 实际应用、requestor/file object 检查、取消、PnP/power、测试签名、Driver Verifier 和 VM 异常输入仍未实现或验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
+
 ---
 
 ## 8. 更新供应链
