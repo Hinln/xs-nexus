@@ -16,7 +16,7 @@ LABEL org.opencontainers.image.title="XS Nexus Console" \
       org.opencontainers.image.source="XS Nexus clean-room repository"
 USER root
 RUN apk upgrade --no-cache \
-    && apk del --no-cache curl
+    && apk del --no-cache curl nginx-module-image-filter
 COPY deploy/docker/console.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder --chown=101:101 /src/apps/console/dist /usr/share/nginx/html
 USER 101:101
