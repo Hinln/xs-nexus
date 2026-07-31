@@ -168,3 +168,4 @@ Bug 集中修复阶段只有满足以下条件才通过：
 ## M6.1 当前已闭环缺陷
 
 - ABI 测试首次以 Release 构建时 `NDEBUG` 移除了标准 `assert`，使断言变量变成未使用并由 `-Werror` 阻止构建；测试翻译单元现显式重新启用断言，随后同一 Release 配置和 ASan/UBSan 配置均必须执行测试，不降级为 Debug-only。
+- 首轮平台判断只核对了“KMDF NetAdapterCx 从 Windows 10 2004 可用”和“UMDF 从 Windows 11 24H2 可用”，遗漏官方版本表中 Windows 10 NetAdapterCx 2.0 仅支持 MBBCx 的限制；重新核对后用 ADR-044 取代 ADR-043，首版改为 Windows 11 24H2 UMDF 2.33 + NetAdapterCx 2.5，并把 Windows 10 差距记录为 `KI-016`，未继续实现或宣称不受支持组合。

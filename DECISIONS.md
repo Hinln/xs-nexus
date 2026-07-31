@@ -505,10 +505,22 @@
 
 ## ADR-043：Windows 10/11 首版采用最小 KMDF NetAdapterCx 和版本化 direct-I/O ABI
 
-- 状态：接受
+- 状态：被 ADR-044 取代
 - 日期：2026-07-31
 - 背景：任务要求同时支持 Windows 10/11；微软 UMDF NetAdapterCx 仅从 Windows 11 24H2 开始，无法覆盖完整范围。驱动又必须保持最小内核攻击面和严格用户态边界。
 - 决策：首版使用独立 KMDF + NetAdapterCx，只实现虚拟 NIC、队列和 LocalSystem Agent IPC。控制请求使用 buffered I/O，包批次使用 direct I/O，禁止 `METHOD_NEITHER`、`FILE_ANY_ACCESS` 和共享可写环。ABI 使用固定小端字节布局、精确长度、非零单调 sequence、规范连续包批次和硬资源上限。
 - 原因：KMDF 覆盖目标系统；WDF/NetAdapterCx 提供明确对象和队列生命周期；先验证小型 ABI 可在没有 WDK 时发现整数、长度和规范编码缺陷。
 - 代价：仍需 WDK、测试签名和 Windows VM 才能实现并证明实际 NetAdapterCx 收发；direct I/O 可能比共享环有更多请求开销，性能数据出来前不引入更复杂共享内存。
 - 安全影响：设备 ACL 仅允许 LocalSystem，单 owner 会话和状态机限制调用顺序；身份、密码学、ACL、NAT、Relay、路由策略和秘密全部留在用户态。
+
+---
+
+## ADR-044：Windows 11 24H2 首版采用 UMDF NetAdapterCx，Windows 10 不作未验证兼容声明
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：微软官方版本表说明 Windows 11 24H2 的 UMDF 2.33 / NetAdapterCx 2.5 支持 Ethernet，而 Windows 10 2004 的 NetAdapterCx 2.0 仅支持 MBBCx。任务书要求优先评估 UMDF，`QA_MATRIX.md` 的强制驱动平台是 Windows 11 LTSC 2024，Windows 10 为条件允许时兼容性项目。
+- 决策：M6.1 首个可安装实现面向 Windows 11 24H2 x86_64，使用 UMDF 2.33 + NetAdapterCx 2.5 和系统分配数据缓冲区。继续保持版本化 ABI、LocalSystem 设备 ACL、单 owner、buffered 控制请求、direct-I/O 包批次以及全部长度和状态校验。Windows 10 不复用不受支持的 Ethernet NetAdapterCx 组合，也不声称兼容；其独立驱动路径在 `KI-016` 中跟踪。
+- 原因：这是与当前正式 VM 门禁、微软支持矩阵和任务书“优先 UMDF”同时一致的最小攻击面路径，驱动故障不会直接在内核地址空间执行。
+- 代价：Windows 10 的任务书目标尚未满足；后续可能需要独立 WDK/NDIS 路径或正式调整支持范围，且当前仍需 WDK 与 Windows VM 才能证明 UMDF 构建和收发。
+- 安全影响：使用 UMDF 降低首版内核内存破坏风险；INF ACL、IOCTL access 位、requestor/file object、取消、PnP/power 和实际 host 隔离仍必须在 VM 中验证，不能由平台选择代替。

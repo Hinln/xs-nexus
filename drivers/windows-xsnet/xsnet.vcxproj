@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{C7BC82E8-906B-40AE-82C8-20A744B57C9D}</ProjectGuid>
+    <RootNamespace>xsnet</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <DriverType>UMDF</DriverType>
+    <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <TargetVersion>Windows10</TargetVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <DriverType>UMDF</DriverType>
+    <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <TargetVersion>Windows10</TargetVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)artifacts\$(Configuration)\$(Platform)\</OutDir>
+    <IntDir>$(SolutionDir)target\xsnet\$(Configuration)\$(Platform)\</IntDir>
+    <TargetName>xsnet</TargetName>
+    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
+    <UMDF_VERSION_MINOR>33</UMDF_VERSION_MINOR>
+    <LinkToNetAdapterCx>true</LinkToNetAdapterCx>
+    <NetAdapterCxMajorVersion>2</NetAdapterCxMajorVersion>
+    <NetAdapterCxMinorVersion>5</NetAdapterCxMinorVersion>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;XSNET_UMDF;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>NetAdapterCxStub.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <DriverSign>
+      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
+      <SignMode>TestSign</SignMode>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\xsnet_abi.h" />
+    <ClInclude Include="include\xsnet_driver.h" />
+    <ClInclude Include="include\xsnet_ioctl.h" />
+    <ClInclude Include="include\xsnet_session.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\abi.c" />
+    <ClCompile Include="src\adapter.c" />
+    <ClCompile Include="src\device.c" />
+    <ClCompile Include="src\driver.c" />
+    <ClCompile Include="src\ioctl.c" />
+    <ClCompile Include="src\queues.c" />
+    <ClCompile Include="src\session.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="xsnet.inf" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

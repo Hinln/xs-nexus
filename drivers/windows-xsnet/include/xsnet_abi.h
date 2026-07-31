@@ -11,6 +11,10 @@
 #define XSNET_ABI_MAX_PACKETS UINT16_C(64)
 #define XSNET_ABI_MIN_PACKET_SIZE UINT32_C(20)
 #define XSNET_ABI_MAX_PACKET_SIZE UINT32_C(9000)
+#define XSNET_ABI_HELLO_PAYLOAD_SIZE UINT32_C(16)
+#define XSNET_ABI_ATTACH_PAYLOAD_SIZE UINT32_C(16)
+#define XSNET_ABI_SET_LINK_PAYLOAD_SIZE UINT32_C(8)
+#define XSNET_CAPABILITY_IPV4 UINT32_C(1)
 
 typedef enum XsnetMessageType {
     XSNET_MESSAGE_HELLO = 1,
@@ -51,6 +55,12 @@ XsnetValidationStatus XsnetValidateMessage(
 XsnetValidationStatus XsnetValidatePacketBatch(
     const uint8_t *payload,
     uint32_t payload_length,
+    uint16_t *packet_count);
+
+XsnetValidationStatus XsnetValidatePacketBatchForMtu(
+    const uint8_t *payload,
+    uint32_t payload_length,
+    uint32_t maximum_packet_size,
     uint16_t *packet_count);
 
 #endif

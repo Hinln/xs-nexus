@@ -67,12 +67,26 @@ XsnetValidationStatus XsnetValidatePacketBatch(
     const uint8_t *payload,
     uint32_t payload_length,
     uint16_t *packet_count) {
+    return XsnetValidatePacketBatchForMtu(
+        payload,
+        payload_length,
+        XSNET_ABI_MAX_PACKET_SIZE,
+        packet_count);
+}
+
+XsnetValidationStatus XsnetValidatePacketBatchForMtu(
+    const uint8_t *payload,
+    uint32_t payload_length,
+    uint32_t maximum_packet_size,
+    uint16_t *packet_count) {
     uint16_t count;
     uint32_t descriptor_length;
     uint32_t expected_offset;
     uint16_t packet_index;
 
-    if (payload == NULL || packet_count == NULL) {
+    if (payload == NULL || packet_count == NULL ||
+        maximum_packet_size < XSNET_ABI_MIN_PACKET_SIZE ||
+        maximum_packet_size > XSNET_ABI_MAX_PACKET_SIZE) {
         return XSNET_INVALID_ARGUMENT;
     }
     if (payload_length < 8) {
@@ -94,7 +108,7 @@ XsnetValidationStatus XsnetValidatePacketBatch(
         uint32_t packet_length = read_u32(descriptor + 4);
 
         if (packet_offset != expected_offset || packet_length < XSNET_ABI_MIN_PACKET_SIZE ||
-            packet_length > XSNET_ABI_MAX_PACKET_SIZE || packet_length > payload_length - packet_offset) {
+            packet_length > maximum_packet_size || packet_length > payload_length - packet_offset) {
             return XSNET_BAD_BATCH;
         }
         expected_offset = packet_offset + packet_length;

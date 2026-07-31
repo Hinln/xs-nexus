@@ -84,26 +84,27 @@
 - PostgreSQL 18 运维工具完成备份、清单校验、篡改拒绝、精确 schema 恢复、恢复前安全备份和失败回滚；
 - M5.2 生命周期测试覆盖实际构建、迁移、健康、持久化、备份恢复、迁移失败保护和错误镜像回滚；
 - M5.2 全量证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，最终无项目容器、网络、namespace、TUN、nftables、默认路由或 `1panel-network` 变化。
-- 按微软官方支持边界确定 Windows 10/11 首版采用最小 KMDF + NetAdapterCx；UMDF NetAdapterCx 仅适用于 Windows 11 24H2 及以后，不作为首版共同实现；
+- 复核微软官方版本表后撤回“KMDF NetAdapterCx 覆盖 Windows 10/11”的错误判断；M6.1 首版改为面向正式门禁 Windows 11 LTSC 2024 的 UMDF 2.33 + NetAdapterCx 2.5，Windows 10 差距记录为 `KI-016`；
 - 固定 `xsnet` 内核职责为虚拟 NIC、队列、受控 LocalSystem IPC 和生命周期，密码学、ACL、路由、NAT、Relay、身份和秘密全部留在用户态；
-- 实现 ABI v1 固定小端消息头和规范包批次解析器，拒绝未知版本/类型/flag、非精确长度、零 sequence、间隙、重叠、隐藏尾部和超限包；
-- `make test-windows-xsnet-abi` 已在 Clang 21 Release `-Werror` 和 GCC 15 ASan/UBSan 两套配置实际通过；该结果不代表 WDK 构建或 Windows 实机通过。
+- 实现 ABI v1 固定小端消息头、规范包批次解析器和纯 C 单 owner 会话状态机，拒绝未知版本/类型/flag、非精确长度、重放/回滚/sequence 上限、错误调用顺序、MTU/队列超限、间隙、重叠、隐藏尾部和超限包；
+- `make test-windows-xsnet-abi` 已在 Clang 21 Release `-Werror` 和 GCC 15 ASan/UBSan 两套配置实际通过 ABI 与会话测试；该结果不代表 WDK 构建或 Windows 实机通过。
+- 已加入 Windows 11 24H2 x64 UMDF 2.33 / NetAdapterCx 2.5 WDK 工程、仅 LocalSystem INF、独立 host、安全 IOCTL、file object、PnP/power、adapter 与断链 packet queue 骨架；`make test-windows-xsnet-source` 实际通过，但没有 WDK 编译证据。
 
 ## 当前工作点
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 开始盘点 Windows 驱动规范、WDK 门禁、Linux 可完成的静态设计和可构建边界；
+- M6.1 已完成 ABI、会话状态机和首轮 UMDF WDK 源码骨架；SetLink/TX/RX 当前显式失败关闭，下一步实现实际 ring 与 direct-I/O 请求配对；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 
 ## 下一步
 
-1. 按设计补齐 KMDF/NetAdapterCx DriverEntry、DeviceAdd、file object 和 queue 源码骨架；
-2. 编写仅授予 LocalSystem 的 INF、IOCTL access 位和 PnP/power 回调；
-3. 增加 ABI 随机畸形输入、sequence 状态机和取消/cleanup 模型测试；
-4. 准备 WDK 工程、测试签名和安装/卸载脚本，但不声称 Linux 能编译驱动；
-5. 获得 Windows VM 后执行 WDK 构建、安装、Driver Verifier 和异常生命周期验收。
+1. 设计并实现 NetAdapterCx ring 与 direct-I/O 请求的有界配对、backpressure 和一次完成；
+2. 增加取消、cleanup、睡眠和 Agent crash 的并发模型测试；
+3. 补充 Windows Agent ABI 客户端与安装/卸载脚本；
+4. 准备 WDK 测试签名命令和 VM 验收脚本，但不声称 Linux 能编译驱动；
+5. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收。
 
 ## 下一条准确命令
 
@@ -131,7 +132,7 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 
 - 命令：`make test-windows-xsnet-abi`；
 - 结果：通过；
-- 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence 负向测试和规范包批次边界；
+- 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence、单 owner、协商顺序、MTU/队列、link、批次和 cleanup 负向测试；
 - 不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏。
 
 ## 外部阻塞

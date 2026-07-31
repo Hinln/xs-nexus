@@ -1,15 +1,18 @@
 # xsnet Windows 驱动设计
 
-状态：M6.1 进行中；仅 ABI 已实现并在 Linux/Clang 下验证  
+状态：M6.1 进行中；ABI 与会话状态机已在 Linux/Clang 下验证  
 实机边界：尚无 WDK 构建、测试签名包、Windows VM、Driver Verifier 或蓝屏结论
 
 ## 1. 平台选择
 
-首版选择最小 KMDF + NetAdapterCx 驱动，目标 Windows 10/11 x86_64。UMDF NetAdapterCx 从 Windows 11 24H2 才可用，不能满足 Windows 10 范围；后续可在不改变 ABI 的前提下评估 Windows 11 专用 UMDF 变体。
+首个可安装实现选择 UMDF 2.33 + NetAdapterCx 2.5，目标 Windows 11 24H2 x86_64，与 `QA_MATRIX.md` 的 Windows 11 LTSC 2024 强制门禁一致。UMDF NetAdapterCx 从 Windows 11 24H2 开始支持 Ethernet，可使用系统分配数据缓冲区并降低首版内核攻击面。
+
+微软版本表同时把 Windows 10 2004 的 NetAdapterCx 2.0 标为仅支持 MBBCx，这与任务书的 Windows 10 + NetAdapterCx Ethernet 组合冲突。当前不向 Windows 10 分发、不声称兼容；独立实现或范围决策由 `KI-016` 跟踪，不能用 Windows 11 结果代替。
 
 依据仅限微软官方文档：
 
 - [User-mode NetAdapterCx](https://learn.microsoft.com/en-us/windows-hardware/drivers/netcx/user-mode-netcx)
+- [NetAdapterCx version overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/netcx/netadaptercx-version-overview)
 - [Porting NDIS miniport drivers to NetAdapterCx](https://learn.microsoft.com/en-us/windows-hardware/drivers/netcx/porting-ndis-miniport-drivers-to-netadaptercx)
 - [Windows security model for driver developers](https://learn.microsoft.com/en-us/windows-hardware/drivers/driversecurity/windows-security-model)
 - [Failure to Check the Size of Buffers](https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/failure-to-check-the-size-of-buffers)
@@ -21,7 +24,7 @@
 驱动只负责：
 
 - 创建一个三层 IPv4 虚拟 NIC；
-- 管理 NetAdapterCx TX/RX 队列；
+- 管理使用系统分配缓冲区的 NetAdapterCx TX/RX 队列；
 - 与唯一活动 LocalSystem Agent 交换有界 IPv4 包批次；
 - 管理 link up/down、队列取消、PnP、电源和文件句柄生命周期；
 - 返回版本、能力和有界诊断计数。
@@ -40,7 +43,7 @@
 - 所有 IOCTL 使用明确读写访问位，不使用 `FILE_ANY_ACCESS`；
 - 控制请求使用 buffered I/O，包批次使用 direct I/O，不使用 `METHOD_NEITHER`；
 - 每个请求再次检查 requestor mode、关联 file object、句柄会话状态和消息 sequence；
-- 同一设备只允许一个完成 ABI 协商的 Agent owner；重复打开或第二个 owner 失败关闭；
+- INF 标记设备栈 exclusive；同一设备只允许一个完成 ABI 协商的 Agent owner，重复打开或第二个 owner 失败关闭；
 - 文件 cleanup、进程崩溃、设备移除或睡眠会先 link down、停止新包、取消请求并释放 owner。
 
 ## 4. ABI v1
@@ -78,12 +81,14 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 - Detach 幂等关闭虚拟链路，但不影响普通物理网络；
 - 取消和 cleanup 可从任意 owner 状态进入，所有完成只发生一次。
 
+`include/xsnet_session.h` 与 `src/session.c` 已实现上述纯状态模型。失败消息不推进 sequence 或状态；`UINT64_MAX` 在处理前拒绝，要求关闭并新建会话。该模型不替代 WDF request 取消和对象生命周期验证。
+
 ## 6. 队列和资源上限
 
 - 每方向最多 64 个待处理包和 1 MiB Agent 请求；
 - 单包不超过协商 MTU，绝不信任描述符长度；
 - 队列停止后不读取 NetAdapterCx ring，不完成新的成功数据请求；
-- 内存分配使用固定 tag，所有 owner/queue 对象由 WDF 父对象或明确引用拥有；
+- UMDF 首版只使用 NetAdapterCx 系统分配缓冲区，所有 owner/queue 对象由 WDF 父对象或明确引用拥有；
 - 不做无限等待、无限重试、动态线程池或内核网络访问；
 - backpressure 只阻塞虚拟 NIC 队列，不影响宿主其他网卡。
 
@@ -91,9 +96,9 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 以下项目在获得 `BLK-001` 环境前不得标记通过：
 
-- WDK/Visual Studio 的 KMDF + NetAdapterCx 编译；
+- WDK/Visual Studio 的 UMDF 2.33 + NetAdapterCx 2.5 编译；
 - INF、CAT、测试签名和驱动安装；
-- Windows 10/11 队列收发和 Linux 互通；
+- Windows 11 24H2 队列收发和 Linux 互通；
 - 取消、Agent crash、设备移除、睡眠/唤醒和网络切换；
 - 反复安装/升级/卸载和失败回滚；
 - Driver Verifier、崩溃转储和蓝屏结果。
@@ -106,4 +111,12 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 make test-windows-xsnet-abi
 ```
 
-该命令以 Release `-Werror` 和 ASan/UBSan Debug 两种配置编译并运行平台无关解析器，只证明 ABI 长度、规范编码和批次边界，不证明 Windows 驱动可运行。
+该命令以 Release `-Werror` 和 ASan/UBSan Debug 两种配置编译并运行平台无关解析器与会话状态机，只证明 ABI 长度、规范编码、批次边界、单 owner、版本/sequence、MTU/队列和状态转换，不证明 Windows 驱动可运行。
+
+```bash
+make test-windows-xsnet-source
+```
+
+该命令检查 WDK 工程和 INF 的目标版本、安全指令、IOCTL 模式以及源码中的生命周期调用。当前源码已包含 DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、D0/release reset、NetAdapter 创建/start/stop 和 packet queue 生命周期骨架。
+
+SetLink、TX 和 RX IOCTL 当前显式返回 `STATUS_NOT_SUPPORTED`，queue advance 不消费 ring，因此 adapter 始终保持 disconnected。这是未完成数据面前的失败关闭状态，不是可工作的驱动或收发证据。`xsnet.vcxproj` 属性名、INF 和全部 API 仍必须在 WDK 10.0.26100、MSBuild、InfVerif 和 Windows 11 24H2 VM 中真实验证。

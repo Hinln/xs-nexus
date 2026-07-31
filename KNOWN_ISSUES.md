@@ -206,3 +206,16 @@
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z` 已证明篡改归档被拒绝、恢复前自动安全备份和目标恢复失败回滚路径。
 - 计划：RC 前使用独立备份密钥实施流式认证加密，复制到受控异机/对象存储，定义保留、删除、密钥轮换和定期恢复演练。
 - 解除条件：加密备份在独立位置可验证恢复，明文临时文件被清理，密钥不在数据库主机或仓库，保留与销毁记录可审计。
+
+---
+
+## KI-016 Windows 10 与 NetAdapterCx Ethernet 官方支持矩阵冲突
+
+- 严重度：高
+- 状态：开放
+- 首次发现：2026-07-31
+- 影响：任务书要求 Windows 10/11 Agent 和基于 NetAdapterCx 的自研虚拟网卡，但微软官方版本表将 Windows 10 2004 的 NetAdapterCx 2.0 标为仅支持 MBBCx；因此当前不能诚实声明 Windows 10 Ethernet 虚拟 NIC 受支持。
+- 证据：微软 `NetAdapterCx version overview` 将 Windows 11 24H2 列为 UMDF 2.33 / NetAdapterCx 2.5 Ethernet 支持平台，将 Windows 10 2004 的 2.0 列为 MBBCx only；`QA_MATRIX.md` 将 Windows 11 LTSC 2024 作为驱动强制平台，Windows 10 为条件允许时兼容性。
+- 临时缓解：M6.1 首版只面向 Windows 11 24H2 UMDF NetAdapterCx，不向 Windows 10 分发、不伪造构建或兼容结果；共享 ABI 与用户态 Agent 保持可复用。
+- 计划：完成 Windows 11 VM 门禁后，在独立 Windows 10 VM 评估最小 clean-room NDIS miniport 路径或由项目所有者正式调整 Windows 10 支持范围；任何新路径必须复用同一安全 ABI 并重新执行驱动审计。
+- 解除条件：Windows 10 获得受支持的实现路径并完成 WDK 构建、测试签名、安装卸载、收发、异常生命周期和 Driver Verifier，或正式任务书明确移除 Windows 10 强制范围。

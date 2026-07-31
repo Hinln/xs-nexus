@@ -5,8 +5,10 @@
 ## Current status
 
 - M6.1 is in progress.
-- The versioned user/kernel ABI and canonical packet-batch validator are implemented and host-tested.
+- The versioned Agent/driver ABI, canonical packet-batch validator, and single-owner session state machine are implemented and host-tested.
+- The first installable target is Windows 11 24H2 UMDF 2.33 + NetAdapterCx 2.5; the Windows 10 support gap is tracked as `KI-016`.
 - The WDK/NetAdapterCx driver, INF, test-signed package, installer, and VM evidence are not complete.
+- The checked-in UMDF source intentionally rejects link-up and packet IOCTLs until ring transfer is implemented and WDK-validated.
 - `BLK-001` blocks WDK build and VM validation; `BLK-004` blocks production signing.
 
 ## Boundary
@@ -25,3 +27,5 @@ ctest --test-dir target/xsnet-abi --output-on-failure
 ```
 
 Passing this test does not constitute a WDK build, driver installation, Driver Verifier result, or Windows compatibility claim.
+
+`make test-windows-xsnet-source` additionally checks source, project, INF, access, and lifecycle invariants. It is not a substitute for MSBuild, InfVerif, signing, or VM testing.
