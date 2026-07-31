@@ -203,6 +203,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 新增 `make test-relay-throughput`，在 release profile 通过真实 UDP Relay、两份认证 Lease、重放/速率/队列门禁和 64 帧有界窗口转发 10,000 个 216 字节 XSR/1 帧；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z` 为 87,822 包/s、18.09 MiB/s，Relay 内部转发延迟平均 4 µs、最大 161 µs，零协议丢弃。该 loopback 基线不等于公网 Relay 容量或 RTT。
 - Controller 新增按 network ID 隔离的 WebSocket 配置广播：所有配置写入仅在数据库事务成功提交后发布事件，同网络已认证连接读取最新签名配置；不同网络不会收到事件。真实 PostgreSQL 集成测试以同一节点两条控制连接验证发起连接直接响应、观察连接收到相同版本 5 广播、唯一节点在线计数和多连接关闭生命周期；`make test-controller-db`、Clippy 和秘密扫描通过。
 - 新增 `make test-agent-rtt`，复用真实双 Agent namespace、TUN、XSP/1、Relay fallback/failover 和 Direct 恢复测试，各路径采样 30 次业务 ICMP。证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T214224Z`：Direct 平均 2.87 ms、p50 1.88 ms、p95 2.19 ms；Relay 平均 4.38 ms、p50 2.30 ms、p95 27.21 ms；Relay 平均增量 1.51 ms、p95 增量 25.02 ms。最大值 Direct 31.31 ms、Relay 41.83 ms 原样保留，未删除调度尖峰。
+- 已建立 `docs/PERFORMANCE_REPORT.md`，统一绑定吞吐、规模、查询、RTT、短时资源和 24 小时长测方法；当前状态保持 `IN_PROGRESS`，不提前勾选性能报告 MUST。
 
 ## 恢复说明
 
