@@ -342,4 +342,5 @@
 - Controller/Relay 镜像不再携带 `curl`；健康检查由同一受限非 root 二进制访问固定 loopback 端口，不读取环境目标、不接受 CLI 地址、不访问容器外网络。
 - 探测器有连接/读写超时、8 KiB 响应上限、完整 HTTP 头和 HTTP 200 门禁；异常响应失败关闭，测试覆盖拒绝、超时、非 200、畸形和超限输入。
 - Console 与 db-tools 构建使用 `apk upgrade --no-cache`，旧扫描中带明确修复版本的 Alpine OpenSSL、expat、libxml2、curl/libcurl 等发现已从 fixable 集合移除。
-- 精确提交 `9b727d4` 的新扫描仍有 Critical 22 和 High 45，但 Grype 当前未给出供应商修复版本。它们不是自动接受项，Release Candidate 前必须逐项确认可达性、供应商状态、基础镜像升级/替换方案和期限。
+- 精确提交 `2eefae9` 的最终扫描只剩 Critical 2 和 High 6，Grype 当前未给出供应商修复版本。Controller/Relay 各为 glibc 1 Critical/2 High，Console 为 TIFF 2 High，db-tools 无 Critical/High。它们不是自动接受项，Release Candidate 前必须逐项确认可达性、供应商状态、基础镜像升级/替换方案和期限。
+- Controller/Relay 使用固定 digest distroless、无 shell/包管理器；Console 已移除 curl 及其反向依赖链。该最小化通过完整 Docker 生命周期，不依赖容器内调试 shell。

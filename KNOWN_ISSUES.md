@@ -275,8 +275,8 @@
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 
 - 状态：OPEN
-- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z/vulnerabilities/summary.json`。
-- 当前结果：Critical 22、High 45；`total_fixable_findings` 为空。Controller/Relay 各 Critical 7、High 17，Console Critical 8、High 11，db-tools 无 Critical/High。
-- 已完成缓解：删除 Controller/Relay 的 curl 运行时依赖，升级 Console/db-tools 的 Alpine 包；相对上一轮 Critical 从 44 降至 22、High 从 115 降至 45，所有当时有明确修复版本的发现已清零。
+- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z/vulnerabilities/summary.json`。
+- 当前结果：Critical 2、High 6；`total_fixable_findings` 为空。Controller/Relay 各 Critical 1、High 2，Console High 2，db-tools 无 Critical/High。
+- 已完成缓解：删除 Controller/Relay 的 curl 运行时依赖并切换到固定 digest distroless，升级 Console/db-tools 的 Alpine 包并从 Console 删除 curl 包链；相对最初扫描 Critical 从 44 降至 2、High 从 115 降至 6，所有当时有明确修复版本的发现已清零。
 - 剩余风险：扫描器的 `not-fixed`/`wont-fix` 不是安全豁免；尚未逐项证明不可达或完成风险接受。
-- 解除条件：基础镜像升级或替换后重扫，或对每个残余 Critical/High 建立有证据、带期限的 disposition；RC 前不得隐藏或自动忽略。
+- 解除条件：基础镜像升级或替换后重扫，或对剩余 glibc/TIFF Critical/High 建立有证据、带期限的 disposition；RC 前不得隐藏或自动忽略。

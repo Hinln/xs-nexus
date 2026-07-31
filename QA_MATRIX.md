@@ -350,3 +350,6 @@
 - `make test-docker-deployment` 真实重建四镜像，并验证迁移、三服务健康、安全属性、备份恢复和失败回滚；通过。
 - `make validate-image-supply-chain`：通过；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z`。
 - `make scan-image-vulnerabilities EVIDENCE_DIR=/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T182323Z`：通过；所有当前有供应商修复版本的发现为 0，残余 Critical/High 保留报告等待 disposition。
+- distroless/Console 进一步最小化后再次运行完整 Docker 生命周期：通过；无 shell 的 Controller/Relay 仍能迁移、启动、健康检查和回滚。
+- distroless `status.d` 正向解析、普通 Debian status、md5sums 排除和不完整身份负向测试：通过。
+- 最终供应链证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z`：通过；最终 Critical 2、High 6，当前可修复项为 0。

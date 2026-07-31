@@ -741,3 +741,14 @@
 - 安全影响：非 loopback、畸形路径、连接拒绝、超时、非 200、畸形响应和超大响应全部失败关闭。残余基础镜像发现仍需显式处置，不能因当前无修复版本而自动豁免。
 
 ---
+## ADR-063：Controller 与 Relay 使用固定 digest 的 distroless 运行时
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：删除 curl 后，`debian:bookworm-slim` 仍携带 Controller/Relay 不使用的 perl、gzip、ncurses、ACL 等运行时包，并产生大量 Critical/High 扫描发现。
+- 决策：Controller 和 Relay 的运行时阶段固定为 `gcr.io/distroless/cc-debian12:nonroot` 的精确 SHA-256 digest，只复制已构建二进制，并继续显式使用 UID/GID 65532。镜像证据生成器支持 distroless 的 `/var/lib/dpkg/status.d` 独立包元数据，保持包身份、许可证材料、镜像 ID、Dockerfile hash 和 revision 的确定性绑定。Console 删除无反向依赖的 curl 包链。
+- 原因：保留 glibc、libgcc、CA 和非 root 运行所需材料，同时移除 shell、包管理器和业务不需要的工具链，显著缩小攻击面。
+- 代价：容器内不再提供 shell 或通用诊断工具；诊断必须使用应用日志、健康命令、镜像证据或受控临时工具容器。更新 distroless 基础时必须显式评审并更新 digest 断言。
+- 安全影响：Critical/High 总数由最初 44/115 降为 2/6；剩余发现仍保持开放，不因 distroless 或无修复版本而自动接受。
+
+---

@@ -214,3 +214,5 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 修复为二进制固定 loopback readiness 探测，补齐命令解析、连接拒绝、超时、非 200、畸形和超大响应回归；同时在两个 Alpine runtime stage 应用安全升级。
 - Docker 生命周期测试真实发现并验证新镜像中的健康命令；新扫描把 Critical 从 44 降为 22、High 从 115 降为 45，fixable Critical/High 从 4/42 降为 0/0。
 - 残余无当前修复版本的发现转入 `KI-021`，未作为已修复或已接受关闭。
+- 第二轮继续移除未使用包：Controller/Relay 改为固定 digest distroless，Console 删除无反向依赖的 curl 链。供应链生成器首次正确拒绝未知 distroless 包数据库，随后新增 `status.d` 精确解析和负向门禁；未绕过 SBOM。
+- 最终扫描 Critical/High 为 2/6；相对最初 44/115 显著下降，剩余 glibc/TIFF 项继续由 `KI-021` 跟踪。
