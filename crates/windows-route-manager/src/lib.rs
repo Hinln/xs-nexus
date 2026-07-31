@@ -11,8 +11,9 @@ mod platform;
 
 #[cfg(windows)]
 pub use platform::{
-    IpHelperBackend, IpHelperError, create_address, delete_address, query_dad_state,
-    read_network_manifest, remove_network_manifest, snapshot_routes, write_network_manifest_atomic,
+    IpHelperBackend, IpHelperError, create_address, delete_address, exact_address_present,
+    query_dad_state, read_network_manifest, remove_network_manifest, snapshot_routes,
+    write_network_manifest_atomic,
 };
 
 pub const MAX_SYSTEM_ROUTES: usize = 4_096;

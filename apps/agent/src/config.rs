@@ -154,6 +154,11 @@ impl AgentConfig {
     }
 
     #[must_use]
+    pub fn network_manifest_temporary_path(&self) -> PathBuf {
+        self.state_directory.join("network-manifest.tmp")
+    }
+
+    #[must_use]
     #[cfg(unix)]
     pub fn socket_path(&self) -> PathBuf {
         self.runtime_directory.join("agent.sock")

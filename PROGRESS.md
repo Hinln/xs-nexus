@@ -117,6 +117,7 @@
 ## 当前工作点
 
 - Windows 路由管理准备已开始：隔离 `xs-windows-route-manager` 已包含事务核心和 IP Helper 平台层，固定 LUID/on-link/metric、4096 条系统表上限、外部重叠拒绝、manifest 精确所有权、additions-first、添加失败逆序补偿和删除失败精确恢复；原始错误与所有 rollback 失败均显式返回。原生层对 `GetIpForwardTable2` 分配使用 RAII 无条件 `FreeMibTable`，支持精确路由 Create/Delete、非持久地址 Create/Delete 和 DAD 状态查询。联合事务仅在 DAD Preferred 后创建路由；Tentative 有界等待，Duplicate/Invalid/Deprecated/Unknown、查询失败和超时均失败关闭并精确清理地址。schema 1 严格 manifest 通过 `xs-windows-private-storage` 完成受保护读取、同目录 write-through 原子替换和 ACL/reparse 验证删除；恢复执行逆序尝试全部精确路由和地址并聚合失败。16 个 Linux 模型单测、两个 Windows crate 的 MSVC target check 和双平台 Clippy 通过；尚无 Agent 启动编排、Windows 运行或 runtime 接入。
+- Agent 新增 Windows-only 准备编排：启动前恢复 stale manifest，写 Preparing 后才执行地址/DAD/路由，成功后原子写 Active；shutdown 全部精确清理成功后才删除 manifest。独立源码门禁固定顺序、禁止 unsafe/线程/子进程、禁止 runtime 引用，并加入 `make test-windows-agent-routing` 与 M6.1 全量入口。完整 Windows Agent 仍因 SDK/`ring/lib.exe` 阻塞且模块未接入 runtime，不宣称可用。
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；

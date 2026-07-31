@@ -3167,6 +3167,7 @@ dependencies = [
  "xs-protocol",
  "xs-windows-local-ipc",
  "xs-windows-private-storage",
+ "xs-windows-route-manager",
  "xs-windows-service",
  "xs-windows-transport",
  "zeroize",

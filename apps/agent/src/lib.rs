@@ -17,4 +17,6 @@ pub mod runtime;
 pub mod state;
 pub mod storage;
 pub mod subnet_routes;
+#[cfg(windows)]
+pub mod windows_network;
 pub mod windows_xsnet;

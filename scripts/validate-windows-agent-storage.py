@@ -30,7 +30,7 @@ library = require(
         "#![deny(unsafe_code)]",
         "#[allow(unsafe_code)]",
         "mod platform;",
-        "pub use platform::{ensure_private_directory, read_private, write_private_atomic};",
+        "pub use platform::{ensure_private_directory, read_private, remove_private, write_private_atomic};",
     ],
 )
 assert "unsafe {" not in library
@@ -56,6 +56,7 @@ platform = require(
         "validate_path_chain",
         "verify_private_acl(parent, PathKind::Directory)",
         "verify_private_acl",
+        "pub fn remove_private",
     ],
 )
 for forbidden in ("MOVEFILE_REPLACE_EXISTING", ";;;WD)", ";;;BU)", ";;;AU)", ";;;IU)"):

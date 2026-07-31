@@ -704,3 +704,5 @@
 - 原因：把所有权、冲突和事务顺序做成纯安全 Rust，可在接触 IP Helper FFI 前穷举失败边界，并阻止后续平台层使用模糊前缀或接口级清理。
 - 代价：当前已实现隔离 `GetIpForwardTable2`/`FreeMibTable`、精确 Create/Delete 路由、非持久地址 Create/Delete、DAD 查询和有界轮询，以及地址成功后才执行的路由联合事务；DAD 拒绝/超时/查询失败与路由失败都会精确删除地址并显式返回清理失败。可信 manifest 使用 schema 1、严格 JSON、64 KiB 上限、规范 route order 和 exact LUID/address/route ownership；恢复计划只选择系统中仍精确匹配的记录资源，任何外部重叠失败关闭。Windows 平台通过 `xs-windows-private-storage` 读取和 write-through 原子替换 manifest，删除前同样验证父目录/文件 exact protected DACL 和 reparse 边界；恢复会尝试全部精确路由和地址并聚合每个失败。已通过 MSVC target check/Clippy；尚未实现 Agent 启动编排或 Windows 运行，不能描述为真实路由管理。
 - 安全影响：默认路由、外部路由重叠、所有权漂移、重复记录、零 LUID 和无界系统快照均在任何系统写入前被拒绝。真实 FFI 必须保持表释放、精确错误映射和 rollback 失败显式上报。
+
+- Agent 接入边界：新增 Windows-only `WindowsNetworkPreparation`，但 runtime 明确禁止引用。准备顺序固定为恢复可信 stale manifest、快照/冲突检查、原子写 Preparing、创建地址并等待 DAD、执行路由事务、原子写 Active；失败后保留 Preparing 供下次恢复。shutdown 只按 Active manifest 精确清理并在全部成功后删除 manifest。interface LUID 必须由未来已验证 xsnet 设备会话显式传入，不从接口名或全局枚举猜测。

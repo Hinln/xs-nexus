@@ -2,7 +2,7 @@ use std::{io, net::Ipv4Addr, path::Path, ptr::null_mut, slice, thread, time::Dur
 
 use ipnet::Ipv4Net;
 use windows_sys::Win32::{
-    Foundation::ERROR_SUCCESS,
+    Foundation::{ERROR_NOT_FOUND, ERROR_SUCCESS},
     NetworkManagement::{
         IpHelper::{
             CreateIpForwardEntry2, CreateUnicastIpAddressEntry, DeleteIpForwardEntry2,
@@ -166,6 +166,25 @@ pub fn query_dad_state(
         IP_DAD_STATE_PREFERRED => DadState::Preferred,
         value => DadState::Unknown(value),
     })
+}
+
+/// Reports whether one exact address exists without accepting other interface addresses.
+///
+/// # Errors
+///
+/// Returns validation or IP Helper failure other than the authoritative not-found status.
+pub fn exact_address_present(
+    interface_luid: u64,
+    address: Ipv4Addr,
+    prefix_length: u8,
+) -> Result<bool, IpHelperError> {
+    let mut row = address_row(interface_luid, address, prefix_length)?;
+    let status = unsafe { GetUnicastIpAddressEntry(&raw mut row) };
+    if status == ERROR_NOT_FOUND {
+        Ok(false)
+    } else {
+        win_result(status).map(|()| true)
+    }
 }
 
 fn route_row(route: RouteKey) -> MIB_IPFORWARD_ROW2 {
