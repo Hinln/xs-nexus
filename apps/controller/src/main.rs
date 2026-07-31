@@ -1,11 +1,29 @@
-use std::process::ExitCode;
+use std::{ffi::OsString, process::ExitCode};
 
 use tokio::{signal, sync::watch};
 use tracing_subscriber::EnvFilter;
-use xs_controller::config::ControllerConfig;
+use xs_controller::config::{ControllerConfig, MigrationConfig};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Command {
+    Serve,
+    Migrate,
+    Version,
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let command = match parse_command(std::env::args_os().skip(1)) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if command == Command::Version {
+        println!("xs-controller {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(
@@ -15,7 +33,7 @@ async fn main() -> ExitCode {
         .with_span_list(false)
         .init();
 
-    match run().await {
+    match run(command).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(event = "controller_start_failed", error = %error);
@@ -24,7 +42,17 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
+    if command == Command::Migrate {
+        let config = MigrationConfig::from_env()?;
+        let database_schema = config.database_schema.clone();
+        xs_controller::db::migrate(&config).await?;
+        tracing::info!(
+            event = "controller_migration_completed",
+            schema = database_schema
+        );
+        return Ok(());
+    }
     let config = ControllerConfig::from_env()?;
     let listen = config.listen;
     let discovery_listen = config.discovery_listen;
@@ -65,6 +93,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn parse_command(arguments: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
+    let arguments: Vec<OsString> = arguments.collect();
+    match arguments.as_slice() {
+        [] => Ok(Command::Serve),
+        [argument] if argument == "serve" => Ok(Command::Serve),
+        [argument] if argument == "migrate" => Ok(Command::Migrate),
+        [argument] if argument == "--version" => Ok(Command::Version),
+        _ => Err("usage: xs-controller [serve|migrate|--version]"),
+    }
+}
+
 async fn shutdown_signal() {
     let interrupt = async {
         if signal::ctrl_c().await.is_err() {
@@ -87,5 +126,34 @@ async fn shutdown_signal() {
     tokio::select! {
         () = interrupt => {}
         () = terminate => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_parser_is_exact() {
+        assert_eq!(
+            parse_command(Vec::<OsString>::new().into_iter()),
+            Ok(Command::Serve)
+        );
+        assert_eq!(
+            parse_command([OsString::from("serve")].into_iter()),
+            Ok(Command::Serve)
+        );
+        assert_eq!(
+            parse_command([OsString::from("migrate")].into_iter()),
+            Ok(Command::Migrate)
+        );
+        assert_eq!(
+            parse_command([OsString::from("--version")].into_iter()),
+            Ok(Command::Version)
+        );
+        assert!(
+            parse_command([OsString::from("migrate"), OsString::from("extra")].into_iter())
+                .is_err()
+        );
     }
 }

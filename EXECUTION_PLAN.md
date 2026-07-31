@@ -513,7 +513,7 @@
 
 ## M5.2 Docker / 1Panel 部署
 
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETED`
 - 前置：M4.1、M5.1
 
 ### 验收
@@ -528,11 +528,21 @@
 - 开发和 RC 隔离；
 - 无公网数据库端口。
 
+### 完成记录
+
+- Controller、Relay、Console 和一次性 migration/db-tools 均以多阶段镜像构建，运行时非 root、只读根文件系统、丢弃全部 capability 并启用 `no-new-privileges`；
+- Compose 只引用既有外部 `1panel-network`，不定义数据库服务、不发布 MySQL/PostgreSQL/Redis 端口，也不创建项目网络；
+- Controller 支持严格 `_FILE` Secret 和独立 `migrate` 命令，迁移在服务激活前执行；开发与 RC 使用独立项目名、schema、端口、Secret、备份和状态目录；
+- 部署脚本在迁移前备份既有 schema，激活失败自动恢复上一个镜像集合；RC 要求干净 Git 和与 HEAD 一致的镜像 revision；
+- PostgreSQL 18 运维镜像提供自定义格式逻辑备份、严格五字段完整性清单、校验、显式 schema 确认、恢复前安全备份和失败数据库回滚；
+- 实际生命周期测试覆盖镜像构建、迁移、三服务健康、容器安全属性、数据持久化、备份篡改拒绝、恢复、迁移失败不替换服务和错误镜像自动回滚；
+- 完成证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；既有 1Panel PostgreSQL/Redis 公网暴露仍为 `KI-006`/`BLK-005`，项目未修改该外部资源。
+
 ---
 
 ## M6.1 Windows 驱动设计和构建
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M1.3
 - 人工门禁：Windows WDK 环境
 - 风险等级：极高

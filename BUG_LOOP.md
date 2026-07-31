@@ -152,3 +152,13 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - Relay 2 的认证流量可能先于 Relay 1 超时维护到达，活动端点已经切换但原因仍为 `relay_fallback`；从一个 Relay 收到另一 Relay 的认证流量现直接分类为 `relay_failover`，Direct 到 Relay 仍为 `relay_fallback`，Relay 全链路连续三轮通过。
 - 最终 ShellCheck 发现 `SC2251`；修正条件表达式后保持 ShellCheck 全量通过，未使用禁用注释。
 - 五次失败全量证据保留在 `artifacts/qa/m5.1-20260730T230810Z`、`artifacts/qa/m5.1-20260730T230947Z`、`artifacts/qa/m5.1-20260730T231558Z`、`artifacts/qa/m5.1-20260730T231749Z` 和 `artifacts/qa/m5.1-20260730T232350Z`；最终通过证据为 `artifacts/qa/m5.1-20260730T232953Z`。
+
+---
+
+## M5.2 已闭环缺陷
+
+- db-tools 最初只设置 `PGDATABASE` 为连接 URI，libpq 将其当普通数据库名并回退本地 socket；改为每次 `psql`、`pg_dump`、`pg_restore` 显式传入受限进程内连接 URI，未记录值。
+- 最初运维镜像使用 PostgreSQL 17 客户端连接 18.4 服务端，`pg_dump` 正确拒绝主版本不匹配；升级为 `postgres:18-alpine3.22` 客户端镜像并保留版本断言，没有忽略错误。
+- `pg_restore --schema` 不恢复 schema 容器本身，首次恢复和安全回滚均失败；恢复路径现先显式创建确认后的目标 schema，再只恢复该 schema 对象。
+- 部署测试中的无效数据库 URI 含模拟 userinfo，被秘密扫描器按凭据字面量拒绝；测试改用无 userinfo 的本机拒绝端点，迁移失败语义和断言保持不变。
+- 失败全量证据保留在 `artifacts/qa/m5.2-20260731T001021Z`；最终通过证据为 `artifacts/qa/m5.2-20260731T001922Z`。

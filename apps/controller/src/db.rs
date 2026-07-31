@@ -4,7 +4,7 @@ use sqlx::{
 };
 use thiserror::Error;
 
-use crate::config::ControllerConfig;
+use crate::config::{ControllerConfig, MigrationConfig};
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
@@ -24,9 +24,27 @@ pub enum DatabaseError {
 ///
 /// Returns `DatabaseError` when connection, schema creation, or migration fails.
 pub async fn connect(config: &ControllerConfig) -> Result<PgPool, DatabaseError> {
-    create_schema(&config.database_url, &config.database_schema).await?;
+    connect_and_migrate(&config.database_url, &config.database_schema).await
+}
 
-    let search_path = format!("SET search_path TO \"{}\", public", config.database_schema);
+/// Applies the embedded database migrations and closes the migration pool.
+///
+/// # Errors
+///
+/// Returns [`DatabaseError`] when the database cannot be reached or migrated.
+pub async fn migrate(config: &MigrationConfig) -> Result<(), DatabaseError> {
+    let pool = connect_and_migrate(&config.database_url, &config.database_schema).await?;
+    pool.close().await;
+    Ok(())
+}
+
+async fn connect_and_migrate(
+    database_url: &str,
+    database_schema: &str,
+) -> Result<PgPool, DatabaseError> {
+    create_schema(database_url, database_schema).await?;
+
+    let search_path = format!("SET search_path TO \"{database_schema}\", public");
     let pool = PgPoolOptions::new()
         .min_connections(1)
         .max_connections(10)
@@ -38,7 +56,7 @@ pub async fn connect(config: &ControllerConfig) -> Result<PgPool, DatabaseError>
                 Ok(())
             })
         })
-        .connect(&config.database_url)
+        .connect(database_url)
         .await
         .map_err(DatabaseError::Connect)?;
 

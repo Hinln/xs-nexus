@@ -81,6 +81,19 @@ sudo /usr/local/lib/xs-nexus/current/bin/xs-agent cleanup \
 - 容器失败时回滚到上一个固定镜像摘要；
 - 迁移失败时停止新版本并恢复数据库备份。
 
+M5.2 项目栈命令：
+
+```bash
+STACK=./deploy/docker/xs-nexus-stack.sh
+ENV_FILE=/etc/xs-nexus/deployments/dev.compose.env
+
+sudo "$STACK" --env-file "$ENV_FILE" status
+sudo "$STACK" --env-file "$ENV_FILE" rollback
+sudo "$STACK" --env-file "$ENV_FILE" down
+```
+
+部署激活前会把当前三个服务镜像 ID 写入私有状态目录并创建项目专用 rollback tag。`rollback` 只在三个旧镜像均可用时执行；若没有完整集合则失败关闭。`down` 只删除当前 Compose 项目容器，不删除 `1panel-network`、数据库、Secret、备份或 1Panel 资源。
+
 ---
 
 ## 5. 数据库恢复
@@ -98,6 +111,25 @@ sudo /usr/local/lib/xs-nexus/current/bin/xs-agent cleanup \
 - 破坏性迁移拆阶段；
 - 先兼容读写，再删除旧字段；
 - 失败保留日志和恢复命令。
+
+已验证命令：
+
+```bash
+sudo "$STACK" --env-file "$ENV_FILE" backup incident-before-change
+sudo "$STACK" --env-file "$ENV_FILE" verify-backup incident-before-change
+sudo "$STACK" --env-file "$ENV_FILE" restore incident-before-change \
+  --confirm-schema xs_nexus_dev
+```
+
+恢复前必须：
+
+1. 保存数据库、Controller 和部署脚本脱敏日志；
+2. 校验 `.dump` 和 `.manifest` 同时存在且均非符号链接；
+3. 执行 `verify-backup`；
+4. 将归档和清单复制到受控离线位置；
+5. 精确核对环境文件中的 schema，不得恢复到其他环境。
+
+恢复脚本停止 Controller、创建恢复前安全备份、删除并重建目标 schema，再受限恢复。恢复失败会删除失败状态并从安全备份回滚；若安全回滚也失败，立即按 P0 处理，不得启动写流量或手工修改其他 schema。备份静态加密和异机复制见 `KI-015`。
 
 ---
 

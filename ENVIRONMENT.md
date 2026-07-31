@@ -191,3 +191,30 @@ M5.1 在开发服务器安装并验证以下发行版构建包：
 - OpenSSL CLI、GNU tar/gzip/coreutils、`readelf`：清单签名、确定性归档、哈希和 ELF 架构验证。
 
 这些是构建主机工具，不进入 Agent 运行时产物。实际 x86_64 与 aarch64 构建证据位于 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。正式签名私钥不得安装或持久化在该开发服务器。
+
+---
+
+## 11. Docker / 1Panel 部署环境
+
+M5.2 使用以下固定边界：
+
+- Compose：`deploy/docker/compose.yaml`；
+- 管理脚本：`deploy/docker/xs-nexus-stack.sh`；
+- dev 模板：`deploy/docker/dev.compose.env.example`；
+- RC 模板：`deploy/docker/rc.compose.env.example`；
+- dev 项目/schema：`xs-nexus-dev` / `xs_nexus_dev`；
+- RC 项目/schema：`xs-nexus-rc` / `xs_nexus_rc`；
+- 外部网络：`1panel-network`，`bridge`，`172.18.0.0/16`；
+- PostgreSQL 服务端：18.4；db-tools 使用 PostgreSQL 18 客户端。
+
+环境文件、Secret、备份和状态必须位于仓库外。推荐根路径：
+
+```text
+/etc/xs-nexus/deployments/<dev|rc>.compose.env
+/etc/xs-nexus/deployments/<dev|rc>/controller
+/etc/xs-nexus/deployments/<dev|rc>/relay
+/var/backups/xs-nexus/<dev|rc>
+/var/lib/xs-nexus-deploy/<dev|rc>
+```
+
+默认 Controller/Console/Discovery/Relay 端口只绑定 `127.0.0.1`。正式 DNS、TLS、反向代理和防火墙仍属于人工门禁。完整准备、部署、备份和恢复步骤见 `docs/DOCKER_1PANEL_DEPLOYMENT.md`。

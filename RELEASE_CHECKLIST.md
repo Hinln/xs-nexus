@@ -19,9 +19,9 @@
 
 - [x] Linux x86_64（M5.1 测试签名构建）
 - [x] Linux arm64（M5.1 真实交叉构建与 ELF 验证，目标运行待门禁）
-- [ ] Controller
-- [ ] Relay
-- [ ] Console
+- [x] Controller（M5.2 开发镜像构建与健康验证）
+- [x] Relay（M5.2 开发镜像构建与健康验证）
+- [x] Console（M5.2 开发镜像构建与健康验证）
 - [x] CLI（Linux x86_64/arm64 包）
 - [ ] Windows Agent
 - [ ] Windows Driver
@@ -50,16 +50,16 @@
 
 ## 部署
 
-- [ ] 使用外部 `1panel-network`
+- [x] 使用外部 `1panel-network`
 - [ ] 无数据库公网端口
-- [ ] 容器非 root
-- [ ] Secret 仓库外
-- [ ] 健康检查
-- [ ] 日志轮转
-- [ ] 备份
-- [ ] 恢复演练
+- [x] 容器非 root
+- [x] Secret 仓库外
+- [x] 健康检查
+- [x] 日志轮转
+- [x] 备份（M5.2 本机私有目录；加密/异机复制待 `KI-015`）
+- [x] 恢复演练（M5.2 测试 schema）
 - [ ] 防火墙最小开放
-- [ ] 开发和 RC 隔离
+- [x] 开发和 RC 隔离
 
 ## 更新
 
@@ -82,7 +82,7 @@
 - [x] 升级（Linux）
 - [x] 卸载（Linux）
 - [x] 恢复（Linux Agent 生命周期）
-- [ ] 1Panel
+- [x] 1Panel（项目部署与恢复；既有公网数据库端口仍由 `BLK-005` 阻塞）
 - [ ] 测试报告
 - [ ] 性能报告
 - [ ] FINAL_REPORT

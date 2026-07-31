@@ -264,6 +264,16 @@
 - 管理控制台 TLS；
 - 开发环境与 RC 隔离。
 
+### M5.2 验证状态
+
+- 所有服务显式使用非 root UID，根文件系统只读，丢弃全部 capability，启用 `no-new-privileges`、PID 上限、tmpfs 和有界 json-file 日志；
+- Secret 只从仓库外、非符号链接、私有权限文件只读挂载；Controller 直接环境值与 `_FILE` 同时出现时失败关闭；
+- Compose 只引用名称、driver 和子网均匹配基线的外部 `1panel-network`，不创建数据库容器、不发布数据库端口、不执行 prune 或网络变更；
+- dev/RC 分离项目、schema、端口、Secret、备份和状态路径；RC 还要求干净 Git、固定 HEAD revision 和一致镜像标签；
+- 迁移在服务激活前运行；激活失败恢复上一镜像集合。备份使用 PostgreSQL 18 客户端、私有目录、自定义归档和大小/SHA-256/时间清单，恢复要求精确 schema 确认并先做安全备份；
+- 备份静态加密、异机复制和恢复保留策略尚未完成，记录为 `KI-015`；既有 1Panel 数据库公网端口仍为 `KI-006`/`BLK-005`；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`。
+
 ---
 
 ## 10. 安全退出条件

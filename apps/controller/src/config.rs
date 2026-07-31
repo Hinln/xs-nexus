@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    env,
+    env, fs,
     net::{Ipv4Addr, SocketAddr},
     path::Path,
 };
@@ -31,6 +31,11 @@ pub struct ControllerConfig {
     pub config_signing_key: SigningKey,
     pub credential_ttl_seconds: u64,
     pub relays: Vec<ConfigurationRelay>,
+}
+
+pub struct MigrationConfig {
+    pub database_url: String,
+    pub database_schema: String,
 }
 
 #[derive(Debug, Error)]
@@ -65,6 +70,18 @@ pub enum ConfigError {
     KeyReuse,
     #[error("invalid RELAY_CATALOG_PATH")]
     RelayCatalog,
+    #[error("{0} and {0}_FILE must not both be set")]
+    SecretConflict(&'static str),
+    #[error("unable to inspect secret file for {0}")]
+    SecretMetadata(&'static str),
+    #[error("secret file for {0} must be a regular non-symlink file")]
+    SecretType(&'static str),
+    #[error("secret file permissions for {0} must not grant group or other access")]
+    SecretPermissions(&'static str),
+    #[error("unable to read secret file for {0}")]
+    SecretRead(&'static str),
+    #[error("secret value for {0} is invalid")]
+    SecretValue(&'static str),
 }
 
 impl ControllerConfig {
@@ -89,20 +106,18 @@ impl ControllerConfig {
         {
             return Err(ConfigError::Discovery);
         }
-        let database_url = required("DATABASE_URL")?;
+        let database_url = required_secret("DATABASE_URL")?.to_string();
         let database_schema = env::var("DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus".to_owned());
         validate_schema(&database_schema)?;
 
-        let admin_token = Zeroizing::new(required("ADMIN_API_TOKEN")?);
+        let admin_token = required_secret("ADMIN_API_TOKEN")?;
         if admin_token.chars().count() < 32 {
             return Err(ConfigError::AdminToken);
         }
         let admin_token_hash = Sha256::digest(admin_token.as_bytes()).into();
         drop(admin_token);
 
-        let console_bootstrap_password = env::var("CONSOLE_BOOTSTRAP_PASSWORD")
-            .ok()
-            .map(Zeroizing::new);
+        let console_bootstrap_password = optional_secret("CONSOLE_BOOTSTRAP_PASSWORD")?;
         let configured_console_username = env::var("CONSOLE_BOOTSTRAP_USERNAME").ok();
         let console_bootstrap_username = match (
             configured_console_username,
@@ -172,6 +187,23 @@ impl ControllerConfig {
     }
 }
 
+impl MigrationConfig {
+    /// Loads only the database settings required by the migration job.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the database secret or schema is invalid.
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let database_url = required_secret("DATABASE_URL")?.to_string();
+        let database_schema = env::var("DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus".to_owned());
+        validate_schema(&database_schema)?;
+        Ok(Self {
+            database_url,
+            database_schema,
+        })
+    }
+}
+
 fn valid_console_username(username: &str) -> bool {
     (3..=64).contains(&username.len())
         && username.bytes().enumerate().all(|(index, byte)| {
@@ -187,6 +219,57 @@ fn valid_console_password(password: &str) -> bool {
 
 fn required(name: &'static str) -> Result<String, ConfigError> {
     env::var(name).map_err(|_| ConfigError::Missing(name))
+}
+
+fn required_secret(name: &'static str) -> Result<Zeroizing<String>, ConfigError> {
+    optional_secret(name)?.ok_or(ConfigError::Missing(name))
+}
+
+fn optional_secret(name: &'static str) -> Result<Option<Zeroizing<String>>, ConfigError> {
+    let direct = env::var(name).ok();
+    let file_variable = format!("{name}_FILE");
+    let file = env::var(file_variable).ok();
+    match (direct, file) {
+        (Some(_), Some(_)) => Err(ConfigError::SecretConflict(name)),
+        (Some(value), None) => validate_secret_value(name, value).map(Some),
+        (None, Some(path)) => read_secret_file(name, Path::new(&path)).map(Some),
+        (None, None) => Ok(None),
+    }
+}
+
+fn read_secret_file(name: &'static str, path: &Path) -> Result<Zeroizing<String>, ConfigError> {
+    let metadata = path
+        .symlink_metadata()
+        .map_err(|_| ConfigError::SecretMetadata(name))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(ConfigError::SecretType(name));
+    }
+    #[cfg(unix)]
+    if metadata.permissions().mode() & 0o077 != 0 {
+        return Err(ConfigError::SecretPermissions(name));
+    }
+    if metadata.len() == 0 || metadata.len() > 8_192 {
+        return Err(ConfigError::SecretValue(name));
+    }
+    let mut value = fs::read_to_string(path).map_err(|_| ConfigError::SecretRead(name))?;
+    if value.ends_with('\n') {
+        value.pop();
+        if value.ends_with('\r') {
+            value.pop();
+        }
+    }
+    validate_secret_value(name, value)
+}
+
+fn validate_secret_value(
+    name: &'static str,
+    value: String,
+) -> Result<Zeroizing<String>, ConfigError> {
+    if value.is_empty() || value.len() > 8_192 || value.contains(['\0', '\r', '\n']) {
+        Err(ConfigError::SecretValue(name))
+    } else {
+        Ok(Zeroizing::new(value))
+    }
 }
 
 fn optional_socket(name: &'static str) -> Result<Option<SocketAddr>, ConfigError> {
@@ -328,6 +411,31 @@ mod tests {
         ];
         write_catalog(&catalog, &duplicates);
         assert!(load_relay_catalog(catalog.path()).is_err());
+    }
+
+    #[test]
+    fn secret_files_allow_one_trailing_newline_and_reject_embedded_lines() {
+        let secret = NamedTempFile::new().expect("temporary secret");
+        std::fs::write(secret.path(), b"secret-value\n").expect("write secret");
+        assert_eq!(
+            read_secret_file("TEST_SECRET", secret.path())
+                .expect("valid secret")
+                .as_str(),
+            "secret-value"
+        );
+
+        std::fs::write(secret.path(), b"line-one\nline-two\n").expect("write invalid secret");
+        assert!(read_secret_file("TEST_SECRET", secret.path()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn secret_files_reject_group_or_other_permissions() {
+        let secret = NamedTempFile::new().expect("temporary secret");
+        std::fs::write(secret.path(), b"secret-value").expect("write secret");
+        std::fs::set_permissions(secret.path(), std::fs::Permissions::from_mode(0o640))
+            .expect("set unsafe secret mode");
+        assert!(read_secret_file("TEST_SECRET", secret.path()).is_err());
     }
 
     #[cfg(unix)]

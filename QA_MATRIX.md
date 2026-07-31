@@ -196,6 +196,16 @@
 - systemd 自动重启与 SIGKILL 后可信 cleanup 已在真实 transient unit 验证；整机重启、真实 arm64/NAS 运行仍属于实机门禁；
 - 证据：`/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。
 
+### M5.2 自动化结果
+
+- `scripts/test-docker-deployment.sh` 使用真实外部 PostgreSQL 和既有 `1panel-network`，构建并启动 Controller、Relay、Console 和一次性迁移/运维镜像；
+- 已验证三服务健康、非 root、只读根文件系统、无 capability、`no-new-privileges`、日志轮转、仅外部网络和无数据库端口；
+- 已验证 API 数据跨容器激活持久化、自定义格式备份、五字段清单、大小/SHA-256/归档校验、篡改拒绝和恢复后数据精确回到快照；
+- 已验证错误数据库端点导致迁移失败时当前服务镜像不变，错误 Controller 镜像激活失败后自动恢复上一组健康镜像；
+- 测试前后比较 Docker 网络、`1panel-network` 成员、默认路由和 nftables，并删除项目容器与测试 schema；
+- `scripts/validate-m52.sh` 汇总全部历史单元/集成/namespace/安装回归、真实 x86_64/aarch64 构建、M5.2 部署生命周期、秘密扫描、ShellCheck、npm audit 和宿主基线；
+- 全量证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`。
+
 ### Windows
 
 - 干净安装；

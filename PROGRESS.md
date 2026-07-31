@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-30 23:35 UTC
-当前 Git 提交：M5.1 完成检查点（以本文件所在提交为准）
+最后更新时间：2026-07-31 00:26 UTC
+当前 Git 提交：M5.2 完成检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M5.2 Docker / 1Panel 部署`
+当前里程碑：`M6.1 Windows 驱动设计和构建`
 
 ---
 
@@ -78,38 +78,45 @@
 - 生命周期测试覆盖干净/重复安装、外层和内层篡改、错误签名/公钥、升级、失败激活、回滚、清理失败、卸载重装和无服务残留；
 - systemd 崩溃测试改为 SIGKILL 后调用发布路径 cleanup，验证恢复清单和主机接口无残留；
 - M5.1 全量证据 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`，包含真实 x86_64/aarch64 构建和宿主/1Panel 前后基线。
+- Controller、Relay、Console 和 PostgreSQL 运维镜像完成多阶段构建；运行时非 root、只读根文件系统、无 capability、启用 `no-new-privileges`、健康检查和日志轮转；
+- Compose 只引用外部 `1panel-network`，不创建数据库服务或项目网络，不发布数据库端口；dev/RC 使用独立项目、schema、端口、Secret、备份和状态目录；
+- Controller 支持严格 `_FILE` Secret 与独立迁移命令；部署在激活前备份和迁移，失败镜像自动回滚，RC 强制干净 Git 与固定 revision；
+- PostgreSQL 18 运维工具完成备份、清单校验、篡改拒绝、精确 schema 恢复、恢复前安全备份和失败回滚；
+- M5.2 生命周期测试覆盖实际构建、迁移、健康、持久化、备份恢复、迁移失败保护和错误镜像回滚；
+- M5.2 全量证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，最终无项目容器、网络、namespace、TUN、nftables、默认路由或 `1panel-network` 变化。
 
 ## 当前工作点
 
-- M5.1 已完成全部计划内实现与全量验证，最终验证无测试 TUN、namespace、bridge、nftables、默认路由、Docker 网络或 `1panel-network` 变化；
-- M5.2 开始核对现有 Dockerfile、Compose、迁移、健康检查、持久化、备份恢复和开发/RC 隔离边界；
-- 真实 NAS `192.168.0.0/24` 保持人工门禁，不以 namespace 结果替代真实设备验收。
+- M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
+- 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
+- M6.1 开始盘点 Windows 驱动规范、WDK 门禁、Linux 可完成的静态设计和可构建边界；
+- 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 
 ## 下一步
 
-1. 完整读取 M5.2 Docker、1Panel、迁移、备份恢复和开发/RC 隔离要求；
-2. 盘点现有镜像、Compose、运行用户、capability、健康检查、日志和数据卷；
-3. 设计只引用外部 `1panel-network` 且不创建数据库容器的部署拓扑；
-4. 实现固定构建产物、非 root 容器、迁移门禁、备份恢复和失败回滚；
-5. 在项目命名资源内运行实际部署验证并复核 1Panel 前后基线。
+1. 完整读取 M6.1 驱动架构、IOCTL、队列、生命周期、安全和构建要求；
+2. 检查仓库现有 Windows 目录、可用交叉工具和 WDK/VM 人工门禁；
+3. 固定 `xsnet` 最小职责、用户态边界、数据格式、状态机和威胁模型；
+4. 实现所有不依赖真实 WDK/VM 的源码、静态验证和负向测试；
+5. 将无法在 Linux 证明的构建、签名、Driver Verifier 和实机结果写入 `BLOCKERS.md`。
 
 ## 下一条准确命令
 
 ```bash
-sed -n '503,520p' EXECUTION_PLAN.md
-rg -n 'Docker|Compose|1Panel|migration|backup|restore|health|non-root' IMPLEMENT.md ACCEPTANCE.md RELEASE_CHECKLIST.md RECOVERY_RUNBOOK.md ENVIRONMENT.md
-find deploy -maxdepth 3 -type f -print | sort
-docker compose version && docker network inspect 1panel-network
+sed -n '533,570p' EXECUTION_PLAN.md
+rg -n 'Windows|driver|xsnet|IOCTL|WDK|Verifier|签名' IMPLEMENT.md ACCEPTANCE.md QA_MATRIX.md SECURITY_REVIEW.md BLOCKERS.md
+find drivers installers/windows -maxdepth 4 -type f -print 2>/dev/null | sort
+command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 ```
 
 ## 最近测试
 
 - 时间：2026-07-30 23:35 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m51.sh`；
+- 命令：`./scripts/validate-m52.sh`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；
-- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、Linux 签名安装生命周期、真实 x86_64/aarch64 release 构建、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；
+- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、Linux 签名安装生命周期、真实 x86_64/aarch64 release 构建、Docker/1Panel 迁移部署备份恢复回滚、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
 
 ## 当前失败
 

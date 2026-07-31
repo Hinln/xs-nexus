@@ -151,16 +151,18 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更�
 
 ## J. 1Panel 部署
 
-- [ ] MUST：服务加入外部 `1panel-network`。
-- [ ] MUST：不重建该网络。
+- [x] MUST：服务加入外部 `1panel-network`。
+- [x] MUST：不重建该网络。
 - [ ] MUST：数据库不向公网暴露。
-- [ ] MUST：容器默认非 root。
-- [ ] MUST：健康检查。
-- [ ] MUST：日志轮转。
-- [ ] MUST：数据备份恢复。
-- [ ] MUST：数据库迁移失败可恢复。
-- [ ] MUST：开发和 RC 隔离。
-- [ ] MUST：不影响 1Panel 现有服务。
+- [x] MUST：容器默认非 root。
+- [x] MUST：健康检查。
+- [x] MUST：日志轮转。
+- [x] MUST：数据备份恢复。
+- [x] MUST：数据库迁移失败可恢复。
+- [x] MUST：开发和 RC 隔离。
+- [x] MUST：不影响 1Panel 现有服务。
+
+证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`。项目 Compose 不包含数据库服务或数据库端口，但既有 1Panel PostgreSQL/Redis 公网暴露仍由 `KI-006`/`BLK-005` 阻塞宿主级“数据库不向公网暴露”，因此该项不勾选。
 
 ---
 

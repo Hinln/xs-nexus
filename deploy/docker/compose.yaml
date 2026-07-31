@@ -1,15 +1,229 @@
-name: xs-nexus-dev
+name: ${XS_COMPOSE_PROJECT_NAME:-xs-nexus-dev}
+
+x-service-security: &service-security
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt:
+    - no-new-privileges:true
+  init: true
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
 
 services:
+  migration:
+    <<: *service-security
+    profiles: ["migration"]
+    image: ${XS_MIGRATION_IMAGE:?set XS_MIGRATION_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/controller.Dockerfile
+      args:
+        VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+    command: ["migrate"]
+    user: "65532:65532"
+    restart: "no"
+    environment:
+      DATABASE_URL_FILE: /run/secrets/xs-controller/database-url
+      DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
+      RUST_LOG: ${XS_RUST_LOG:-info}
+    volumes:
+      - type: bind
+        source: ${XS_CONTROLLER_SECRETS_DIR:?set XS_CONTROLLER_SECRETS_DIR}
+        target: /run/secrets/xs-controller
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks:
+      - 1panel-network
+
+  controller:
+    <<: *service-security
+    image: ${XS_CONTROLLER_IMAGE:?set XS_CONTROLLER_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/controller.Dockerfile
+      args:
+        VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+    command: ["serve"]
+    user: "65532:65532"
+    restart: unless-stopped
+    stop_grace_period: 20s
+    environment:
+      CONTROLLER_LISTEN: 0.0.0.0:8080
+      DISCOVERY_LISTEN: 0.0.0.0:42000
+      DISCOVERY_PUBLIC_ENDPOINT: ${XS_DISCOVERY_PUBLIC_ENDPOINT:?set XS_DISCOVERY_PUBLIC_ENDPOINT}
+      DATABASE_URL_FILE: /run/secrets/xs-controller/database-url
+      DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
+      ADMIN_API_TOKEN_FILE: /run/secrets/xs-controller/admin-api-token
+      CONSOLE_BOOTSTRAP_USERNAME: ${XS_CONSOLE_BOOTSTRAP_USERNAME:-admin}
+      CONSOLE_BOOTSTRAP_PASSWORD_FILE: /run/secrets/xs-controller/console-bootstrap-password
+      CONSOLE_COOKIE_SECURE: ${XS_CONSOLE_COOKIE_SECURE:-true}
+      CONSOLE_SESSION_TTL_SECONDS: ${XS_CONSOLE_SESSION_TTL_SECONDS:-28800}
+      NODE_CREDENTIAL_TTL_SECONDS: ${XS_NODE_CREDENTIAL_TTL_SECONDS:-2592000}
+      CREDENTIAL_SIGNING_KEY_PATH: /run/secrets/xs-controller/credential-signing-key
+      CONFIG_SIGNING_KEY_PATH: /run/secrets/xs-controller/configuration-signing-key
+      RELAY_CATALOG_PATH: /run/secrets/xs-controller/relay-catalog.json
+      RUST_LOG: ${XS_RUST_LOG:-info}
+    volumes:
+      - type: bind
+        source: ${XS_CONTROLLER_SECRETS_DIR:?set XS_CONTROLLER_SECRETS_DIR}
+        target: /run/secrets/xs-controller
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    ports:
+      - target: 8080
+        published: ${XS_CONTROLLER_HTTP_PORT:-18080}
+        host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
+        protocol: tcp
+      - target: 42000
+        published: ${XS_DISCOVERY_UDP_PORT:-42000}
+        host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
+        protocol: udp
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks:
+      1panel-network:
+        aliases:
+          - xs-nexus-${XS_DEPLOYMENT:-dev}-controller
+
+  relay:
+    <<: *service-security
+    image: ${XS_RELAY_IMAGE:?set XS_RELAY_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/relay.Dockerfile
+      args:
+        VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+    user: "65532:65532"
+    restart: unless-stopped
+    stop_grace_period: 20s
+    environment:
+      RELAY_LISTEN: 0.0.0.0:42001
+      RELAY_HEALTH_LISTEN: 0.0.0.0:8081
+      RELAY_ID_BASE64: ${XS_RELAY_ID_BASE64:?set XS_RELAY_ID_BASE64}
+      CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH: /run/secrets/xs-relay/controller-credential-public-key
+      RELAY_IDENTITY_KEY_PATH: /run/secrets/xs-relay/identity-key
+      RELAY_LEASE_TTL_SECONDS: ${XS_RELAY_LEASE_TTL_SECONDS:-120}
+      RELAY_IDLE_TIMEOUT_SECONDS: ${XS_RELAY_IDLE_TIMEOUT_SECONDS:-60}
+      RELAY_MAX_LEASES: ${XS_RELAY_MAX_LEASES:-4096}
+      RELAY_REGISTRATIONS_PER_SOURCE_PER_MINUTE: ${XS_RELAY_REGISTRATIONS_PER_SOURCE_PER_MINUTE:-30}
+      RELAY_PACKETS_PER_LEASE_PER_SECOND: ${XS_RELAY_PACKETS_PER_LEASE_PER_SECOND:-2000}
+      RELAY_BYTES_PER_LEASE_PER_SECOND: ${XS_RELAY_BYTES_PER_LEASE_PER_SECOND:-16777216}
+      RELAY_QUEUE_PACKETS_PER_NODE: ${XS_RELAY_QUEUE_PACKETS_PER_NODE:-64}
+      RELAY_QUEUE_BYTES_PER_NODE: ${XS_RELAY_QUEUE_BYTES_PER_NODE:-131072}
+      RUST_LOG: ${XS_RUST_LOG:-info}
+    volumes:
+      - type: bind
+        source: ${XS_RELAY_SECRETS_DIR:?set XS_RELAY_SECRETS_DIR}
+        target: /run/secrets/xs-relay
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    ports:
+      - target: 42001
+        published: ${XS_RELAY_UDP_PORT:-42001}
+        host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
+        protocol: udp
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8081/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      1panel-network:
+        aliases:
+          - xs-nexus-${XS_DEPLOYMENT:-dev}-relay
+
+  console:
+    <<: *service-security
+    image: ${XS_CONSOLE_IMAGE:?set XS_CONSOLE_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/console.Dockerfile
+      args:
+        VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+    user: "101:101"
+    restart: unless-stopped
+    stop_grace_period: 10s
+    environment:
+      CONTROLLER_UPSTREAM: xs-nexus-${XS_DEPLOYMENT:-dev}-controller:8080
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=16m,mode=0750,uid=101,gid=101
+      - /etc/nginx/conf.d:size=1m,mode=0750,uid=101,gid=101
+    ports:
+      - target: 8080
+        published: ${XS_CONSOLE_HTTP_PORT:-18081}
+        host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
+        protocol: tcp
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/console-health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    depends_on:
+      controller:
+        condition: service_healthy
+    networks:
+      1panel-network:
+        aliases:
+          - xs-nexus-${XS_DEPLOYMENT:-dev}-console
+
+  db-tools:
+    <<: *service-security
+    profiles: ["ops"]
+    image: ${XS_DB_TOOLS_IMAGE:?set XS_DB_TOOLS_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/db-tools.Dockerfile
+      args:
+        VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+    user: "65532:65532"
+    restart: "no"
+    environment:
+      DATABASE_URL_FILE: /run/secrets/xs-controller/database-url
+      DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
+      BACKUP_DIRECTORY: /backups
+    volumes:
+      - type: bind
+        source: ${XS_CONTROLLER_SECRETS_DIR:?set XS_CONTROLLER_SECRETS_DIR}
+        target: /run/secrets/xs-controller
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${XS_BACKUP_DIR:?set XS_BACKUP_DIR}
+        target: /backups
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    networks:
+      - 1panel-network
+
   network-probe:
+    <<: *service-security
     image: alpine:3.22
     profiles: ["baseline"]
     command: ["/bin/true"]
     user: "65534:65534"
-    read_only: true
-    cap_drop: ["ALL"]
-    security_opt:
-      - no-new-privileges:true
     restart: "no"
     networks:
       - 1panel-network

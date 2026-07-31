@@ -1,6 +1,6 @@
 # 第三方依赖与许可证
 
-状态：M5.1 运行时、构建与测试依赖清单  
+状态：M5.2 运行时、构建与测试依赖清单  
 日期：2026-07-31
 
 `Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。版本与许可证字段已通过 `cargo metadata` 核对；任何新增依赖必须同步更新本文件。发布前仍须生成完整 SBOM、许可证文本集合和构建来源证明。
@@ -62,6 +62,17 @@
 | Vitest | 4.1.10 | 前端单元测试 | MIT | 否 |
 | `@types/react` | 19.2.17 | TypeScript 类型 | MIT | 否 |
 | `@types/react-dom` | 19.2.3 | TypeScript 类型 | MIT | 否 |
+
+### 容器基础镜像与运行工具
+
+| 镜像/组件 | 固定系列 | 用途 | 许可说明 |
+|---|---|---|---|
+| Debian `bookworm-slim` | bookworm | Controller/Relay 运行时 | Debian 软件包各自许可证；RC 前由 SBOM 固定摘要和包清单 |
+| NGINX unprivileged | `1.29-alpine` | Console 非 root 静态服务和反向代理 | NGINX BSD-2-Clause；Alpine 包各自许可证 |
+| PostgreSQL Alpine | `18-alpine3.22` | 一次性 `pg_dump`/`pg_restore`/`psql` 运维镜像 | PostgreSQL License；Alpine 包各自许可证 |
+| Alpine | `3.22` | 外部网络只读配置探针和错误镜像测试 | Alpine 包各自许可证 |
+
+Controller/Relay 的 Rust `1.93.0-bookworm` 和 Console 的 Node `24-bookworm-slim` 只作为构建阶段，不进入最终运行镜像。当前标签已在 M5.2 实际解析和构建；RC 前仍须固定 manifest digest、生成镜像 SBOM、许可证文本和漏洞报告。
 
 ## 3. 工具与 CI
 

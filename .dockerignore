@@ -1,0 +1,13 @@
+.git
+.github
+.env
+artifacts
+target
+node_modules
+apps/console/dist
+apps/console/test-results
+apps/console/playwright-report
+*.tgz
+*.log
+**/__pycache__
+**/*.pyc
