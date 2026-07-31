@@ -71,6 +71,87 @@ pub enum RoutePlanError {
     OwnershipDrift,
 }
 
+pub trait RouteBackend {
+    type Error;
+
+    /// Creates exactly one route.
+    ///
+    /// # Errors
+    ///
+    /// Returns the platform error without retrying or treating ambiguous completion as success.
+    fn create(&mut self, route: RouteKey) -> Result<(), Self::Error>;
+
+    /// Deletes exactly one route.
+    ///
+    /// # Errors
+    ///
+    /// Returns the platform error without broad prefix, interface, or table cleanup.
+    fn delete(&mut self, route: RouteKey) -> Result<(), Self::Error>;
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ExecuteError<E> {
+    Add {
+        route: RouteKey,
+        source: E,
+        compensation_failures: Vec<(RouteKey, E)>,
+    },
+    Remove {
+        route: RouteKey,
+        source: E,
+        restore_failures: Vec<(RouteKey, E)>,
+    },
+}
+
+/// Executes one additions-first transaction with explicit compensation evidence.
+///
+/// # Errors
+///
+/// Returns the original create/delete failure together with every failed compensating operation.
+/// The caller must treat any non-empty compensation or restore list as host state requiring manual
+/// recovery; failures are never collapsed into a generic success result.
+pub fn execute_plan<B: RouteBackend>(
+    backend: &mut B,
+    plan: &ReconcilePlan,
+) -> Result<(), ExecuteError<B::Error>> {
+    let mut added = Vec::with_capacity(plan.additions.len());
+    for route in &plan.additions {
+        if let Err(source) = backend.create(*route) {
+            let mut compensation_failures = Vec::new();
+            for added_route in added.iter().rev().copied() {
+                if let Err(error) = backend.delete(added_route) {
+                    compensation_failures.push((added_route, error));
+                }
+            }
+            return Err(ExecuteError::Add {
+                route: *route,
+                source,
+                compensation_failures,
+            });
+        }
+        added.push(*route);
+    }
+
+    let mut removed = Vec::with_capacity(plan.removals.len());
+    for route in &plan.removals {
+        if let Err(source) = backend.delete(*route) {
+            let mut restore_failures = Vec::new();
+            for removed_route in removed.iter().rev().copied() {
+                if let Err(error) = backend.create(removed_route) {
+                    restore_failures.push((removed_route, error));
+                }
+            }
+            return Err(ExecuteError::Remove {
+                route: *route,
+                source,
+                restore_failures,
+            });
+        }
+        removed.push(*route);
+    }
+    Ok(())
+}
+
 /// Produces a fail-closed additions-first route transaction.
 ///
 /// `owned` is the trusted local manifest. `system` is a bounded snapshot returned by Windows IP
@@ -176,7 +257,30 @@ fn reserved(prefix: Ipv4Net) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use super::*;
+
+    #[derive(Default)]
+    struct FakeBackend {
+        calls: Vec<(&'static str, RouteKey)>,
+        create_results: VecDeque<Result<(), &'static str>>,
+        delete_results: VecDeque<Result<(), &'static str>>,
+    }
+
+    impl RouteBackend for FakeBackend {
+        type Error = &'static str;
+
+        fn create(&mut self, route: RouteKey) -> Result<(), Self::Error> {
+            self.calls.push(("create", route));
+            self.create_results.pop_front().unwrap_or(Ok(()))
+        }
+
+        fn delete(&mut self, route: RouteKey) -> Result<(), Self::Error> {
+            self.calls.push(("delete", route));
+            self.delete_results.pop_front().unwrap_or(Ok(()))
+        }
+    }
 
     fn prefix(value: &str) -> Ipv4Net {
         value.parse().expect("valid prefix")
@@ -268,6 +372,85 @@ mod tests {
         assert_eq!(
             plan_reconcile(7, &[], &[], &system),
             Err(RoutePlanError::RouteTableLimit)
+        );
+    }
+
+    #[test]
+    fn add_failure_compensates_created_routes_in_reverse_order() {
+        let first = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("first");
+        let second = RouteKey::project(prefix("192.168.20.0/24"), 7).expect("second");
+        let plan = ReconcilePlan {
+            additions: vec![first, second],
+            compensation: vec![second, first],
+            removals: Vec::new(),
+        };
+        let mut backend = FakeBackend {
+            create_results: [Ok(()), Err("create")].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            execute_plan(&mut backend, &plan),
+            Err(ExecuteError::Add {
+                route: second,
+                source: "create",
+                compensation_failures: Vec::new(),
+            })
+        );
+        assert_eq!(
+            backend.calls,
+            vec![("create", first), ("create", second), ("delete", first)]
+        );
+    }
+
+    #[test]
+    fn compensation_failure_is_not_hidden() {
+        let first = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("first");
+        let second = RouteKey::project(prefix("192.168.20.0/24"), 7).expect("second");
+        let plan = ReconcilePlan {
+            additions: vec![first, second],
+            compensation: vec![second, first],
+            removals: Vec::new(),
+        };
+        let mut backend = FakeBackend {
+            create_results: [Ok(()), Err("create")].into(),
+            delete_results: [Err("rollback")].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            execute_plan(&mut backend, &plan),
+            Err(ExecuteError::Add {
+                route: second,
+                source: "create",
+                compensation_failures: vec![(first, "rollback")],
+            })
+        );
+    }
+
+    #[test]
+    fn removal_failure_restores_only_routes_already_removed() {
+        let first = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("first");
+        let second = RouteKey::project(prefix("192.168.20.0/24"), 7).expect("second");
+        let plan = ReconcilePlan {
+            additions: Vec::new(),
+            compensation: Vec::new(),
+            removals: vec![first, second],
+        };
+        let mut backend = FakeBackend {
+            create_results: [Err("restore")].into(),
+            delete_results: [Ok(()), Err("delete")].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            execute_plan(&mut backend, &plan),
+            Err(ExecuteError::Remove {
+                route: second,
+                source: "delete",
+                restore_failures: vec![(first, "restore")],
+            })
+        );
+        assert_eq!(
+            backend.calls,
+            vec![("delete", first), ("delete", second), ("create", first)]
         );
     }
 }
