@@ -89,7 +89,7 @@ services:
         host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
         protocol: udp
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/health/ready"]
+      test: ["CMD", "/usr/local/bin/xs-controller", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -140,7 +140,7 @@ services:
         host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
         protocol: udp
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8081/health/ready"]
+      test: ["CMD", "/usr/local/bin/xs-relay", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 12

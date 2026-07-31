@@ -1,4 +1,4 @@
-use std::{ffi::OsString, process::ExitCode};
+use std::{ffi::OsString, process::ExitCode, time::Duration};
 
 use tokio::{signal, sync::watch};
 use tracing_subscriber::EnvFilter;
@@ -8,6 +8,7 @@ use xs_controller::config::{ControllerConfig, MigrationConfig};
 enum Command {
     Serve,
     Migrate,
+    Healthcheck,
     Version,
 }
 
@@ -23,6 +24,19 @@ async fn main() -> ExitCode {
     if command == Command::Version {
         println!("xs-controller {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
+    }
+    if command == Command::Healthcheck {
+        return match xs_core::check_local_http_health(
+            "127.0.0.1:8080".parse().expect("fixed healthcheck address"),
+            "/health/ready",
+            Duration::from_secs(2),
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
     }
     tracing_subscriber::fmt()
         .json()
@@ -99,8 +113,9 @@ fn parse_command(arguments: impl Iterator<Item = OsString>) -> Result<Command, &
         [] => Ok(Command::Serve),
         [argument] if argument == "serve" => Ok(Command::Serve),
         [argument] if argument == "migrate" => Ok(Command::Migrate),
+        [argument] if argument == "healthcheck" => Ok(Command::Healthcheck),
         [argument] if argument == "--version" => Ok(Command::Version),
-        _ => Err("usage: xs-controller [serve|migrate|--version]"),
+        _ => Err("usage: xs-controller [serve|migrate|healthcheck|--version]"),
     }
 }
 
@@ -136,6 +151,10 @@ mod tests {
     #[test]
     fn command_parser_is_exact() {
         assert_eq!(
+            parse_command([OsString::from("healthcheck")].into_iter()),
+            Ok(Command::Healthcheck)
+        );
+        assert_eq!(
             parse_command(Vec::<OsString>::new().into_iter()),
             Ok(Command::Serve)
         );
@@ -154,6 +173,12 @@ mod tests {
         assert!(
             parse_command([OsString::from("migrate"), OsString::from("extra")].into_iter())
                 .is_err()
+        );
+        assert!(
+            parse_command(
+                [OsString::from("healthcheck"), OsString::from("127.0.0.1:9")].into_iter()
+            )
+            .is_err()
         );
     }
 }

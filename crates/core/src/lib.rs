@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod acl;
+mod healthcheck;
 mod routes;
 
 pub use acl::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
     AclValidationError, PortRange,
 };
+pub use healthcheck::{HttpHealthcheckError, check_local_http_health};
 pub use routes::validate_subnet_route_suggestion;
 pub use routes::{ResolvedSubnetRoute, SubnetRoutePolicy, SubnetRouteValidationError};
 

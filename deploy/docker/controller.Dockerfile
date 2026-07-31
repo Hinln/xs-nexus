@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.title="XS Nexus Controller" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="XS Nexus clean-room repository"
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates curl \
+    && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 65532 xs-nexus \
     && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin xs-nexus

@@ -229,7 +229,7 @@ wait_for_http "http://127.0.0.1:$CONTROLLER_PORT/health/ready"
 wait_for_http "http://127.0.0.1:$CONSOLE_PORT/console-health"
 curl --fail --silent --show-error "http://127.0.0.1:$CONSOLE_PORT/health/ready" >/dev/null
 relay_container=$(compose ps -q relay)
-docker exec "$relay_container" curl --fail --silent --show-error http://127.0.0.1:8081/health/ready >/dev/null
+docker exec "$relay_container" /usr/local/bin/xs-relay healthcheck
 
 for service in controller relay console; do
     assert_service_security "$service"

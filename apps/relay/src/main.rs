@@ -1,14 +1,41 @@
-use std::{process::ExitCode, sync::Arc};
+use std::{ffi::OsString, process::ExitCode, sync::Arc, time::Duration};
 
 use tokio::{signal, sync::watch};
 use tracing_subscriber::EnvFilter;
 use xs_relay::{RelayMetrics, RelayServer, config::RelayConfig};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Command {
+    Serve,
+    Healthcheck,
+    Version,
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    if version_requested() {
+    let command = match parse_command(std::env::args_os().skip(1)) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if command == Command::Version {
         println!("xs-relay {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
+    }
+    if command == Command::Healthcheck {
+        return match xs_core::check_local_http_health(
+            "127.0.0.1:8081".parse().expect("fixed healthcheck address"),
+            "/health/ready",
+            Duration::from_secs(2),
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
     }
     tracing_subscriber::fmt()
         .json()
@@ -28,12 +55,15 @@ async fn main() -> ExitCode {
     }
 }
 
-fn version_requested() -> bool {
-    let mut arguments = std::env::args_os().skip(1);
-    arguments
-        .next()
-        .is_some_and(|argument| argument == "--version")
-        && arguments.next().is_none()
+fn parse_command(arguments: impl Iterator<Item = OsString>) -> Result<Command, &'static str> {
+    let arguments: Vec<OsString> = arguments.collect();
+    match arguments.as_slice() {
+        [] => Ok(Command::Serve),
+        [argument] if argument == "serve" => Ok(Command::Serve),
+        [argument] if argument == "healthcheck" => Ok(Command::Healthcheck),
+        [argument] if argument == "--version" => Ok(Command::Version),
+        _ => Err("usage: xs-relay [serve|healthcheck|--version]"),
+    }
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -127,4 +157,34 @@ fn hexadecimal(bytes: &[u8]) -> String {
         encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
     encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_parser_is_exact() {
+        assert_eq!(
+            parse_command(Vec::<OsString>::new().into_iter()),
+            Ok(Command::Serve)
+        );
+        assert_eq!(
+            parse_command([OsString::from("serve")].into_iter()),
+            Ok(Command::Serve)
+        );
+        assert_eq!(
+            parse_command([OsString::from("healthcheck")].into_iter()),
+            Ok(Command::Healthcheck)
+        );
+        assert_eq!(
+            parse_command([OsString::from("--version")].into_iter()),
+            Ok(Command::Version)
+        );
+        assert!(parse_command([OsString::from("unknown")].into_iter()).is_err());
+        assert!(
+            parse_command([OsString::from("healthcheck"), OsString::from("remote")].into_iter())
+                .is_err()
+        );
+    }
 }
