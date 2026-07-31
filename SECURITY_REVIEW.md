@@ -223,8 +223,9 @@
 - INF 草案仅授予 LocalSystem、标记 exclusive、禁用 host 共享、拒绝内核客户端和空/未知 file object；每个请求还要求 user-mode、已接受 file object 和读写 access 位；
 - IOCTL 禁止 `FILE_ANY_ACCESS`、`METHOD_NEITHER` 和共享可写环；控制面 buffered，包方向 direct I/O，当前未实现包路径和 SetLink 统一返回 `STATUS_NOT_SUPPORTED` 并保持断链；
 - ABI v1 与会话模型使用固定字节布局、精确总长度、严格递增非极值 sequence、单 owner、状态顺序、MTU/队列和 1 MiB/64 包/9000 字节硬上限；Release 严格告警与 ASan/UBSan 均通过；
+- 平台无关数据平面模型使用每方向 64 包固定上限、协商 MTU 校验和原子批次入队；容量不足或输出过小时不部分修改队列，出队和 reset 对完整固定槽清零，避免失败请求泄漏陈旧 payload；
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
-- WDK/MSBuild、InfVerif、INF ACL 实际应用、NetAdapterCx API 编译、ring 收发、请求取消竞态、PnP/power 实际行为、测试签名、Driver Verifier 和 VM 异常输入仍未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
+- 有界队列尚未接入 direct-I/O request 和 NetAdapterCx ring；WDK/MSBuild、InfVerif、INF ACL 实际应用、NetAdapterCx API 编译、ring 收发、请求取消竞态、PnP/power 实际行为、测试签名、Driver Verifier 和 VM 异常输入仍未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 
 ---
 

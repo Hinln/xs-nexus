@@ -225,10 +225,11 @@
 - `drivers/windows-xsnet/src/abi.c` 不依赖 Windows 结构体布局，逐字段读取固定小端头和批次描述符；
 - `drivers/windows-xsnet/tests/abi_test.c` 覆盖正确消息、截断、Magic、版本、header、flag、payload 上限、精确总长度、零 sequence、空/超限批次、描述符长度、间隙、短包和隐藏尾部；
 - `drivers/windows-xsnet/tests/session_test.c` 覆盖单 owner、版本和能力协商、调用顺序、严格递增 sequence、上限重开、MTU、队列深度、link、包 MTU、幂等 Detach 和 cleanup；
-- `scripts/test-windows-xsnet-abi.sh` 在 Clang 21 Release `-Wall -Wextra -Wpedantic -Werror` 与 GCC 15 ASan/UBSan 配置编译运行两组测试；
+- `drivers/windows-xsnet/tests/dataplane_test.c` 覆盖双包往返、批次原子入队、MTU、容量背压、小输出不消费、部分出队、环绕和 reset 后 payload 清零；
+- `scripts/test-windows-xsnet-abi.sh` 在 Clang 21 Release `-Wall -Wextra -Wpedantic -Werror` 与 GCC 15 ASan/UBSan 配置编译运行三组测试；
 - `scripts/validate-windows-xsnet-source.py` 固定 Windows 11 24H2、UMDF 2.33、NetAdapterCx 2.5、x64、测试签名元数据、仅 LocalSystem SDDL、独立 UMDF host、拒绝内核客户端/未知 file object/直接硬件访问、direct/buffered IOCTL 和关键生命周期回调；
 - 源码当前对 SetLink 和双向包 IOCTL 返回 `STATUS_NOT_SUPPORTED`，保持 adapter 断链，避免尚未实现 ring 传输时误报可用；
-- 当前结果只证明平台无关模型和源码文本不变量；WDK 编译、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
+- 当前结果只证明平台无关模型和源码文本不变量；有界队列尚未接入 WDF request 或 NetAdapterCx ring。WDK 编译、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---
 

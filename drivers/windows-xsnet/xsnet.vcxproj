@@ -64,6 +64,7 @@
   <ItemGroup>
     <ClInclude Include="include\xsnet_abi.h" />
     <ClInclude Include="include\xsnet_driver.h" />
+    <ClInclude Include="include\xsnet_dataplane.h" />
     <ClInclude Include="include\xsnet_ioctl.h" />
     <ClInclude Include="include\xsnet_session.h" />
   </ItemGroup>
@@ -71,6 +72,7 @@
     <ClCompile Include="src\abi.c" />
     <ClCompile Include="src\adapter.c" />
     <ClCompile Include="src\device.c" />
+    <ClCompile Include="src\dataplane.c" />
     <ClCompile Include="src\driver.c" />
     <ClCompile Include="src\ioctl.c" />
     <ClCompile Include="src\queues.c" />

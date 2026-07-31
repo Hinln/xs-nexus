@@ -92,6 +92,8 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 - 不做无限等待、无限重试、动态线程池或内核网络访问；
 - backpressure 只阻塞虚拟 NIC 队列，不影响宿主其他网卡。
 
+`include/xsnet_dataplane.h` 与 `src/dataplane.c` 已实现平台无关的固定槽队列模型：批次入队先完成全量规范编码、MTU 和容量检查，失败不部分入队；出队按调用方容量选择完整包，无法容纳首包时不消费；成功出队和 reset 清零完整槽。该模型只证明队列语义，不代表已接入 WDF direct I/O 或 NetAdapterCx ring。
+
 ## 7. 未完成门禁
 
 以下项目在获得 `BLK-001` 环境前不得标记通过：
@@ -111,7 +113,7 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 make test-windows-xsnet-abi
 ```
 
-该命令以 Release `-Werror` 和 ASan/UBSan Debug 两种配置编译并运行平台无关解析器与会话状态机，只证明 ABI 长度、规范编码、批次边界、单 owner、版本/sequence、MTU/队列和状态转换，不证明 Windows 驱动可运行。
+该命令以 Release `-Werror` 和 ASan/UBSan Debug 两种配置编译并运行平台无关解析器、会话状态机与有界包队列，只证明 ABI 长度、规范编码、批次边界、单 owner、版本/sequence、MTU/队列、状态转换、背压、环绕和清零，不证明 Windows 驱动可运行。
 
 ```bash
 make test-windows-xsnet-source

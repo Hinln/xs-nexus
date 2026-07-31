@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(xsnet_abi C)
 
-add_library(xsnet_abi STATIC src/abi.c src/session.c)
+add_library(xsnet_abi STATIC src/abi.c src/dataplane.c src/session.c)
 target_include_directories(xsnet_abi PUBLIC include)
 target_compile_features(xsnet_abi PUBLIC c_std_11)
 
@@ -30,4 +30,13 @@ if(BUILD_TESTING)
         target_compile_options(xsnet_session_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME xsnet_session_validation COMMAND xsnet_session_test)
+
+    add_executable(xsnet_dataplane_test tests/dataplane_test.c)
+    target_link_libraries(xsnet_dataplane_test PRIVATE xsnet_abi)
+    if(MSVC)
+        target_compile_options(xsnet_dataplane_test PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(xsnet_dataplane_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME xsnet_dataplane_validation COMMAND xsnet_dataplane_test)
 endif()

@@ -52,6 +52,14 @@ def validate_project() -> None:
         "Release|x64",
     }:
         fail("xsnet.vcxproj must target x64 Debug and Release only")
+    compile_sources = {
+        item.attrib["Include"]
+        for item in tree.findall(".//msb:ClCompile", namespace)
+        if "Include" in item.attrib
+    }
+    for source in ("src\\abi.c", "src\\session.c", "src\\dataplane.c"):
+        if source not in compile_sources:
+            fail(f"xsnet.vcxproj must compile {source}")
 
 
 def validate_inf() -> None:
@@ -110,6 +118,9 @@ def validate_sources() -> None:
         "NET_ADAPTER_RX_CAPABILITIES_INIT_SYSTEM_MANAGED",
         "NET_ADAPTER_LINK_STATE_INIT_DISCONNECTED",
         "WdfRequestComplete(request, STATUS_CANCELLED)",
+        "XsnetPacketQueuePushBatch",
+        "XsnetPacketQueuePopBatch",
+        "secure_zero",
     ]
     for value in required:
         if value not in sources:

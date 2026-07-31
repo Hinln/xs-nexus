@@ -5,7 +5,7 @@
 ## Current status
 
 - M6.1 is in progress.
-- The versioned Agent/driver ABI, canonical packet-batch validator, and single-owner session state machine are implemented and host-tested.
+- The versioned Agent/driver ABI, canonical packet-batch validator, single-owner session state machine, and bounded packet queue are implemented and host-tested.
 - The first installable target is Windows 11 24H2 UMDF 2.33 + NetAdapterCx 2.5; the Windows 10 support gap is tracked as `KI-016`.
 - The WDK/NetAdapterCx driver, INF, test-signed package, installer, and VM evidence are not complete.
 - The checked-in UMDF source intentionally rejects link-up and packet IOCTLs until ring transfer is implemented and WDK-validated.
@@ -16,6 +16,8 @@
 The driver may create and operate one virtual NIC, exchange bounded IPv4 batches with the LocalSystem Agent, enforce handle ownership and lifecycle, and report link/queue state. Encryption, XSP/1, identity, ACL, routing policy, NAT, Relay, updates, and secrets remain in user mode.
 
 The ABI rejects unknown versions, types, flags, noncanonical lengths, zero sequence numbers, oversized batches, gaps, overlaps, hidden trailing bytes, and packets outside 20–9000 bytes.
+
+The portable queue has a fixed 64-packet capacity per direction, validates a batch before mutating state, preserves packets when output is too small, and zeroes complete slots after dequeue or reset. It is not yet connected to WDF direct I/O or NetAdapterCx rings.
 
 ## Host ABI test
 

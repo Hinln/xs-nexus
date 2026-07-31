@@ -132,7 +132,8 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 
 - 命令：`make test-windows-xsnet-abi`；
 - 结果：通过；
-- 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence、单 owner、协商顺序、MTU/队列、link、批次和 cleanup 负向测试；
+- 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence、单 owner、协商顺序、MTU/队列、link、批次和 cleanup 负向测试，以及有界队列的原子入队、背压、小输出、部分出队、环绕和 payload 清零；
+- 当前实现：有界包队列纯 C 模型已完成，尚未接入 WDF direct I/O 和 NetAdapterCx TX/RX ring；
 - 不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏。
 
 ## 外部阻塞
