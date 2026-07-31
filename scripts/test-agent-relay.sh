@@ -700,6 +700,10 @@ CAPTURE_PID=
 cat "$TEMPORARY/collector.log"
 cat "$TEMPORARY/relay-capture.log"
 wait_relay_metric "$RELAY_HEALTH_1" packets_forwarded 1
+wait_relay_metric "$RELAY_HEALTH_1" packets_received 1
+wait_relay_metric "$RELAY_HEALTH_1" bytes_received 1
+wait_relay_metric "$RELAY_HEALTH_1" bytes_forwarded 1
+wait_relay_metric "$RELAY_HEALTH_1" forwarding_latency_samples 1
 
 authentication_before=$(relay_metric "$RELAY_HEALTH_1" authentication_drops)
 python3 - "$TEMPORARY/relay-frame.bin" "$BRIDGE_IP" "$RELAY_PORT_1" <<'PY'
@@ -711,6 +715,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
     sock.sendto(Path(sys.argv[1]).read_bytes(), (sys.argv[2], int(sys.argv[3])))
 PY
 wait_relay_metric_kreater "$RELAY_HEALTH_1" authentication_drops "$authentication_before"
+wait_relay_metric "$RELAY_HEALTH_1" packets_dropped 1
 
 kill "$RELAY_1_PID"
 wait "$RELAY_1_PID"
