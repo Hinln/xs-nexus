@@ -179,6 +179,7 @@ pub(crate) async fn create_network(
 
     let configuration = publish_configuration(&mut transaction, network_id, state).await?;
     transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(network_id);
 
     Ok(NetworkResponse {
         id: network_id,
@@ -405,6 +406,7 @@ pub(crate) async fn replace_acl_policy(
     )
     .await?;
     transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(network_id);
     Ok(ReplaceAclPolicyResponse {
         network_id,
         policy_version: next_policy_version,
@@ -549,6 +551,7 @@ pub(crate) async fn replace_subnet_routes(
     )
     .await?;
     transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(network_id);
     Ok(ReplaceSubnetRoutesResponse {
         network_id,
         configuration_version: configuration.version,
@@ -917,6 +920,7 @@ pub(crate) async fn revoke_node(
     )
     .await?;
     transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(network_id);
     Ok(RevokeNodeResponse {
         network_id,
         node_id_base64: node_id_base64.to_owned(),
@@ -1288,6 +1292,7 @@ pub(crate) async fn enroll_node(
     )
     .await?;
     transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(token.network_id);
 
     Ok(EnrollResponse {
         network_id: token.network_id,
@@ -1759,6 +1764,7 @@ pub(crate) async fn advertise_candidates(
     )
     .await?;
     transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(authenticated.network_id);
     Ok(configuration)
 }
 

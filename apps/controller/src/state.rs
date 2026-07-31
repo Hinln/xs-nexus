@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ed25519_dalek::SigningKey;
 use sqlx::PgPool;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 use xs_core::ConfigurationRelay;
 
 use crate::config::ControllerConfig;
@@ -21,11 +21,13 @@ pub struct AppState {
     pub discovery_public_endpoints: Arc<Vec<SocketAddr>>,
     pub relays: Arc<Vec<ConfigurationRelay>>,
     online_nodes: Arc<RwLock<HashMap<[u8; 16], usize>>>,
+    configuration_events: broadcast::Sender<uuid::Uuid>,
 }
 
 impl AppState {
     #[must_use]
     pub fn new(pool: PgPool, config: &ControllerConfig) -> Self {
+        let (configuration_events, _) = broadcast::channel(256);
         Self {
             pool,
             admin_token_hash: config.admin_token_hash,
@@ -39,6 +41,7 @@ impl AppState {
             ),
             relays: Arc::new(config.relays.clone()),
             online_nodes: Arc::new(RwLock::new(HashMap::new())),
+            configuration_events,
         }
     }
 
@@ -63,5 +66,13 @@ impl AppState {
 
     pub(crate) async fn online_node_ids(&self) -> Vec<[u8; 16]> {
         self.online_nodes.read().await.keys().copied().collect()
+    }
+
+    pub(crate) fn subscribe_configuration_events(&self) -> broadcast::Receiver<uuid::Uuid> {
+        self.configuration_events.subscribe()
+    }
+
+    pub(crate) fn notify_configuration_changed(&self, network_id: uuid::Uuid) {
+        let _ = self.configuration_events.send(network_id);
     }
 }

@@ -21,6 +21,7 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
     let Some(authenticated) = authenticate_socket(&mut socket, &state, &challenge).await else {
         return;
     };
+    let mut configuration_events = state.subscribe_configuration_events();
     if send_initial_configuration(&mut socket, &state, &authenticated)
         .await
         .is_err()
@@ -34,7 +35,13 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
     {
         tracing::warn!(event = "control_presence_write_failed", state = "connected");
     }
-    serve_authenticated_loop(&mut socket, &state, &authenticated).await;
+    serve_authenticated_loop(
+        &mut socket,
+        &state,
+        &authenticated,
+        &mut configuration_events,
+    )
+    .await;
     if state.mark_node_offline(authenticated.node_id).await
         && crate::service::record_control_disconnected(&state, &authenticated.node_id)
             .await
@@ -131,6 +138,7 @@ async fn serve_authenticated_loop(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    configuration_events: &mut tokio::sync::broadcast::Receiver<uuid::Uuid>,
 ) {
     let mut heartbeat = interval(Duration::from_secs(30));
     heartbeat.tick().await;
@@ -138,6 +146,16 @@ async fn serve_authenticated_loop(
         tokio::select! {
             _ = heartbeat.tick() => {
                 if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    return;
+                }
+            }
+            event = configuration_events.recv() => {
+                let Ok(network_id) = event else {
+                    continue;
+                };
+                if network_id == authenticated.network_id
+                    && send_latest_configuration(socket, state, authenticated).await.is_err()
+                {
                     return;
                 }
             }
@@ -151,6 +169,21 @@ async fn serve_authenticated_loop(
             }
         }
     }
+}
+
+async fn send_latest_configuration(
+    socket: &mut WebSocket,
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+) -> Result<(), axum::Error> {
+    let configuration = crate::service::latest_configuration(state, authenticated.network_id)
+        .await
+        .map_err(|_| axum::Error::new(std::io::Error::other("configuration unavailable")))?;
+    send_json(
+        socket,
+        &ControlServerMessage::Configuration { configuration },
+    )
+    .await
 }
 
 async fn handle_authenticated_message(

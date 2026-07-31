@@ -925,7 +925,7 @@ async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str)
     .fetch_one(pool)
     .await
     .expect("control audit count");
-    assert_eq!(control_audits, 2);
+    assert_eq!(control_audits, 3);
 
     let stored_use_count: i32 =
         sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
@@ -1626,6 +1626,66 @@ async fn verify_websocket_control(
             .expect("serve test controller");
     });
 
+    let mut socket = authenticate_websocket(address, enrollment, identity).await;
+    let mut observer = authenticate_websocket(address, enrollment, identity).await;
+
+    socket
+        .send(Message::Text(
+            json!({"type": "sync", "last_version": 4})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send sync");
+    let synchronized = socket
+        .next()
+        .await
+        .expect("sync response")
+        .expect("valid sync response");
+    let Message::Text(synchronized) = synchronized else {
+        panic!("expected sync text");
+    };
+    let synchronized: Value = serde_json::from_str(&synchronized).expect("sync JSON");
+    assert_eq!(synchronized["type"], "up_to_date");
+    assert_eq!(synchronized["version"], 4);
+
+    advertise_candidates_and_verify(&mut socket, enrollment, identity, discovery_address).await;
+    let broadcast = timeout(Duration::from_secs(2), observer.next())
+        .await
+        .expect("configuration broadcast timeout")
+        .expect("observer message")
+        .expect("valid observer message");
+    let Message::Text(broadcast) = broadcast else {
+        panic!("expected configuration broadcast text");
+    };
+    let broadcast: Value = serde_json::from_str(&broadcast).expect("broadcast JSON");
+    assert_eq!(broadcast["type"], "configuration");
+    assert_eq!(broadcast["configuration"]["version"], 5);
+    assert_console_online_count(router, 1).await;
+
+    socket.close(None).await.expect("close websocket");
+    observer
+        .close(None)
+        .await
+        .expect("close observer websocket");
+    timeout(Duration::from_secs(2), async {
+        loop {
+            if console_online_count(router).await == 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("control disconnect updates console presence");
+    server.abort();
+}
+
+async fn authenticate_websocket(
+    address: SocketAddr,
+    enrollment: &Value,
+    identity: &SigningKey,
+) -> ControlSocket {
     let (mut socket, _) = connect_async(format!("ws://{address}/v1/control"))
         .await
         .expect("connect control websocket");
@@ -1654,7 +1714,6 @@ async fn verify_websocket_control(
     input.extend_from_slice(&challenge);
     input.extend_from_slice(&node_id);
     let signature = identity.sign(&input);
-
     socket
         .send(Message::Text(
             json!({
@@ -1679,46 +1738,20 @@ async fn verify_websocket_control(
     let authenticated: Value = serde_json::from_str(&authenticated).expect("authenticated JSON");
     assert_eq!(authenticated["type"], "authenticated");
     assert_eq!(authenticated["configuration"]["version"], 4);
-
     socket
-        .send(Message::Text(
-            json!({"type": "sync", "last_version": 4})
-                .to_string()
-                .into(),
-        ))
-        .await
-        .expect("send sync");
-    let synchronized = socket
-        .next()
-        .await
-        .expect("sync response")
-        .expect("valid sync response");
-    let Message::Text(synchronized) = synchronized else {
-        panic!("expected sync text");
-    };
-    let synchronized: Value = serde_json::from_str(&synchronized).expect("sync JSON");
-    assert_eq!(synchronized["type"], "up_to_date");
-    assert_eq!(synchronized["version"], 4);
+}
 
-    advertise_candidates_and_verify(&mut socket, enrollment, identity, discovery_address).await;
-    assert_console_online_count(router, 1).await;
-
-    socket.close(None).await.expect("close websocket");
+async fn assert_console_online_count(router: &Router, expected: u64) {
     timeout(Duration::from_secs(2), async {
         loop {
-            if console_online_count(router).await == 0 {
+            if console_online_count(router).await == expected {
                 break;
             }
             tokio::task::yield_now().await;
         }
     })
     .await
-    .expect("control disconnect updates console presence");
-    server.abort();
-}
-
-async fn assert_console_online_count(router: &Router, expected: u64) {
-    assert_eq!(console_online_count(router).await, expected);
+    .expect("console online count converges");
 }
 
 async fn console_online_count(router: &Router) -> u64 {
