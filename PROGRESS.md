@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 02:27 UTC
-当前 Git 提交：M6.1 Windows exact ABI 与安装兼容检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 02:45 UTC
+当前 Git 提交：源码供应链与独立实现验收检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -103,6 +103,11 @@
 - `docs/WINDOWS_XSNET_COMPATIBILITY.md` 明确测试安装器只支持 clean install/uninstall，替换包必须停止 Agent、关闭 handle、精确卸载并依赖 VM 快照恢复；没有实现或声称热升级、热降级或生产回滚。
 - 兼容与回滚边界证据为 `/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`，覆盖 workspace 单测、Agent 全目标 Clippy、兼容/安装/VM/源码门禁、C Release/ASan/UBSan、秘密扫描和宿主前后基线。
 
+- Acceptance A 独立实现门禁：扫描全部运行源码并精确固定三个负向引用，新增引用失败关闭；
+- 完整源码依赖清单：321 个 Cargo crate、110 个 npm 包，逐组件许可证、PURL 与 lock checksum/integrity；
+- 确定性源码 SBOM：离线生成 CycloneDX 1.6、SPDX 2.3 和 SHA-256 manifest，双次输出逐字节一致；
+- 供应链 CI 门禁、M0.2 clean-room/原创性验证、秘密扫描和 npm 高危漏洞审计均通过；证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。
+
 ## 当前工作点
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
@@ -110,6 +115,7 @@
 - M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步仍是最小 Windows transport，但当前没有可编译 Windows Rust/SDK 环境；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
+- Acceptance A 已有源码和文档证据；容器操作系统 SBOM、许可证全文和构建来源证明仍留在 Release Checklist，不提前宣称完整 RC 供应链。
 
 ## 下一步
 
@@ -130,12 +136,12 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 
 ## 最近测试
 
-- 时间：2026-07-31 02:26 UTC；
+- 时间：2026-07-31 02:45 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`cargo fmt --all -- --check`、`make test-unit`、Agent 全目标 Clippy、`make test-windows-xsnet-compatibility`、安装器/VM/源码门禁、`make test-windows-xsnet-abi`、`make security-check`、Python bytecode 检查和 `git diff --check`；
+- 命令：`make test-independent-implementation`、`make test-source-sbom`、实际 `make source-sbom`、`make test-spec`、`make security-check`、`npm audit --audit-level=high`、Python bytecode 检查、JSON 结构/计数检查和 `git diff --check`；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`；
-- 覆盖：exact ABI v1、Hello 三处版本固定、INF/driver-store/状态版本一致、clean-install 边界、workspace 单测、Agent Clippy、UMDF/INF/IOCTL 源码不变量、五组 Clang Release 和 GCC ASan/UBSan、720 种 teardown、秘密扫描、Git whitespace、namespace/TUN、默认路由、规范化 nftables、失败服务和完整 `1panel-network` 前后比较。
+- 证据：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`；
+- 覆盖：全运行源码禁用引用、clean-room/协议原创性文档、431 个锁定源码依赖、全部许可证、Cargo SHA-256、npm SHA-512 integrity、CycloneDX 1.6、SPDX 2.3、确定性输出和拒绝路径；namespace/TUN、默认路由、规范化 nftables、失败服务和完整 `1panel-network` 前后比较。
 
 ## 当前失败
 
@@ -168,6 +174,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
 - Windows 驱动源码尚未经过 WDK 编译和 VM 执行，真实设备尚未接入；
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
+- 源码依赖 SBOM 已可复现生成，但容器操作系统包、许可证全文和最终构建来源证明尚未完成；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
 - 临时凭据后续必须轮换。

@@ -6,11 +6,13 @@
 
 ## A. 独立实现
 
-- [ ] MUST：核心运行路径不依赖禁用的组网/VPN/穿透产品。
-- [ ] MUST：`THIRD_PARTY.md` 列出全部依赖和许可证。
-- [ ] MUST：Clean-room 文档完整。
-- [ ] MUST：不存在复制的私有协议和包格式。
-- [ ] MUST：SBOM 可生成。
+- [x] MUST：核心运行路径不依赖禁用的组网/VPN/穿透产品。
+- [x] MUST：`THIRD_PARTY.md` 列出全部依赖和许可证。
+- [x] MUST：Clean-room 文档完整。
+- [x] MUST：不存在复制的私有协议和包格式。
+- [x] MUST：SBOM 可生成。
+
+证据：M0.2 clean-room 与协议原创性验证 `/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`；全运行源码禁用引用门禁、321 个 Cargo 与 110 个 npm 精确锁定依赖许可证、确定性 CycloneDX 1.6/SPDX 2.3 生成和负向测试证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。该 SBOM 只覆盖源码依赖，容器操作系统包仍属于 Release Checklist 未完成项。
 
 ---
 

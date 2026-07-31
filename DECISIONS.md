@@ -620,3 +620,15 @@
 - 原因：把运行时协议兼容、包身份和安装事务分开后，不会因产品版本相近就连接不兼容 ABI，也不会把尚未实现的热升级或降级路径写成可用能力。
 - 代价：任何 ABI 变化都需要新的显式 discovery/compatibility 设计和 VM 矩阵；测试包升级步骤较慢，无法证明最终用户无缝升级。
 - 安全影响：未知 ABI、错误 INF 版本、staged package 漂移和既有模糊状态都失败关闭；回滚不能选择未记录 `oem#.inf`、未知 signer 或不同 ABI。生产升级与回滚仍为未完成门禁。
+
+---
+
+## ADR-053：源码 SBOM 使用锁文件、固定许可证快照和双格式确定性导出
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：`Cargo.lock` 有 crate checksum 但没有许可证，npm lock v3 有 integrity 但没有许可证；依赖本机 `node_modules` 会遗漏非当前平台 optional 包，生成时在线查询注册表又会让 CI 和历史证据随外部状态漂移。
+- 决策：Cargo 以 `cargo metadata --locked` 的许可证和 `Cargo.lock` SHA-256 checksum 逐项绑定；npm 使用建立时已和官方注册表 exact version、license、`dist.integrity` 核对的受版本控制快照，并要求其集合与 `package-lock.json` 完全一致。标准库 Python 工具离线生成 CycloneDX 1.6、SPDX 2.3 和输入/输出 manifest，使用稳定排序、输入摘要派生 UUID 与显式 `SOURCE_DATE_EPOCH`。许可证、禁用依赖、输出路径和覆盖行为全部失败关闭。
+- 原因：同时覆盖当前主机未安装的可选平台包、保留锁文件内容身份、消除生成期网络依赖，并使依赖变化必须通过可审查的 lock/snapshot diff 和负向测试。
+- 代价：npm 依赖变化必须通过独立受控步骤刷新许可证快照；源码 SBOM 不含容器操作系统包、许可证全文或最终镜像摘要，不能直接满足完整 RC 供应链清单。
+- 安全影响：未知许可证、快照缺项或多项、checksum/integrity 缺失、禁用产品依赖和新增运行路径引用都会阻断 CI；允许许可证表达式保留原始选择语义，只把非标准斜杠写法规范化为 SPDX `OR`，不把未知条款误标为已批准。

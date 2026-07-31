@@ -248,6 +248,16 @@
 
 ---
 
+### 独立实现与源码供应链自动化覆盖
+
+- `scripts/validate-independent-implementation.py` 扫描 Agent、Controller、Relay、协议、驱动、安装器、部署和脚本源码；只允许 Agent 对已知第三方接口前缀的排除保护，以及 Windows 源码门禁中的禁止断言，任何新增禁用产品引用失败关闭；
+- `scripts/generate-source-sbom.py` 离线绑定 `Cargo.lock`、`cargo metadata --locked`、`package-lock.json` 和精确 npm 许可证快照，生成排序稳定的 CycloneDX 1.6、SPDX 2.3 与 SHA-256 manifest；
+- `scripts/test-source-sbom.py` 双次生成并逐字节比较，固定 321 个 Cargo、110 个 npm、总计 431 个组件，验证全部许可证、PURL 和锁定摘要，并覆盖缺失快照项、拒绝许可证、禁用依赖和覆盖既有目录；
+- `make test-independent-implementation` 与 `make test-source-sbom` 已接入 CI；M0.2 文档门禁继续验证 clean-room、原创协议和明确不兼容说明；
+- 完整证据：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。该范围不包含容器操作系统包或许可证全文，不能替代 RC 容器 SBOM。
+
+---
+
 ## 6. 控制面
 
 - 数据库断开；

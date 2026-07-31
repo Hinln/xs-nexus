@@ -180,3 +180,11 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - direct-I/O 锁复核时发现一次编辑把 RX 协商深度检查误插入 TX 出队成功分支，且 TX 异常回滚快照位于 sequence 推进之后；在进入验证前将深度检查移回 RX 预检、快照移到状态机调用前，不以“后续分支理论不失败”作为正确性依据。
 - 新增 TX 无副作用批次测量测试时，首次把 47 字节不足断言插入了 128 字节成功缓冲区用例，测试正确失败；将断言移动到真实小缓冲场景后重跑，未修改测量实现或容量规则。
 - 官方 DDI 复核确认运行时 `NetAdapterSetLinkLayerMtuSize` 会重建 TX/RX queues；Attach 最初在 `session_lock` 内调用会让 queue stop/create 回调重入同一 wait lock。现只在锁内提交会话与私有 MTU，解锁后调用 NetAdapterCx MTU 更新，SetLink 仍需等待重建后的双队列 started。
+
+---
+
+## 源码供应链验收已闭环缺陷
+
+- 首次 CycloneDX/SPDX 实际生成保留 Cargo metadata 中 `Apache-2.0/MIT` 与 `MIT/Apache-2.0` 历史写法；策略解析虽能判断，但斜杠不是规范 SPDX 运算符。生成器现只把这两种明确写法规范化为 `OR`，测试要求所有组件表达式不含 `/`，未丢弃原许可证选择。
+- 独立实现扫描器首轮把 SBOM 生成器和测试自身的禁用词策略表判为运行依赖并失败；修复只排除三份策略工具本身，Agent、Controller、Relay、协议、驱动、安装器、部署及其他脚本仍全量扫描，三个真实负向引用继续按路径、词和精确数量固定。
+- 早期证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731T024136Z` 保留，仅证明首版结构和主机基线；由于包含非规范斜杠许可证表达式，不作为验收证据。最终证据为 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。

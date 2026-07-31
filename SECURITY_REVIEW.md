@@ -267,8 +267,17 @@
 - 激活采用版本目录和原子符号链接；服务失败会恢复原版本、systemd 单元和活动状态并删除失败版本；
 - 安装包不包含也不执行安装脚本；安装器只安装经过 allowlist 和签名链验证的二进制、systemd 单元、示例配置与文档；
 - Enrollment Token 只从受限文件读取，不进入进程命令行、状态、包和日志；默认卸载保留身份，网络 cleanup 必须先验证本地身份、签名状态和恢复清单；
-- M5.1 使用临时测试签名密钥验证机制，未创建或导入正式生产发布私钥；正式离线根签名、密钥托管、撤回、分批发布、SBOM 与构建来源证明仍未完成；
+- M5.1 使用临时测试签名密钥验证机制，未创建或导入正式生产发布私钥；正式离线根签名、密钥托管、撤回、分批发布、容器操作系统 SBOM 与构建来源证明仍未完成；
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。
+
+### 源码依赖供应链验证状态
+
+- 源码依赖 SBOM 只从已提交 lock、Cargo metadata 和固定 npm 许可证快照生成，不在生成或 CI 中访问网络；npm 快照建立时逐包核对官方注册表 exact version、license 和 `dist.integrity` 与 lock 一致；
+- 每个 Cargo 组件必须具备 `Cargo.lock` SHA-256 checksum 和可解析许可证表达式；每个 npm 组件必须具备唯一 exact version、SHA-512 integrity 和快照许可证，集合差异失败关闭；
+- 许可证策略解析 `AND`、`OR`、括号与 `WITH`，只接受至少一条获准选择路径并保留完整 SPDX 表达式；历史斜杠写法规范化为 `OR`，未知标识不会被静默接受；
+- 禁用产品既在全部源码依赖名称中拒绝，也由独立源码扫描器拒绝新增运行路径引用；三个现有负向引用被精确固定，数量或位置变化即失败；
+- 输出目录必须是不存在的绝对真实路径，避免覆盖或经符号链接改写证据；CycloneDX、SPDX 和 manifest 使用固定排序、输入摘要派生 UUID 与 `SOURCE_DATE_EPOCH`，双次生成逐字节一致；
+- 证据：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。尚未覆盖容器基础镜像中的 Debian/Alpine/NGINX/PostgreSQL 包、许可证全文、漏洞豁免流程或最终构建来源，因此 Release Checklist 的完整 SBOM 保持未完成。
 
 ---
 

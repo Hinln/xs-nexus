@@ -1,9 +1,9 @@
 # 第三方依赖与许可证
 
-状态：M5.2 运行时、构建与测试依赖清单  
+状态：源码运行时、构建与测试依赖完整清单  
 日期：2026-07-31
 
-`Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。版本与许可证字段已通过 `cargo metadata` 核对；任何新增依赖必须同步更新本文件。发布前仍须生成完整 SBOM、许可证文本集合和构建来源证明。
+`Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。`supply-chain/npm-licenses.json` 固定 npm 官方注册表中与 lock integrity 一致的精确版本许可证；Cargo 许可证由 `cargo metadata --locked` 读取并与 `Cargo.lock` SHA-256 checksum 逐项绑定。`make source-sbom SBOM_OUTPUT=<绝对新目录> SOURCE_DATE_EPOCH=<时间>` 离线生成完整源码传递依赖清单；任何新增、删除、版本、checksum、integrity 或许可证变化都必须同步通过门禁。容器操作系统包、许可证文本集合和最终构建来源证明仍属于 Release Checklist。
 
 ## 1. 当前运行时直接依赖
 
@@ -95,7 +95,7 @@ Controller/Relay 的 Rust `1.93.0-bookworm` 和 Console 的 Node `24-bookworm-sl
 
 ## 4. 传递依赖
 
-Rust 与 npm 传递依赖分别锁定在 `Cargo.lock` 和 `package-lock.json`。M0.1 的 `npm audit --audit-level=high` 结果为 0 漏洞；M1.1 依赖变更后必须重新执行。完整传递许可证导出和 CycloneDX/SPDX SBOM 属于 M7.2/M9.1 前强制工作，不能以本表替代。
+Rust 与 npm 传递依赖分别锁定在 `Cargo.lock` 和 `package-lock.json`。`scripts/generate-source-sbom.py` 对 321 个第三方 Cargo crate 和 110 个唯一 npm 包生成逐组件名称、版本、PURL、许可证与锁定摘要；输出同时包含 CycloneDX 1.6、SPDX 2.3 和输入/输出 SHA-256 manifest。生成过程禁止网络访问、拒绝未知或不允许的许可证、拒绝禁用产品依赖、拒绝快照与锁文件集合不一致，并使用 `SOURCE_DATE_EPOCH` 与输入摘要产生字节级可复现输出。`scripts/test-source-sbom.py` 验证双次输出一致及缺失许可证、拒绝许可证、既有输出目录和禁用依赖负向路径。完整证据为 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。
 
 ## 5. 密码学依赖边界
 
