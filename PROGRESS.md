@@ -116,7 +116,7 @@
 
 ## 当前工作点
 
-- Windows 路由管理准备已开始：隔离 `xs-windows-route-manager` 已包含事务核心和 IP Helper 平台层，固定 LUID/on-link/metric、4096 条系统表上限、外部重叠拒绝、manifest 精确所有权、additions-first、添加失败逆序补偿和删除失败精确恢复；原始错误与所有 rollback 失败均显式返回。原生层对 `GetIpForwardTable2` 分配使用 RAII 无条件 `FreeMibTable`，支持精确路由 Create/Delete、非持久地址 Create/Delete 和 DAD 状态查询。8 个 Linux 模型单测、MSVC target check 和交叉 Clippy 通过；尚无 DAD 等待、联合事务、持久化、Windows 执行或 runtime 接入。
+- Windows 路由管理准备已开始：隔离 `xs-windows-route-manager` 已包含事务核心和 IP Helper 平台层，固定 LUID/on-link/metric、4096 条系统表上限、外部重叠拒绝、manifest 精确所有权、additions-first、添加失败逆序补偿和删除失败精确恢复；原始错误与所有 rollback 失败均显式返回。原生层对 `GetIpForwardTable2` 分配使用 RAII 无条件 `FreeMibTable`，支持精确路由 Create/Delete、非持久地址 Create/Delete 和 DAD 状态查询。联合事务仅在 DAD Preferred 后创建路由；Tentative 有界等待，Duplicate/Invalid/Deprecated/Unknown、查询失败和超时均失败关闭并精确清理地址。11 个 Linux 模型单测、MSVC target check 和双平台 Clippy 通过；尚无 manifest 持久化、崩溃恢复、Windows 执行或 runtime 接入。
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；

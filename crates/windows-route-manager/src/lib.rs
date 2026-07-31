@@ -10,12 +10,22 @@ mod platform;
 
 #[cfg(windows)]
 pub use platform::{
-    DadState, IpHelperBackend, IpHelperError, create_address, delete_address, query_dad_state,
+    IpHelperBackend, IpHelperError, create_address, delete_address, query_dad_state,
     snapshot_routes,
 };
 
 pub const MAX_SYSTEM_ROUTES: usize = 4_096;
 pub const PROJECT_ROUTE_METRIC: u32 = 32;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DadState {
+    Invalid,
+    Tentative,
+    Duplicate,
+    Deprecated,
+    Preferred,
+    Unknown(i32),
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RouteKey {
@@ -97,6 +107,128 @@ pub trait RouteBackend {
     ///
     /// Returns the platform error without broad prefix, interface, or table cleanup.
     fn delete(&mut self, route: RouteKey) -> Result<(), Self::Error>;
+}
+
+pub trait HostNetworkBackend: RouteBackend {
+    /// Creates one exact non-persistent address.
+    ///
+    /// # Errors
+    ///
+    /// Returns the platform failure without treating a pre-existing address as project owned.
+    fn create_address(
+        &mut self,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+    ) -> Result<(), Self::Error>;
+
+    /// Deletes one exact address.
+    ///
+    /// # Errors
+    ///
+    /// Returns the platform failure without interface-wide cleanup.
+    fn delete_address(
+        &mut self,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+    ) -> Result<(), Self::Error>;
+
+    /// Queries the authoritative Duplicate Address Detection state.
+    ///
+    /// # Errors
+    ///
+    /// Returns the platform query failure without inferring availability.
+    fn dad_state(
+        &mut self,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+    ) -> Result<DadState, Self::Error>;
+
+    fn wait_dad_poll(&mut self);
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ProvisionError<E> {
+    AddressCreate(E),
+    DadQuery {
+        source: E,
+        address_cleanup: Option<E>,
+    },
+    DadRejected {
+        state: DadState,
+        address_cleanup: Option<E>,
+    },
+    DadTimeout {
+        address_cleanup: Option<E>,
+    },
+    Routes {
+        source: ExecuteError<E>,
+        address_cleanup: Option<E>,
+    },
+}
+
+/// Creates an address, waits for authoritative DAD success, then applies the route transaction.
+///
+/// # Errors
+///
+/// Fails closed on invalid poll bounds, any non-tentative/non-preferred DAD state, timeout, query
+/// failure, or route failure. Every post-create failure attempts exact address cleanup and returns
+/// that cleanup failure alongside the original error.
+pub fn provision_network<B: HostNetworkBackend>(
+    backend: &mut B,
+    interface_luid: u64,
+    address: Ipv4Addr,
+    prefix_length: u8,
+    maximum_dad_polls: usize,
+    routes: &ReconcilePlan,
+) -> Result<(), ProvisionError<B::Error>> {
+    backend
+        .create_address(interface_luid, address, prefix_length)
+        .map_err(ProvisionError::AddressCreate)?;
+    if maximum_dad_polls == 0 {
+        return Err(ProvisionError::DadTimeout {
+            address_cleanup: backend
+                .delete_address(interface_luid, address, prefix_length)
+                .err(),
+        });
+    }
+    for poll in 0..maximum_dad_polls {
+        match backend.dad_state(interface_luid, address, prefix_length) {
+            Ok(DadState::Preferred) => {
+                return execute_plan(backend, routes).map_err(|source| ProvisionError::Routes {
+                    source,
+                    address_cleanup: backend
+                        .delete_address(interface_luid, address, prefix_length)
+                        .err(),
+                });
+            }
+            Ok(DadState::Tentative) if poll + 1 < maximum_dad_polls => backend.wait_dad_poll(),
+            Ok(DadState::Tentative) => break,
+            Ok(state) => {
+                return Err(ProvisionError::DadRejected {
+                    state,
+                    address_cleanup: backend
+                        .delete_address(interface_luid, address, prefix_length)
+                        .err(),
+                });
+            }
+            Err(source) => {
+                return Err(ProvisionError::DadQuery {
+                    source,
+                    address_cleanup: backend
+                        .delete_address(interface_luid, address, prefix_length)
+                        .err(),
+                });
+            }
+        }
+    }
+    Err(ProvisionError::DadTimeout {
+        address_cleanup: backend
+            .delete_address(interface_luid, address, prefix_length)
+            .err(),
+    })
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -276,6 +408,10 @@ mod tests {
         calls: Vec<(&'static str, RouteKey)>,
         create_results: VecDeque<Result<(), &'static str>>,
         delete_results: VecDeque<Result<(), &'static str>>,
+        address_create_results: VecDeque<Result<(), &'static str>>,
+        address_delete_results: VecDeque<Result<(), &'static str>>,
+        dad_results: VecDeque<Result<DadState, &'static str>>,
+        host_calls: Vec<&'static str>,
     }
 
     impl RouteBackend for FakeBackend {
@@ -289,6 +425,44 @@ mod tests {
         fn delete(&mut self, route: RouteKey) -> Result<(), Self::Error> {
             self.calls.push(("delete", route));
             self.delete_results.pop_front().unwrap_or(Ok(()))
+        }
+    }
+
+    impl HostNetworkBackend for FakeBackend {
+        fn create_address(
+            &mut self,
+            _interface_luid: u64,
+            _address: Ipv4Addr,
+            _prefix_length: u8,
+        ) -> Result<(), Self::Error> {
+            self.host_calls.push("address-create");
+            self.address_create_results.pop_front().unwrap_or(Ok(()))
+        }
+
+        fn delete_address(
+            &mut self,
+            _interface_luid: u64,
+            _address: Ipv4Addr,
+            _prefix_length: u8,
+        ) -> Result<(), Self::Error> {
+            self.host_calls.push("address-delete");
+            self.address_delete_results.pop_front().unwrap_or(Ok(()))
+        }
+
+        fn dad_state(
+            &mut self,
+            _interface_luid: u64,
+            _address: Ipv4Addr,
+            _prefix_length: u8,
+        ) -> Result<DadState, Self::Error> {
+            self.host_calls.push("dad");
+            self.dad_results
+                .pop_front()
+                .unwrap_or(Ok(DadState::Tentative))
+        }
+
+        fn wait_dad_poll(&mut self) {
+            self.host_calls.push("wait");
         }
     }
 
@@ -461,6 +635,87 @@ mod tests {
         assert_eq!(
             backend.calls,
             vec![("delete", first), ("delete", second), ("create", first)]
+        );
+    }
+
+    #[test]
+    fn provision_waits_for_preferred_before_creating_routes() {
+        let route = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("route");
+        let plan = ReconcilePlan {
+            additions: vec![route],
+            compensation: vec![route],
+            removals: Vec::new(),
+        };
+        let mut backend = FakeBackend {
+            dad_results: [Ok(DadState::Tentative), Ok(DadState::Preferred)].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            provision_network(&mut backend, 7, Ipv4Addr::new(100, 88, 0, 10), 16, 3, &plan,),
+            Ok(())
+        );
+        assert_eq!(
+            backend.host_calls,
+            vec!["address-create", "dad", "wait", "dad"]
+        );
+        assert_eq!(backend.calls, vec![("create", route)]);
+    }
+
+    #[test]
+    fn duplicate_dad_deletes_address_without_touching_routes() {
+        let mut backend = FakeBackend {
+            dad_results: [Ok(DadState::Duplicate)].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            provision_network(
+                &mut backend,
+                7,
+                Ipv4Addr::new(100, 88, 0, 10),
+                16,
+                3,
+                &ReconcilePlan {
+                    additions: Vec::new(),
+                    compensation: Vec::new(),
+                    removals: Vec::new(),
+                },
+            ),
+            Err(ProvisionError::DadRejected {
+                state: DadState::Duplicate,
+                address_cleanup: None,
+            })
+        );
+        assert_eq!(
+            backend.host_calls,
+            vec!["address-create", "dad", "address-delete"]
+        );
+        assert!(backend.calls.is_empty());
+    }
+
+    #[test]
+    fn route_failure_reports_address_cleanup_failure() {
+        let route = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("route");
+        let plan = ReconcilePlan {
+            additions: vec![route],
+            compensation: vec![route],
+            removals: Vec::new(),
+        };
+        let mut backend = FakeBackend {
+            create_results: [Err("route")].into(),
+            address_delete_results: [Err("address-cleanup")].into(),
+            dad_results: [Ok(DadState::Preferred)].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            provision_network(&mut backend, 7, Ipv4Addr::new(100, 88, 0, 10), 16, 3, &plan,),
+            Err(ProvisionError::Routes {
+                source: ExecuteError::Add {
+                    route,
+                    source: "route",
+                    compensation_failures: Vec::new(),
+                },
+                address_cleanup: Some("address-cleanup"),
+            })
         );
     }
 }

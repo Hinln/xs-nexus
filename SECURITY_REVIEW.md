@@ -218,6 +218,8 @@
 
 ### M6.1 当前验证状态
 
+- Windows 路由管理新增隔离安全 Rust 事务核心与 IP Helper 平台层：系统表限制 4096 条并由 RAII 无条件 `FreeMibTable`，只接受明确 LUID、规范前缀、on-link 下一跳和固定 metric；默认/保留/外部重叠与 manifest 所有权漂移在写入前拒绝。地址创建后必须观察 DAD Preferred 才创建路由，其他状态、查询失败或超时会精确删除地址；路由失败同时保留原始错误、路由补偿失败和地址清理失败。11 个模型测试与 MSVC target check/Clippy 通过，但尚未在 Windows 执行，不改变 M6.1/K 项状态。
+
 - 按微软支持矩阵和 Windows 11 LTSC 2024 强制门禁改用 UMDF 2.33 + NetAdapterCx 2.5；Windows 10 不受支持组合已记录为 `KI-016`，不作兼容声明；
 - 驱动设计不包含密码学、身份、ACL、路由、NAT、Relay、更新或秘密，UMDF 使用系统分配数据缓冲区且拒绝直接硬件访问；
 - INF 草案仅授予 LocalSystem、标记 exclusive、禁用 host 共享、拒绝内核客户端和空/未知 file object；每个请求还要求 user-mode、已接受 file object 和读写 access 位；

@@ -1,4 +1,4 @@
-use std::{io, net::Ipv4Addr, ptr::null_mut, slice};
+use std::{io, net::Ipv4Addr, ptr::null_mut, slice, thread, time::Duration};
 
 use ipnet::Ipv4Net;
 use windows_sys::Win32::{
@@ -21,7 +21,10 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{MAX_SYSTEM_ROUTES, PROJECT_ROUTE_METRIC, RouteBackend, RouteKey, SystemRoute};
+use crate::{
+    DadState, HostNetworkBackend, MAX_SYSTEM_ROUTES, PROJECT_ROUTE_METRIC, RouteBackend, RouteKey,
+    SystemRoute,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IpHelperError(pub u32);
@@ -30,16 +33,6 @@ impl From<IpHelperError> for io::Error {
     fn from(value: IpHelperError) -> Self {
         Self::from_raw_os_error(i32::try_from(value.0).unwrap_or(i32::MAX))
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DadState {
-    Invalid,
-    Tentative,
-    Duplicate,
-    Deprecated,
-    Preferred,
-    Unknown(i32),
 }
 
 pub struct IpHelperBackend;
@@ -55,6 +48,39 @@ impl RouteBackend for IpHelperBackend {
     fn delete(&mut self, route: RouteKey) -> Result<(), Self::Error> {
         let row = route_row(route);
         win_result(unsafe { DeleteIpForwardEntry2(&raw const row) })
+    }
+}
+
+impl HostNetworkBackend for IpHelperBackend {
+    fn create_address(
+        &mut self,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+    ) -> Result<(), Self::Error> {
+        create_address(interface_luid, address, prefix_length)
+    }
+
+    fn delete_address(
+        &mut self,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+    ) -> Result<(), Self::Error> {
+        delete_address(interface_luid, address, prefix_length)
+    }
+
+    fn dad_state(
+        &mut self,
+        interface_luid: u64,
+        address: Ipv4Addr,
+        prefix_length: u8,
+    ) -> Result<DadState, Self::Error> {
+        query_dad_state(interface_luid, address, prefix_length)
+    }
+
+    fn wait_dad_poll(&mut self) {
+        thread::sleep(Duration::from_millis(100));
     }
 }
 
