@@ -191,7 +191,7 @@ def tar_member_bytes(archive, member, maximum):
     return value
 
 
-def parse_debian_status(value):
+def parse_debian_status(value, assume_installed=False):
     packages = []
     for paragraph in value.decode("utf-8").split("\n\n"):
         fields = {}
@@ -199,7 +199,10 @@ def parse_debian_status(value):
             if ": " in line and not line.startswith((" ", "\t")):
                 key, field_value = line.split(": ", 1)
                 fields[key] = field_value
-        if fields.get("Status") != "install ok installed":
+        status = fields.get("Status")
+        if status is None and assume_installed:
+            status = "install ok installed"
+        if status != "install ok installed":
             continue
         if not all(fields.get(key) for key in ("Package", "Version", "Architecture")):
             raise ValidationError("installed Debian package has incomplete identity")
@@ -266,6 +269,34 @@ def analyze_rootfs(image_name, archive_path, license_root):
             packages = parse_debian_status(
                 tar_member_bytes(archive, by_name["var/lib/dpkg/status"], 32 * 1024 * 1024)
             )
+            license_prefixes = ("usr/share/doc/", "usr/share/common-licenses/")
+            selected = [
+                member
+                for member in members
+                if member.isfile()
+                and member.name.lstrip("./").startswith(license_prefixes)
+                and (
+                    member.name.lstrip("./").endswith("/copyright")
+                    or member.name.lstrip("./").startswith("usr/share/common-licenses/")
+                )
+            ]
+        elif any(
+            name.startswith("var/lib/dpkg/status.d/") and not name.endswith(".md5sums")
+            for name in by_name
+        ):
+            status_fragments = []
+            total_status_bytes = 0
+            for name, member in sorted(by_name.items()):
+                if not name.startswith("var/lib/dpkg/status.d/") or name.endswith(".md5sums"):
+                    continue
+                if not member.isfile():
+                    raise ValidationError(f"unsafe Debian status fragment: {member.name}")
+                content = tar_member_bytes(archive, member, 1024 * 1024)
+                total_status_bytes += len(content)
+                if total_status_bytes > 32 * 1024 * 1024:
+                    raise ValidationError("Debian status fragments exceed size limit")
+                status_fragments.extend(parse_debian_status(content, assume_installed=True))
+            packages = status_fragments
             license_prefixes = ("usr/share/doc/", "usr/share/common-licenses/")
             selected = [
                 member

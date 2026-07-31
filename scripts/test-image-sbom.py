@@ -60,9 +60,14 @@ def main():
             raise AssertionError("invalid Dockerfile mapping was accepted")
 
     debian_status = b"""Package: ca-certificates\nStatus: install ok installed\nArchitecture: all\nVersion: 20250419\n\n"""
+    debian_status_fragment = b"""Package: libc6\nArchitecture: amd64\nVersion: 2.36-9+deb12u14\nDescription: runtime library\n"""
     alpine_status = b"""P:musl\nV:1.2.5-r10\nA:x86_64\nL:MIT\n\n"""
     alpine_virtual = b"""P:.runtime-deps\nV:20260731.000000\nA:x86_64\n\n"""
     assert module.parse_debian_status(debian_status)[0]["name"] == "ca-certificates"
+    assert module.parse_debian_status(debian_status_fragment) == []
+    assert module.parse_debian_status(debian_status_fragment, assume_installed=True)[0][
+        "name"
+    ] == "libc6"
     assert module.parse_apk_installed(alpine_status)[0]["license"] == "MIT"
     assert module.parse_apk_installed(alpine_virtual)[0]["virtual"] is True
     for parser, malformed in (
@@ -113,6 +118,17 @@ def main():
         )
         assert statement["predicateType"] == "https://slsa.dev/provenance/v1"
         assert statement["subject"][0]["digest"]["sha256"] == "1" * 64
+
+        distroless = base / "distroless.tar"
+        with tarfile.open(distroless, "w") as archive:
+            add_file(archive, "var/lib/dpkg/status.d/libc6", debian_status_fragment)
+            add_file(archive, "var/lib/dpkg/status.d/libc6.md5sums", b"ignored\n")
+            add_file(archive, "usr/share/doc/libc6/copyright", b"copyright text\n")
+        packages, materials = module.analyze_rootfs(
+            "controller", distroless, base / "distroless-licenses"
+        )
+        assert [package["name"] for package in packages] == ["libc6"]
+        assert any(item["kind"] == "package-manager-declarations" for item in materials)
 
         malicious = base / "malicious.tar"
         with tarfile.open(malicious, "w") as archive:
