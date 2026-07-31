@@ -227,13 +227,15 @@
 - `drivers/windows-xsnet/tests/session_test.c` 覆盖单 owner、版本和能力协商、调用顺序、严格递增 sequence、上限重开、MTU、队列深度、link、包 MTU、幂等 Detach 和 cleanup；
 - `drivers/windows-xsnet/tests/dataplane_test.c` 覆盖双包往返、批次原子入队、IPv4 version/IHL/总长度、MTU、容量背压、小输出不消费、单包/部分出队、环绕和 reset 后 payload 清零；
 - `drivers/windows-xsnet/tests/stress_test.c` 以固定种子分别执行 30,000 轮任意消息解析、消息写入往返、任意批次解析、会话状态操作和有界队列操作；所有失败会话操作必须逐字段保持原状态，所有失败队列操作必须保持元数据和完整 64 槽字节不变，并对 Hello、Attach、SetLink、TxBatch、RxBatch、Detach 六类有效消息执行逐字节变异；
-- `scripts/test-windows-xsnet-abi.sh` 在 Clang 21 Release `-Wall -Wextra -Wpedantic -Werror` 与 GCC 15 ASan/UBSan 配置编译运行四组测试；
+- `drivers/windows-xsnet/tests/lifecycle_test.c` 从活动 owner/link/双队列/请求状态穷举 cleanup、TX cancel、RX cancel、D0 exit、hardware release 和 I/O stop 的全部 720 种顺序，验证单次完成/取消、断链、session/队列清理、睡眠后重新认证、队列重启和重复 teardown 幂等；
+- `scripts/test-windows-xsnet-abi.sh` 在 Clang 21 Release `-Wall -Wextra -Wpedantic -Werror` 与 GCC 15 ASan/UBSan 配置编译运行五组测试；
 - `scripts/validate-windows-xsnet-source.py` 固定 Windows 11 24H2、UMDF 2.33、NetAdapterCx 2.5、x64、测试签名元数据、仅 LocalSystem SDDL、独立 UMDF host、拒绝内核客户端/未知 file object/直接硬件访问、direct/buffered IOCTL 和关键生命周期回调；
 - TX/RX queue callback 已缓存 ring collection 和必需的虚拟地址扩展，限定 Passive 执行，按一包一 fragment 在系统缓冲区与私有有界队列间复制；TX 不修改只读描述符，RX 填充 `Layer2TypeNull` 和 IPv4 layout，畸形 ring 数据会断链；
 - TX direct-I/O 使用空 payload 请求和 framed 输出；RX direct-I/O 使用 framed direct 输入。请求同步完成且不挂起，空/满/小缓冲/未启动先失败，成功才推进 sequence；SetLink 要求双队列 started，stop/cancel 退回 Attached 并断链；固定 64 包和协商深度同时生效；
 - `scripts/validate-windows-xsnet-installer.py` 静态检查测试安装器的管理员门禁、Windows build 下限、精确三文件包、重解析点拒绝、signer thumbprint、Microsoft-signed WDK DevGen、PnPUtil、精确状态、20 秒有界等待、失败回滚和残留拒绝；
 - 本地 Windows PowerShell parser 已对模块、安装和卸载脚本执行零语法错误解析；未调用脚本、PnPUtil、DevGen 或设备 API，该结果不能替代 PowerShell 7.4/WDK VM 执行；
 - 2026-07-31 连续三轮源码门禁、四组 Release/ASan/UBSan 测试和安装器门禁均通过；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`；
+- 生命周期模型加入后再次连续三轮通过五组 Release/ASan/UBSan、源码与安装器门禁；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
 - 当前结果只证明平台无关模型和源码文本不变量；direct-I/O 与 ring 代码未由 WDK 编译或执行。MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---

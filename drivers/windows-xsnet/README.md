@@ -23,6 +23,8 @@ The portable queue has a fixed 64-packet capacity per direction, validates canon
 
 The deterministic host stress test runs 30,000 cases in each parser, writer, session, and queue domain. It checks arbitrary input under ASan/UBSan, verifies that rejected session operations preserve every state field, and mutates valid Hello, Attach, SetLink, TxBatch, RxBatch, and Detach messages.
 
+The portable lifecycle harness exhausts all 720 orderings of cleanup, TX cancel, RX cancel, D0 exit, hardware release, and I/O stop from an active session. It verifies fail-closed link state, queue/session reset, cancellation-versus-completion single ownership, sleep reauthentication, queue restart, and idempotent teardown. This models callbacks serialized by the driver's single wait lock; it is not WDF scheduling, PnP, power, or Agent-crash evidence.
+
 ## Host ABI test
 
 ```bash
@@ -34,4 +36,4 @@ ctest --test-dir target/xsnet-abi --output-on-failure
 
 Passing this test does not constitute a WDK build, driver installation, Driver Verifier result, or Windows compatibility claim.
 
-`make test-windows-xsnet-abi` runs both the strict Clang Release build and the GCC ASan/UBSan build, including the deterministic stress test. `make test-windows-xsnet-source` additionally checks source, project, INF, access, lifecycle, and stress-test registration invariants. Neither command substitutes for MSBuild, InfVerif, signing, or VM testing.
+`make test-windows-xsnet-abi` runs both the strict Clang Release build and the GCC ASan/UBSan build, including deterministic stress and lifecycle interleaving tests. `make test-windows-xsnet-source` additionally checks source, project, INF, access, lifecycle, and test-registration invariants. Neither command substitutes for MSBuild, InfVerif, signing, or VM testing.

@@ -175,6 +175,8 @@ def validate_portable_tests() -> None:
         [
             "add_executable(xsnet_stress_test tests/stress_test.c)",
             "add_test(NAME xsnet_stress_validation COMMAND xsnet_stress_test)",
+            "add_executable(xsnet_lifecycle_test tests/lifecycle_test.c)",
+            "add_test(NAME xsnet_lifecycle_validation COMMAND xsnet_lifecycle_test)",
         ],
     )
     stress = require_text(
@@ -192,6 +194,8 @@ def validate_portable_tests() -> None:
     )
     if cmake.count("xsnet_stress_validation") != 1:
         fail("CMakeLists.txt must register exactly one portable stress test")
+    if cmake.count("xsnet_lifecycle_validation") != 1:
+        fail("CMakeLists.txt must register exactly one lifecycle test")
     for message_type in (
         "XSNET_MESSAGE_HELLO",
         "XSNET_MESSAGE_ATTACH",
@@ -202,6 +206,19 @@ def validate_portable_tests() -> None:
     ):
         if message_type not in stress:
             fail(f"portable stress test missing message mutation: {message_type}")
+    require_text(
+        DRIVER / "tests" / "lifecycle_test.c",
+        [
+            "test_all_teardown_interleavings",
+            "permutation_count == 720",
+            "test_completion_wins_before_teardown",
+            "test_sleep_requires_new_owner_session",
+            "test_queue_restart_preserves_owner",
+            "test_repeated_teardown_is_idempotent",
+            "requests_cancelled == 1",
+            "#ifdef NDEBUG\n#undef NDEBUG",
+        ],
+    )
 
 
 def main() -> int:

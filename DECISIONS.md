@@ -560,3 +560,15 @@
 - 原因：满足 M6.1/M6.2 测试签名安装准备，同时遵守微软工具许可，不把测试工具或 test-signing 配置伪装成生产安装器。
 - 代价：脚本依赖测试 VM 已安装 WDK，不能用于最终用户分发；生产软件设备创建、正式签名、升级和回滚仍需独立实现与门禁。
 - 安全影响：拒绝路径扩展、重解析点、额外文件、未知 signer、非 Microsoft DevGen、既有模糊状态和无限等待；脚本不下载代码、不改 BCD、不绕过执行策略。
+
+---
+
+## ADR-048：在 WDK 门禁前用单锁交错模型验证 xsnet teardown 安全不变量
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：当前没有 Windows 11 WDK VM，不能真实执行 WDF 取消、PnP 和电源回调；但 file cleanup、Agent crash、queue cancel、睡眠和设备移除共享 owner、link、私有队列与同步请求状态，等待 VM 才检查会让失败状态边界长期不可验证。
+- 决策：新增只依赖纯 C session/queue 实现的生命周期 harness，按驱动单一 `WDFWAITLOCK` 临界区把 cleanup、TX/RX cancel、D0 exit、hardware release 和 I/O stop 建模为原子事件，穷举全部 720 种顺序，并分别验证取消胜出、完成胜出、睡眠后重新认证、队列重启和重复 teardown。测试不保留跨事件 request/ring 引用，不改变真实回调代码，也不标记任何 VM 验收项。
+- 原因：有限状态交错能在 Linux Release 与 ASan/UBSan 中持续验证 fail-closed、单次完成和幂等不变量，同时明确隔离无法模拟的 WDF 调度、对象引用与 Windows 网络栈。
+- 代价：模型依赖当前单锁和同步 I/O 架构；若以后引入挂起请求、多个锁或共享环，必须先重写模型和锁序证明。即使 720 种顺序全部通过，仍不能替代 WDK 编译、Driver Verifier、Agent crash、PnP/power 或睡眠实测。
+- 安全影响：teardown 任意顺序都不能保留活动 link、重复完成请求或自动复活旧 owner；真实 WDF 对象生命周期和回调竞态继续由 `BLK-001` 人工门禁阻塞。

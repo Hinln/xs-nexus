@@ -90,6 +90,8 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `include/xsnet_session.h` 与 `src/session.c` 已实现上述纯状态模型。失败消息不推进 sequence 或状态；`UINT64_MAX` 在处理前拒绝，要求关闭并新建会话。该模型不替代 WDF request 取消和对象生命周期验证。
 
+`tests/lifecycle_test.c` 以驱动当前锁序建立可移植生命周期 harness：file cleanup、packet queue stop/cancel、D0 exit、hardware release 和同步 I/O stop 都先进入同一个 session/私有队列临界区；请求不挂起，不保留跨回调 WDFREQUEST；NetAdapterCx ring 指针只随其 WDF queue context 存活，不进入 session 或 Agent。模型穷举六类 teardown 的全部 720 种顺序，并分别验证取消胜出和完成胜出，因此每个活动请求只归属一次完成路径。睡眠、移除和 Agent cleanup 均断链并清空 owner/包状态；恢复后旧 owner 不会自动复活，必须重新打开并协商。该 harness 只验证锁内状态和动作幂等，不模拟 WDF 对象引用、真实线程调度、PnP/power 回调顺序或 Windows 网络栈。
+
 ## 6. 队列和资源上限
 
 - 每方向最多 64 个待处理包和 1 MiB Agent 请求；
@@ -122,12 +124,12 @@ NetAdapterCx packet queue 源码按官方 ring 所有权规则缓存 TX/RX ring 
 make test-windows-xsnet-abi
 ```
 
-该命令以 Release `-Werror` 和 ASan/UBSan Debug 两种配置编译并运行平台无关解析器、会话状态机与有界包队列，只证明 ABI 长度、规范编码、批次边界、单 owner、版本/sequence、MTU/队列、状态转换、背压、环绕和清零，不证明 Windows 驱动可运行。
+该命令以 Release `-Werror` 和 ASan/UBSan Debug 两种配置编译并运行五组平台无关测试：解析器、会话状态机、有界包队列、确定性任意输入压力和生命周期交错。它只证明 ABI 长度、规范编码、批次边界、单 owner、版本/sequence、MTU/队列、状态转换、背压、环绕、清零和 harness 可达状态，不证明 Windows 驱动可运行。
 
 ```bash
 make test-windows-xsnet-source
 ```
 
-该命令检查 WDK 工程和 INF 的目标版本、安全指令、IOCTL 模式以及源码中的生命周期调用。当前源码已包含 DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、D0/release reset、NetAdapter 创建/start/stop 和 packet queue 生命周期骨架。
+该命令检查 WDK 工程和 INF 的目标版本、安全指令、IOCTL 模式、源码生命周期调用，以及压力/生命周期测试注册与 Release 断言门禁。当前源码已包含 DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、D0/release reset、NetAdapter 创建/start/stop 和 packet queue 生命周期骨架。
 
 SetLink、同步 TX/RX direct-I/O 和 ring copy 源码已经接通，并由源码脚本检查 buffer、通知、ring 和扩展调用存在；平台无关测试验证编码、状态、背压和清零语义。但 Linux 主机没有 WDK/NetAdapterCx 头文件与运行时，这些 Windows 源码没有被真实编译或执行，绝不是可工作的驱动或收发证据。`xsnet.vcxproj` 属性名、INF 和全部 API 仍必须在 WDK 10.0.26100、MSBuild、InfVerif 和 Windows 11 24H2 VM 中真实验证。
