@@ -1,9 +1,4 @@
-use std::{
-    fs::{File, OpenOptions},
-    io::{Read, Write},
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use ed25519_dalek::SigningKey;
 use getrandom::fill;
@@ -13,9 +8,16 @@ use zeroize::Zeroizing;
 
 use crate::error::{AgentError, Result};
 
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+use unix as platform;
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows as platform;
+
 const MAX_STATE_BYTES: u64 = 512 * 1024;
-const PRIVATE_MODE: u32 = 0o600;
-const DIRECTORY_MODE: u32 = 0o700;
 
 pub struct Identity {
     signing_key: SigningKey,
@@ -28,11 +30,7 @@ impl Identity {
     ///
     /// Returns [`AgentError::State`] when the file is absent, unsafe, or invalid.
     pub fn load(path: &Path) -> Result<Self> {
-        let metadata = path.symlink_metadata().map_err(|_| AgentError::State)?;
-        if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
-            return Err(AgentError::State);
-        }
-        let bytes = Zeroizing::new(std::fs::read(path).map_err(|_| AgentError::State)?);
+        let bytes = Zeroizing::new(platform::read_private(path, 32)?);
         let seed: &[u8; 32] = bytes.as_slice().try_into().map_err(|_| AgentError::State)?;
         Ok(Self {
             signing_key: SigningKey::from_bytes(seed),
@@ -52,7 +50,7 @@ impl Identity {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let mut seed = Zeroizing::new([0_u8; 32]);
                 fill(seed.as_mut()).map_err(|_| AgentError::State)?;
-                write_atomic(path, seed.as_ref(), PRIVATE_MODE)?;
+                write_atomic(path, seed.as_ref())?;
                 Ok(Self {
                     signing_key: SigningKey::from_bytes(&seed),
                 })
@@ -78,13 +76,7 @@ impl Identity {
 ///
 /// Returns [`AgentError::State`] when the path is not a real directory or permissions fail.
 pub fn ensure_private_directory(path: &Path) -> Result<()> {
-    std::fs::create_dir_all(path).map_err(|_| AgentError::State)?;
-    let metadata = path.symlink_metadata().map_err(|_| AgentError::State)?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(AgentError::State);
-    }
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(DIRECTORY_MODE))
-        .map_err(|_| AgentError::State)
+    platform::ensure_private_directory(path)
 }
 
 /// Serializes and atomically replaces a bounded private JSON state file.
@@ -97,7 +89,7 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if bytes.len() > usize::try_from(MAX_STATE_BYTES).map_err(|_| AgentError::State)? {
         return Err(AgentError::State);
     }
-    write_atomic(path, &bytes, PRIVATE_MODE)
+    write_atomic(path, &bytes)
 }
 
 /// Reads a bounded private JSON state file.
@@ -106,18 +98,7 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 ///
 /// Returns [`AgentError::State`] when the file is unsafe, oversized, unreadable, or invalid.
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    let metadata = path.symlink_metadata().map_err(|_| AgentError::State)?;
-    if !metadata.is_file()
-        || metadata.permissions().mode() & 0o077 != 0
-        || metadata.len() > MAX_STATE_BYTES
-    {
-        return Err(AgentError::State);
-    }
-    let mut file = File::open(path).map_err(|_| AgentError::State)?;
-    let capacity = usize::try_from(metadata.len()).map_err(|_| AgentError::State)?;
-    let mut bytes = Vec::with_capacity(capacity);
-    file.read_to_end(&mut bytes)
-        .map_err(|_| AgentError::State)?;
+    let bytes = platform::read_private(path, MAX_STATE_BYTES)?;
     serde_json::from_slice(&bytes).map_err(|_| AgentError::State)
 }
 
@@ -127,14 +108,11 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
 ///
 /// Returns [`AgentError::State`] when permissions, size, encoding, or token syntax are invalid.
 pub fn read_token(path: &Path) -> Result<Zeroizing<String>> {
-    let metadata = path.symlink_metadata().map_err(|_| AgentError::State)?;
-    if !metadata.is_file()
-        || metadata.permissions().mode() & 0o077 != 0
-        || !(16..=512).contains(&metadata.len())
-    {
+    let bytes = platform::read_private(path, 512)?;
+    if bytes.len() < 16 {
         return Err(AgentError::State);
     }
-    let token = Zeroizing::new(std::fs::read_to_string(path).map_err(|_| AgentError::State)?);
+    let token = Zeroizing::new(String::from_utf8(bytes).map_err(|_| AgentError::State)?);
     let trimmed = token.trim();
     if trimmed.len() < 16 || trimmed.len() > 256 || trimmed.chars().any(char::is_whitespace) {
         return Err(AgentError::State);
@@ -142,35 +120,11 @@ pub fn read_token(path: &Path) -> Result<Zeroizing<String>> {
     Ok(Zeroizing::new(trimmed.to_owned()))
 }
 
-fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().ok_or(AgentError::State)?;
     ensure_private_directory(parent)?;
-    if path
-        .symlink_metadata()
-        .is_ok_and(|metadata| metadata.file_type().is_symlink())
-    {
-        return Err(AgentError::State);
-    }
-
     let temporary = temporary_path(path);
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&temporary)
-            .map_err(|_| AgentError::State)?;
-        file.write_all(bytes).map_err(|_| AgentError::State)?;
-        file.sync_all().map_err(|_| AgentError::State)?;
-        std::fs::rename(&temporary, path).map_err(|_| AgentError::State)?;
-        File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .map_err(|_| AgentError::State)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result
+    platform::write_private_atomic(path, &temporary, bytes)
 }
 
 fn temporary_path(path: &Path) -> PathBuf {
@@ -185,6 +139,9 @@ fn temporary_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
     #[test]
     fn identity_is_stable_and_restricted() {
         let directory = tempfile::tempdir().expect("tempdir");
@@ -192,10 +149,14 @@ mod tests {
         let first = Identity::load_or_create(&path).expect("create identity");
         let second = Identity::load_or_create(&path).expect("load identity");
         assert_eq!(first.public_key(), second.public_key());
-        let mode = path.metadata().expect("metadata").permissions().mode();
-        assert_eq!(mode & 0o777, PRIVATE_MODE);
+        #[cfg(unix)]
+        {
+            let mode = path.metadata().expect("metadata").permissions().mode();
+            assert_eq!(mode & 0o777, unix::PRIVATE_MODE);
+        }
     }
 
+    #[cfg(unix)]
     #[test]
     fn identity_rejects_group_readable_file() {
         let directory = tempfile::tempdir().expect("tempdir");

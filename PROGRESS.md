@@ -95,8 +95,9 @@
 - Rust Agent 侧 ABI 客户端完成固定 IOCTL/字节布局、单飞请求、成功后提交、已知拒绝重试、不确定结果强制重连及 TX/RX 规范 IPv4 批次校验；原证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`。
 - 安全 `XsnetTransport` 契约已接入隔离 `no_std + alloc` Win32 crate；精确 GUID 单接口、独占同步 handle、六 IOCTL、三类 buffer 映射、初始化所有权和五个 unsafe 块通过实际 MSVC target check、交叉 Clippy 和源码门禁，证据 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`。
 - 新增无后台轮询/重试的安全 Rust `XsnetDeviceSession`：任何设备打开/I/O 前验证 MTU/深度并推导 TX 容量，严格执行 Hello/Attach/SetLink，每次仅执行一个 TX/RX 请求，权威拒绝不自动重试，不确定或畸形完成毒化 handle，shutdown 按 LinkDown/Detach 排序且 Drop 不执行 I/O；18 个 Agent xsnet 测试和 2 个 transport crate 测试通过，新增覆盖失败启动释放、无效 RX 零 I/O、Drop 零 I/O 和 shutdown 显式重试。空 TX/满 RX 的 Win32 权威状态尚未在 VM 证明，因此未接入 runtime。
-- Windows 源码门禁现强制配置校验先于首个 IOCTL/设备打开，并在 WDK/VM 证据前拒绝 runtime 引用、后台线程、sleep 和 session Drop I/O；`scripts/validate-m61-agent-session.sh` 汇总 workspace Clippy/单测、真实 PostgreSQL Agent 控制面、C Release/ASan/UBSan、Windows 源码/安装器/VM/兼容/transport/本地 IPC、独立实现、SBOM、秘密、ShellCheck、npm audit 和宿主基线，最新证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T040415Z`。
+- Windows 源码门禁现强制配置校验先于首个 IOCTL/设备打开，并在 WDK/VM 证据前拒绝 runtime 引用、后台线程、sleep 和 session Drop I/O；`scripts/validate-m61-agent-session.sh` 汇总 workspace Clippy/单测、真实 PostgreSQL Agent 控制面、C Release/ASan/UBSan、Windows 源码/安装器/VM/兼容/transport/本地 IPC/私有存储、独立实现、SBOM、秘密、ShellCheck、npm audit 和宿主基线，最新证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T041702Z`。
 - Windows 本地管理 IPC 已从 Unix-only 实现拆为共享严格只读协议、Unix transport 和 Windows transport；Windows 端固定 `\\.\pipe\xs-nexus-agent`，使用 first-instance、防远程客户端、不可继承 handle、仅 LocalSystem/Administrators DACL、16 个活动处理器和额外 1 个监听实例。三个 unsafe 块仅存在于 `crates/windows-local-ipc`，Agent 继续全局禁止 unsafe；Linux IPC 集成回归、Windows crate 单测、MSVC target check 与交叉 Clippy 已通过，完整边界见 `docs/WINDOWS_AGENT_LOCAL_IPC.md`。
+- Agent 私有存储已从 Unix-only mode 实现拆为共享 identity/JSON/token 逻辑、Unix transport 和 Windows transport；Windows 端要求绝对路径、整条现有路径无 reparse、直接父目录和文件 exact protected DACL，读操作绑定长度与完整字节，写操作使用同目录 `create_new` 临时文件、精确 ACL、`sync_all` 和 write-through Replace/Move。全部 Windows FFI 隔离在 `crates/windows-private-storage`，最小 MSVC check、交叉 Clippy、workspace Clippy 和 42 个 Agent 单测通过，完整边界见 `docs/WINDOWS_AGENT_STORAGE.md`。
 - 安装官方 rustup 目标后，首次全量验证让旧 transport check 与 rustup Clippy 混用不同 sysroot，失败证据保留在 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T035905Z`；transport 脚本现从同一工具目录固定 `cargo`、`rustc` 和 `cargo-clippy`，未切换或放宽测试，随后全量验证通过。
 - transport 契约完整回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`，覆盖 workspace 单测、真实 PostgreSQL Agent 控制面、Clippy、C Release/ASan/UBSan、安装器、秘密扫描和宿主残留复核。
 - 新增只面向快照 VM 的测试包构建脚本，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先签 DLL 再生成 catalog 并签 catalog、`10_GE_X64`、SHA-256 test signing、精确三文件 allowlist 和哈希清单；不创建证书、不修改 BCD、信任或测试签名策略。
@@ -116,14 +117,14 @@
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步是 Windows 安全存储、Service/SCM、路由和完整 Agent Windows 编译链接与 VM 执行，当前缺少 Windows SDK/WDK/VM；
+- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器、私有存储边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步是 Windows Service/SCM、路由和完整 Agent Windows 编译链接与 VM 执行，当前缺少 Windows SDK/WDK/VM；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 - Acceptance A 已有源码和文档证据；容器操作系统 SBOM、许可证全文和构建来源证明仍留在 Release Checklist，不提前宣称完整 RC 供应链。
 
 ## 下一步
 
-1. 继续实现不依赖实机的 Windows 安全存储与 Service/SCM 边界；获得 Windows SDK 环境后编译链接完整 Agent，并复核隔离 unsafe、命名管道 DACL、句柄 ABI 和同步阻塞边界；
+1. 继续实现不依赖实机的 Windows Service/SCM 边界；获得 Windows SDK 环境后编译链接完整 Agent，并复核隔离 unsafe、命名管道/存储 DACL、句柄 ABI 和同步阻塞边界；
 2. 获得 Windows VM 后执行设备枚举、六 IOCTL、空 TX/满 RX 精确状态、取消、WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
 3. 只有权威 no-commit 映射或显式唤醒协议得到证据后，才把有界 Windows 包调度接入 Agent runtime；
 4. 在 VM 中验证 exact ABI 拒绝、重复 clean install 和快照回滚，再设计生产升级事务；

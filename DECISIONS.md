@@ -668,3 +668,15 @@
 - 原因：固定名称和首实例门禁消除配置注入与启动前管道劫持；显式 DACL 不依赖进程默认 token，远程拒绝和有界实例防止跨主机与资源耗尽；平台无关 handler 让既有 Linux 集成测试继续覆盖真实协议行为。
 - 代价：当前只实现 Agent 服务器边界，Windows CLI、安全存储、Service/SCM、完整链接和运行测试仍未完成；最小 MSVC target check 不能证明 Windows 有效 DACL、连接拒绝、服务停止或并发行为。
 - 安全影响：Agent 继续禁止 unsafe，新增原始指针审计面只有三个块；普通用户与远程客户端默认拒绝，未知 endpoint 拒绝启动。M6.1、M6.2 与 `ACCEPTANCE.md` K 项不因源码准备而完成。
+
+---
+
+## ADR-057：Windows 私有状态使用 exact protected DACL 与同目录 write-through 替换
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Agent identity、签名配置、network manifest 和 enrollment token 只按 Unix mode 验证，Windows 无法编译该模块；仅在创建后设置 ACL 或只检查文件 ACL，会留下 reparse 跟随、宽松父目录替换、临时文件暴露和覆盖式 rename 语义差异。
+- 决策：共享层只负责 identity、JSON/token 语义、大小和随机临时名；Unix 保留 mode、同目录 rename 和目录 fsync。Windows 文件/目录分别使用固定仅 LocalSystem/Administrators 的 exact protected DACL，目录 ACE 可继承；要求绝对路径与所有现有路径组件非 reparse，读前同时验证直接父目录和文件 ACL、类型与长度。写入先硬化父目录，在同目录 `create_new` 临时文件上设置并回读 ACL，写入后 `sync_all`，已有目标用 `ReplaceFileW`、新目标用不覆盖的 `MoveFileExW`，两者均 write-through，完成后再次验证。
+- 原因：exact ACL 字节和 `SE_DACL_PROTECTED` 同时验证可拒绝额外主体与继承漂移；受限父目录和同目录临时文件收紧替换窗口；非覆盖 Move 避免把竞态出现的新目标静默覆盖。
+- 代价：当前 Windows crate 只完成源码和交叉编译，未验证 NTFS ACL 规范化、junction/hard-link、ReplaceFile 元数据、杀进程/断电或杀毒软件共享冲突；正式 ProgramData 根、owner 和 token 删除仍需安装器/VM 证明。
+- 安全影响：Agent 继续全局禁止 unsafe，Windows 安全描述符与替换 FFI 集中到最小 crate；ACL、路径、长度或替换结果模糊时一律失败关闭。该准备不完成 M6.1/M6.2。
