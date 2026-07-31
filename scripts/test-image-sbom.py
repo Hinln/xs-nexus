@@ -5,6 +5,7 @@ import io
 import json
 import tarfile
 import tempfile
+from unittest import mock
 from pathlib import Path
 
 
@@ -122,6 +123,16 @@ def main():
             pass
         else:
             raise AssertionError("unsafe license path was accepted")
+
+        source = base / "source"
+        source.mkdir()
+        (source / "value").write_text("complete", encoding="utf-8")
+        destination_parent = base / "destination"
+        destination_parent.mkdir()
+        with mock.patch.object(module.os, "replace", wraps=module.os.replace) as replace:
+            module.publish_output(source, destination_parent / "output")
+            replace.assert_called_once()
+        assert (destination_parent / "output" / "value").read_text(encoding="utf-8") == "complete"
 
     print("image SBOM tests passed")
     return 0

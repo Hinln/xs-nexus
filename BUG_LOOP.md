@@ -207,3 +207,4 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - identity 扩展首轮 M6.1 聚合验证被 Clippy `doc_markdown` 拒绝，因为新增公开文档中的 `NetAdapterCx` 未使用代码标记；失败证据保留在 `artifacts/qa/m6.1-agent-session-20260731T173555Z`。修正文档标记后原样重跑全量门禁，没有添加 lint allow 或降低告警等级。
 - identity query 首版虽提供同句柄 LUID，但网络准备公开函数仍允许任意调用方直接传入裸 `u64`，可信链条可被未来编排绕过。现把裸 LUID recover/prepare 降为私有，只公开 session-bound wrapper，并用源码门禁拒绝重新公开；runtime 保持未接入。
 - 镜像 SBOM 首次真实解析 PostgreSQL Alpine rootfs 时，严格许可证门禁拒绝 generated `.postgresql-rundeps`，因为该 dot-prefixed virtual metapackage 没有 `L:` 字段。修复为只允许这类明确虚拟包缺失许可证并仍保留在 SBOM；普通 apk 包缺失许可证继续失败。四镜像试运行随后识别 344 个包，未为虚拟包伪造许可证。
+- 当前提交四镜像首次正式供应链验证完成构建后，在把 `/tmp` 中的完整输出用 `os.replace` 发布到仓库证据目录时收到 `EXDEV`，失败证据保留在 `artifacts/qa/image-supply-chain-20260731T175829Z`。生成器现先复制到输出父目录中的私有 staging，再执行同文件系统原子替换；已有目标仍拒绝覆盖，失败 staging 会清理，不降低完整发布语义。

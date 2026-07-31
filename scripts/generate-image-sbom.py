@@ -74,6 +74,22 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def publish_output(source, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.name}.staging-",
+            dir=destination.parent,
+        )
+    )
+    try:
+        shutil.rmtree(staging)
+        shutil.copytree(source, staging)
+        os.replace(staging, destination)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def parse_images(values):
     images = {}
     for value in values:
@@ -437,8 +453,7 @@ def main():
             output / "xs-nexus-images.provenance.json",
             provenance(images, dockerfiles, args.revision, timestamp),
         )
-        args.output_dir.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(output, args.output_dir)
+        publish_output(output, args.output_dir)
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
     return 0
