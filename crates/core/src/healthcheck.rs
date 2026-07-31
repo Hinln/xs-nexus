@@ -118,9 +118,18 @@ mod tests {
         let address = listener.local_addr().expect("test address");
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accept healthcheck");
-            let mut request = [0_u8; 256];
-            let count = stream.read(&mut request).expect("read request");
-            assert!(request[..count].starts_with(b"GET /health/ready HTTP/1.1\r\n"));
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .expect("set request timeout");
+            let mut request = Vec::with_capacity(256);
+            let mut chunk = [0_u8; 64];
+            while request.len() < 1024 && !request.windows(4).any(|value| value == b"\r\n\r\n") {
+                let count = stream.read(&mut chunk).expect("read request");
+                assert_ne!(count, 0, "request ended before HTTP headers");
+                request.extend_from_slice(&chunk[..count]);
+            }
+            assert!(request.starts_with(b"GET /health/ready HTTP/1.1\r\n"));
+            assert!(request.windows(4).any(|value| value == b"\r\n\r\n"));
             stream.write_all(response).expect("write response");
         });
         address
