@@ -13,6 +13,23 @@ static uint64_t read_u64(const uint8_t *bytes) {
     return (uint64_t)read_u32(bytes) | ((uint64_t)read_u32(bytes + 4) << 32);
 }
 
+static void write_u16(uint8_t *bytes, uint16_t value) {
+    bytes[0] = (uint8_t)value;
+    bytes[1] = (uint8_t)(value >> 8);
+}
+
+static void write_u32(uint8_t *bytes, uint32_t value) {
+    bytes[0] = (uint8_t)value;
+    bytes[1] = (uint8_t)(value >> 8);
+    bytes[2] = (uint8_t)(value >> 16);
+    bytes[3] = (uint8_t)(value >> 24);
+}
+
+static void write_u64(uint8_t *bytes, uint64_t value) {
+    write_u32(bytes, (uint32_t)value);
+    write_u32(bytes + 4, (uint32_t)(value >> 32));
+}
+
 XsnetValidationStatus XsnetValidateMessage(
     const void *buffer,
     size_t buffer_length,
@@ -60,6 +77,34 @@ XsnetValidationStatus XsnetValidateMessage(
     message_view->payload = bytes + XSNET_ABI_HEADER_SIZE;
     message_view->payload_length = payload_length;
     message_view->sequence = read_u64(bytes + 24);
+    return XSNET_VALID;
+}
+
+XsnetValidationStatus XsnetWriteMessageHeader(
+    void *buffer,
+    size_t buffer_capacity,
+    XsnetMessageType message_type,
+    uint32_t payload_length,
+    uint64_t sequence) {
+    uint8_t *bytes = (uint8_t *)buffer;
+
+    if (buffer == NULL || message_type < XSNET_MESSAGE_HELLO ||
+        message_type > XSNET_MESSAGE_DETACH ||
+        payload_length > XSNET_ABI_MAX_PAYLOAD || sequence == 0) {
+        return XSNET_INVALID_ARGUMENT;
+    }
+    if (buffer_capacity <
+        (size_t)XSNET_ABI_HEADER_SIZE + (size_t)payload_length) {
+        return XSNET_TRUNCATED;
+    }
+    write_u32(bytes, XSNET_ABI_MAGIC);
+    write_u16(bytes + 4, XSNET_ABI_VERSION);
+    write_u16(bytes + 6, XSNET_ABI_HEADER_SIZE);
+    write_u32(bytes + 8, (uint32_t)message_type);
+    write_u32(bytes + 12, 0);
+    write_u32(bytes + 16, payload_length);
+    write_u32(bytes + 20, 0);
+    write_u64(bytes + 24, sequence);
     return XSNET_VALID;
 }
 

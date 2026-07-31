@@ -121,6 +121,23 @@ def validate_sources() -> None:
         "XsnetPacketQueuePushBatch",
         "XsnetPacketQueuePopBatch",
         "secure_zero",
+        "NetTxQueueGetRingCollection",
+        "NetRxQueueGetRingCollection",
+        "NetTxQueueGetExtension",
+        "NetRxQueueGetExtension",
+        "NET_FRAGMENT_EXTENSION_VIRTUAL_ADDRESS_NAME",
+        "NetExtensionGetFragmentVirtualAddress",
+        "NetRingCollectionGetPacketRing",
+        "NetRingCollectionGetFragmentRing",
+        "NetRingIncrementIndex",
+        "NetPacketLayer2TypeNull",
+        "WdfExecutionLevelPassive",
+        "WdfRequestRetrieveOutputBuffer",
+        "WdfRequestCompleteWithInformation",
+        "NetRxQueueNotifyMoreReceivedPacketsAvailable",
+        "XsnetPacketQueueValidateBatch",
+        "XsnetPacketQueueMeasureBatch",
+        "XsnetWriteMessageHeader",
     ]
     for value in required:
         if value not in sources:
@@ -138,8 +155,18 @@ def validate_sources() -> None:
         if value in sources:
             fail(f"Windows source contains forbidden dependency or logging: {value}")
     ioctl_source = (DRIVER / "src" / "ioctl.c").read_text(encoding="utf-8")
-    if "XSNET_MESSAGE_SET_LINK" not in ioctl_source or "STATUS_NOT_SUPPORTED" not in ioctl_source:
-        fail("incomplete packet path must fail closed before link-up")
+    for value in (
+        "complete_transmit_request",
+        "complete_receive_request",
+        "transmit_queue_ready_locked",
+        "receive_queue_ready_locked",
+        "STATUS_NO_MORE_ENTRIES",
+        "STATUS_BUFFER_TOO_SMALL",
+    ):
+        if value not in ioctl_source:
+            fail(f"packet request path missing invariant: {value}")
+    if "message_type == XSNET_MESSAGE_SET_LINK ||" in ioctl_source:
+        fail("SetLink must not share the obsolete blanket packet rejection path")
 
 
 def main() -> int:

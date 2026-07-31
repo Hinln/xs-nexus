@@ -52,6 +52,13 @@ XsnetValidationStatus XsnetValidateMessage(
     uint32_t maximum_payload_length,
     XsnetMessageView *message_view);
 
+XsnetValidationStatus XsnetWriteMessageHeader(
+    void *buffer,
+    size_t buffer_capacity,
+    XsnetMessageType message_type,
+    uint32_t payload_length,
+    uint64_t sequence);
+
 XsnetValidationStatus XsnetValidatePacketBatch(
     const uint8_t *payload,
     uint32_t payload_length,

@@ -12,6 +12,8 @@ static XsnetPacketSlot test_slots[XSNET_ABI_MAX_PACKETS];
 static void fill_packet(uint8_t *packet, uint32_t packet_length, uint8_t value) {
     memset(packet, value, packet_length);
     packet[0] = 0x45;
+    packet[2] = (uint8_t)(packet_length >> 8);
+    packet[3] = (uint8_t)packet_length;
 }
 
 static void write_u16(uint8_t *bytes, uint16_t value) {
@@ -98,6 +100,15 @@ static void test_batch_atomicity_and_mtu(void) {
                &accepted_packets) == XSNET_QUEUE_BAD_PACKET);
     assert(accepted_packets == 0);
     assert(queue.count == 2);
+    payload_length = make_two_packet_batch(payload, 40, 60);
+    payload[64] = 0x65;
+    assert(XsnetPacketQueuePushBatch(
+               &queue,
+               payload,
+               payload_length,
+               &accepted_packets) == XSNET_QUEUE_BAD_PACKET);
+    assert(accepted_packets == 0);
+    assert(queue.count == 2);
 }
 
 static void test_capacity_is_atomic(void) {
@@ -134,6 +145,13 @@ static void test_small_output_preserves_queue(void) {
     fill_packet(packet, sizeof(packet), 0x13);
     assert(XsnetPacketQueueInitialize(&queue, test_slots, 1400) == XSNET_QUEUE_OK);
     assert(XsnetPacketQueuePush(&queue, packet, sizeof(packet)) == XSNET_QUEUE_OK);
+    assert(XsnetPacketQueueMeasureBatch(
+               &queue,
+               sizeof(payload),
+               1,
+               &payload_length,
+               &packet_count) == XSNET_QUEUE_BUFFER_TOO_SMALL);
+    assert(queue.count == 1);
     assert(XsnetPacketQueuePopBatch(
                &queue,
                payload,
@@ -187,6 +205,39 @@ static void test_reset_zeroes_payloads(void) {
     }
 }
 
+static void test_ipv4_validation_and_single_pop(void) {
+    XsnetPacketQueue queue;
+    uint8_t packet[64];
+    uint8_t output[64];
+    uint32_t output_length;
+
+    fill_packet(packet, sizeof(packet), 0x61);
+    assert(XsnetPacketQueueInitialize(&queue, test_slots, 1400) == XSNET_QUEUE_OK);
+    packet[0] = 0x65;
+    assert(XsnetPacketQueuePush(&queue, packet, sizeof(packet)) ==
+           XSNET_QUEUE_BAD_PACKET);
+    fill_packet(packet, sizeof(packet), 0x61);
+    packet[3] -= 1;
+    assert(XsnetPacketQueuePush(&queue, packet, sizeof(packet)) ==
+           XSNET_QUEUE_BAD_PACKET);
+    fill_packet(packet, sizeof(packet), 0x61);
+    assert(XsnetPacketQueuePush(&queue, packet, sizeof(packet)) == XSNET_QUEUE_OK);
+    assert(XsnetPacketQueuePop(
+               &queue,
+               output,
+               sizeof(output) - 1,
+               &output_length) == XSNET_QUEUE_BUFFER_TOO_SMALL);
+    assert(queue.count == 1);
+    assert(XsnetPacketQueuePop(
+               &queue,
+               output,
+               sizeof(output),
+               &output_length) == XSNET_QUEUE_OK);
+    assert(output_length == sizeof(packet));
+    assert(memcmp(output, packet, sizeof(packet)) == 0);
+    assert(queue.count == 0);
+}
+
 int main(void) {
     test_single_packet_round_trip();
     test_batch_atomicity_and_mtu();
@@ -194,6 +245,7 @@ int main(void) {
     test_small_output_preserves_queue();
     test_partial_pop_and_wraparound();
     test_reset_zeroes_payloads();
+    test_ipv4_validation_and_single_pop();
     puts("xsnet dataplane queue tests passed");
     return 0;
 }

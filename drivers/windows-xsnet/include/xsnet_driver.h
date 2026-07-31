@@ -6,6 +6,7 @@
 #include <netadaptercx.h>
 
 #include "xsnet_abi.h"
+#include "xsnet_dataplane.h"
 #include "xsnet_ioctl.h"
 #include "xsnet_session.h"
 
@@ -15,6 +16,12 @@ typedef struct XsnetDeviceContext {
     WDFWAITLOCK session_lock;
     NETADAPTER adapter;
     XsnetSession session;
+    XsnetPacketQueue transmit_packets;
+    XsnetPacketQueue receive_packets;
+    XsnetPacketSlot transmit_slots[XSNET_ABI_MAX_PACKETS];
+    XsnetPacketSlot receive_slots[XSNET_ABI_MAX_PACKETS];
+    NETPACKETQUEUE transmit_queue;
+    NETPACKETQUEUE receive_queue;
     uint64_t next_owner_cookie;
     BOOLEAN adapter_started;
 } XsnetDeviceContext;
@@ -32,6 +39,9 @@ typedef enum XsnetQueueDirection {
 
 typedef struct XsnetQueueContext {
     XsnetQueueDirection direction;
+    WDFDEVICE device;
+    const NET_RING_COLLECTION *rings;
+    NET_EXTENSION virtual_address_extension;
     BOOLEAN started;
     BOOLEAN notification_enabled;
     BOOLEAN cancelled;

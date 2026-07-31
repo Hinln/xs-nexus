@@ -16,6 +16,9 @@
 - [Porting NDIS miniport drivers to NetAdapterCx](https://learn.microsoft.com/en-us/windows-hardware/drivers/netcx/porting-ndis-miniport-drivers-to-netadaptercx)
 - [Windows security model for driver developers](https://learn.microsoft.com/en-us/windows-hardware/drivers/driversecurity/windows-security-model)
 - [Failure to Check the Size of Buffers](https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/failure-to-check-the-size-of-buffers)
+- [Net ring element management](https://learn.microsoft.com/en-us/windows-hardware/drivers/netcx/net-ring-element-management)
+- [NetAdapterSetLinkLayerMtuSize](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/netadapter/nf-netadapter-netadaptersetlinklayermtusize)
+- [WdfRequestRetrieveOutputBuffer](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdfrequest/nf-wdfrequest-wdfrequestretrieveoutputbuffer)
 
 不复制 WDK 示例、第三方驱动、Wintun、TAP-Windows 或现成 VPN/组网实现。
 
@@ -65,6 +68,10 @@
 
 包批次最多 64 包，每包 20–9000 字节。描述符表长度必须等于 `count * 8`；包数据必须紧随描述符、按顺序连续、无间隙、无重叠、无隐藏尾部数据。ABI 不使用编译器结构体布局解析字节流。
 
+direct-I/O 使用明确的双缓冲方向：`DEQUEUE_TX` 的 buffered 输入必须是 payload 长度为 0 的 32 字节 TxBatch 请求，direct 输出为带同一 sequence 的完整 TxBatch；`ENQUEUE_RX` 不接受 buffered 输入，其 direct 缓冲区必须是完整 RxBatch。空 TX、满 RX、输出不足、队列未启动或输入失败均立即返回，不挂起请求、不消费包、不推进 sequence。只有完整成功请求推进 sequence；TX 输出最多协商的 transmit depth，RX 积压不得超过协商的 receive depth。
+
+Attach 在会话锁内提交协商 MTU 和私有队列上限，解锁后才调用 `NetAdapterSetLinkLayerMtuSize`。微软文档说明运行时 MTU 更新会重建 TX/RX queues；任何在锁内调用都会让 queue stop/create 回调重入同一锁。重建完成前 SetLink 因双队列未 started 而失败关闭。
+
 ## 5. 状态机
 
 ```text
@@ -94,6 +101,8 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `include/xsnet_dataplane.h` 与 `src/dataplane.c` 已实现平台无关的固定槽队列模型：批次入队先完成全量规范编码、MTU 和容量检查，失败不部分入队；出队按调用方容量选择完整包，无法容纳首包时不消费；成功出队和 reset 清零完整槽。该模型只证明队列语义，不代表已接入 WDF direct I/O 或 NetAdapterCx ring。
 
+NetAdapterCx packet queue 源码按官方 ring 所有权规则缓存 TX/RX ring collection 和虚拟地址 fragment 扩展，并限定 Passive 回调。TX 只读取一包一 fragment 的系统缓冲区，完整复制入私有队列后才推进 Begin/Next；RX 只把已通过 IPv4 version、IHL、总长度和 MTU 校验的包复制到系统缓冲区，设置 `Layer2TypeNull`、IPv4 header length 和单 fragment，再推进 Begin。ring 索引、fragment 数、虚拟地址或容量异常会停止消费并断链。SetLink 只有在双向 packet queue 已启动时才能 link up；queue stop/cancel 会清空对应积压、退回 Attached 并断链。
+
 ## 7. 未完成门禁
 
 以下项目在获得 `BLK-001` 环境前不得标记通过：
@@ -121,4 +130,4 @@ make test-windows-xsnet-source
 
 该命令检查 WDK 工程和 INF 的目标版本、安全指令、IOCTL 模式以及源码中的生命周期调用。当前源码已包含 DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、D0/release reset、NetAdapter 创建/start/stop 和 packet queue 生命周期骨架。
 
-SetLink、TX 和 RX IOCTL 当前显式返回 `STATUS_NOT_SUPPORTED`，queue advance 不消费 ring，因此 adapter 始终保持 disconnected。这是未完成数据面前的失败关闭状态，不是可工作的驱动或收发证据。`xsnet.vcxproj` 属性名、INF 和全部 API 仍必须在 WDK 10.0.26100、MSBuild、InfVerif 和 Windows 11 24H2 VM 中真实验证。
+SetLink、同步 TX/RX direct-I/O 和 ring copy 源码已经接通，并由源码脚本检查 buffer、通知、ring 和扩展调用存在；平台无关测试验证编码、状态、背压和清零语义。但 Linux 主机没有 WDK/NetAdapterCx 头文件与运行时，这些 Windows 源码没有被真实编译或执行，绝不是可工作的驱动或收发证据。`xsnet.vcxproj` 属性名、INF 和全部 API 仍必须在 WDK 10.0.26100、MSBuild、InfVerif 和 Windows 11 24H2 VM 中真实验证。

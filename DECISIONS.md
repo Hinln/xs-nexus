@@ -532,7 +532,19 @@
 - 状态：接受
 - 日期：2026-07-31
 - 背景：Agent 与驱动需要交换 NetAdapterCx 包，但共享可写内存会引入跨进程所有权、TOCTOU、取消和长期映射生命周期；当前性能数据不足以证明该复杂度必要。
-- 决策：首版在驱动边界使用 direct-I/O 请求和每方向最多 64 包的私有固定槽队列。批次先完整验证规范布局、MTU 和剩余容量，再原子入队；输出容量不足不消费，出队或 reset 后清零完整槽。NetAdapterCx 系统缓冲区只在 packet queue callback 持有期间复制，不向 Agent 映射。
+- 决策：首版在驱动边界使用同步 direct-I/O 请求和每方向最多 64 包的私有固定槽队列。TX 使用 header-only 请求与 framed 输出，RX 使用 framed direct 输入；批次先完整验证规范布局、MTU、协商深度和剩余容量，再原子入队；输出容量不足不消费，出队或 reset 后清零完整槽。NetAdapterCx 系统缓冲区只在 packet queue callback 持有期间复制，不向 Agent 映射。
 - 原因：所有权和失败边界可由 WDF request、单 owner 会话、固定资源上限和小型纯 C 模型分别测试，不需要把可变环索引暴露给不可信用户态进程。
 - 代价：每包至少一次复制，吞吐可能低于共享环；WDF direct-I/O 双缓冲方向、取消和 ring 接线仍需 WDK/VM 验证，性能不达标时也必须先保留安全边界再评估替代方案。
 - 安全影响：拒绝无限积压、部分批次、陈旧 payload 和跨请求共享写入；队列满只对虚拟 NIC 施加背压，不修改物理网络或放宽输入校验。
+
+---
+
+## ADR-046：xsnet 使用 IF_TYPE_TUNNEL 与 Layer2TypeNull 交换规范原始 IPv4 包
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Linux TUN 与现有 Agent 数据面交换 L3 IPv4；若 Windows 驱动伪装 Ethernet，则必须额外实现 MAC、ARP/邻居、二层广播和头部转换，扩大驱动职责并破坏跨平台包语义。
+- 决策：INF 保持 `IF_TYPE_TUNNEL`/IP media，Agent ABI 只接受规范原始 IPv4。队列校验版本 4、IHL、IPv4 总长度、协商 MTU 和批次布局；RX ring 使用 `NetPacketLayer2TypeNull`、零 L2 长度和准确 IPv4 header length，TX 不读取 `Ignore` 包的其他只读字段。
+- 原因：微软 ring 规则明确允许 RX 的 `Layer2TypeNull`，这与任务书要求的 L3 虚拟接口和 Linux TUN 边界一致，不把 ARP 或 Ethernet 策略塞进最小驱动。
+- 代价：Windows TCP/IP 对 `IF_TYPE_TUNNEL`、IP media 与 UMDF NetAdapterCx 2.5 的实际绑定和路由行为仍必须在 Windows 11 VM 验证；若 WDK 或系统拒绝该组合，必须保存证据并重新评估，而不能静默改为伪 Ethernet。
+- 安全影响：驱动拒绝 IPv6、截断头、非法 IHL 和总长度不一致包；不可信 Agent 不能通过合法批次描述符注入非规范 L3 payload。

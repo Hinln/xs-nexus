@@ -32,9 +32,21 @@ static NTSTATUS initialize_device_context(WDFDEVICE device) {
         return status;
     }
     device_context->adapter = NULL;
+    device_context->transmit_queue = NULL;
+    device_context->receive_queue = NULL;
     device_context->next_owner_cookie = 0;
     device_context->adapter_started = FALSE;
     XsnetSessionInitialize(&device_context->session);
+    if (XsnetPacketQueueInitialize(
+            &device_context->transmit_packets,
+            device_context->transmit_slots,
+            XSNET_ABI_MAX_PACKET_SIZE) != XSNET_QUEUE_OK ||
+        XsnetPacketQueueInitialize(
+            &device_context->receive_packets,
+            device_context->receive_slots,
+            XSNET_ABI_MAX_PACKET_SIZE) != XSNET_QUEUE_OK) {
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
     return STATUS_SUCCESS;
 }
 
@@ -166,6 +178,8 @@ void XsnetEvtDeviceFileCreate(
         file_context->owner_cookie = device_context->next_owner_cookie;
         file_context->requestor_process_id = WdfRequestGetRequestorProcessId(request);
         file_context->accepted = TRUE;
+        XsnetPacketQueueReset(&device_context->transmit_packets);
+        XsnetPacketQueueReset(&device_context->receive_packets);
     }
     WdfWaitLockRelease(device_context->session_lock);
 
@@ -184,6 +198,8 @@ void XsnetEvtFileCleanup(WDFFILEOBJECT file_object) {
     }
     if (NT_SUCCESS(WdfWaitLockAcquire(device_context->session_lock, NULL))) {
         XsnetSessionClose(&device_context->session, file_context->owner_cookie);
+        XsnetPacketQueueReset(&device_context->transmit_packets);
+        XsnetPacketQueueReset(&device_context->receive_packets);
         file_context->accepted = FALSE;
         WdfWaitLockRelease(device_context->session_lock);
     }
@@ -238,6 +254,10 @@ void XsnetResetSession(WDFDEVICE device) {
 
     if (NT_SUCCESS(WdfWaitLockAcquire(device_context->session_lock, NULL))) {
         XsnetSessionInitialize(&device_context->session);
+        XsnetPacketQueueReset(&device_context->transmit_packets);
+        XsnetPacketQueueReset(&device_context->receive_packets);
+        device_context->transmit_packets.mtu = XSNET_ABI_MAX_PACKET_SIZE;
+        device_context->receive_packets.mtu = XSNET_ABI_MAX_PACKET_SIZE;
         WdfWaitLockRelease(device_context->session_lock);
     }
 }

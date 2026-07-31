@@ -95,9 +95,42 @@ static void test_packet_batch_validation(void) {
     assert(XsnetValidatePacketBatch(payload, 63, &packet_count) == XSNET_BAD_BATCH);
 }
 
+static void test_message_header_writer(void) {
+    uint8_t buffer[XSNET_ABI_HEADER_SIZE + 64];
+    XsnetMessageView message_view;
+
+    memset(buffer, 0xa5, sizeof(buffer));
+    assert(XsnetWriteMessageHeader(
+               buffer,
+               sizeof(buffer),
+               XSNET_MESSAGE_TX_BATCH,
+               64,
+               UINT64_C(9)) == XSNET_VALID);
+    assert(XsnetValidateMessage(
+               buffer,
+               sizeof(buffer),
+               XSNET_MESSAGE_TX_BATCH,
+               64,
+               &message_view) == XSNET_VALID);
+    assert(message_view.sequence == 9);
+    assert(XsnetWriteMessageHeader(
+               buffer,
+               XSNET_ABI_HEADER_SIZE + 63,
+               XSNET_MESSAGE_TX_BATCH,
+               64,
+               UINT64_C(9)) == XSNET_TRUNCATED);
+    assert(XsnetWriteMessageHeader(
+               buffer,
+               sizeof(buffer),
+               XSNET_MESSAGE_TX_BATCH,
+               64,
+               0) == XSNET_INVALID_ARGUMENT);
+}
+
 int main(void) {
     test_message_validation();
     test_packet_batch_validation();
+    test_message_header_writer();
     puts("xsnet ABI validation tests passed");
     return 0;
 }

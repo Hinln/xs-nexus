@@ -39,11 +39,30 @@ XsnetQueueStatus XsnetPacketQueuePush(
     const void *packet,
     uint32_t packet_length);
 
+XsnetQueueStatus XsnetPacketQueueValidateBatch(
+    const XsnetPacketQueue *queue,
+    const uint8_t *payload,
+    uint32_t payload_length,
+    uint16_t *packet_count);
+
 XsnetQueueStatus XsnetPacketQueuePushBatch(
     XsnetPacketQueue *queue,
     const uint8_t *payload,
     uint32_t payload_length,
     uint16_t *accepted_packets);
+
+XsnetQueueStatus XsnetPacketQueuePop(
+    XsnetPacketQueue *queue,
+    void *packet,
+    uint32_t packet_capacity,
+    uint32_t *packet_length);
+
+XsnetQueueStatus XsnetPacketQueueMeasureBatch(
+    const XsnetPacketQueue *queue,
+    uint32_t payload_capacity,
+    uint16_t maximum_packets,
+    uint32_t *payload_length,
+    uint16_t *packet_count);
 
 XsnetQueueStatus XsnetPacketQueuePopBatch(
     XsnetPacketQueue *queue,

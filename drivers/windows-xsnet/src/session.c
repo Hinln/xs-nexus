@@ -135,6 +135,18 @@ static XsnetSessionStatus process_packet_batch(
     return XSNET_SESSION_OK;
 }
 
+static XsnetSessionStatus process_transmit_request(
+    const XsnetSession *session,
+    const XsnetMessageView *message_view) {
+    if (session->state != XSNET_SESSION_LINK_UP) {
+        return XSNET_SESSION_BAD_STATE;
+    }
+    if (message_view->payload_length != 0) {
+        return XSNET_SESSION_BAD_MESSAGE;
+    }
+    return XSNET_SESSION_OK;
+}
+
 static XsnetSessionStatus process_detach(XsnetSession *session) {
     if (session->state != XSNET_SESSION_NEGOTIATED &&
         session->state != XSNET_SESSION_ATTACHED &&
@@ -213,6 +225,8 @@ XsnetSessionStatus XsnetSessionProcess(
             maximum_payload_length = XSNET_ABI_SET_LINK_PAYLOAD_SIZE;
             break;
         case XSNET_MESSAGE_TX_BATCH:
+            maximum_payload_length = 0;
+            break;
         case XSNET_MESSAGE_RX_BATCH:
             maximum_payload_length = XSNET_ABI_MAX_PAYLOAD;
             break;
@@ -253,6 +267,8 @@ XsnetSessionStatus XsnetSessionProcess(
             session_status = process_set_link(session, &message_view);
             break;
         case XSNET_MESSAGE_TX_BATCH:
+            session_status = process_transmit_request(session, &message_view);
+            break;
         case XSNET_MESSAGE_RX_BATCH:
             session_status = process_packet_batch(
                 session,

@@ -247,7 +247,7 @@ static void test_link_packet_and_detach(void) {
 
     XsnetSessionInitialize(&session);
     negotiate_and_attach(&session, buffer, &validation_status);
-    message_length = make_batch(buffer, XSNET_MESSAGE_TX_BATCH, 3, 20);
+    message_length = make_message(buffer, XSNET_MESSAGE_TX_BATCH, 3, 0);
     assert(XsnetSessionProcess(
                &session,
                TEST_OWNER,
@@ -264,7 +264,7 @@ static void test_link_packet_and_detach(void) {
                message_length,
                &validation_status) == XSNET_SESSION_OK);
     assert(session.state == XSNET_SESSION_LINK_UP);
-    message_length = make_batch(buffer, XSNET_MESSAGE_TX_BATCH, 4, 1401);
+    message_length = make_batch(buffer, XSNET_MESSAGE_TX_BATCH, 4, 20);
     assert(XsnetSessionProcess(
                &session,
                TEST_OWNER,
@@ -272,9 +272,17 @@ static void test_link_packet_and_detach(void) {
                buffer,
                message_length,
                &validation_status) == XSNET_SESSION_BAD_MESSAGE);
-    assert(validation_status == XSNET_BAD_BATCH);
+    assert(validation_status == XSNET_BAD_LENGTH);
     assert(session.last_sequence == 3);
-    message_length = make_batch(buffer, XSNET_MESSAGE_RX_BATCH, 4, 1400);
+    message_length = make_message(buffer, XSNET_MESSAGE_TX_BATCH, 4, 0);
+    assert(XsnetSessionProcess(
+               &session,
+               TEST_OWNER,
+               XSNET_MESSAGE_TX_BATCH,
+               buffer,
+               message_length,
+               &validation_status) == XSNET_SESSION_OK);
+    message_length = make_batch(buffer, XSNET_MESSAGE_RX_BATCH, 5, 1400);
     assert(XsnetSessionProcess(
                &session,
                TEST_OWNER,
@@ -282,7 +290,7 @@ static void test_link_packet_and_detach(void) {
                buffer,
                message_length,
                &validation_status) == XSNET_SESSION_OK);
-    message_length = make_message(buffer, XSNET_MESSAGE_DETACH, 5, 0);
+    message_length = make_message(buffer, XSNET_MESSAGE_DETACH, 6, 0);
     assert(XsnetSessionProcess(
                &session,
                TEST_OWNER,
@@ -291,7 +299,7 @@ static void test_link_packet_and_detach(void) {
                message_length,
                &validation_status) == XSNET_SESSION_OK);
     assert(session.state == XSNET_SESSION_NEGOTIATED);
-    message_length = make_message(buffer, XSNET_MESSAGE_DETACH, 6, 0);
+    message_length = make_message(buffer, XSNET_MESSAGE_DETACH, 7, 0);
     assert(XsnetSessionProcess(
                &session,
                TEST_OWNER,
