@@ -34,12 +34,15 @@ FAILURE_LINE=
 FAILURE_COMMAND=
 
 record_failure() {
-    FAILURE_LINE=$1
-    FAILURE_COMMAND=$2
+    if [[ -z $FAILURE_LINE ]]; then
+        FAILURE_LINE=$1
+        FAILURE_COMMAND=$2
+    fi
 }
 
 cleanup() {
     local status=$?
+    trap - ERR
     set +e
     if [[ -n $CAPTURE_PID ]]; then
         kill "$CAPTURE_PID" >/dev/null 2>&1
@@ -68,8 +71,10 @@ cleanup() {
                 cat "$TEMPORARY/$log" >&2
             fi
         done
+        printf 'candidate path failure evidence retained at %s\n' "$TEMPORARY" >&2
+    else
+        rm -rf "$TEMPORARY"
     fi
-    rm -rf "$TEMPORARY"
     exit "$status"
 }
 trap cleanup EXIT INT TERM

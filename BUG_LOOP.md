@@ -191,9 +191,9 @@ Bug 集中修复阶段只有满足以下条件才通过：
 
 ---
 
-## M7.1 当前已闭环缺陷
+## M7.1 当前缺陷调查
 
-- 三轮聚合回归第 2 轮捕获候选路径测试竞态：测试只等待 A 端完成对 B 新路径的 PathResponse，便立即发送双向 ICMP；协议按方向独立维护探测，B 端可能尚未完成自己的 PathChallenge/Response。失败证据为 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`，缺陷记录为 `artifacts/bugs/XS-2026-0003.md`。测试现分别要求 A、B 都报告 `authenticated_path_probe` 后才验证双向业务流量，并在失败时输出精确 Shell 行号和命令；没有延长等待上限或增加重试。
+- 三轮聚合回归捕获候选路径测试竞态：测试原先只等待 A 端完成对 B 新路径的 PathResponse，便立即发送双向 ICMP；协议按方向独立维护探测。首次失败证据为 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`，双向等待后的失败证据为 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194301Z`，缺陷记录为 `artifacts/bugs/XS-2026-0003.md`。测试已分别要求 A、B 都报告 `authenticated_path_probe`，并修正诊断以保留首个失败命令和受限临时证据；完整 M5.2 随后通过，但缺陷保持调查中，三轮计数仍为零。
 
 ---
 

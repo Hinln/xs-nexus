@@ -249,3 +249,4 @@ make clean
 - Console 已删除未使用的 `nginx-module-image-filter` 与 TIFF 包链，完整 Docker 生命周期通过；提交 `ca7d2c2e026385b6e8f4432de7942b672be71d3a` 的供应链与漏洞证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`。结果降为 Critical 2、High 4、Medium 16、Negligible 24，Console/db-tools 无 Critical/High，当前可修复项为 0。
 - 剩余 glibc 三个 CVE 已建立可执行 disposition 门禁：精确匹配报告、拒绝可修复项/新增 High 或 Critical，并从镜像提取 Controller/Relay 二进制验证不导入受影响 API；复核期限为 2026-08-31，基础镜像、glibc、扫描结果或二进制导入变化会提前触发复核。Windows runtime 接入继续由 `BLK-001` 阻塞。
 - M7.1 首次三轮聚合在第 2 轮捕获候选路径测试的双向就绪竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`；根因和修复记录于 `XS-2026-0003`。测试现独立等待两个方向完成认证路径探测，未延长超时；修复后的三轮聚合仍须从零重新计数。
+- 双向等待后的聚合首轮再次失败，证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194301Z`；旧 ERR 诊断被 cleanup 覆盖，现已修复为保留首错误命令及失败临时目录。定向 10 轮、fallback/path 组合 12 轮和完整 M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194855Z` 通过，但 `XS-2026-0003` 仍保持调查中，M7.1 三轮计数为零。
