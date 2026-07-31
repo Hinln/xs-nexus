@@ -16,6 +16,7 @@ use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use sqlx::Connection;
 use tokio::{
     net::{TcpStream, UdpSocket},
     sync::watch,
@@ -91,7 +92,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(network["config_version"], 1);
     let network_id = network["id"].as_str().expect("network id");
-    assert_overlapping_network_rejected(&router).await;
+    assert_network_persistence_guards(&router, &state.pool, &config, network_id).await;
 
     let (token_id, token) = create_token(&router, network_id, 1).await;
     assert_token_is_hash_only(&state.pool, &config.database_schema).await;
@@ -154,6 +155,90 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         .await
         .expect("join discovery server")
         .expect("discovery server exits cleanly");
+}
+
+async fn assert_network_persistence_guards(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    config: &ControllerConfig,
+    network_id: &str,
+) {
+    assert_overlapping_network_rejected(router).await;
+    assert_database_pool_recovers_after_backend_termination(router, pool, config, network_id).await;
+}
+
+async fn assert_database_pool_recovers_after_backend_termination(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    config: &ControllerConfig,
+    network_id: &str,
+) {
+    let mut target = pool.acquire().await.expect("acquire target connection");
+    let terminated_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *target)
+        .await
+        .expect("read target backend pid");
+
+    let mut terminator = sqlx::postgres::PgConnection::connect(&config.database_url)
+        .await
+        .expect("connect independent database terminator");
+    let terminated: bool = sqlx::query_scalar("SELECT pg_terminate_backend($1)")
+        .bind(terminated_pid)
+        .fetch_one(&mut terminator)
+        .await
+        .expect("terminate only the borrowed test-pool backend");
+    assert!(terminated, "PostgreSQL accepted backend termination");
+
+    let target_failure = sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()")
+        .fetch_one(&mut *target)
+        .await;
+    assert!(
+        target_failure.is_err(),
+        "the explicitly terminated pool connection must become unusable"
+    );
+    drop(target);
+
+    let recovery = timeout(Duration::from_secs(5), async {
+        loop {
+            let (ready_status, ready) =
+                request_json(router, Method::GET, "/health/ready", None, None).await;
+            let (networks_status, networks) = request_json(
+                router,
+                Method::GET,
+                "/v1/admin/networks",
+                None,
+                Some(ADMIN_TOKEN),
+            )
+            .await;
+            let network_preserved = networks.as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|network| network["id"].as_str() == Some(network_id))
+            });
+            if ready_status == StatusCode::OK
+                && ready["database"] == "ok"
+                && networks_status == StatusCode::OK
+                && network_preserved
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    assert!(
+        recovery.is_ok(),
+        "database pool did not recover within 5 seconds"
+    );
+
+    let replacement_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(pool)
+        .await
+        .expect("query through recovered pool");
+    assert_ne!(
+        replacement_pid, terminated_pid,
+        "the terminated PostgreSQL backend must not be reused"
+    );
 }
 
 async fn assert_overlapping_network_rejected(router: &Router) {
