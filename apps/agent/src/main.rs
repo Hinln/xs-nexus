@@ -9,6 +9,8 @@ use xs_agent::{
     runtime::run_agent,
 };
 
+const WINDOWS_SERVICE_NAME: &str = "XsNexusAgent";
+
 #[derive(Debug, Eq, PartialEq)]
 enum Command {
     Cleanup {
@@ -19,6 +21,9 @@ enum Command {
         token_file: PathBuf,
     },
     Run {
+        config: PathBuf,
+    },
+    Service {
         config: PathBuf,
     },
     Version,
@@ -58,6 +63,7 @@ async fn entrypoint() -> Result<()> {
             let _ = signal_task.await;
             result
         }
+        Command::Service { config } => run_windows_service(config),
         Command::Cleanup { config } => {
             let config = AgentConfig::load(&config)?;
             cleanup_network(&config).await?;
@@ -72,10 +78,18 @@ async fn entrypoint() -> Result<()> {
 }
 
 fn parse_command() -> Result<Command> {
-    parse_command_from(std::env::args_os().skip(1))
+    parse_command_from_with_platform(std::env::args_os().skip(1), cfg!(windows))
 }
 
+#[cfg(test)]
 fn parse_command_from(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Command> {
+    parse_command_from_with_platform(arguments, cfg!(windows))
+}
+
+fn parse_command_from_with_platform(
+    arguments: impl IntoIterator<Item = std::ffi::OsString>,
+    windows: bool,
+) -> Result<Command> {
     let mut arguments = arguments.into_iter();
     let command = arguments.next().ok_or(AgentError::Configuration)?;
     if command == "--version" {
@@ -106,6 +120,11 @@ fn parse_command_from(arguments: impl IntoIterator<Item = std::ffi::OsString>) -
             config: config.ok_or(AgentError::Configuration)?,
         });
     }
+    if windows && command == "service" && token_file.is_none() {
+        return Ok(Command::Service {
+            config: config.ok_or(AgentError::Configuration)?,
+        });
+    }
     if command == "cleanup" && token_file.is_none() {
         return Ok(Command::Cleanup {
             config: config.ok_or(AgentError::Configuration)?,
@@ -118,6 +137,36 @@ fn parse_command_from(arguments: impl IntoIterator<Item = std::ffi::OsString>) -
         });
     }
     Err(AgentError::Configuration)
+}
+
+fn run_windows_service(config_path: PathBuf) -> Result<()> {
+    let runtime = tokio::runtime::Handle::current();
+    xs_windows_service::run_service(WINDOWS_SERVICE_NAME, move |shutdown| {
+        runtime.block_on(async move {
+            let config = match AgentConfig::load(&config_path) {
+                Ok(config) => config,
+                Err(error) => {
+                    eprintln!("xs-agent service error={}", error.code());
+                    return false;
+                }
+            };
+            let (shutdown_sender, shutdown_receiver) = watch::channel(false);
+            let shutdown_task = tokio::spawn(async move {
+                shutdown.cancelled().await;
+                let _ = shutdown_sender.send(true);
+            });
+            let result = run_agent(config, shutdown_receiver).await;
+            shutdown_task.abort();
+            let _ = shutdown_task.await;
+            if let Err(error) = result {
+                eprintln!("xs-agent service error={}", error.code());
+                false
+            } else {
+                true
+            }
+        })
+    })
+    .map_err(|_| AgentError::Runtime)
 }
 
 #[cfg(unix)]
@@ -141,7 +190,7 @@ async fn wait_for_shutdown_signal() -> Result<()> {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{Command, parse_command_from};
+    use super::{Command, parse_command_from, parse_command_from_with_platform};
 
     fn arguments(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
@@ -169,6 +218,31 @@ mod tests {
                 "--token-file",
                 "/tmp/token",
             ]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn service_command_is_windows_only_and_exact() {
+        let values = arguments(&["service", "--config", r"C:\ProgramData\XS Nexus\agent.json"]);
+        assert_eq!(
+            parse_command_from_with_platform(values.clone(), true).expect("Windows service"),
+            Command::Service {
+                config: r"C:\ProgramData\XS Nexus\agent.json".into(),
+            }
+        );
+        assert!(parse_command_from_with_platform(values, false).is_err());
+        assert!(
+            parse_command_from_with_platform(
+                arguments(&[
+                    "service",
+                    "--config",
+                    r"C:\ProgramData\XS Nexus\agent.json",
+                    "--token-file",
+                    r"C:\token",
+                ]),
+                true,
+            )
             .is_err()
         );
     }

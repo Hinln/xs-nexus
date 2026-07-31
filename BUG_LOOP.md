@@ -200,3 +200,6 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - Windows 本地 IPC 首版把 OS pipe instance 上限和活动 handler 上限都设为 16；第 16 个活动连接会在创建下一 listener 时超过上限并终止服务。现固定 16 个活动许可加 1 个 listener，许可耗尽时 `connect` 分支不接收，源码门禁同时锁定 17 实例和 guard，未以提高无界上限掩盖问题。
 - 安装 rustup Windows 标准库后，首次全量验证的 transport check 使用系统 Cargo，而 `cargo clippy` 被同名 rustup proxy 接管，两个步骤使用不同 sysroot 并在离线标准库依赖解析失败；失败证据保留在 `artifacts/qa/m6.1-agent-session-20260731T035905Z`。脚本现从同一工具目录固定 cargo、rustc 与 cargo-clippy，旧门禁和新 IPC 交叉门禁分别真实通过，最终全量证据为 `artifacts/qa/m6.1-agent-session-20260731T040415Z`。
 - Windows 私有存储初版读路径验证了文件 exact DACL 与整条路径的 reparse 属性，但没有验证直接父目录 DACL；宽松父目录仍可能允许在检查与打开间替换文件。读路径现要求父目录为真实目录且 exact protected DACL 后才检查文件，源码门禁固定该调用，未把仅文件 ACL 当作完整替换防护。
+- Windows Service 首版在注册 control handler 后无锁上报 START_PENDING/RUNNING；STOP 若在检查与 RUNNING 上报之间到达，STOP_PENDING 可能被过期 RUNNING 覆盖。现用独立状态互斥串行化启动、停止和最终 STOPPED，上报活动状态前在同一锁内复核原子 STOP，源码门禁固定状态锁，未通过延迟或轮询掩盖竞争。
+- 新增 workspace crate 后首次服务专用测试保留 `--locked` 并正确因 `Cargo.lock` 尚无新 package 失败；使用离线 Cargo 正常解析后回同步锁文件，再原样执行 `--locked` 测试通过，没有移除可复现性门禁。
+- workspace Clippy 首轮拒绝非 Windows Service stub 缺少 `# Errors`、使用下划线绑定和空 async，第二轮又拒绝只供测试使用的解析 wrapper dead code；分别补齐契约文档、真实 pending await，并把 helper 限定为 `cfg(test)`，未添加 lint allow，随后 workspace warnings-as-errors 与全量单测通过。

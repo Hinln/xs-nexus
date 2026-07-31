@@ -65,6 +65,7 @@ make test-windows-xsnet-compatibility
 make test-windows-xsnet-transport
 make test-windows-agent-ipc
 make test-windows-agent-storage
+make test-windows-agent-service
 make test-independent-implementation
 make test-source-sbom
 make security-check

@@ -680,3 +680,15 @@
 - 原因：exact ACL 字节和 `SE_DACL_PROTECTED` 同时验证可拒绝额外主体与继承漂移；受限父目录和同目录临时文件收紧替换窗口；非覆盖 Move 避免把竞态出现的新目标静默覆盖。
 - 代价：当前 Windows crate 只完成源码和交叉编译，未验证 NTFS ACL 规范化、junction/hard-link、ReplaceFile 元数据、杀进程/断电或杀毒软件共享冲突；正式 ProgramData 根、owner 和 token 删除仍需安装器/VM 证明。
 - 安全影响：Agent 继续全局禁止 unsafe，Windows 安全描述符与替换 FFI 集中到最小 crate；ACL、路径、长度或替换结果模糊时一律失败关闭。该准备不完成 M6.1/M6.2。
+
+---
+
+## ADR-058：Windows Service 使用固定 SCM 宿主与一次性停止桥接
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Windows Agent 需要在 SCM 下长期运行，但现有 `run` 入口只监听控制台信号。直接把 Win32 callback、全局状态和 Tokio 生命周期写入 Agent 会扩大 unsafe 审计面；从 runtime 自行创建或修改服务又会把安装权限和运行权限混合。STOP 还可能与 START_PENDING/RUNNING 上报并发，若没有串行化会把 STOP_PENDING 覆盖为过期 RUNNING。
+- 决策：新增最小 `xs-windows-service` crate，固定 Agent 服务名 `XsNexusAgent` 和 Windows-only `service --config` 入口。进程主路径调用 dispatcher，服务 callback 注册 STOP/SHUTDOWN/INTERROGATE，按 START_PENDING、RUNNING、STOP_PENDING、STOPPED 上报；首个停止以 atomic swap 和 Tokio Notify 一次性唤醒，通过 watch channel 复用现有 `run_agent` shutdown。状态锁串行化启动、停止和最终状态；handler panic 或 Agent 失败报告 service-specific error。四个 unsafe 块只封装 dispatcher、注册和状态 FFI，runtime 禁止 Create/Delete/ChangeServiceConfig。
+- 原因：固定名称消除配置注入，复用 Agent shutdown 保持 console/service 行为一致；一次性通知无轮询、sleep 或后台重试，状态锁关闭 STOP/RUNNING 竞争；安装事务、服务身份和运行时生命周期分离后，可由未来签名安装器独立实现与回滚。
+- 代价：最小 MSVC target check 不能证明 SCM callback 线程、30 秒 wait hint、LocalSystem token、事件日志、关机顺序或重复启停；完整 Agent 仍因缺少 Windows SDK 无法链接，服务创建、升级和卸载尚未实现。
+- 安全影响：Agent 保持无 unsafe；无效名称、重复初始化、锁毒化、dispatcher 失败、panic 和 runtime 失败均失败关闭。当前源码准备不完成 M6.1/M6.2，真实 SCM、LocalSystem、ACL 和卸载零残留继续由 `BLK-001` 门禁。

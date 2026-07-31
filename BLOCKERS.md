@@ -8,7 +8,7 @@
 
 - 状态：阻塞 Windows 实机验收
 - 当前环境核对：开发服务器仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK、UMDF/NetAdapterCx 构建目标、测试签名模式或 Windows VM；因此不能生成或声称测试签名驱动包。
-- 新增可执行准备：已安装与仓库 Rust 1.93.1 匹配的官方最小 rustup 工具链、`x86_64-pc-windows-msvc` 标准库、Clippy 和 rustfmt，用于不依赖 SDK 链接的最小 Windows crate check；本地 IPC crate 已通过，但完整 Agent 仍准确停在 `ring` 查找 `lib.exe`，因此该准备不解除 Windows SDK/WDK/VM 门禁。
+- 新增可执行准备：已安装与仓库 Rust 1.93.1 匹配的官方最小 rustup 工具链、`x86_64-pc-windows-msvc` 标准库、Clippy 和 rustfmt，用于不依赖 SDK 链接的最小 Windows crate check；本地 IPC、私有存储和 Service crate 已通过，但完整 Agent 仍准确停在 `ring` 查找 `lib.exe`，因此该准备不解除 Windows SDK/WDK/VM 门禁。
 - 需要：
   - Windows 11 测试 VM；
   - 快照；
@@ -22,7 +22,7 @@
   - Relay；
   - Console；
   - 驱动代码和交叉构建准备。
-- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 `no_std + alloc` Win32 transport、无后台重试的单步 Agent 会话适配、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；transport 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、真实 PostgreSQL Agent 控制面、Agent Clippy、源码不变量和本地 PowerShell 语法验证已通过。空 TX/满 RX 的 Win32 权威拒绝映射尚需 VM 证明，因此适配层不接入 runtime；完整 Agent 在缺少 Windows SDK C 头时无法构建，测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows API 和设备操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
+- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 `no_std + alloc` Win32 transport、无后台重试的单步 Agent 会话适配、安全命名管道、私有存储和固定名称 Service/SCM 边界、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；三个最小 Windows crate 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、真实 PostgreSQL Agent 控制面、Agent Clippy、源码不变量和本地 PowerShell 语法验证已通过。空 TX/满 RX 的 Win32 权威拒绝映射尚需 VM 证明，因此适配层不接入 runtime；完整 Agent 在缺少 Windows SDK C 头时无法构建，SCM、ACL、原子替换和 service token 尚未实机验证，测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows API 和设备操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
 - 解除步骤：用户提供可测试 VM，Codex执行安装和验证。
 
 ---

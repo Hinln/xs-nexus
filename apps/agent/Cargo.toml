@@ -28,6 +28,7 @@ xs-core = { path = "../../crates/core" }
 xs-protocol = { path = "../../crates/protocol" }
 xs-windows-local-ipc = { path = "../../crates/windows-local-ipc" }
 xs-windows-private-storage = { path = "../../crates/windows-private-storage" }
+xs-windows-service = { path = "../../crates/windows-service" }
 xs-windows-transport = { path = "../../crates/windows-transport" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
