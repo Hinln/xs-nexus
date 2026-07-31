@@ -718,3 +718,15 @@
 - 原因：身份来源与实际 I/O handle、驱动 device context 和 NetAdapterCx adapter 是同一对象链，不需要名称、display string、SetupAPI 属性猜测或任意全局枚举；独立 schema 又不会把设备元数据冒充现有消息 ABI 的成功响应。
 - 代价：identity schema 自身需要独立版本管理；新增 IOCTL 和 `NetAdapterGetNetLuid` 尚未经过 WDK 编译与 Windows VM 执行，不能宣称真实 LUID 查询成功，也不能据此启用 runtime。
 - 安全影响：错误版本、错误长度、非零 reserved、零 LUID、adapter 未启动、模糊设备路径和查询失败全部失败关闭。源码门禁固定七个 IOCTL、identity codec 负向测试、同句柄查询和六个集中 unsafe 块；禁止退回接口别名或全局匹配。
+
+---
+
+## ADR-061：运行时镜像供应链证据直接从精确 rootfs 和内容 ID 生成
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：源码 SBOM 只覆盖 Cargo/npm 锁文件，不能证明四个运行时镜像实际安装了哪些 Debian/Alpine 包、包含哪些许可证材料，也不能把 Dockerfile 与最终镜像内容绑定。仅记录可变 tag 或在线查询结果无法作为可复现发布证据。
+- 决策：新增标准库 Python 生成器，要求每个逻辑镜像提供 exact revision label 与仓库内 Dockerfile。工具创建临时容器并导出只读 rootfs，直接解析 dpkg/apk 已安装数据库；每个 subject 固定 Docker `sha256:` image ID、Dockerfile SHA-256、声明 base image、包 PURL、许可证声明和实际 rootfs 中可用的 copyright/license 文件。输出 CycloneDX 1.6、manifest 和 in-toto/SLSA provenance；同一输入必须双生成逐字节一致。
+- 原因：不依赖生成期网络、第三方扫描器或容器内可执行工具，能够审计最小运行时镜像本身，并避免 tag 漂移、包管理器命令缺失和容器入口点差异。许可证缺失的 Alpine dot-prefixed generated dependency metapackage 保留为 virtual package，不伪造许可证。
+- 代价：最小镜像未必携带每个声明许可证的全文；当前输出不含漏洞数据库结果。二者必须在 RC 前以 digest-bound 外部材料补齐，本工具不得把声明表达式冒充完整许可证文本或漏洞扫描。
+- 安全影响：错误 revision、非 SHA-256 image ID、缺少 OCI 标签、未知包数据库、非虚拟包缺失许可证、超限 rootfs/文件/包数、路径穿越、重复 PURL、已有输出目录和 Dockerfile 映射漂移全部失败关闭；验证前后比较容器、Docker 网络、`1panel-network`、默认路由和 nftables。

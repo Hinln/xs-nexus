@@ -223,6 +223,7 @@
 - Windows manifest 现复用私有存储的整条 reparse 检查、父目录/文件 exact protected DACL、同目录 `create_new` 临时文件、`sync_all` 和 write-through Replace/Move；删除 manifest 前执行同样的路径和 ACL 验证。恢复执行逆序尝试所有计划内 exact route，再删除 exact address，并聚合全部失败而不提前返回。累计 16 项模型测试与两个 crate 的 MSVC target check/Clippy 通过；NTFS 和 IP Helper 仍未实机执行。
 - Agent Windows 网络准备层固定 stale recovery→Preparing→DAD→routes→Active 顺序，shutdown 只在完整清理后删除 manifest；runtime 源码门禁禁止引用，避免无 VM 证据时启用主机路由。LUID 由同一独占 xsnet device handle 的版本化 identity query 从驱动自身 `NETADAPTER` 获取，不按可注入名称或全局枚举查找；错误 schema、reserved、长度和零值失败关闭。源码门禁与模型回归通过，但 identity IOCTL、Agent 模块和 IP Helper 尚未越过 WDK/Windows VM 门禁。
 - 网络准备公开边界不再接受调用方提供的裸 LUID，只接受已打开的 `XsnetDeviceSession<Win32DeviceTransport>`；内部 LUID 参数函数保持私有，源码门禁同时拒绝重新公开，缩小未来编排误接任意接口的风险。
+- 镜像供应链生成器不执行 rootfs 内二进制，只导出临时容器并以有界 tar 读取 dpkg/apk 数据库和许可证文件；拒绝 symlink/非普通目标、路径穿越、超限 rootfs/材料/包数、未知数据库、标签漂移和重复包身份。输出固定 image content ID 与 Dockerfile hash，避免把 mutable tag 当证据；生成器不访问网络。漏洞扫描和发行版未携带的许可证全文继续明确开放。
 
 - 按微软支持矩阵和 Windows 11 LTSC 2024 强制门禁改用 UMDF 2.33 + NetAdapterCx 2.5；Windows 10 不受支持组合已记录为 `KI-016`，不作兼容声明；
 - 驱动设计不包含密码学、身份、ACL、路由、NAT、Relay、更新或秘密，UMDF 使用系统分配数据缓冲区且拒绝直接硬件访问；

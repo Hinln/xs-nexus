@@ -256,7 +256,8 @@
 - 影响：CycloneDX/SPDX 已覆盖全部 431 个 Cargo/npm 锁定依赖，但 Controller、Relay、Console、PostgreSQL 运维镜像中的 Debian、Alpine、NGINX 和系统包尚未逐镜像固定摘要、导出包清单与许可证文本，因此不能把源码 SBOM 描述为完整 RC SBOM。
 - 临时缓解：manifest 明确声明只覆盖 source dependency locks；`ACCEPTANCE.md` 只勾选“SBOM 可生成”，`RELEASE_CHECKLIST.md` 的完整 SBOM 保持未完成；源码生成不访问网络并保留输入/输出 SHA-256。
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final` 验证 321 个 Cargo、110 个 npm、许可证策略、禁用依赖、确定性双格式输出和宿主基线不变。
-- 计划：在 M7.2/M9.1 对每个 digest 固定的最终镜像生成 OS 包 SBOM、许可证文本集合、漏洞报告和构建来源证明，并与源码 SBOM 合并到发布清单。
+- 新增缓解：已实现从 exact image rootfs 生成 dpkg/apk OS 包 CycloneDX、可用 copyright/license 材料、Dockerfile hash 和 in-toto/SLSA provenance，并提供四镜像干净构建、双生成一致性、revision mismatch 拒绝及宿主保护验证。不会把 Alpine 声明许可证清单冒充缺失的全文。
+- 计划：在当前提交上生成正式四镜像证据；M7.2/M9.1 仍需为每个最终 image ID 附 digest-bound 漏洞报告，补齐最小镜像未携带的许可证全文，再与源码 SBOM 合并到发布清单。
 - 解除条件：所有最终镜像 digest、OS 包、应用依赖、许可证文本、漏洞处置和来源证明可从固定提交重建并由 Release Checklist 验证。
 
 ---

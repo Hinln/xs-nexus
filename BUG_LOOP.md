@@ -206,3 +206,4 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - LUID 设计审计发现路由准备层只有显式参数而没有可信生产者；没有采用接口别名、display name、全局适配器枚举或篡改 ABI v1 Hello 响应。新增同一独占 xsnet handle 的 identity schema v1 查询，驱动从自身 `NETADAPTER` 读取 LUID；C/Rust 负向测试覆盖错误版本、长度、reserved 和零 LUID，runtime 仍保持禁用。
 - identity 扩展首轮 M6.1 聚合验证被 Clippy `doc_markdown` 拒绝，因为新增公开文档中的 `NetAdapterCx` 未使用代码标记；失败证据保留在 `artifacts/qa/m6.1-agent-session-20260731T173555Z`。修正文档标记后原样重跑全量门禁，没有添加 lint allow 或降低告警等级。
 - identity query 首版虽提供同句柄 LUID，但网络准备公开函数仍允许任意调用方直接传入裸 `u64`，可信链条可被未来编排绕过。现把裸 LUID recover/prepare 降为私有，只公开 session-bound wrapper，并用源码门禁拒绝重新公开；runtime 保持未接入。
+- 镜像 SBOM 首次真实解析 PostgreSQL Alpine rootfs 时，严格许可证门禁拒绝 generated `.postgresql-rundeps`，因为该 dot-prefixed virtual metapackage 没有 `L:` 字段。修复为只允许这类明确虚拟包缺失许可证并仍保留在 SBOM；普通 apk 包缺失许可证继续失败。四镜像试运行随后识别 344 个包，未为虚拟包伪造许可证。
