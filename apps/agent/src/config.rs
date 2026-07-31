@@ -154,8 +154,15 @@ impl AgentConfig {
     }
 
     #[must_use]
+    #[cfg(unix)]
     pub fn socket_path(&self) -> PathBuf {
         self.runtime_directory.join("agent.sock")
+    }
+
+    #[must_use]
+    #[cfg(windows)]
+    pub fn socket_path(&self) -> PathBuf {
+        PathBuf::from(xs_windows_local_ipc::AGENT_PIPE_NAME)
     }
 }
 

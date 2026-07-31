@@ -656,3 +656,15 @@
 - 原因：单步边界可在 Linux fake transport 中完整验证，又不削弱 ADR-050 的 no-commit 证明要求；把“如何等待驱动有包”和“哪些 Win32 状态可安全重试”留给真实 Windows 证据，而不是把猜测固化为后台线程。
 - 代价：当前完整 Windows Agent 仍不能自动泵送包，M6.1/M6.2 不完成；VM 阶段必须证明精确错误映射或设计显式唤醒协议，之后再实现有界调度与 Tokio 阻塞边界。
 - 安全影响：没有隐藏重试、序列猜测、跨 handle 状态继承、无界 channel 或析构期设备调用；任何不确定完成立即失败关闭，普通物理网络不由该未启用适配层修改。
+
+---
+
+## ADR-056：Windows 本地管理使用固定受限命名管道并隔离安全描述符 FFI
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Agent 本地状态协议和 CLI 只实现 Unix socket，完整 Agent 即使越过 TLS 工具链也会因 `std::os::unix` 与 Tokio Unix 类型无法形成 Windows 源码边界。直接使用 Tokio 默认命名管道安全描述符不能证明仅服务身份和管理员可访问，把原始 `SECURITY_ATTRIBUTES` 放进 Agent 又会破坏 workspace 的全局 unsafe 禁令。
+- 决策：共享请求解析、严格 JSON、只读响应、大小和超时边界保持平台无关；Unix transport 原样迁移到平台模块。Windows 端固定 `\\.\pipe\xs-nexus-agent`，首实例使用抢占门禁，始终拒绝远程客户端，handle 不继承，受保护 DACL 只授予 LocalSystem 和 built-in Administrators。最多 16 个活动处理器并保留第 17 个 OS 实例作为 listener；许可耗尽时停止接收。SDDL 转换、Tokio 原始安全属性创建和释放集中在独立 `xs-windows-local-ipc` crate 的三个可计数 unsafe 块。
+- 原因：固定名称和首实例门禁消除配置注入与启动前管道劫持；显式 DACL 不依赖进程默认 token，远程拒绝和有界实例防止跨主机与资源耗尽；平台无关 handler 让既有 Linux 集成测试继续覆盖真实协议行为。
+- 代价：当前只实现 Agent 服务器边界，Windows CLI、安全存储、Service/SCM、完整链接和运行测试仍未完成；最小 MSVC target check 不能证明 Windows 有效 DACL、连接拒绝、服务停止或并发行为。
+- 安全影响：Agent 继续禁止 unsafe，新增原始指针审计面只有三个块；普通用户与远程客户端默认拒绝，未知 endpoint 拒绝启动。M6.1、M6.2 与 `ACCEPTANCE.md` K 项不因源码准备而完成。

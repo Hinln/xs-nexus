@@ -3165,6 +3165,7 @@ dependencies = [
  "xs-controller",
  "xs-core",
  "xs-protocol",
+ "xs-windows-local-ipc",
  "xs-windows-transport",
  "zeroize",
 ]
@@ -3253,6 +3254,14 @@ dependencies = [
  "xs-core",
  "xs-protocol",
  "zeroize",
+]
+
+[[package]]
+name = "xs-windows-local-ipc"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

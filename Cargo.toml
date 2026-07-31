@@ -6,6 +6,7 @@ members = [
   "apps/relay",
   "crates/core",
   "crates/protocol",
+  "crates/windows-local-ipc",
   "crates/windows-transport",
 ]
 resolver = "3"
@@ -47,7 +48,7 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt", "js
 uuid = { version = "=1.24.0", features = ["serde", "v4"] }
 x25519-dalek = "=2.0.1"
 zeroize = "=1.9.0"
-windows-sys = { version = "=0.61.2", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_IO"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -241,7 +241,9 @@
 - `crates/windows-transport` 以 `no_std + alloc` 实现精确 GUID 单接口解析、独占同步 handle、六个 IOCTL、buffered/IN_DIRECT/OUT_DIRECT 映射、初始化输出、输入复制和全失败 Indeterminate；Agent 保持 `#![forbid(unsafe_code)]`，五个 unsafe 块只存在于平台文件；
 - `scripts/test-windows-xsnet-transport.sh` 先运行全部 18 个 Agent xsnet 测试，再实际为 `x86_64-pc-windows-msvc` 构建 core/alloc 与 transport，并对同一 target 运行 Clippy `-D warnings`；transport crate 的 2 个 Linux 测试覆盖超限、未知 IOCTL 和空/多接口，Agent 覆盖配置先于设备打开校验、失败释放、无效数据零 I/O、析构边界及非 Windows 打开拒绝；最新证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033841Z`；
 - `scripts/validate-windows-xsnet-source.py` 额外固定 session 必需实现与负向测试、配置校验先于首个 IOCTL 和设备打开，并在 WDK/VM 门禁前拒绝 Agent runtime 引用、后台线程、sleep 或 session Drop I/O；
-- `scripts/validate-m61-agent-session.sh` 汇总格式化、workspace Clippy、Rust/npm 单测、真实 PostgreSQL Agent 控制面、五组 C Release/ASan/UBSan、源码/安装器/VM/兼容/transport 门禁、独立实现、SBOM、秘密扫描、ShellCheck、npm audit，以及 Docker、`1panel-network`、默认路由、nftables、namespace/TUN 和失败服务前后基线；
+- `crates/windows-local-ipc` 将 SDDL 转换、`SECURITY_ATTRIBUTES` 和 Tokio 原始创建调用限制在三个可计数 unsafe 块；固定管道名、first-instance、拒绝远程客户端、仅 LocalSystem/Administrators DACL、不可继承 handle、4 KiB 请求、512 KiB 响应和 17 个 OS 实例上限；
+- `scripts/test-windows-agent-ipc.sh` 固定上述源码不变量，运行既有 Linux 私有 socket 集成回归和 Windows crate 单测，并实际为 `x86_64-pc-windows-msvc` 执行 check 与 Clippy warnings-as-errors；16 个活动处理许可耗尽时 Windows listener 停止接收而不创建任务或退出；
+- `scripts/validate-m61-agent-session.sh` 汇总格式化、workspace Clippy、Rust/npm 单测、真实 PostgreSQL Agent 控制面、五组 C Release/ASan/UBSan、源码/安装器/VM/兼容/transport/本地 IPC 门禁、独立实现、SBOM、秘密扫描、ShellCheck、npm audit，以及 Docker、`1panel-network`、默认路由、nftables、namespace/TUN 和失败服务前后基线；最新证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T040415Z`；
 - 以上未链接完整 Windows Agent，未调用真实 Configuration Manager、CreateFileW、DeviceIoControl 或 CloseHandle，也未执行取消、设备移除或 WDK/VM；这些验收继续由 `BLK-001` 阻塞；
 - `scripts/windows/build-xsnet-test-package.ps1` 只在显式确认的 Windows 11 26100+ 管理员测试 VM 中运行，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先嵌入签名 DLL 再生成并签名 `10_GE_X64` catalog、SHA-256 test signer 和精确 INF/CAT/DLL allowlist；不修改 BCD、信任根或测试签名策略；
 - `scripts/windows/invoke-xsnet-test-vm-stage.ps1` 以 Initialize/Install/EnableVerifier/CollectVerifier/DisableVerifier/Uninstall 六个不可复用阶段保存系统、网卡、路由、设备、驱动、Verifier 和错误事件证据；要求相同 VM/快照声明、Verifier 前后两次人工重启、精确健康状态和卸载零残留，最终生成 SHA-256 证据清单；
@@ -249,7 +251,7 @@
 - 测试包与 VM 工作流最终自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`，包含 ABI Release/ASan/UBSan、源码、安装器、VM 门禁、秘密扫描以及默认路由、规范化 nftables、完整 `1panel-network`、namespace/TUN 前后比较；
 - `scripts/validate-windows-xsnet-compatibility.py` 强制 C header、Rust Agent 和安装状态共同固定 exact ABI v1，Hello header/min/max 都为 v1，INF 只有一个四段 `DriverVer`，构建清单记录 driver version/ABI `1..1`/IPv4，安装器在 staging 前后核对版本并拒绝任何既有 xsnet；
 - 测试安装器不支持 in-place upgrade；替换包只能在快照 VM 停止 Agent、关闭 handle、精确卸载后 clean install。兼容/回滚边界证据为 `/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`，真实版本升级、回滚和跨 ABI 拒绝仍未执行；
-- 当前结果只证明平台无关模型、Agent 单步会话语义和源码文本不变量；direct-I/O 与 ring 代码未由 WDK 编译或执行。空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent Windows 链接、运行时接入、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
+- 当前结果只证明平台无关模型、Agent 单步会话语义、本地 IPC Windows crate 编译和源码文本不变量；命名管道、direct-I/O 与 ring 代码均未在 Windows 执行。命名管道有效 DACL/拒绝矩阵、Windows CLI、空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent Windows 链接、运行时接入、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---
 

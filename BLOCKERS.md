@@ -8,6 +8,7 @@
 
 - 状态：阻塞 Windows 实机验收
 - 当前环境核对：开发服务器仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK、UMDF/NetAdapterCx 构建目标、测试签名模式或 Windows VM；因此不能生成或声称测试签名驱动包。
+- 新增可执行准备：已安装与仓库 Rust 1.93.1 匹配的官方最小 rustup 工具链、`x86_64-pc-windows-msvc` 标准库、Clippy 和 rustfmt，用于不依赖 SDK 链接的最小 Windows crate check；本地 IPC crate 已通过，但完整 Agent 仍准确停在 `ring` 查找 `lib.exe`，因此该准备不解除 Windows SDK/WDK/VM 门禁。
 - 需要：
   - Windows 11 测试 VM；
   - 快照；

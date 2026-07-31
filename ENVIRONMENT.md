@@ -194,6 +194,8 @@ M5.1 在开发服务器安装并验证以下发行版构建包：
 
 M6.1 进一步确认当前 Rust 1.93.1 包含匹配 `rust-src`，Cargo 可在 `RUSTC_BOOTSTRAP=1` 下使用 `-Z build-std`。`crates/windows-transport` 不依赖 `std` 或 SDK C 头，已用 `core,alloc,panic_abort` 为 `x86_64-pc-windows-msvc` 实际 check 和 Clippy。完整 Agent 的 Windows check 会在 TLS 依赖 `ring` 编译时因缺少 Windows SDK `assert.h`、`lib.exe` 等失败；服务器仍没有 Windows SDK、WDK、MSBuild、UMDF/NetAdapterCx targets 或 VM。证据：`/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`。
 
+2026-07-31 为验证使用 Tokio `std` 的最小 Windows 本地 IPC crate，在 root 用户目录安装了官方最小 Rust 1.93.1 rustup 工具链、`x86_64-pc-windows-msvc` 标准库、rust-src、Clippy 和 rustfmt；未替换 `/usr/bin` 的发行版工具链，也未安装或伪造 Windows SDK。`crates/windows-local-ipc` 已使用该目标实际 check 和交叉 Clippy，完整 Agent 仍在 `ring` 查找 `lib.exe` 时失败，和既有 `BLK-001` 一致。旧 transport 脚本现从 `cargo` 所在目录选择匹配的 `rustc` 与 `cargo-clippy`，防止系统 Cargo 和 rustup Clippy 混用 sysroot。
+
 ---
 
 ## 11. Docker / 1Panel 部署环境

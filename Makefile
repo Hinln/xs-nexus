@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-docker-deployment test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-windows-xsnet-compatibility test-windows-xsnet-transport test-independent-implementation test-source-sbom source-sbom test-protocol-vectors test-spec test-network test-e2e test-visual security-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 validate-m61-agent-session release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-docker-deployment test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-windows-xsnet-compatibility test-windows-xsnet-transport test-windows-agent-ipc test-independent-implementation test-source-sbom source-sbom test-protocol-vectors test-spec test-network test-e2e test-visual security-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 validate-m61-agent-session release clean
 
 setup:
 >npm ci
@@ -89,6 +89,9 @@ test-windows-xsnet-compatibility:
 
 test-windows-xsnet-transport:
 >./scripts/test-windows-xsnet-transport.sh
+
+test-windows-agent-ipc:
+>./scripts/test-windows-agent-ipc.sh
 
 test-independent-implementation:
 >./scripts/validate-independent-implementation.py

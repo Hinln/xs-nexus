@@ -197,3 +197,5 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 最小 crate 初次 `-Z build-std=std` 因发行版 rust-src 的 Windows std 内部 `windows_targets` 不完整失败；将 crate 收紧为 `no_std + alloc`，只构建实际需要的 core/alloc/panic_abort，随后 MSVC target check 通过。
 - Linux Clippy 首次拒绝只在 Windows 使用的私有访问器 dead code；用 `cfg(windows)` 限定真实使用点、接口解析保留 `cfg(test)`，没有添加 allow。交叉 Clippy 随后拒绝两个隐式 borrow-to-pointer，改为 Rust 2024 `&raw mut` 后 warnings-as-errors 通过。
 - 一次同步命令把 Agent 源文件误放到 `apps/agent/windows_xsnet.rs`；删除前逐字节 SHA-256 核对它等于本地待同步文件，再写入正确 `src/` 路径。错误文件未进入 Git，Agent 新增非 Windows 拒绝测试随后从 31 增至 32 个并实际执行。
+- Windows 本地 IPC 首版把 OS pipe instance 上限和活动 handler 上限都设为 16；第 16 个活动连接会在创建下一 listener 时超过上限并终止服务。现固定 16 个活动许可加 1 个 listener，许可耗尽时 `connect` 分支不接收，源码门禁同时锁定 17 实例和 guard，未以提高无界上限掩盖问题。
+- 安装 rustup Windows 标准库后，首次全量验证的 transport check 使用系统 Cargo，而 `cargo clippy` 被同名 rustup proxy 接管，两个步骤使用不同 sysroot 并在离线标准库依赖解析失败；失败证据保留在 `artifacts/qa/m6.1-agent-session-20260731T035905Z`。脚本现从同一工具目录固定 cargo、rustc 与 cargo-clippy，旧门禁和新 IPC 交叉门禁分别真实通过，最终全量证据为 `artifacts/qa/m6.1-agent-session-20260731T040415Z`。

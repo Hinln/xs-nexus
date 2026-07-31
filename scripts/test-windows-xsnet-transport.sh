@@ -2,7 +2,15 @@
 set -Eeuo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-RUST_SOURCE="$(rustc --print sysroot)/lib/rustlib/src/rust/library"
+TOOL_DIR=$(dirname "$(command -v cargo)")
+CARGO_BIN="$TOOL_DIR/cargo"
+RUSTC_BIN="$TOOL_DIR/rustc"
+CLIPPY_BIN="$TOOL_DIR/cargo-clippy"
+[[ -x "$CARGO_BIN" && -x "$RUSTC_BIN" && -x "$CLIPPY_BIN" ]] || {
+    printf 'matching cargo, rustc, and cargo-clippy are required\n' >&2
+    exit 2
+}
+RUST_SOURCE="$("$RUSTC_BIN" --print sysroot)/lib/rustlib/src/rust/library"
 TARGET_DIR=$(mktemp -d /tmp/xs-nexus-windows-transport.XXXXXX)
 trap 'rm -rf -- "$TARGET_DIR"' EXIT INT TERM
 
@@ -13,16 +21,16 @@ trap 'rm -rf -- "$TARGET_DIR"' EXIT INT TERM
 
 cd "$ROOT_DIR"
 export CARGO_NET_OFFLINE=true
-cargo test --locked -p xs-agent --lib windows_xsnet::tests
+"$CARGO_BIN" test --locked -p xs-agent --lib windows_xsnet::tests
 
 export CARGO_TARGET_DIR="$TARGET_DIR"
 export RUSTC_BOOTSTRAP=1
 
-cargo check --locked \
+"$CARGO_BIN" check --locked \
     --target x86_64-pc-windows-msvc \
     -Z build-std=core,alloc,panic_abort \
     -p xs-windows-transport
-cargo clippy --locked \
+"$CLIPPY_BIN" clippy --locked \
     --target x86_64-pc-windows-msvc \
     -Z build-std=core,alloc,panic_abort \
     -p xs-windows-transport \
