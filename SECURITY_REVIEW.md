@@ -357,3 +357,8 @@
 
 - 提交 `52867cd` 的三轮聚合证据 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z` 连续通过 Linux 数据面/NAT/Relay/ACL/路由、安装部署恢复、Windows 源码门禁、UI、秘密扫描、SBOM 和漏洞 disposition。
 - 三轮没有新增安全告警、鉴权绕过、秘密命中、路由/namespace/TUN/Compose 残留或 `1panel-network`/默认路由/nftables 漂移；这仍不是第三方协议/驱动安全审计，也不解除 Windows VM、生产防火墙或真实 NAS 门禁。
+---
+
+## Windows route ownership re-review (2026-07-31)
+
+The IP Helper snapshot boundary now requires `MIB_IPFORWARD_ROW2.SitePrefixLength` to equal the canonical destination prefix length before a row can be marked project-owned. Protocol, origin, metric, unspecified next hop, exact LUID, and canonical prefix checks remain required. A row with a matching route key but mismatched site-prefix semantics is treated as foreign; recovery therefore fails closed instead of deleting it. No runtime integration was added before Windows SDK/WDK and VM evidence.

@@ -770,3 +770,12 @@
 - 决策：真实候选路径测试在发送双向业务流量前，必须分别等待两个 Agent 都把对端新地址标记为 `authenticated_path_probe`；单侧收到 PathResponse 只证明该方向的 challenge/response 成功，不作为反方向同时就绪的证据。
 - 原因：XSP/1 每个 peer 方向独立维护 pending probe、token、path ID 和重试状态，UDP 业务包也不提供传输层重传。把单向完成当成双向完成会制造时序相关的假失败，也会削弱测试对真实双向路径状态的表达。
 - 边界：不延长等待上限、不重试业务断言、不改变产品路径晋升规则；失败诊断保留第一个失败命令和受限临时日志，以便区分状态机错误与测试编排错误。
+---
+
+## ADR-066: Windows route ownership requires canonical site-prefix semantics
+
+- Date: 2026-07-31
+- Status: Accepted
+- Decision: A route returned by IP Helper is project-owned only when its exact key, on-link next hop, fixed metric, protocol, origin, and `SitePrefixLength` all match the canonical project route shape. A matching destination/interface/metric without the same site prefix is foreign and must fail closed.
+- Rationale: `MIB_IPFORWARD_ROW2` carries site-prefix semantics separately from destination prefix length. Treating a shape-mismatched row as owned could permit recovery to delete or mutate a route the project did not create.
+- Evidence: `./scripts/test-windows-agent-routing.sh`; the source gate, 16 route transaction tests, Windows target check, and cross-target Clippy pass.

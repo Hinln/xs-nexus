@@ -236,6 +236,7 @@ fn system_route(row: &MIB_IPFORWARD_ROW2) -> Result<SystemRoute, IpHelperError> 
         metric: row.Metric,
     };
     let project_owned = key.next_hop == Ipv4Addr::UNSPECIFIED
+        && row.SitePrefixLength == prefix.prefix_len()
         && key.metric == PROJECT_ROUTE_METRIC
         && row.Protocol == MIB_IPPROTO_NETMGMT
         && row.Origin == NlroManual;
