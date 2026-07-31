@@ -191,6 +191,12 @@ Bug 集中修复阶段只有满足以下条件才通过：
 
 ---
 
+## M7.1 当前已闭环缺陷
+
+- 三轮聚合回归第 2 轮捕获候选路径测试竞态：测试只等待 A 端完成对 B 新路径的 PathResponse，便立即发送双向 ICMP；协议按方向独立维护探测，B 端可能尚未完成自己的 PathChallenge/Response。失败证据为 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`，缺陷记录为 `artifacts/bugs/XS-2026-0003.md`。测试现分别要求 A、B 都报告 `authenticated_path_probe` 后才验证双向业务流量，并在失败时输出精确 Shell 行号和命令；没有延长等待上限或增加重试。
+
+---
+
 ## M6.1 Win32 transport 已闭环缺陷
 
 - 首次完整 Agent MSVC check 成功构建 Windows core/std 后在 `ring` 找不到 `lib.exe`，指定 `clang-cl` 后进一步证明缺少 Windows SDK `assert.h`；未把该失败写成 transport 编译结果，也未安装或伪造 SDK。transport 被隔离为不依赖 TLS/C 头的最小 crate，完整 Agent 继续由 `BLK-001` 阻塞。

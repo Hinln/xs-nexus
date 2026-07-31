@@ -30,6 +30,13 @@ AGENT_B_PID=
 CAPTURE_PID=
 PROXY_A_PID=
 PROXY_B_PID=
+FAILURE_LINE=
+FAILURE_COMMAND=
+
+record_failure() {
+    FAILURE_LINE=$1
+    FAILURE_COMMAND=$2
+}
 
 cleanup() {
     local status=$?
@@ -53,6 +60,8 @@ cleanup() {
     ip netns del "$NETNS_B" >/dev/null 2>&1
     ip link del "$BRIDGE" >/dev/null 2>&1
     if (( status != 0 )); then
+        printf 'candidate path test failed at line %s: %s\n' \
+            "${FAILURE_LINE:-unknown}" "${FAILURE_COMMAND:-unknown}" >&2
         for log in controller.log agent-a.log agent-b.log proxy-a.log proxy-b.log path-capture.log; do
             if [[ -s $TEMPORARY/$log ]]; then
                 printf '\n--- %s ---\n' "$log" >&2
@@ -64,6 +73,7 @@ cleanup() {
     exit "$status"
 }
 trap cleanup EXIT INT TERM
+trap 'record_failure "$LINENO" "$BASH_COMMAND"' ERR
 
 require_command() {
     command -v "$1" >/dev/null || {
@@ -520,6 +530,7 @@ CAPTURE_PID=
 cat "$TEMPORARY/path-capture.log"
 
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$PATH_IP_B" authenticated_path_probe
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$PATH_IP_A" authenticated_path_probe
 ip netns exec "$NETNS_A" "$PROBE" icmp \
     --destination "$virtual_ip_b" \
     --payload xs-m21-promoted-path \

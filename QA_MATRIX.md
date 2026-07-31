@@ -361,3 +361,8 @@
 - 真实 UDP Relay 测试验证认证注册、逐字节密文转发、重放和端点伪造拒绝后，指标与实际事件一致。
 - `test-agent-relay.sh` 在双 Relay fallback、主 Relay 故障切换和 Direct 恢复场景中从真实 `/metrics` 断言 `packets_received`、`bytes_received`、`packets_forwarded`、`bytes_forwarded`、`forwarding_latency_samples` 和 `packets_dropped`。
 - 完整命令：`make validate-m23`；结果通过；证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`。
+
+## 11. M7.1 三轮聚合回归（2026-07-31）
+
+- 首次聚合第 1 轮通过 Linux 全链路、M6.1 源码门禁、UI 与供应链处置；第 2 轮在候选路径测试捕获单向探测被误当作双向就绪的竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`。
+- 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。
