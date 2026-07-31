@@ -604,7 +604,7 @@
 
 ## M7.3 性能和稳定性
 
-- 状态：`NOT_STARTED`
+- 状态：`IN_PROGRESS`
 - 前置：M7.1
 
 至少测试：
@@ -620,6 +620,8 @@
 - 24 小时稳定性；
 - 日志增长；
 - 数据库重连。
+
+当前进展：已完成真实 PostgreSQL backend 终止后的连接池恢复测试、Controller 100/500/1000 节点 API 注册与查询基线、以及可配置时长的 Docker 运行时资源/日志/故障恢复采样器。24 小时稳定性、加密/Relay 吞吐、Direct/Relay RTT、WebSocket 广播和拥塞长测仍是未完成项。
 
 ---
 

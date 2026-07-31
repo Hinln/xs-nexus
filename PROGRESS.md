@@ -194,6 +194,12 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 服务器提示需要维护窗口重启；
 - 临时凭据后续必须轮换。
 
+## 2026-07-31 M7.3 性能与稳定性基线
+
+- 新增 `scripts/test-runtime-stability.sh`，接入 `make test-docker-deployment` 的可配置 `XS_STABILITY_DURATION_SECONDS`；采集 Controller、Relay、Console 完整进程树的 RSS、线程、FD、CPU ticks 和 Docker 日志大小，并对三个项目容器分别重启后验证健康恢复。短时校准 30 秒通过，证据 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T205004Z`；Docker/1Panel、备份恢复、失败迁移和镜像激活回滚均通过。
+- 新增 Controller 真实 API 规模测试 `make test-controller-scale`，使用独立 `xs_nexus_scale` schema、20 个受限 token、32 路并发注册，验证 100/500/1000 活动节点、地址唯一性、Console 快照和数据库查询。证据 `/srv/xs-nexus/artifacts/qa/controller-scale-20260731T210210Z`：100 节点 39.18 注册/s，500 节点增量 18.20/s，1000 节点增量 8.66/s；快照 50/131/193 ms，计数查询约 2 ms，总耗时 83 秒。
+- 运行时稳定性仍需完整 24 小时曲线；当前短时资源数据用于校准，不替代 24 小时验收。加密吞吐、Direct/Relay RTT、WebSocket 广播和 Relay 拥塞长测仍待补齐。
+
 ## 恢复说明
 
 ```bash

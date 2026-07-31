@@ -7,6 +7,7 @@ const ALLOWED_TEST_SCHEMAS: &[&str] = &[
     "xs_nexus_m21_path_test",
     "xs_nexus_m23_relay_test",
     "xs_nexus_m52_deploy_dev",
+    "xs_nexus_scale",
 ];
 
 #[tokio::main]
