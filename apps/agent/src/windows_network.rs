@@ -10,6 +10,7 @@ use xs_windows_route_manager::{
 use crate::{
     error::{AgentError, Result},
     network::NetworkPlan,
+    windows_xsnet::{Win32DeviceTransport, XsnetDeviceSession},
 };
 
 pub struct WindowsNetworkPreparation {
@@ -17,17 +18,49 @@ pub struct WindowsNetworkPreparation {
 }
 
 impl WindowsNetworkPreparation {
+    /// Recovers stale state using the authoritative LUID bound to this exact xsnet session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for manifest drift, ownership conflicts, IP Helper failures, or cleanup
+    /// failures.
+    pub fn recover_for_session(
+        plan: &NetworkPlan,
+        session: &XsnetDeviceSession<Win32DeviceTransport>,
+        manifest_path: &Path,
+    ) -> Result<()> {
+        Self::recover_stale(plan, session.interface_luid(), manifest_path)
+    }
+
+    /// Prepares address and routes for the authoritative LUID bound to this exact xsnet session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for stale recovery, unsafe/conflicting routes, persistence, DAD, IP
+    /// Helper, or rollback failure.
+    pub fn prepare_for_session(
+        plan: &NetworkPlan,
+        session: &XsnetDeviceSession<Win32DeviceTransport>,
+        desired_prefixes: &[Ipv4Net],
+        manifest_path: &Path,
+        temporary_path: &Path,
+    ) -> Result<Self> {
+        Self::prepare(
+            plan,
+            session.interface_luid(),
+            desired_prefixes,
+            manifest_path,
+            temporary_path,
+        )
+    }
+
     /// Recovers a trusted stale manifest before any new Windows network mutation.
     ///
     /// # Errors
     ///
     /// Fails closed for plan mismatch, ownership drift, IP Helper failure, cleanup failure, or
     /// private manifest removal failure.
-    pub fn recover_stale(
-        plan: &NetworkPlan,
-        interface_luid: u64,
-        manifest_path: &Path,
-    ) -> Result<()> {
+    fn recover_stale(plan: &NetworkPlan, interface_luid: u64, manifest_path: &Path) -> Result<()> {
         if !manifest_path.exists() {
             return Ok(());
         }
@@ -54,7 +87,7 @@ impl WindowsNetworkPreparation {
     /// Fails closed for stale recovery, unsafe/conflicting routes, persistence, DAD, IP Helper, or
     /// rollback failure. A post-persistence failure deliberately leaves Preparing state for the
     /// next trusted recovery.
-    pub fn prepare(
+    fn prepare(
         plan: &NetworkPlan,
         interface_luid: u64,
         desired_prefixes: &[Ipv4Net],

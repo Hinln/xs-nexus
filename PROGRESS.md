@@ -118,6 +118,7 @@
 
 - Windows 路由管理准备已开始：隔离 `xs-windows-route-manager` 已包含事务核心和 IP Helper 平台层，固定 LUID/on-link/metric、4096 条系统表上限、外部重叠拒绝、manifest 精确所有权、additions-first、添加失败逆序补偿和删除失败精确恢复；原始错误与所有 rollback 失败均显式返回。原生层对 `GetIpForwardTable2` 分配使用 RAII 无条件 `FreeMibTable`，支持精确路由 Create/Delete、非持久地址 Create/Delete 和 DAD 状态查询。联合事务仅在 DAD Preferred 后创建路由；Tentative 有界等待，Duplicate/Invalid/Deprecated/Unknown、查询失败和超时均失败关闭并精确清理地址。schema 1 严格 manifest 通过 `xs-windows-private-storage` 完成受保护读取、同目录 write-through 原子替换和 ACL/reparse 验证删除；恢复执行逆序尝试全部精确路由和地址并聚合失败。Agent 网络准备层已形成但仍由 runtime 门禁隔离。可信 LUID 由同一独占 xsnet handle 的 identity schema v1 查询取得，驱动直接调用 `NetAdapterGetNetLuid`；ABI v1 六类消息保持不变，错误长度/版本/reserved/零值全部拒绝。16 个路由模型单测、C identity 负向测试、Rust transport 解析测试、最小 Windows crate 的 MSVC target check 和双平台 Clippy通过；尚无 WDK 编译、Windows 运行或 runtime 接入。
 - 本轮完整 M6.1 聚合验证已通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`；验证同时确认 Docker/`1panel-network`、默认路由、nftables 和失败 systemd 服务前后无变化。该证据是 Linux/交叉编译与源码门禁，不是 Windows 实机结果。
+- Agent 网络准备的公开 API 已收紧为 `recover_for_session`/`prepare_for_session`，只能从同一 `XsnetDeviceSession<Win32DeviceTransport>` 读取 authoritative LUID；接受裸 `u64` 的内部入口不再公开。routing/transport 专项测试、workspace Clippy、MSVC target check 和源码门禁通过，runtime 仍无引用。
 - Agent 新增 Windows-only 准备编排：启动前恢复 stale manifest，写 Preparing 后才执行地址/DAD/路由，成功后原子写 Active；shutdown 全部精确清理成功后才删除 manifest。独立源码门禁固定顺序、禁止 unsafe/线程/子进程、禁止 runtime 引用，并加入 `make test-windows-agent-routing` 与 M6.1 全量入口。完整 Windows Agent 仍因 SDK/`ring/lib.exe` 阻塞且模块未接入 runtime，不宣称可用。
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；

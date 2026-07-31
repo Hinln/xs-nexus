@@ -593,7 +593,7 @@
 - 日期：2026-07-31
 - 背景：驱动 ABI 是同步 direct-I/O，但泛化 Win32 错误不能可靠证明驱动是否已推进 sequence；当前主机也没有 Windows Rust 标准库，未编译 FFI 会制造虚假进度。
 - 决策：先固化安全 `XsnetTransport` 契约与只读请求访问器。首版实际 Win32 transport 必须使用单一无共享同步 handle，不使用 overlapped、共享环或后台重试；Win32 调用失败、取消、移除、异常字节数和模糊状态默认返回 Indeterminate。只有具备权威未提交证明的状态才可返回 Rejected。`unsafe` 必须隔离在独立 target-specific 边界，不能降低 Agent/workspace 全局规则。
-- 原因：保守分类防止在驱动可能已提交后复用 sequence；同步所有权与当前驱动一次完成模型一致，并把未来审计面限制为设备枚举、handle 和六个 IOCTL。
+- 原因：保守分类防止在驱动可能已提交后复用 sequence；同步所有权与当前驱动一次完成模型一致，并把未来审计面限制为设备枚举、handle、六个 ABI IOCTL 和独立 identity query。
 - 代价：部分本可安全重试的 OS 错误首版也会重连；没有 Windows 编译环境前只完成契约和规范，不声称可打开设备。
 - 安全影响：任何模糊失败和畸形成功响应都会关闭逻辑会话，旧 sequence 不跨 handle；无依据的错误码映射不能绕过该规则。
 
@@ -635,12 +635,12 @@
 
 ---
 
-## ADR-054：Win32 FFI 使用独立 no_std crate 和五块可计数 unsafe
+## ADR-054：Win32 FFI 使用独立 no_std crate 和可计数 unsafe
 
 - 状态：接受
 - 日期：2026-07-31
 - 背景：Agent 全局禁止 unsafe；开发服务器没有 Windows SDK/WDK，完整 Agent 的 TLS 依赖需要 SDK C 头，但 Cargo 能从匹配 `rust-src` 为 MSVC target 构建 core/alloc。继续等待 VM 会让最小 FFI 长期无编译证据，直接放宽 Agent lint 又会扩大审计面。
-- 决策：新增 `xs-windows-transport` workspace crate，使用 `no_std + alloc` 和 target-specific `windows-sys 0.61.2`。crate 默认 deny unsafe，只在 `platform.rs` 允许五个块，分别包围两次 Configuration Manager 查询、`CreateFileW`、`DeviceIoControl` 与 `CloseHandle`；Agent 只通过安全请求/结果类型和 `XsnetTransport` 适配。MSVC target 只构建 core/alloc/panic_abort，并同时运行 Clippy warnings-as-errors。
+- 决策：新增 `xs-windows-transport` workspace crate，使用 `no_std + alloc` 和 target-specific `windows-sys 0.61.2`。crate 默认 deny unsafe，只在 `platform.rs` 允许可由源码门禁精确计数的块，包围 Configuration Manager 查询、`CreateFileW`、`DeviceIoControl` 与 `CloseHandle`；Agent 只通过安全请求/结果类型和 `XsnetTransport` 适配。identity query 增加第二个 `DeviceIoControl` 后当前固定为六块。MSVC target 只构建 core/alloc/panic_abort，并同时运行 Clippy warnings-as-errors。
 - 原因：无需伪造 SDK/WDK 即可真实编译 Windows API 绑定和所有 unsafe 路径，同时保持 Agent、协议、密码学、路由和包解析完全安全 Rust；固定块数让新增 unsafe 必须显式修改门禁与评审。
 - 代价：最小 crate check 不能证明完整 Agent 链接、Windows loader、设备 ACL、真实 buffer 映射、取消、PnP/power 或驱动行为；`RUSTC_BOOTSTRAP=1 -Z build-std` 只作为当前 Linux 准备门禁，正式构建仍需固定 Windows 工具链。
 - 安全影响：接口列表必须恰有一个规范 `\\?\` 路径，handle 读写且零共享、非 overlapped；所有长度先转 u32，输出预初始化，RX 使用自有副本并检测写入；任何 Win32 失败或异常成功都为 Indeterminate，不复用 sequence。
@@ -714,7 +714,7 @@
 - 状态：接受
 - 日期：2026-07-31
 - 背景：路由事务要求可信的非零 interface LUID，但 exact ABI v1 只定义六类带 32 字节消息头的会话/数据消息，除 TX 外成功响应必须为空。把 LUID 塞进 Hello、增加 ABI v1 消息或按接口名/全局适配器枚举匹配都会削弱 ADR-052 或引入可注入、竞态的身份推断。
-- 决策：保留 ABI v1 六类消息完全不变，新增独立 `IOCTL_XSNET_QUERY_IDENTITY`。它只接受 identity schema v1 的精确 8 字节请求并返回精确 16 字节响应；版本、长度、reserved、返回长度和非零 LUID 全部严格校验。驱动只从当前 `NETADAPTER` 调用 `NetAdapterGetNetLuid`，查询仍受同一设备 DACL、唯一 present interface、零共享独占 handle 和 requestor 校验约束。Win32 transport 在打开句柄后立即查询并缓存，Agent session 只暴露该同句柄 LUID。
+- 决策：保留 ABI v1 六类消息完全不变，新增独立 `IOCTL_XSNET_QUERY_IDENTITY`。它只接受 identity schema v1 的精确 8 字节请求并返回精确 16 字节响应；版本、长度、reserved、返回长度和非零 LUID 全部严格校验。驱动只从当前 `NETADAPTER` 调用 `NetAdapterGetNetLuid`，查询仍受同一设备 DACL、唯一 present interface、零共享独占 handle 和 requestor 校验约束。Win32 transport 在打开句柄后立即查询并缓存，Agent session 只暴露该同句柄 LUID；Windows 网络准备层的公开 recover/prepare 入口只接受该 session，原始 `u64` LUID 入口保持私有。
 - 原因：身份来源与实际 I/O handle、驱动 device context 和 NetAdapterCx adapter 是同一对象链，不需要名称、display string、SetupAPI 属性猜测或任意全局枚举；独立 schema 又不会把设备元数据冒充现有消息 ABI 的成功响应。
 - 代价：identity schema 自身需要独立版本管理；新增 IOCTL 和 `NetAdapterGetNetLuid` 尚未经过 WDK 编译与 Windows VM 执行，不能宣称真实 LUID 查询成功，也不能据此启用 runtime。
 - 安全影响：错误版本、错误长度、非零 reserved、零 LUID、adapter 未启动、模糊设备路径和查询失败全部失败关闭。源码门禁固定七个 IOCTL、identity codec 负向测试、同句柄查询和六个集中 unsafe 块；禁止退回接口别名或全局匹配。

@@ -26,9 +26,13 @@ source = require(
     ROOT / "apps/agent/src/windows_network.rs",
     [
         "pub struct WindowsNetworkPreparation",
-        "pub fn recover_stale",
-        "pub fn prepare",
+        "pub fn recover_for_session",
+        "pub fn prepare_for_session",
+        "fn recover_stale",
+        "fn prepare",
         "pub fn shutdown",
+        "session.interface_luid()",
+        "XsnetDeviceSession<Win32DeviceTransport>",
         "write_network_manifest_atomic",
         "ManifestState::Preparing",
         "ManifestState::Active",
@@ -40,6 +44,8 @@ source = require(
 )
 for forbidden in ("unsafe {", "tokio::spawn", "thread::spawn", "std::process::Command"):
     assert forbidden not in source, f"forbidden routing preparation behavior: {forbidden}"
+assert "pub fn recover_stale(" not in source
+assert "pub fn prepare(" not in source
 
 runtime = (ROOT / "apps/agent/src/runtime.rs").read_text(encoding="utf-8")
 assert "WindowsNetworkPreparation" not in runtime
