@@ -370,6 +370,7 @@
 - 注册吞吐基线：100 节点批次 39.18/s，500 节点增量 18.20/s，1000 节点增量 8.66/s；Console 快照分别约 50.2、130.9、192.6 ms；数据库计数查询分别约 2.72、1.70、2.30 ms。该结果是当前测试主机和独立 schema 的基线，不构成公网容量承诺。
 - `XS_STABILITY_DURATION_SECONDS=30 XS_STABILITY_SAMPLE_INTERVAL_SECONDS=5 make test-docker-deployment` 通过，证据：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T205004Z`。采样覆盖完整容器进程树，Controller/Relay/Console 分别验证重启恢复、RSS、FD、线程、日志大小和进程 PID 变化。
 - 24 小时稳定性、加密吞吐、Direct/Relay RTT、WebSocket 广播、Relay 限速拥塞和长时间日志曲线仍未完成，不得以本节短时证据勾选 M7.3 全部 MUST。
+- `make test-protocol-throughput` 在 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 seal/open，结果 161,314 往返/s、184.61 MiB/s；证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`。该结果覆盖 AEAD 与协议校验，但不包含 TUN、UDP socket、Relay 或公网路径开销。
 
 - 首次聚合第 1 轮通过 Linux 全链路、M6.1 源码门禁、UI 与供应链处置；第 2 轮在候选路径测试捕获单向探测被误当作双向就绪的竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`。
 - 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。

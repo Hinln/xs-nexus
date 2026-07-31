@@ -710,6 +710,8 @@ fn array<const LENGTH: usize>(bytes: &[u8]) -> Result<[u8; LENGTH], InvalidProto
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, time::Instant};
+
     use super::*;
 
     #[test]
@@ -742,5 +744,68 @@ mod tests {
         let mut tampered = payload;
         tampered[35] ^= 1;
         assert!(verify_key_update_payload(&tampered, [7_u8; 16], 9).is_err());
+    }
+
+    #[test]
+    fn encryption_throughput_baseline() {
+        const ITERATIONS: u32 = 50_000;
+        let source = Ipv4Addr::new(100, 96, 0, 16);
+        let destination = Ipv4Addr::new(100, 96, 0, 17);
+        let mut packet = vec![0_u8; 1200];
+        packet[0] = 0x45;
+        let packet_length = u16::try_from(packet.len()).expect("packet length fits u16");
+        packet[2..4].copy_from_slice(&packet_length.to_be_bytes());
+        packet[12..16].copy_from_slice(&source.octets());
+        packet[16..20].copy_from_slice(&destination.octets());
+        for (index, byte) in packet[20..].iter_mut().enumerate() {
+            *byte = u8::try_from(index % 256)
+                .expect("modulo byte index")
+                .wrapping_mul(31);
+        }
+        let ids = ([41_u8; 16], [42_u8; 16], [43_u8; 16], [44_u8; 16]);
+        let secret = Zeroizing::new([45_u8; 32]);
+        let mut sender = DataSender::new(
+            secret.clone(),
+            ids.0,
+            ids.1,
+            ids.2,
+            ids.3,
+            source,
+            destination,
+        )
+        .expect("sender");
+        let mut receiver =
+            DataReceiver::new(secret, ids.0, ids.1, ids.2, ids.3, source, destination)
+                .expect("receiver");
+        let started = Instant::now();
+        let mut bytes = 0_u32;
+        for _ in 0..ITERATIONS {
+            let encrypted = sender
+                .seal_ipv4(DataFlags::ACK_ELICITING, 7, &packet)
+                .expect("encrypt");
+            let opened = receiver.open(&encrypted).expect("decrypt");
+            assert_eq!(opened.plaintext, packet);
+            bytes += u32::try_from(packet.len()).expect("packet length fits u32");
+        }
+        let elapsed = started.elapsed();
+        let report = serde_json::json!({
+            "iterations": ITERATIONS,
+            "plaintext_bytes": bytes,
+            "elapsed_ms": elapsed.as_secs_f64() * 1000.0,
+            "encrypt_decrypt_ops_per_second": f64::from(ITERATIONS) / elapsed.as_secs_f64(),
+            "plaintext_mib_per_second": f64::from(bytes) / elapsed.as_secs_f64() / 1_048_576.0,
+            "packet_bytes": packet.len(),
+        });
+        if let Some(path) = std::env::var_os("XS_PROTOCOL_THROUGHPUT_REPORT") {
+            fs::write(
+                path,
+                serde_json::to_vec_pretty(&report).expect("serialize throughput report"),
+            )
+            .expect("write throughput report");
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&report).expect("throughput JSON")
+        );
     }
 }
