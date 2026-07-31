@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 00:35 UTC
-当前 Git 提交：M6.1 ABI/架构中间检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 01:30 UTC
+当前 Git 提交：M6.1 便携压力验证检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -87,24 +87,26 @@
 - 复核微软官方版本表后撤回“KMDF NetAdapterCx 覆盖 Windows 10/11”的错误判断；M6.1 首版改为面向正式门禁 Windows 11 LTSC 2024 的 UMDF 2.33 + NetAdapterCx 2.5，Windows 10 差距记录为 `KI-016`；
 - 固定 `xsnet` 内核职责为虚拟 NIC、队列、受控 LocalSystem IPC 和生命周期，密码学、ACL、路由、NAT、Relay、身份和秘密全部留在用户态；
 - 实现 ABI v1 固定小端消息头、规范包批次解析器和纯 C 单 owner 会话状态机，拒绝未知版本/类型/flag、非精确长度、重放/回滚/sequence 上限、错误调用顺序、MTU/队列超限、间隙、重叠、隐藏尾部和超限包；
-- `make test-windows-xsnet-abi` 已在 Clang 21 Release `-Werror` 和 GCC 15 ASan/UBSan 两套配置实际通过 ABI 与会话测试；该结果不代表 WDK 构建或 Windows 实机通过。
+- `make test-windows-xsnet-abi` 已在 Clang 21 Release `-Werror` 和 GCC 15 ASan/UBSan 两套配置实际通过 ABI、会话、数据面与固定种子压力测试；该结果不代表 WDK 构建或 Windows 实机通过。
 - 已加入 Windows 11 24H2 x64 UMDF 2.33 / NetAdapterCx 2.5 WDK 工程、仅 LocalSystem INF、独立 host、安全 IOCTL、file object、PnP/power、adapter 与断链 packet queue 骨架；`make test-windows-xsnet-source` 实际通过，但没有 WDK 编译证据。
+- 已实现 NetAdapterCx 有界 ring 复制、同步 direct-I/O 请求、双队列 SetLink 门禁、协商深度限制和停止/取消断链，并加入快照测试 VM 专用的严格安装/卸载脚本；Windows 源码和脚本均未执行真实 WDK/设备操作。
+- 固定种子压力测试分别执行 30,000 轮任意消息、写入、批次、会话和队列操作，并对六类有效消息逐字节变异；2026-07-31 三轮严格回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`。
 
 ## 当前工作点
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 已完成 ABI、会话状态机和首轮 UMDF WDK 源码骨架；SetLink/TX/RX 当前显式失败关闭，下一步实现实际 ring 与 direct-I/O 请求配对；
+- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期和确定性压力回归；下一步继续完成 Windows Agent ABI 客户端与并发生命周期模型；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 
 ## 下一步
 
-1. 设计并实现 NetAdapterCx ring 与 direct-I/O 请求的有界配对、backpressure 和一次完成；
-2. 增加取消、cleanup、睡眠和 Agent crash 的并发模型测试；
-3. 补充 Windows Agent ABI 客户端与安装/卸载脚本；
-4. 准备 WDK 测试签名命令和 VM 验收脚本，但不声称 Linux 能编译驱动；
-5. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收。
+1. 增加取消、cleanup、睡眠、设备移除和 Agent crash 的并发模型测试；
+2. 补充 Windows Agent ABI 客户端与失败恢复测试；
+3. 准备 WDK 测试签名命令和 VM 验收脚本，但不声称 Linux 能编译驱动；
+4. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
+5. 保持 M6.2 驱动签名人工门禁，不提前进入依赖核心完成的 M7。
 
 ## 下一条准确命令
 
@@ -117,12 +119,12 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 
 ## 最近测试
 
-- 时间：2026-07-30 23:35 UTC；
+- 时间：2026-07-31 01:30 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`./scripts/validate-m52.sh`；
+- 命令：连续三轮 `make test-windows-xsnet-source && make test-windows-xsnet-abi && make test-windows-xsnet-installer`，随后秘密扫描与宿主边界复核；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；
-- 覆盖：格式化、Clippy、构建、全量单元/集成测试、真实 PostgreSQL、TUN/候选/NAT/Relay/ACL/子网路由 namespace 网络实验、Linux 签名安装生命周期、真实 x86_64/aarch64 release 构建、Docker/1Panel 迁移部署备份恢复回滚、秘密扫描、ShellCheck、npm audit，以及 Docker 容器/网络、`1panel-network` 成员、默认路由和 nftables 前后基线。
+- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`；
+- 覆盖：UMDF/INF/IOCTL 源码不变量、四组 Clang Release 严格告警测试、四组 GCC ASan/UBSan 测试、测试安装器不变量、秘密扫描、Git whitespace、精确 namespace/TUN 残留、默认路由、nftables、失败服务和只读 `1panel-network` 属性复核。
 
 ## 当前失败
 
@@ -133,6 +135,7 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 - 命令：`make test-windows-xsnet-abi`；
 - 结果：通过；
 - 覆盖：Clang Release 严格告警、GCC ASan/UBSan、固定消息头、长度/版本/type/flag/sequence、单 owner、协商顺序、MTU/队列、link、批次和 cleanup 负向测试，以及有界队列的原子入队、背压、小输出、部分出队、环绕和 payload 清零；
+- 压力覆盖：固定种子每域 30,000 轮任意输入或状态操作，所有失败会话操作逐字段保持原状态，失败队列操作保持元数据和完整 64 槽字节，六类有效消息逐字节变异；
 - 当前实现：有界 IPv4 队列、TX 空请求/RX framed 请求、同步 direct-I/O、协商深度、SetLink 门禁与 NetAdapterCx TX/RX 系统缓冲区复制源码已完成；Windows 部分尚未经过 WDK 编译或执行；
 - 测试安装准备：已加入只面向快照 VM 的 PowerShell 安装/卸载脚本，固定 signer thumbprint、Microsoft-signed WDK DevGen、精确状态回滚和残留拒绝；尚未在 Windows 执行；
 - 安装器验证：`make test-windows-xsnet-installer` 通过，本地 Windows PowerShell parser 对三份脚本零语法错误；未运行设备安装、卸载或签名命令；
@@ -149,7 +152,7 @@ command -v clang-cl || true; command -v x86_64-w64-mingw32-gcc || true
 ## 当前风险
 
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
-- Windows 驱动尚未开发，真实设备尚未接入；
+- Windows 驱动源码尚未经过 WDK 编译和 VM 执行，真实设备尚未接入；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
 - 临时凭据后续必须轮换。

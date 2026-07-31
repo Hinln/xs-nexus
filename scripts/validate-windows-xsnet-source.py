@@ -169,12 +169,48 @@ def validate_sources() -> None:
         fail("SetLink must not share the obsolete blanket packet rejection path")
 
 
+def validate_portable_tests() -> None:
+    cmake = require_text(
+        DRIVER / "CMakeLists.txt",
+        [
+            "add_executable(xsnet_stress_test tests/stress_test.c)",
+            "add_test(NAME xsnet_stress_validation COMMAND xsnet_stress_test)",
+        ],
+    )
+    stress = require_text(
+        DRIVER / "tests" / "stress_test.c",
+        [
+            "STRESS_ITERATIONS UINT32_C(30000)",
+            "stress_message_parser",
+            "stress_message_writer",
+            "stress_batch_parser",
+            "stress_session_atomicity",
+            "stress_valid_session_mutations",
+            "stress_packet_queue",
+            "sessions_equal",
+        ],
+    )
+    if cmake.count("xsnet_stress_validation") != 1:
+        fail("CMakeLists.txt must register exactly one portable stress test")
+    for message_type in (
+        "XSNET_MESSAGE_HELLO",
+        "XSNET_MESSAGE_ATTACH",
+        "XSNET_MESSAGE_SET_LINK",
+        "XSNET_MESSAGE_TX_BATCH",
+        "XSNET_MESSAGE_RX_BATCH",
+        "XSNET_MESSAGE_DETACH",
+    ):
+        if message_type not in stress:
+            fail(f"portable stress test missing message mutation: {message_type}")
+
+
 def main() -> int:
     try:
         validate_project()
         validate_inf()
         validate_ioctl()
         validate_sources()
+        validate_portable_tests()
     except (AssertionError, OSError, element_tree.ParseError) as error:
         print(f"xsnet source validation failed: {error}", file=sys.stderr)
         return 1

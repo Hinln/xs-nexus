@@ -221,14 +221,15 @@
 - 按微软支持矩阵和 Windows 11 LTSC 2024 强制门禁改用 UMDF 2.33 + NetAdapterCx 2.5；Windows 10 不受支持组合已记录为 `KI-016`，不作兼容声明；
 - 驱动设计不包含密码学、身份、ACL、路由、NAT、Relay、更新或秘密，UMDF 使用系统分配数据缓冲区且拒绝直接硬件访问；
 - INF 草案仅授予 LocalSystem、标记 exclusive、禁用 host 共享、拒绝内核客户端和空/未知 file object；每个请求还要求 user-mode、已接受 file object 和读写 access 位；
-- IOCTL 禁止 `FILE_ANY_ACCESS`、`METHOD_NEITHER` 和共享可写环；控制面 buffered，包方向 direct I/O，当前未实现包路径和 SetLink 统一返回 `STATUS_NOT_SUPPORTED` 并保持断链；
+- IOCTL 禁止 `FILE_ANY_ACCESS`、`METHOD_NEITHER` 和共享可写环；控制面 buffered，包方向 direct I/O；SetLink 仅在双队列 started 后允许，TX/RX 使用同步有界请求并在失败时保持状态；
 - ABI v1 与会话模型使用固定字节布局、精确总长度、严格递增非极值 sequence、单 owner、状态顺序、MTU/队列和 1 MiB/64 包/9000 字节硬上限；Release 严格告警与 ASan/UBSan 均通过；
 - 平台无关数据平面模型使用每方向 64 包固定上限、规范原始 IPv4 version/IHL/总长度、协商 MTU 校验和原子批次入队；容量不足或输出过小时不部分修改队列，出队和 reset 对完整固定槽清零，避免失败请求泄漏陈旧 payload；
 - ring 回调只在 Passive packet queue 生命周期中访问 NetAdapterCx 系统分配缓冲区，要求虚拟地址扩展、连续的一包一 fragment 和合法 capacity/offset/length；TX 只读 packet/fragment，RX 明确填充原始 IPv4 `Layer2TypeNull` layout，异常描述符停止消费并断链；
 - direct-I/O 使用同步非挂起请求，不把 NetAdapterCx ring 或私有槽映射给 Agent；TX 空请求与 RX framed 请求方向固定，空/满/小缓冲/队列未启动在状态机前失败，因此包和 sequence 均不前移；固定硬上限与协商队列深度同时执行；
+- 固定种子压力测试在 Clang Release 和 GCC ASan/UBSan 下分别覆盖每域 30,000 次任意字节解析、消息写入、会话调用与队列操作；被拒绝的会话请求必须逐字段保持状态，失败队列操作必须保持元数据和完整 64 槽字节，六类有效消息逐字节变异未发现越界、未定义行为或失败状态提交；
 - 测试安装器只在管理员 Windows 11 26100+ 接受精确 INF/CAT/DLL、有效且匹配显式 thumbprint 的 signer 和本机 Microsoft-signed WDK DevGen；不下载或分发 DevGen，不修改 BCD/测试签名模式，不通过 ExecutionPolicy Bypass；状态 ACL 仅 LocalSystem/Administrators，卸载只操作记录的 ROOT instance 与 `oem#.inf`，残留失败关闭；
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
-- direct-I/O、ring 和 PowerShell 安装器尚未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入仍未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
+- 2026-07-31 连续三轮源码、Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`；direct-I/O、ring 和 PowerShell 安装器仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。
 
 ---
 

@@ -21,6 +21,8 @@ The portable queue has a fixed 64-packet capacity per direction, validates canon
 
 `IOCTL_XSNET_DEQUEUE_TX` takes a buffered 32-byte header-only TxBatch request and returns a direct framed TxBatch. `IOCTL_XSNET_ENQUEUE_RX` takes a framed RxBatch in the direct buffer and no buffered input. Empty/full/too-small requests return immediately without waiting and without advancing the session sequence.
 
+The deterministic host stress test runs 30,000 cases in each parser, writer, session, and queue domain. It checks arbitrary input under ASan/UBSan, verifies that rejected session operations preserve every state field, and mutates valid Hello, Attach, SetLink, TxBatch, RxBatch, and Detach messages.
+
 ## Host ABI test
 
 ```bash
@@ -32,4 +34,4 @@ ctest --test-dir target/xsnet-abi --output-on-failure
 
 Passing this test does not constitute a WDK build, driver installation, Driver Verifier result, or Windows compatibility claim.
 
-`make test-windows-xsnet-source` additionally checks source, project, INF, access, and lifecycle invariants. It is not a substitute for MSBuild, InfVerif, signing, or VM testing.
+`make test-windows-xsnet-abi` runs both the strict Clang Release build and the GCC ASan/UBSan build, including the deterministic stress test. `make test-windows-xsnet-source` additionally checks source, project, INF, access, lifecycle, and stress-test registration invariants. Neither command substitutes for MSBuild, InfVerif, signing, or VM testing.
