@@ -94,7 +94,7 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `apps/agent/src/windows_xsnet.rs` 实现无 `unsafe` 的 Agent 侧 ABI 客户端模型和 `XsnetDeviceSession`：固定 IOCTL、头和批次编码与 C 合约向量互校，单飞请求在成功后才提交 sequence/状态/Attach 参数；明确驱动拒绝保持原状态并允许调用方显式决定是否重试，传输结果不确定则进入 `ReconnectRequired`，禁止猜测 sequence。会话启动严格执行 Hello/Attach/SetLink，TX 输出容量由协商 MTU/深度推导，每个收发方法只执行一个有界请求，shutdown 按 LinkDown/Detach 排序且不在 Drop 中执行 I/O。TX 响应重新执行精确头、MTU、深度、连续描述符和 IPv4 校验。
 
-安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。隔离 `no_std + alloc` Win32 transport 已通过 `x86_64-pc-windows-msvc` core/alloc 构建和交叉 Clippy，使用唯一接口、独占同步 handle、六个 IOCTL 和五个受限 `unsafe` 块。完整 Agent 仍缺少 Windows SDK/WDK 链接与 VM 证据；空 TX/满 RX 的失败结果当前不能安全映射为 Rejected，因此会话适配层不接入运行时，不添加后台轮询或自动重试。完整边界见 `docs/WINDOWS_XSNET_TRANSPORT.md`。
+安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。隔离 `no_std + alloc` Win32 transport 已通过 `x86_64-pc-windows-msvc` core/alloc 构建和交叉 Clippy，使用唯一接口、独占同步 handle、六个 ABI IOCTL、一个独立 identity IOCTL 和六个受限 `unsafe` 块。identity query 在同一 handle 上获取驱动 `NETADAPTER` 的 authoritative LUID，不按名称匹配。完整 Agent 仍缺少 Windows SDK/WDK 链接与 VM 证据；空 TX/满 RX 的失败结果当前不能安全映射为 Rejected，因此会话适配层不接入运行时，不添加后台轮询或自动重试。完整边界见 `docs/WINDOWS_XSNET_TRANSPORT.md`。
 
 ## 6. 队列和资源上限
 
