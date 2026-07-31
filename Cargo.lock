@@ -3278,6 +3278,7 @@ name = "xs-windows-route-manager"
 version = "0.1.0"
 dependencies = [
  "ipnet",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

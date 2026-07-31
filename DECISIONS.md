@@ -702,5 +702,5 @@
 - 背景：Windows IP Helper 路由表属于全局主机状态。若只按前缀删除、先删后加、允许默认路由或把任意同接口路由视为项目所有，配置失败可能破坏普通网络；原生表还必须在有界复制后由 `FreeMibTable` 释放。
 - 决策：新增隔离 `xs-windows-route-manager` crate。项目路由固定非零 interface LUID、规范 IPv4 `/1..=/30`、on-link `0.0.0.0` 下一跳和 metric 32；拒绝默认、保留和任何非项目系统路由重叠。可信 manifest 必须与系统中的精确 route key 和项目所有权同时一致。reconcile 只生成 additions-first 计划，创建失败按已成功添加的逆序精确补偿，全部添加成功后才删除 manifest 中不再需要的精确旧路由；删除阶段失败只逆序恢复本事务已删除的路由。原始失败与每个补偿/恢复失败必须共同返回；系统表超过 4096 条失败关闭。
 - 原因：把所有权、冲突和事务顺序做成纯安全 Rust，可在接触 IP Helper FFI 前穷举失败边界，并阻止后续平台层使用模糊前缀或接口级清理。
-- 代价：当前只完成事务核心，尚未实现 `GetIpForwardTable2`、`CreateIpForwardEntry2`、`DeleteIpForwardEntry2`、地址 DAD、manifest 持久化或 Windows 执行；不能描述为真实路由管理。
+- 代价：当前已实现隔离 `GetIpForwardTable2`/`FreeMibTable`、精确 Create/Delete 路由、非持久地址 Create/Delete 和 DAD 查询，并通过 MSVC target check/Clippy；尚未实现 DAD 有界等待、地址与路由联合事务、manifest 持久化或 Windows 执行，不能描述为真实路由管理。
 - 安全影响：默认路由、外部路由重叠、所有权漂移、重复记录、零 LUID 和无界系统快照均在任何系统写入前被拒绝。真实 FFI 必须保持表释放、精确错误映射和 rollback 失败显式上报。

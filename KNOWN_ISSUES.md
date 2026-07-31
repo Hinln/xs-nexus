@@ -267,6 +267,6 @@
 - 状态：开放
 - 首次发现：2026-07-31
 - 影响：当前只有平台无关的精确所有权与 additions-first 事务模型，不能读取、创建或删除 Windows 地址/路由，也不能证明虚拟地址完成 DAD；Agent runtime 不得据此宣称 Windows 网络已可用。
-- 临时缓解：新 crate 不接入 runtime，不包含系统写入或 unsafe；默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭。
+- 临时缓解：新 crate 不接入 runtime；unsafe 只存在于 Windows 平台模块。默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key。
 - 计划：隔离 IP Helper FFI，确保 `GetIpForwardTable2` 表无条件释放，验证 LUID、规范前缀、on-link 下一跳、metric 和精确删除；实现非持久地址创建、DAD 等待、有界超时、失败补偿、manifest 原子持久化和 rollback 失败显式结果。
 - 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。

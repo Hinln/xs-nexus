@@ -4,6 +4,16 @@ use std::{collections::HashSet, net::Ipv4Addr};
 
 use ipnet::Ipv4Net;
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod platform;
+
+#[cfg(windows)]
+pub use platform::{
+    DadState, IpHelperBackend, IpHelperError, create_address, delete_address, query_dad_state,
+    snapshot_routes,
+};
+
 pub const MAX_SYSTEM_ROUTES: usize = 4_096;
 pub const PROJECT_ROUTE_METRIC: u32 = 32;
 
