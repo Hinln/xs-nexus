@@ -229,6 +229,7 @@
 - 固定种子压力测试在 Clang Release 和 GCC ASan/UBSan 下分别覆盖每域 30,000 次任意字节解析、消息写入、会话调用与队列操作；被拒绝的会话请求必须逐字段保持状态，失败队列操作必须保持元数据和完整 64 槽字节，六类有效消息逐字节变异未发现越界、未定义行为或失败状态提交；
 - 生命周期 harness 按单一 wait lock 的串行临界区穷举六类 teardown 的全部 720 种顺序；活动请求在取消胜出或完成胜出路径中只结算一次，cleanup、睡眠、移除和重复取消保持断链，旧 owner 不在恢复后自动复活。模型不持有跨回调 request/ring 引用，也不替代 WDF 引用计数或实际调度验证；
 - Rust Agent ABI 客户端只允许单飞请求；驱动明确拒绝时保持状态并复用同一 sequence，任何无法确定驱动是否已提交的传输结果都会毒化 handle 并要求重新打开。Attach 参数和 sequence 只在成功响应验证后提交，TX 响应再次校验固定头、精确长度、规范批次、协商 MTU/深度和原始 IPv4；当前没有 Windows API transport，不伪造 `DeviceIoControl` 执行证据；
+- `XsnetTransport` 隐藏请求字段并只提供只读 buffer 访问，将 OS 结果固定为 Success/Rejected/Indeterminate；只有具有权威未提交证明的状态才可 Rejected，首版 Win32 失败默认 Indeterminate。未来 `unsafe` 必须位于独立 target-specific 边界，不能降低 Agent 或 workspace 的全局禁用规则；完整规范见 `docs/WINDOWS_XSNET_TRANSPORT.md`；
 - 测试安装器只在管理员 Windows 11 26100+ 接受精确 INF/CAT/DLL、有效且匹配显式 thumbprint 的 signer 和本机 Microsoft-signed WDK DevGen；不下载或分发 DevGen，不修改 BCD/测试签名模式，不通过 ExecutionPolicy Bypass；状态 ACL 仅 LocalSystem/Administrators，卸载只操作记录的 ROOT instance 与 `oem#.inf`，残留失败关闭；
 - DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、cancel、D0/release reset、adapter start/stop 和 packet queue start/stop/cancel 骨架已写入，并由源码不变量脚本检查；
 - 2026-07-31 生命周期模型加入后连续三轮源码、五组 Release/ASan/UBSan 与安装器静态门禁通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；direct-I/O、ring 和 PowerShell 安装器仍未在 Windows 执行，WDF 对 METHOD_IN_DIRECT 缓冲区、对象引用、queue stop/cancel 和通知竞态的实际行为仍未知；WDK/MSBuild、InfVerif、INF ACL 实际应用、ring 收发、PnP/power、测试签名、Driver Verifier 和 VM 异常输入保持未验证，因此 M6.1 和 `ACCEPTANCE.md` K 项保持未完成。

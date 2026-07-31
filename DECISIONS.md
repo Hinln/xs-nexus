@@ -584,3 +584,15 @@
 - 原因：协议状态和不可信字节可在现有主机完整测试、Clippy 和真实 Agent 回归中验证，同时把未来 FFI 审计面限制为无策略 transport。
 - 代价：当前 Windows Agent 仍不能打开设备或收发包，M6.1/M6.2 和 `ACCEPTANCE.md` K 项不完成；未来 transport 必须证明取消、overlapped/sync 语义和句柄恢复与本模型一致。
 - 安全影响：不确定结果绝不猜测驱动 sequence，畸形响应不会提交客户端状态；Win32 `unsafe` 不扩散到协议和数据面逻辑。
+
+---
+
+## ADR-050：Win32 transport 首版使用同步独占句柄并默认不确定失败
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：驱动 ABI 是同步 direct-I/O，但泛化 Win32 错误不能可靠证明驱动是否已推进 sequence；当前主机也没有 Windows Rust 标准库，未编译 FFI 会制造虚假进度。
+- 决策：先固化安全 `XsnetTransport` 契约与只读请求访问器。首版实际 Win32 transport 必须使用单一无共享同步 handle，不使用 overlapped、共享环或后台重试；Win32 调用失败、取消、移除、异常字节数和模糊状态默认返回 Indeterminate。只有具备权威未提交证明的状态才可返回 Rejected。`unsafe` 必须隔离在独立 target-specific 边界，不能降低 Agent/workspace 全局规则。
+- 原因：保守分类防止在驱动可能已提交后复用 sequence；同步所有权与当前驱动一次完成模型一致，并把未来审计面限制为设备枚举、handle 和六个 IOCTL。
+- 代价：部分本可安全重试的 OS 错误首版也会重连；没有 Windows 编译环境前只完成契约和规范，不声称可打开设备。
+- 安全影响：任何模糊失败和畸形成功响应都会关闭逻辑会话，旧 sequence 不跨 handle；无依据的错误码映射不能绕过该规则。

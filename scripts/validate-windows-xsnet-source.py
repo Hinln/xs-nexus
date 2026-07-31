@@ -228,12 +228,15 @@ def validate_agent_client() -> None:
             "const ABI_MAGIC: u32 = 0x314e_5358;",
             "const DEVICE_TYPE: u32 = 0x8337;",
             "pub struct XsnetClient",
+            "pub trait XsnetTransport",
+            "pub enum TransportOutcome",
             "ClientState::ReconnectRequired",
             "complete_rejected",
             "complete_indeterminate",
             "decode_transmit_response",
             "encode_packet_batch",
             "constants_and_header_match_driver_contract",
+            "transport_classification_controls_recovery",
             "0x8337_e00e",
             "0x8337_e011",
         ],
@@ -241,6 +244,16 @@ def validate_agent_client() -> None:
     require_text(
         ROOT / "apps" / "agent" / "src" / "lib.rs",
         ["pub mod windows_xsnet;"],
+    )
+    require_text(
+        ROOT / "docs" / "WINDOWS_XSNET_TRANSPORT.md",
+        [
+            "The existing Agent crate remains `#![forbid(unsafe_code)]`",
+            "no buffered input",
+            "initial Win32 implementation should not infer",
+            "Every cancellation, device removal",
+            "never guess whether the driver advanced sequence",
+        ],
     )
 
 

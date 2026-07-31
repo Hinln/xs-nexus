@@ -232,3 +232,16 @@
 - 已完成缓解：安装失败和卸载只操作精确记录的 `Root\XSNET` instance 与 `oem#.inf`，20 秒有界等待，设备或 driver-store 残留返回失败并保留状态。
 - 计划：Windows VM 驱动验证通过后，为正式签名包实现受支持的软件设备创建、升级、回滚和企业部署路径，并单独执行安装器威胁建模。
 - 解除条件：不依赖不可分发测试工具的正式安装器完成签名、干净安装、重复安装、升级、失败回滚、卸载、重启和零残留验收。
+
+---
+
+## KI-018 Windows Agent Win32 transport 尚未实现
+
+- 严重度：高
+- 状态：开放
+- 首次发现：2026-07-31
+- 影响：Rust Agent 已能编码、验证和恢复 xsnet ABI 状态，但尚不能枚举设备接口、打开独占 handle 或调用 `DeviceIoControl`，因此不能在 Windows 收发数据。
+- 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果，所有未知结果和畸形成功响应强制重连；`docs/WINDOWS_XSNET_TRANSPORT.md` 固定同步 I/O、buffer 方向、句柄和 `unsafe` 隔离边界，不提交未编译 FFI。
+- 已完成缓解：7 个 Rust 测试覆盖固定 ABI/IOCTL、单飞、明确拒绝、不确定结果、畸形成功响应和恢复状态；源码门禁要求 transport 契约持续存在。
+- 计划：在具备 Windows Rust 标准库与 SDK 的受控构建环境中实现独立最小 transport，编译实际 Windows target 后进入 `BLK-001` VM 验收。
+- 解除条件：实际 Windows transport 通过编译、unsafe 审计、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。

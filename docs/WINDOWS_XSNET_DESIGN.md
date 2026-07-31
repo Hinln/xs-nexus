@@ -94,6 +94,8 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `apps/agent/src/windows_xsnet.rs` 实现无 `unsafe` 的 Agent 侧 ABI 客户端模型：固定 IOCTL、头和批次编码与 C 合约向量互校，单飞请求在成功后才提交 sequence/状态/Attach 参数；明确驱动拒绝保持原状态并允许同 sequence 重试，传输结果不确定则进入 `ReconnectRequired`，禁止猜测 sequence。TX 响应重新执行精确头、MTU、深度、连续描述符和 IPv4 校验。当前模块未接入 Windows 设备枚举或 `DeviceIoControl`，后者仍需独立、最小且可审计的平台 transport 与 Windows 构建门禁。
 
+安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。首版 Win32 transport 的句柄、同步 I/O、buffer 映射、错误分类和 `unsafe` 隔离规则固定在 `docs/WINDOWS_XSNET_TRANSPORT.md`。当前主机没有 Windows Rust 标准库或可交叉验证的 Win32 环境，因此不提交无法编译的 FFI 实现。
+
 ## 6. 队列和资源上限
 
 - 每方向最多 64 个待处理包和 1 MiB Agent 请求；

@@ -52,13 +52,61 @@ pub enum ClientError {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedRequest {
-    pub ioctl: u32,
-    pub sequence: u64,
-    pub buffered_input: Vec<u8>,
-    pub direct_input: Vec<u8>,
-    pub direct_output_capacity: usize,
+    ioctl: u32,
+    sequence: u64,
+    buffered_input: Vec<u8>,
+    direct_input: Vec<u8>,
+    direct_output_capacity: usize,
     message_type: MessageType,
     transition: ClientState,
+}
+
+impl PreparedRequest {
+    #[must_use]
+    pub const fn ioctl(&self) -> u32 {
+        self.ioctl
+    }
+
+    #[must_use]
+    pub const fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    #[must_use]
+    pub fn buffered_input(&self) -> &[u8] {
+        &self.buffered_input
+    }
+
+    #[must_use]
+    pub fn direct_input(&self) -> &[u8] {
+        &self.direct_input
+    }
+
+    #[must_use]
+    pub const fn direct_output_capacity(&self) -> usize {
+        self.direct_output_capacity
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TransportOutcome {
+    Success(Vec<u8>),
+    Rejected(u32),
+    Indeterminate,
+}
+
+pub trait XsnetTransport {
+    fn execute(&mut self, request: &PreparedRequest) -> TransportOutcome;
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum ExecutionError {
+    #[error(transparent)]
+    Client(#[from] ClientError),
+    #[error("xsnet driver rejected the request with status {0:#010x}")]
+    Rejected(u32),
+    #[error("xsnet request outcome is indeterminate and the handle must be reopened")]
+    ReconnectRequired,
 }
 
 #[derive(Debug)]
@@ -288,6 +336,38 @@ impl XsnetClient {
         self.pending = None;
         self.state = ClientState::ReconnectRequired;
         Ok(())
+    }
+
+    /// Executes one prepared request and applies its failure classification atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns a client validation error, an explicit driver rejection, or a reconnect requirement.
+    pub fn execute_prepared<T: XsnetTransport>(
+        &mut self,
+        transport: &mut T,
+        request: &PreparedRequest,
+    ) -> Result<Vec<Vec<u8>>, ExecutionError> {
+        self.require_pending(request)?;
+        match transport.execute(request) {
+            TransportOutcome::Success(response) => {
+                match self.complete_success(request, &response) {
+                    Ok(packets) => Ok(packets),
+                    Err(error) => {
+                        self.complete_indeterminate(request)?;
+                        Err(ExecutionError::Client(error))
+                    }
+                }
+            }
+            TransportOutcome::Rejected(status) => {
+                self.complete_rejected(request)?;
+                Err(ExecutionError::Rejected(status))
+            }
+            TransportOutcome::Indeterminate => {
+                self.complete_indeterminate(request)?;
+                Err(ExecutionError::ReconnectRequired)
+            }
+        }
     }
 
     fn require_state(&self, allowed: &[ClientState]) -> Result<(), ClientError> {
@@ -558,6 +638,14 @@ mod tests {
         packet
     }
 
+    struct FixedTransport(TransportOutcome);
+
+    impl XsnetTransport for FixedTransport {
+        fn execute(&mut self, _request: &PreparedRequest) -> TransportOutcome {
+            self.0.clone()
+        }
+    }
+
     fn complete_handshake(client: &mut XsnetClient) {
         let hello = client.prepare_hello().expect("hello");
         client.complete_success(&hello, &[]).expect("hello success");
@@ -670,5 +758,38 @@ mod tests {
         assert_eq!(read_u32(&request.buffered_input, 8), Some(1));
         assert_eq!(read_u32(&request.buffered_input, 16), Some(16));
         assert_eq!(read_u64(&request.buffered_input, 24), Some(1));
+    }
+
+    #[test]
+    fn transport_classification_controls_recovery() {
+        let mut rejected_client = XsnetClient::opened();
+        let rejected_request = rejected_client.prepare_hello().expect("hello");
+        let mut rejected_transport = FixedTransport(TransportOutcome::Rejected(0xc000_0184));
+        assert_eq!(
+            rejected_client.execute_prepared(&mut rejected_transport, &rejected_request),
+            Err(ExecutionError::Rejected(0xc000_0184))
+        );
+        assert_eq!(rejected_client.state(), ClientState::Opened);
+        assert_eq!(rejected_client.next_sequence(), 1);
+
+        let mut unknown_client = XsnetClient::opened();
+        let unknown_request = unknown_client.prepare_hello().expect("hello");
+        let mut unknown_transport = FixedTransport(TransportOutcome::Indeterminate);
+        assert_eq!(
+            unknown_client.execute_prepared(&mut unknown_transport, &unknown_request),
+            Err(ExecutionError::ReconnectRequired)
+        );
+        assert_eq!(unknown_client.state(), ClientState::ReconnectRequired);
+
+        let mut malformed_client = XsnetClient::opened();
+        complete_handshake(&mut malformed_client);
+        let malformed_request = malformed_client.prepare_transmit(4096).expect("transmit");
+        let mut malformed_transport =
+            FixedTransport(TransportOutcome::Success(vec![0_u8; HEADER_SIZE]));
+        assert_eq!(
+            malformed_client.execute_prepared(&mut malformed_transport, &malformed_request),
+            Err(ExecutionError::Client(ClientError::InvalidResponse))
+        );
+        assert_eq!(malformed_client.state(), ClientState::ReconnectRequired);
     }
 }
