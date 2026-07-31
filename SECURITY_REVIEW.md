@@ -352,3 +352,8 @@
 - 丢弃按 invalid/authentication/replay/rate-limit/queue/destination/send 分类，并提供可审计总数；不把不可观测的公网 UDP 丢失推断为零或精确比例。
 - 延迟使用单调 `Instant`，只在完整 datagram 成功发送后提交样本；失败发送计入 drop 与 I/O error，不污染成功延迟。
 - 指标端点与 health listener 共用，Compose 不向宿主或公网发布该 TCP 端口；Controller 集成前仍需定义认证、采集边界和保留策略。
+
+## 13. M7.1 连续回归复核（2026-07-31）
+
+- 提交 `52867cd` 的三轮聚合证据 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z` 连续通过 Linux 数据面/NAT/Relay/ACL/路由、安装部署恢复、Windows 源码门禁、UI、秘密扫描、SBOM 和漏洞 disposition。
+- 三轮没有新增安全告警、鉴权绕过、秘密命中、路由/namespace/TUN/Compose 残留或 `1panel-network`/默认路由/nftables 漂移；这仍不是第三方协议/驱动安全审计，也不解除 Windows VM、生产防火墙或真实 NAS 门禁。

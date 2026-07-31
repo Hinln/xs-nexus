@@ -250,3 +250,4 @@ make clean
 - 剩余 glibc 三个 CVE 已建立可执行 disposition 门禁：精确匹配报告、拒绝可修复项/新增 High 或 Critical，并从镜像提取 Controller/Relay 二进制验证不导入受影响 API；复核期限为 2026-08-31，基础镜像、glibc、扫描结果或二进制导入变化会提前触发复核。Windows runtime 接入继续由 `BLK-001` 阻塞。
 - M7.1 首次三轮聚合在第 2 轮捕获候选路径测试的双向就绪竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`；根因和修复记录于 `XS-2026-0003`。测试现独立等待两个方向完成认证路径探测，未延长超时；修复后的三轮聚合仍须从零重新计数。
 - 双向等待后的聚合首轮再次失败，证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194301Z`；旧 ERR 诊断被 cleanup 覆盖，现已修复为保留首错误命令及失败临时目录。定向 10 轮、fallback/path 组合 12 轮和完整 M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194855Z` 通过，但 `XS-2026-0003` 仍保持调查中，M7.1 三轮计数为零。
+- 提交 `52867cd` 后重新从零执行的三轮完整聚合全部通过，证据 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`；每轮覆盖 Linux 全链路、安装/部署/恢复、M6.1 Windows 源码门禁、E2E/视觉、image SBOM 和漏洞 disposition。当前记录 P0=0、P1=0，三个 P2 均有关闭结论，`XS-2026-0003` 已闭环；M7.1 自动化退出条件完成，但不改变 M6.1/M6.2 外部门禁。

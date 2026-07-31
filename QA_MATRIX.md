@@ -367,3 +367,4 @@
 - 首次聚合第 1 轮通过 Linux 全链路、M6.1 源码门禁、UI 与供应链处置；第 2 轮在候选路径测试捕获单向探测被误当作双向就绪的竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`。
 - 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。
 - 双向等待版在下一次聚合首轮仍失败，但旧 ERR trap 被 cleanup 覆盖；诊断已改为只保留首错误并保留失败临时目录。随后 fallback/path 组合 12 轮和完整 M5.2 通过，证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194855Z`；连续三轮尚未重新建立。
+- 提交 `52867cd` 后从零重跑三轮聚合全部通过，证据 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`。每轮包含 M5.2 Linux/安装/部署全量、M6.1 Windows 源码/交叉门禁、6 个 E2E、2 个视觉矩阵、image SBOM 和 glibc disposition verifier；没有新增失败、路由/namespace/TUN/Compose 残留或宿主基线变化。
