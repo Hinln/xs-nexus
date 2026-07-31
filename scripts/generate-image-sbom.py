@@ -21,6 +21,8 @@ MAX_LICENSE_BYTES = 4 * 1024 * 1024
 MAX_PACKAGES = 4096
 IMAGE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}\Z")
 SHA256_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
+SPDX_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*")
+SPDX_OPERATORS = {"AND", "OR", "WITH"}
 
 
 class ValidationError(RuntimeError):
@@ -259,12 +261,82 @@ def package_purl(package):
     return f"pkg:{package_type}/{name}@{version}?arch={architecture}"
 
 
+def alpine_license_ids(expression):
+    if expression == "2-clause BSD-like license":
+        return []
+    return [
+        token
+        for token in SPDX_TOKEN_RE.findall(expression)
+        if token not in SPDX_OPERATORS and token != "Public-Domain"
+    ]
+
+
+def build_license_closure(image_name, packages, rootfs_materials, doc_links):
+    material_paths = {item["rootfs_path"] for item in rootfs_materials}
+    closure = []
+    for package in packages:
+        identity = package_purl(package)
+        if package["manager"] == "dpkg":
+            expected = f"usr/share/doc/{package['name']}/copyright"
+            resolved = expected
+            link = doc_links.get(f"usr/share/doc/{package['name']}")
+            if link:
+                resolved = f"usr/share/doc/{link}/copyright"
+            if resolved not in material_paths:
+                raise ValidationError(
+                    f"Debian package has no exact copyright closure: {image_name}:{identity}"
+                )
+            closure.append(
+                {
+                    "package": identity,
+                    "status": "package-copyright",
+                    "materials": [resolved],
+                }
+            )
+            continue
+        if package.get("virtual"):
+            closure.append({"package": identity, "status": "virtual", "materials": []})
+            continue
+        expression = package["license"]
+        if expression == "2-clause BSD-like license":
+            prefix = f"usr/share/licenses/{package['name']}/"
+            matched = sorted(path for path in material_paths if path.startswith(prefix))
+            if not matched:
+                raise ValidationError(
+                    f"non-SPDX Alpine package has no package license text: {image_name}:{identity}"
+                )
+            closure.append(
+                {"package": identity, "status": "package-license", "materials": matched}
+            )
+            continue
+        identifiers = alpine_license_ids(expression)
+        matched = [f"usr/share/licenses/spdx/{identifier}.txt" for identifier in identifiers]
+        missing = [path for path in matched if path not in material_paths]
+        if missing:
+            raise ValidationError(
+                f"Alpine package license text is incomplete: {image_name}:{identity}: {missing}"
+            )
+        status = "public-domain-declaration" if not identifiers else "spdx-license-text"
+        closure.append({"package": identity, "status": status, "materials": matched})
+    closure.sort(key=lambda item: item["package"])
+    return closure
+
+
 def analyze_rootfs(image_name, archive_path, license_root):
     packages = None
     license_materials = []
+    doc_links = {}
     with tarfile.open(archive_path, mode="r:") as archive:
         members = archive.getmembers()
         by_name = {member.name.lstrip("./"): member for member in members}
+        for member in members:
+            name = member.name.lstrip("./").rstrip("/")
+            if not member.issym() or not name.startswith("usr/share/doc/"):
+                continue
+            target = PurePosixPath(member.linkname)
+            if target.is_absolute() or ".." in target.parts or len(target.parts) != 1:
+                raise ValidationError(f"unsafe package documentation symlink: {member.name}")
+            doc_links[name] = target.as_posix()
         if "var/lib/dpkg/status" in by_name:
             packages = parse_debian_status(
                 tar_member_bytes(archive, by_name["var/lib/dpkg/status"], 32 * 1024 * 1024)
@@ -333,6 +405,7 @@ def analyze_rootfs(image_name, archive_path, license_root):
             destination.write_bytes(content)
             license_materials.append(
                 {
+                    "rootfs_path": relative.as_posix(),
                     "path": str(Path("licenses") / image_name / Path(*relative.parts)).replace("\\", "/"),
                     "sha256": sha256_bytes(content),
                     "size": len(content),
@@ -359,6 +432,7 @@ def analyze_rootfs(image_name, archive_path, license_root):
     license_materials.append(
         {
             "kind": "package-manager-declarations",
+            "rootfs_path": "declared-packages.json",
             "path": str(Path("licenses") / image_name / "declared-packages.json").replace("\\", "/"),
             "sha256": sha256_bytes(declaration_content),
             "size": len(declaration_content),
@@ -367,7 +441,13 @@ def analyze_rootfs(image_name, archive_path, license_root):
     for material in license_materials:
         material.setdefault("kind", "license-text")
     license_materials.sort(key=lambda item: item["path"])
-    return packages, license_materials
+    closure = build_license_closure(
+        image_name,
+        packages,
+        [item for item in license_materials if item["kind"] == "license-text"],
+        doc_links,
+    )
+    return packages, license_materials, closure
 
 
 def cyclonedx(images, timestamp):
@@ -455,11 +535,14 @@ def main():
             identity = inspect_image(reference, args.revision)
             archive = temporary / f"{image_name}.tar"
             export_rootfs(reference, archive)
-            packages, materials = analyze_rootfs(image_name, archive, license_root)
+            packages, materials, license_closure = analyze_rootfs(
+                image_name, archive, license_root
+            )
             images[image_name] = {
                 **identity,
                 "packages": packages,
                 "license_materials": materials,
+                "license_closure": license_closure,
             }
         manifest_images = {}
         for image_name, image in images.items():
@@ -467,6 +550,9 @@ def main():
                 key: value for key, value in image.items() if key != "packages"
             }
             manifest_images[image_name]["package_count"] = len(image["packages"])
+            manifest_images[image_name]["license_closure_count"] = len(
+                image["license_closure"]
+            )
             manifest_images[image_name]["dockerfile"] = dockerfiles[image_name]
         manifest = {
             "schema": 1,
@@ -474,7 +560,7 @@ def main():
             "revision": args.revision,
             "generated_at": timestamp,
             "network_required": False,
-            "scope": "installed operating-system packages and available license materials in exact local runtime images",
+            "scope": "installed operating-system packages with package-complete, hash-bound license material closure in exact local runtime images",
             "images": manifest_images,
             "vulnerability_scan": "not-included; attach a digest-bound scanner report before Release Candidate",
         }

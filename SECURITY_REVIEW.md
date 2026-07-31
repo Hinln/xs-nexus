@@ -362,3 +362,7 @@
 ## Windows route ownership re-review (2026-07-31)
 
 The IP Helper snapshot boundary now requires `MIB_IPFORWARD_ROW2.SitePrefixLength` to equal the canonical destination prefix length before a row can be marked project-owned. Protocol, origin, metric, unspecified next hop, exact LUID, and canonical prefix checks remain required. A row with a matching route key but mismatched site-prefix semantics is treated as foreign; recovery therefore fails closed instead of deleting it. No runtime integration was added before Windows SDK/WDK and VM evidence.
+
+## Runtime image license closure review (2026-07-31)
+
+Runtime image license evidence now fails closed per exact installed package rather than treating package-manager declarations as proof of full text. Alpine SPDX identifiers bind to official distribution text files retained from a build-only package; Debian packages bind to exact copyright files through bounded safe documentation links. Missing or mismatched text, unsafe links, duplicate package identities, material hash changes and package/closure drift are rejected. Public-domain and virtual metapackage cases remain explicit and do not invent a license grant.

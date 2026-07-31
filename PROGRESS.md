@@ -240,6 +240,14 @@ find deploy -maxdepth 3 -type f -print | sort
 make clean
 ```
 
+## 2026-07-31 runtime image license closure
+
+- Implemented a fail-closed one-entry-per-package license closure for all four runtime images.
+- Console and db-tools retain the official Alpine SPDX text corpus while removing the build-only `spdx-licenses-text` package before final package inspection.
+- Real rootfs dry-run results: Controller 10/10, Relay 10/10, Console 32/32, db-tools 61/61 packages have closure records. Console and db-tools bind 783 and 758 license materials respectively; these dry runs are implementation evidence, not the final clean-commit QA artifact.
+- Unit coverage includes missing Alpine text, unsafe rootfs paths, safe Debian documentation links, malformed package metadata, duplicate image mappings and deterministic publication.
+- Next command after commit: `make validate-image-supply-chain`, followed by the digest-bound vulnerability scan and disposition verifier.
+
 该命令只删除项目 Rust 构建目录和控制台 `dist`，不操作 Docker、1Panel、网络或外部秘密。
 ## 2026-07-31 运行时镜像漏洞收敛检查点
 

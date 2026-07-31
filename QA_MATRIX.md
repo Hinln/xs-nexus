@@ -354,6 +354,12 @@
 - distroless `status.d` 正向解析、普通 Debian status、md5sums 排除和不完整身份负向测试：通过。
 - 最终供应链证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T183424Z`：通过；最终 Critical 2、High 6，当前可修复项为 0。
 - Console 删除未使用 image-filter/TIFF 包链后，`make test-docker-deployment` 与 `make validate-image-supply-chain` 通过；新证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z` 为 Critical 2、High 4，Console/db-tools 无 Critical/High。
+
+### Runtime image license closure (2026-07-31)
+
+- `python3 scripts/test-image-sbom.py`: passed with negative coverage for missing SPDX text and unsafe material paths.
+- Real rootfs dry run: Controller 10/10, Relay 10/10, Console 32/32 and db-tools 61/61 package closure records.
+- Final clean-commit `make validate-image-supply-chain` evidence is required before this row is considered complete.
 - `make verify-image-vulnerability-disposition EVIDENCE_DIR=/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`：通过；严格匹配剩余三个 glibc CVE，拒绝 fixable/集合漂移，并验证 Controller/Relay 精确镜像二进制不导入受影响 API。
 ## 10. Relay 可观测性回归（2026-07-31）
 

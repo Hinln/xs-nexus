@@ -104,3 +104,10 @@
 - [ ] 不适合生产
 
 必须三选一，并在 `FINAL_REPORT.md` 给出证据。
+
+## Runtime image license closure checkpoint (2026-07-31)
+
+- [x] Exact installed OS package set has one closure record per package in implementation dry runs.
+- [x] Referenced license materials are path/size/SHA-256 bound and independently rehashed.
+- [x] Missing SPDX text, unsafe rootfs paths and package identity drift fail closed.
+- [ ] Clean-commit full image build, deterministic regeneration, vulnerability scan and disposition evidence completed for this change.

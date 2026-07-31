@@ -28,6 +28,15 @@ def add_file(archive, name, value):
     archive.addfile(info, io.BytesIO(value))
 
 
+def add_symlink(archive, name, target):
+    info = tarfile.TarInfo(name)
+    info.type = tarfile.SYMTYPE
+    info.linkname = target
+    info.mode = 0o777
+    info.mtime = 0
+    archive.addfile(info)
+
+
 def main():
     module = load_module()
     assert module.parse_images(["controller=example/controller:test"]) == {
@@ -88,8 +97,11 @@ def main():
             add_file(archive, "var/lib/dpkg/status", debian_status)
             add_file(archive, "usr/share/doc/ca-certificates/copyright", b"copyright text\n")
             add_file(archive, "usr/share/common-licenses/GPL-2", b"license text\n")
-        packages, materials = module.analyze_rootfs("controller", archive_path, base / "licenses")
+        packages, materials, closure = module.analyze_rootfs(
+            "controller", archive_path, base / "licenses"
+        )
         assert len(packages) == 1
+        assert closure[0]["status"] == "package-copyright"
         assert [item["path"] for item in materials] == sorted(item["path"] for item in materials)
         assert all((base / item["path"]).is_file() for item in materials)
         assert any(item["kind"] == "package-manager-declarations" for item in materials)
@@ -124,11 +136,49 @@ def main():
             add_file(archive, "var/lib/dpkg/status.d/libc6", debian_status_fragment)
             add_file(archive, "var/lib/dpkg/status.d/libc6.md5sums", b"ignored\n")
             add_file(archive, "usr/share/doc/libc6/copyright", b"copyright text\n")
-        packages, materials = module.analyze_rootfs(
+        packages, materials, closure = module.analyze_rootfs(
             "controller", distroless, base / "distroless-licenses"
         )
         assert [package["name"] for package in packages] == ["libc6"]
         assert any(item["kind"] == "package-manager-declarations" for item in materials)
+        assert closure[0]["materials"] == ["usr/share/doc/libc6/copyright"]
+
+        alpine = base / "alpine.tar"
+        with tarfile.open(alpine, "w") as archive:
+            add_file(archive, "lib/apk/db/installed", alpine_status)
+            add_file(archive, "usr/share/licenses/spdx/MIT.txt", b"MIT license text\n")
+        packages, materials, closure = module.analyze_rootfs(
+            "console", alpine, base / "alpine-licenses"
+        )
+        assert closure == [
+            {
+                "package": module.package_purl(packages[0]),
+                "status": "spdx-license-text",
+                "materials": ["usr/share/licenses/spdx/MIT.txt"],
+            }
+        ]
+
+        missing_alpine = base / "missing-alpine.tar"
+        with tarfile.open(missing_alpine, "w") as archive:
+            add_file(archive, "lib/apk/db/installed", alpine_status)
+        try:
+            module.analyze_rootfs("console", missing_alpine, base / "missing-licenses")
+        except module.ValidationError:
+            pass
+        else:
+            raise AssertionError("missing Alpine license text was accepted")
+
+        linked_debian = base / "linked-debian.tar"
+        linked_status = debian_status + b"Package: libalias\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1\n\n"
+        with tarfile.open(linked_debian, "w") as archive:
+            add_file(archive, "var/lib/dpkg/status", linked_status)
+            add_file(archive, "usr/share/doc/ca-certificates/copyright", b"copyright text\n")
+            add_symlink(archive, "usr/share/doc/libalias", "ca-certificates")
+        packages, _, closure = module.analyze_rootfs(
+            "controller", linked_debian, base / "linked-licenses"
+        )
+        assert len(packages) == len(closure) == 2
+        assert closure[1]["materials"] == ["usr/share/doc/ca-certificates/copyright"]
 
         malicious = base / "malicious.tar"
         with tarfile.open(malicious, "w") as archive:

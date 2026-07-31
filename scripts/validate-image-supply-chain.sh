@@ -107,6 +107,10 @@ assert manifest["network_required"] is False
 assert set(manifest["images"]) == {"controller", "relay", "console", "db-tools"}
 assert all(value["package_count"] > 0 for value in manifest["images"].values())
 assert all(value["license_materials"] for value in manifest["images"].values())
+assert all(
+    value["license_closure_count"] == value["package_count"]
+    for value in manifest["images"].values()
+)
 assert cyclonedx["bomFormat"] == "CycloneDX"
 assert cyclonedx["specVersion"] == "1.6"
 assert len(cyclonedx["components"]) == sum(
@@ -118,6 +122,26 @@ for image in manifest["images"].values():
     assert image["image_id"].startswith("sha256:")
     dockerfile = Path(image["dockerfile"]["path"])
     assert hashlib.sha256(dockerfile.read_bytes()).hexdigest() == image["dockerfile"]["sha256"]
+    material_by_rootfs_path = {
+        material["rootfs_path"]: material for material in image["license_materials"]
+    }
+    assert len(material_by_rootfs_path) == len(image["license_materials"])
+    closure_packages = {entry["package"] for entry in image["license_closure"]}
+    assert len(closure_packages) == image["package_count"]
+    for entry in image["license_closure"]:
+        assert entry["status"] in {
+            "package-copyright",
+            "package-license",
+            "spdx-license-text",
+            "public-domain-declaration",
+            "virtual",
+        }
+        for rootfs_path in entry["materials"]:
+            material = material_by_rootfs_path[rootfs_path]
+            material_path = root / material["path"]
+            assert material_path.is_file() and not material_path.is_symlink()
+            assert material_path.stat().st_size == material["size"]
+            assert hashlib.sha256(material_path.read_bytes()).hexdigest() == material["sha256"]
 PY
 
 if ./scripts/generate-image-sbom.py \

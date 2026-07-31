@@ -16,6 +16,12 @@ LABEL org.opencontainers.image.title="XS Nexus Console" \
       org.opencontainers.image.source="XS Nexus clean-room repository"
 USER root
 RUN apk upgrade --no-cache \
+    && apk add --no-cache spdx-licenses-text \
+    && install -d /tmp/xs-spdx /usr/share/licenses/spdx \
+    && cp -a /usr/share/spdx/text/. /tmp/xs-spdx/ \
+    && apk del --no-cache spdx-licenses-text \
+    && cp -a /tmp/xs-spdx/. /usr/share/licenses/spdx/ \
+    && rm -rf /tmp/xs-spdx \
     && apk del --no-cache curl nginx-module-image-filter
 COPY deploy/docker/console.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder --chown=101:101 /src/apps/console/dist /usr/share/nginx/html

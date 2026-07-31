@@ -779,3 +779,13 @@
 - Decision: A route returned by IP Helper is project-owned only when its exact key, on-link next hop, fixed metric, protocol, origin, and `SitePrefixLength` all match the canonical project route shape. A matching destination/interface/metric without the same site prefix is foreign and must fail closed.
 - Rationale: `MIB_IPFORWARD_ROW2` carries site-prefix semantics separately from destination prefix length. Treating a shape-mismatched row as owned could permit recovery to delete or mutate a route the project did not create.
 - Evidence: `./scripts/test-windows-agent-routing.sh`; the source gate, 16 route transaction tests, Windows target check, and cross-target Clippy pass.
+
+---
+
+## ADR-067: Runtime image license evidence is a per-package offline closure
+
+- Date: 2026-07-31
+- Status: Accepted
+- Decision: Every installed OS package must have one deterministic closure record. Debian packages resolve to exact package copyright material, following only a safe one-component `/usr/share/doc` link. Alpine SPDX expressions resolve to official text files copied from the distribution's `spdx-licenses-text` build package; that package is removed before the final package database is recorded. Public-domain and virtual package cases are explicit states, while non-SPDX nginx declarations require package-specific COPYRIGHT material.
+- Rationale: A package-manager declaration or an arbitrary collection of rootfs license files does not prove that the exact installed package set has complete corresponding material. Package-count equality, exact paths and content hashes make omissions and package-set drift detectable offline.
+- Security impact: Missing text, wrong SPDX mapping, unsafe paths/links, duplicate package identities, unbound material and closure-count drift fail closed. The validator independently hashes every referenced file.
