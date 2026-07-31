@@ -6,4 +6,4 @@
 mod platform;
 
 #[cfg(windows)]
-pub use platform::{ensure_private_directory, read_private, write_private_atomic};
+pub use platform::{ensure_private_directory, read_private, remove_private, write_private_atomic};

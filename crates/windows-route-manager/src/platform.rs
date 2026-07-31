@@ -1,4 +1,4 @@
-use std::{io, net::Ipv4Addr, ptr::null_mut, slice, thread, time::Duration};
+use std::{io, net::Ipv4Addr, path::Path, ptr::null_mut, slice, thread, time::Duration};
 
 use ipnet::Ipv4Net;
 use windows_sys::Win32::{
@@ -20,6 +20,7 @@ use windows_sys::Win32::{
         SOCKADDR_IN, SOCKADDR_INET,
     },
 };
+use xs_windows_private_storage::{read_private, remove_private, write_private_atomic};
 
 use crate::{
     DadState, HostNetworkBackend, MAX_SYSTEM_ROUTES, PROJECT_ROUTE_METRIC, RouteBackend, RouteKey,
@@ -245,4 +246,39 @@ fn win_result(status: u32) -> Result<(), IpHelperError> {
     } else {
         Err(IpHelperError(status))
     }
+}
+
+/// Reads and strictly validates one private network manifest.
+///
+/// # Errors
+///
+/// Returns private-storage, size, JSON, schema, or ownership validation failure.
+pub fn read_network_manifest(path: &Path) -> io::Result<crate::NetworkManifest> {
+    let bytes = read_private(path, crate::MAX_MANIFEST_BYTES as u64)?;
+    crate::NetworkManifest::decode(&bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))
+}
+
+/// Atomically writes one validated manifest through the protected storage boundary.
+///
+/// # Errors
+///
+/// Returns manifest validation, private-storage, ACL, or atomic replacement failure.
+pub fn write_network_manifest_atomic(
+    path: &Path,
+    temporary: &Path,
+    manifest: &crate::NetworkManifest,
+) -> io::Result<()> {
+    let bytes = manifest
+        .encode()
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    write_private_atomic(path, temporary, &bytes)
+}
+
+/// Removes one exact validated private manifest.
+///
+/// # Errors
+///
+/// Returns path, ACL, reparse, object type, or removal failure.
+pub fn remove_network_manifest(path: &Path) -> io::Result<()> {
+    remove_private(path)
 }

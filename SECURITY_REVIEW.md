@@ -220,6 +220,7 @@
 
 - Windows 路由管理新增隔离安全 Rust 事务核心与 IP Helper 平台层：系统表限制 4096 条并由 RAII 无条件 `FreeMibTable`，只接受明确 LUID、规范前缀、on-link 下一跳和固定 metric；默认/保留/外部重叠与 manifest 所有权漂移在写入前拒绝。地址创建后必须观察 DAD Preferred 才创建路由，其他状态、查询失败或超时会精确删除地址；路由失败同时保留原始错误、路由补偿失败和地址清理失败。11 个模型测试与 MSVC target check/Clippy 通过，但尚未在 Windows 执行，不改变 M6.1/K 项状态。
 - manifest codec 固定 schema 1、严格拒绝未知字段与尾随数据、限制 64 KiB、要求安全 host 地址、精确 LUID 和规范排序 project route key。恢复只删除 manifest 中记录且系统快照仍 exact/project-owned 的路由；相同或重叠前缀出现外部 route 时停止，不做前缀级或接口级清理。模型测试累计 15 项；磁盘 ACL、原子写入和恢复执行仍未完成。
+- Windows manifest 现复用私有存储的整条 reparse 检查、父目录/文件 exact protected DACL、同目录 `create_new` 临时文件、`sync_all` 和 write-through Replace/Move；删除 manifest 前执行同样的路径和 ACL 验证。恢复执行逆序尝试所有计划内 exact route，再删除 exact address，并聚合全部失败而不提前返回。累计 16 项模型测试与两个 crate 的 MSVC target check/Clippy 通过；NTFS 和 IP Helper 仍未实机执行。
 
 - 按微软支持矩阵和 Windows 11 LTSC 2024 强制门禁改用 UMDF 2.33 + NetAdapterCx 2.5；Windows 10 不受支持组合已记录为 `KI-016`，不作兼容声明；
 - 驱动设计不包含密码学、身份、ACL、路由、NAT、Relay、更新或秘密，UMDF 使用系统分配数据缓冲区且拒绝直接硬件访问；

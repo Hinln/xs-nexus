@@ -111,6 +111,24 @@ pub fn read_private(path: &Path, maximum_bytes: u64) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Removes one exact private regular file after validating its path chain and protected DACL.
+///
+/// # Errors
+///
+/// Returns an error for unsafe paths, wrong object types, ACL drift, or removal failure.
+pub fn remove_private(path: &Path) -> io::Result<()> {
+    require_absolute(path)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+    validate_path_chain(parent)?;
+    validate_kind(parent, PathKind::Directory)?;
+    verify_private_acl(parent, PathKind::Directory)?;
+    validate_kind(path, PathKind::File)?;
+    verify_private_acl(path, PathKind::File)?;
+    std::fs::remove_file(path)
+}
+
 /// Atomically replaces a private file using a same-directory restricted temporary file.
 ///
 /// # Errors

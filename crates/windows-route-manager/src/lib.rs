@@ -12,7 +12,7 @@ mod platform;
 #[cfg(windows)]
 pub use platform::{
     IpHelperBackend, IpHelperError, create_address, delete_address, query_dad_state,
-    snapshot_routes,
+    read_network_manifest, remove_network_manifest, snapshot_routes, write_network_manifest_atomic,
 };
 
 pub const MAX_SYSTEM_ROUTES: usize = 4_096;
@@ -159,6 +159,50 @@ impl NetworkManifest {
 pub struct RecoveryPlan {
     pub routes: Vec<RouteKey>,
     pub delete_address: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct RecoveryError<E> {
+    pub route_failures: Vec<(RouteKey, E)>,
+    pub address_failure: Option<E>,
+}
+
+/// Executes exact recovery cleanup and aggregates every failure.
+///
+/// # Errors
+///
+/// Attempts all recorded route deletions in reverse order and then the exact address deletion.
+/// Returns every failure; partial cleanup is never reported as success.
+pub fn execute_recovery<B: HostNetworkBackend>(
+    backend: &mut B,
+    manifest: &NetworkManifest,
+    plan: &RecoveryPlan,
+) -> Result<(), RecoveryError<B::Error>> {
+    let mut route_failures = Vec::new();
+    for route in plan.routes.iter().rev().copied() {
+        if let Err(error) = backend.delete(route) {
+            route_failures.push((route, error));
+        }
+    }
+    let address_failure = if plan.delete_address {
+        backend
+            .delete_address(
+                manifest.interface_luid,
+                manifest.address,
+                manifest.prefix_length,
+            )
+            .err()
+    } else {
+        None
+    };
+    if route_failures.is_empty() && address_failure.is_none() {
+        Ok(())
+    } else {
+        Err(RecoveryError {
+            route_failures,
+            address_failure,
+        })
+    }
 }
 
 /// Builds an exact cleanup plan from a trusted manifest and current bounded system snapshot.
@@ -993,5 +1037,30 @@ mod tests {
             plan_recovery(&manifest, &[foreign], true),
             Err(ManifestError::OwnershipDrift)
         );
+    }
+
+    #[test]
+    fn recovery_attempts_every_exact_resource_and_aggregates_failures() {
+        let first = RouteKey::project(prefix("192.168.10.0/24"), 7).expect("first");
+        let second = RouteKey::project(prefix("192.168.20.0/24"), 7).expect("second");
+        let manifest = manifest(vec![first, second]);
+        let plan = RecoveryPlan {
+            routes: vec![first, second],
+            delete_address: true,
+        };
+        let mut backend = FakeBackend {
+            delete_results: [Err("second"), Err("first")].into(),
+            address_delete_results: [Err("address")].into(),
+            ..FakeBackend::default()
+        };
+        assert_eq!(
+            execute_recovery(&mut backend, &manifest, &plan),
+            Err(RecoveryError {
+                route_failures: vec![(second, "second"), (first, "first")],
+                address_failure: Some("address"),
+            })
+        );
+        assert_eq!(backend.calls, vec![("delete", second), ("delete", first)]);
+        assert_eq!(backend.host_calls, vec!["address-delete"]);
     }
 }
