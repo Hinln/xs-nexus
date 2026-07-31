@@ -14,7 +14,12 @@ use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::core::GUID;
 
-use crate::{OpenError, Outcome, Request, RequestKind, parse_single_interface};
+use crate::{
+    IDENTITY_RESPONSE_SIZE, IOCTL_QUERY_IDENTITY, OpenError, Outcome, Request, RequestKind,
+    parse_identity_response, parse_single_interface,
+};
+
+const IDENTITY_REQUEST: [u8; 8] = [1, 0, 8, 0, 0, 0, 0, 0];
 
 const MAX_INTERFACE_LIST_CHARS: u32 = 32_768;
 const GUID_DEVINTERFACE_XSNET: GUID = GUID {
@@ -38,6 +43,7 @@ impl Drop for OwnedHandle {
 #[derive(Debug)]
 pub struct DeviceTransport {
     handle: OwnedHandle,
+    interface_luid: u64,
 }
 
 impl DeviceTransport {
@@ -87,9 +93,34 @@ impl DeviceTransport {
         if handle == INVALID_HANDLE_VALUE || handle.is_null() {
             return Err(OpenError::OpenFailed);
         }
+        let handle = OwnedHandle(handle);
+        let mut response = [0_u8; IDENTITY_RESPONSE_SIZE];
+        let mut bytes_returned = 0_u32;
+        let succeeded = unsafe {
+            DeviceIoControl(
+                handle.0,
+                IOCTL_QUERY_IDENTITY,
+                IDENTITY_REQUEST.as_ptr().cast::<c_void>(),
+                8,
+                response.as_mut_ptr().cast::<c_void>(),
+                16,
+                &raw mut bytes_returned,
+                null_mut(),
+            )
+        } != 0;
+        if !succeeded || bytes_returned as usize != response.len() {
+            return Err(OpenError::IdentityQueryFailed);
+        }
+        let interface_luid = parse_identity_response(&response)?;
         Ok(Self {
-            handle: OwnedHandle(handle),
+            handle,
+            interface_luid,
         })
+    }
+
+    #[must_use]
+    pub const fn interface_luid(&self) -> u64 {
+        self.interface_luid
     }
 
     pub fn execute(&mut self, request: Request<'_>) -> Outcome {

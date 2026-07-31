@@ -14,9 +14,14 @@ pub const IOCTL_SET_LINK: u32 = 0x8337_e008;
 pub const IOCTL_DEQUEUE_TX: u32 = 0x8337_e00e;
 pub const IOCTL_ENQUEUE_RX: u32 = 0x8337_e011;
 pub const IOCTL_DETACH: u32 = 0x8337_e014;
+pub const IOCTL_QUERY_IDENTITY: u32 = 0x8337_e018;
 const HEADER_SIZE: usize = 32;
 const MAX_PAYLOAD: usize = 1_048_576;
 const MIN_RX_MESSAGE: usize = HEADER_SIZE + 16 + 20;
+#[cfg(any(windows, test))]
+const IDENTITY_VERSION: u16 = 1;
+#[cfg(any(windows, test))]
+const IDENTITY_RESPONSE_SIZE: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestError {
@@ -141,6 +146,8 @@ pub enum OpenError {
     InvalidInterfaceList,
     AmbiguousInterface,
     OpenFailed,
+    IdentityQueryFailed,
+    InvalidIdentity,
 }
 
 impl Display for OpenError {
@@ -151,8 +158,30 @@ impl Display for OpenError {
             Self::InvalidInterfaceList => formatter.write_str("xsnet interface list is invalid"),
             Self::AmbiguousInterface => formatter.write_str("xsnet interface list is ambiguous"),
             Self::OpenFailed => formatter.write_str("xsnet interface open failed"),
+            Self::IdentityQueryFailed => formatter.write_str("xsnet identity query failed"),
+            Self::InvalidIdentity => formatter.write_str("xsnet identity response is invalid"),
         }
     }
+}
+
+#[cfg(any(windows, test))]
+fn parse_identity_response(buffer: &[u8]) -> Result<u64, OpenError> {
+    if buffer.len() != IDENTITY_RESPONSE_SIZE
+        || u16::from_le_bytes([buffer[0], buffer[1]]) != IDENTITY_VERSION
+        || usize::from(u16::from_le_bytes([buffer[2], buffer[3]])) != IDENTITY_RESPONSE_SIZE
+        || buffer[4..8] != [0, 0, 0, 0]
+    {
+        return Err(OpenError::InvalidIdentity);
+    }
+    let luid = u64::from_le_bytes(
+        buffer[8..16]
+            .try_into()
+            .map_err(|_| OpenError::InvalidIdentity)?,
+    );
+    if luid == 0 {
+        return Err(OpenError::InvalidIdentity);
+    }
+    Ok(luid)
 }
 
 impl Error for OpenError {}
@@ -208,6 +237,11 @@ impl DeviceTransport {
     /// Always returns `UnsupportedPlatform`.
     pub const fn open() -> Result<Self, OpenError> {
         Err(OpenError::UnsupportedPlatform)
+    }
+
+    #[must_use]
+    pub const fn interface_luid(&self) -> u64 {
+        0
     }
 
     pub fn execute(&mut self, _request: Request<'_>) -> Outcome {
@@ -272,6 +306,31 @@ mod tests {
         assert_eq!(
             parse_single_interface(&invalid_utf16),
             Err(OpenError::InvalidInterfaceList)
+        );
+    }
+
+    #[test]
+    fn identity_response_requires_exact_schema_and_nonzero_luid() {
+        let mut response = [0_u8; IDENTITY_RESPONSE_SIZE];
+        response[0..2].copy_from_slice(&IDENTITY_VERSION.to_le_bytes());
+        response[2..4].copy_from_slice(&16_u16.to_le_bytes());
+        response[8..16].copy_from_slice(&42_u64.to_le_bytes());
+        assert_eq!(parse_identity_response(&response), Ok(42));
+
+        let mut invalid = response;
+        invalid[4] = 1;
+        assert_eq!(
+            parse_identity_response(&invalid),
+            Err(OpenError::InvalidIdentity)
+        );
+        assert_eq!(
+            parse_identity_response(&response[..IDENTITY_RESPONSE_SIZE - 1]),
+            Err(OpenError::InvalidIdentity)
+        );
+        response[8..16].fill(0);
+        assert_eq!(
+            parse_identity_response(&response),
+            Err(OpenError::InvalidIdentity)
         );
     }
 }

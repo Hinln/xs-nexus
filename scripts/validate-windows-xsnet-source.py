@@ -57,7 +57,12 @@ def validate_project() -> None:
         for item in tree.findall(".//msb:ClCompile", namespace)
         if "Include" in item.attrib
     }
-    for source in ("src\\abi.c", "src\\session.c", "src\\dataplane.c"):
+    for source in (
+        "src\\abi.c",
+        "src\\session.c",
+        "src\\dataplane.c",
+        "src\\identity.c",
+    ):
         if source not in compile_sources:
             fail(f"xsnet.vcxproj must compile {source}")
 
@@ -99,8 +104,8 @@ def validate_ioctl() -> None:
     for forbidden in ("FILE_ANY_ACCESS", "METHOD_NEITHER"):
         if forbidden in text:
             fail(f"xsnet_ioctl.h contains forbidden transfer/access mode: {forbidden}")
-    if len(re.findall(r"CTL_CODE\(", text)) != 6:
-        fail("xsnet_ioctl.h must define exactly six IOCTLs")
+    if len(re.findall(r"CTL_CODE\(", text)) != 7:
+        fail("xsnet_ioctl.h must define exactly seven IOCTLs")
 
 
 def validate_sources() -> None:
@@ -138,6 +143,9 @@ def validate_sources() -> None:
         "XsnetPacketQueueValidateBatch",
         "XsnetPacketQueueMeasureBatch",
         "XsnetWriteMessageHeader",
+        "NetAdapterGetNetLuid",
+        "XsnetValidateIdentityRequest",
+        "XsnetWriteIdentityResponse",
     ]
     for value in required:
         if value not in sources:
@@ -177,6 +185,8 @@ def validate_portable_tests() -> None:
             "add_test(NAME xsnet_stress_validation COMMAND xsnet_stress_test)",
             "add_executable(xsnet_lifecycle_test tests/lifecycle_test.c)",
             "add_test(NAME xsnet_lifecycle_validation COMMAND xsnet_lifecycle_test)",
+            "add_executable(xsnet_identity_test tests/identity_test.c)",
+            "add_test(NAME xsnet_identity_validation COMMAND xsnet_identity_test)",
         ],
     )
     stress = require_text(
@@ -196,6 +206,8 @@ def validate_portable_tests() -> None:
         fail("CMakeLists.txt must register exactly one portable stress test")
     if cmake.count("xsnet_lifecycle_validation") != 1:
         fail("CMakeLists.txt must register exactly one lifecycle test")
+    if cmake.count("xsnet_identity_validation") != 1:
+        fail("CMakeLists.txt must register exactly one identity test")
     for message_type in (
         "XSNET_MESSAGE_HELLO",
         "XSNET_MESSAGE_ATTACH",
@@ -217,6 +229,15 @@ def validate_portable_tests() -> None:
             "test_repeated_teardown_is_idempotent",
             "requests_cancelled == 1",
             "#ifdef NDEBUG\n#undef NDEBUG",
+        ],
+    )
+    require_text(
+        DRIVER / "tests" / "identity_test.c",
+        [
+            "XSNET_IDENTITY_BAD_VERSION",
+            "XSNET_IDENTITY_BAD_RESERVED",
+            "XSNET_IDENTITY_BAD_LUID",
+            "sizeof(response) - 1",
         ],
     )
 
@@ -261,6 +282,7 @@ def validate_agent_client() -> None:
             "device_session_shutdown_rejection_requires_explicit_retry",
             "xs_windows_transport::Request::new",
             "xs_windows_transport::Outcome::Indeterminate",
+            "pub const fn interface_luid(&self) -> u64",
         ],
     )
     try:
@@ -304,6 +326,10 @@ def validate_agent_client() -> None:
         "UnsupportedIoctl",
         "InvalidBuffers",
         "AmbiguousInterface",
+        "IOCTL_QUERY_IDENTITY",
+        "parse_identity_response",
+        "IdentityQueryFailed",
+        "InvalidIdentity",
     ):
         if value not in transport:
             fail(f"Windows transport boundary missing invariant: {value}")
@@ -318,10 +344,12 @@ def validate_agent_client() -> None:
         "Outcome::Indeterminate",
         "&raw mut character_count",
         "&raw mut bytes_returned",
+        "IDENTITY_REQUEST",
+        "parse_identity_response(&response)",
     ):
         if value not in platform:
             fail(f"Win32 platform transport missing invariant: {value}")
-    if transport.count("unsafe {") != 0 or platform.count("unsafe {") != 5:
+    if transport.count("unsafe {") != 0 or platform.count("unsafe {") != 6:
         fail("Win32 unsafe blocks must remain isolated and exactly counted")
     for forbidden in (
         "FILE_FLAG_OVERLAPPED",

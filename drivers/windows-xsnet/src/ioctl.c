@@ -77,6 +77,68 @@ static NTSTATUS validate_request_file(
     return STATUS_SUCCESS;
 }
 
+static void complete_identity_request(
+    WDFREQUEST request,
+    XsnetDeviceContext *device_context,
+    size_t input_buffer_length,
+    size_t output_buffer_length) {
+    PVOID input_buffer;
+    PVOID output_buffer;
+    size_t actual_input_length;
+    size_t actual_output_length;
+    NET_LUID interface_luid;
+    NTSTATUS status;
+
+    if (input_buffer_length != XSNET_IDENTITY_REQUEST_SIZE ||
+        output_buffer_length != XSNET_IDENTITY_RESPONSE_SIZE) {
+        WdfRequestComplete(request, STATUS_INVALID_BUFFER_SIZE);
+        return;
+    }
+    status = WdfRequestRetrieveInputBuffer(
+        request,
+        XSNET_IDENTITY_REQUEST_SIZE,
+        &input_buffer,
+        &actual_input_length);
+    if (!NT_SUCCESS(status) || actual_input_length != input_buffer_length) {
+        WdfRequestComplete(
+            request,
+            NT_SUCCESS(status) ? STATUS_INVALID_BUFFER_SIZE : status);
+        return;
+    }
+    if (XsnetValidateIdentityRequest(input_buffer, actual_input_length) !=
+        XSNET_IDENTITY_VALID) {
+        WdfRequestComplete(request, STATUS_INVALID_PARAMETER);
+        return;
+    }
+    if (device_context->adapter == NULL || !device_context->adapter_started) {
+        WdfRequestComplete(request, STATUS_DEVICE_NOT_READY);
+        return;
+    }
+    interface_luid = NetAdapterGetNetLuid(device_context->adapter);
+    status = WdfRequestRetrieveOutputBuffer(
+        request,
+        XSNET_IDENTITY_RESPONSE_SIZE,
+        &output_buffer,
+        &actual_output_length);
+    if (!NT_SUCCESS(status) || actual_output_length != output_buffer_length) {
+        WdfRequestComplete(
+            request,
+            NT_SUCCESS(status) ? STATUS_INVALID_BUFFER_SIZE : status);
+        return;
+    }
+    if (XsnetWriteIdentityResponse(
+            output_buffer,
+            actual_output_length,
+            interface_luid.Value) != XSNET_IDENTITY_VALID) {
+        WdfRequestComplete(request, STATUS_DEVICE_CONFIGURATION_ERROR);
+        return;
+    }
+    WdfRequestCompleteWithInformation(
+        request,
+        STATUS_SUCCESS,
+        XSNET_IDENTITY_RESPONSE_SIZE);
+}
+
 static BOOLEAN transmit_queue_ready_locked(
     const XsnetDeviceContext *device_context) {
     XsnetQueueContext *queue_context;
@@ -481,6 +543,14 @@ void XsnetEvtIoDeviceControl(
     status = validate_request_file(request, &file_context);
     if (!NT_SUCCESS(status)) {
         WdfRequestComplete(request, status);
+        return;
+    }
+    if (io_control_code == IOCTL_XSNET_QUERY_IDENTITY) {
+        complete_identity_request(
+            request,
+            device_context,
+            input_buffer_length,
+            output_buffer_length);
         return;
     }
     message_type = message_type_from_ioctl(io_control_code);

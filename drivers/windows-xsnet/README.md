@@ -22,6 +22,8 @@ The portable queue has a fixed 64-packet capacity per direction, validates canon
 
 `IOCTL_XSNET_DEQUEUE_TX` takes a buffered 32-byte header-only TxBatch request and returns a direct framed TxBatch. `IOCTL_XSNET_ENQUEUE_RX` takes a framed RxBatch in the direct buffer and no buffered input. Empty/full/too-small requests return immediately without waiting and without advancing the session sequence.
 
+`IOCTL_XSNET_QUERY_IDENTITY` is deliberately outside the six-message packet/session ABI. On the same exclusive device handle, it accepts an exact 8-byte identity schema v1 request and returns an exact 16-byte response containing the nonzero interface LUID obtained from `NetAdapterGetNetLuid`. It rejects unknown versions, nonzero reserved fields, wrong lengths, unavailable adapters, and zero LUIDs. The Agent must not substitute interface names or global adapter enumeration for this binding.
+
 The deterministic host stress test runs 30,000 cases in each parser, writer, session, and queue domain. It checks arbitrary input under ASan/UBSan, verifies that rejected session operations preserve every state field, and mutates valid Hello, Attach, SetLink, TxBatch, RxBatch, and Detach messages.
 
 The portable lifecycle harness exhausts all 720 orderings of cleanup, TX cancel, RX cancel, D0 exit, hardware release, and I/O stop from an active session. It verifies fail-closed link state, queue/session reset, cancellation-versus-completion single ownership, sleep reauthentication, queue restart, and idempotent teardown. This models callbacks serialized by the driver's single wait lock; it is not WDF scheduling, PnP, power, or Agent-crash evidence.

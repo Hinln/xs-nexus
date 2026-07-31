@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(xsnet_abi C)
 
-add_library(xsnet_abi STATIC src/abi.c src/dataplane.c src/session.c)
+add_library(xsnet_abi STATIC src/abi.c src/dataplane.c src/identity.c src/session.c)
 target_include_directories(xsnet_abi PUBLIC include)
 target_compile_features(xsnet_abi PUBLIC c_std_11)
 
@@ -57,4 +57,13 @@ if(BUILD_TESTING)
         target_compile_options(xsnet_lifecycle_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME xsnet_lifecycle_validation COMMAND xsnet_lifecycle_test)
+
+    add_executable(xsnet_identity_test tests/identity_test.c)
+    target_link_libraries(xsnet_identity_test PRIVATE xsnet_abi)
+    if(MSVC)
+        target_compile_options(xsnet_identity_test PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(xsnet_identity_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME xsnet_identity_validation COMMAND xsnet_identity_test)
 endif()

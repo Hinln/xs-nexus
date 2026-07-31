@@ -203,3 +203,5 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - Windows Service 首版在注册 control handler 后无锁上报 START_PENDING/RUNNING；STOP 若在检查与 RUNNING 上报之间到达，STOP_PENDING 可能被过期 RUNNING 覆盖。现用独立状态互斥串行化启动、停止和最终 STOPPED，上报活动状态前在同一锁内复核原子 STOP，源码门禁固定状态锁，未通过延迟或轮询掩盖竞争。
 - 新增 workspace crate 后首次服务专用测试保留 `--locked` 并正确因 `Cargo.lock` 尚无新 package 失败；使用离线 Cargo 正常解析后回同步锁文件，再原样执行 `--locked` 测试通过，没有移除可复现性门禁。
 - workspace Clippy 首轮拒绝非 Windows Service stub 缺少 `# Errors`、使用下划线绑定和空 async，第二轮又拒绝只供测试使用的解析 wrapper dead code；分别补齐契约文档、真实 pending await，并把 helper 限定为 `cfg(test)`，未添加 lint allow，随后 workspace warnings-as-errors 与全量单测通过。
+- LUID 设计审计发现路由准备层只有显式参数而没有可信生产者；没有采用接口别名、display name、全局适配器枚举或篡改 ABI v1 Hello 响应。新增同一独占 xsnet handle 的 identity schema v1 查询，驱动从自身 `NETADAPTER` 读取 LUID；C/Rust 负向测试覆盖错误版本、长度、reserved 和零 LUID，runtime 仍保持禁用。
+- identity 扩展首轮 M6.1 聚合验证被 Clippy `doc_markdown` 拒绝，因为新增公开文档中的 `NetAdapterCx` 未使用代码标记；失败证据保留在 `artifacts/qa/m6.1-agent-session-20260731T173555Z`。修正文档标记后原样重跑全量门禁，没有添加 lint allow 或降低告警等级。

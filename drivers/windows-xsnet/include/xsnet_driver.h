@@ -8,6 +8,7 @@
 #include "xsnet_abi.h"
 #include "xsnet_dataplane.h"
 #include "xsnet_ioctl.h"
+#include "xsnet_identity.h"
 #include "xsnet_session.h"
 
 #define XSNET_LINK_SPEED UINT64_C(1000000000)

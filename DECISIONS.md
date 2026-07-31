@@ -705,4 +705,16 @@
 - 代价：当前已实现隔离 `GetIpForwardTable2`/`FreeMibTable`、精确 Create/Delete 路由、非持久地址 Create/Delete、DAD 查询和有界轮询，以及地址成功后才执行的路由联合事务；DAD 拒绝/超时/查询失败与路由失败都会精确删除地址并显式返回清理失败。可信 manifest 使用 schema 1、严格 JSON、64 KiB 上限、规范 route order 和 exact LUID/address/route ownership；恢复计划只选择系统中仍精确匹配的记录资源，任何外部重叠失败关闭。Windows 平台通过 `xs-windows-private-storage` 读取和 write-through 原子替换 manifest，删除前同样验证父目录/文件 exact protected DACL 和 reparse 边界；恢复会尝试全部精确路由和地址并聚合每个失败。已通过 MSVC target check/Clippy；尚未实现 Agent 启动编排或 Windows 运行，不能描述为真实路由管理。
 - 安全影响：默认路由、外部路由重叠、所有权漂移、重复记录、零 LUID 和无界系统快照均在任何系统写入前被拒绝。真实 FFI 必须保持表释放、精确错误映射和 rollback 失败显式上报。
 
-- Agent 接入边界：新增 Windows-only `WindowsNetworkPreparation`，但 runtime 明确禁止引用。准备顺序固定为恢复可信 stale manifest、快照/冲突检查、原子写 Preparing、创建地址并等待 DAD、执行路由事务、原子写 Active；失败后保留 Preparing 供下次恢复。shutdown 只按 Active manifest 精确清理并在全部成功后删除 manifest。interface LUID 必须由未来已验证 xsnet 设备会话显式传入，不从接口名或全局枚举猜测。
+- Agent 接入边界：新增 Windows-only `WindowsNetworkPreparation`，但 runtime 明确禁止引用。准备顺序固定为恢复可信 stale manifest、快照/冲突检查、原子写 Preparing、创建地址并等待 DAD、执行路由事务、原子写 Active；失败后保留 Preparing 供下次恢复。shutdown 只按 Active manifest 精确清理并在全部成功后删除 manifest。interface LUID 必须由已独占打开的同一 xsnet 设备句柄通过版本化 identity query 显式提供，不从接口名或全局枚举猜测。
+
+---
+
+## ADR-060：xsnet 设备身份使用独立版本化查询绑定 authoritative LUID
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：路由事务要求可信的非零 interface LUID，但 exact ABI v1 只定义六类带 32 字节消息头的会话/数据消息，除 TX 外成功响应必须为空。把 LUID 塞进 Hello、增加 ABI v1 消息或按接口名/全局适配器枚举匹配都会削弱 ADR-052 或引入可注入、竞态的身份推断。
+- 决策：保留 ABI v1 六类消息完全不变，新增独立 `IOCTL_XSNET_QUERY_IDENTITY`。它只接受 identity schema v1 的精确 8 字节请求并返回精确 16 字节响应；版本、长度、reserved、返回长度和非零 LUID 全部严格校验。驱动只从当前 `NETADAPTER` 调用 `NetAdapterGetNetLuid`，查询仍受同一设备 DACL、唯一 present interface、零共享独占 handle 和 requestor 校验约束。Win32 transport 在打开句柄后立即查询并缓存，Agent session 只暴露该同句柄 LUID。
+- 原因：身份来源与实际 I/O handle、驱动 device context 和 NetAdapterCx adapter 是同一对象链，不需要名称、display string、SetupAPI 属性猜测或任意全局枚举；独立 schema 又不会把设备元数据冒充现有消息 ABI 的成功响应。
+- 代价：identity schema 自身需要独立版本管理；新增 IOCTL 和 `NetAdapterGetNetLuid` 尚未经过 WDK 编译与 Windows VM 执行，不能宣称真实 LUID 查询成功，也不能据此启用 runtime。
+- 安全影响：错误版本、错误长度、非零 reserved、零 LUID、adapter 未启动、模糊设备路径和查询失败全部失败关闭。源码门禁固定七个 IOCTL、identity codec 负向测试、同句柄查询和六个集中 unsafe 块；禁止退回接口别名或全局匹配。

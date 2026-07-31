@@ -115,6 +115,13 @@ impl Win32DeviceTransport {
             inner: xs_windows_transport::DeviceTransport::open()?,
         })
     }
+
+    /// Returns the authoritative interface LUID reported by the `NetAdapterCx` adapter bound to
+    /// this exact exclusive device handle.
+    #[must_use]
+    pub const fn interface_luid(&self) -> u64 {
+        self.inner.interface_luid()
+    }
 }
 
 impl XsnetTransport for Win32DeviceTransport {
@@ -251,6 +258,13 @@ impl<T: XsnetTransport> XsnetDeviceSession<T> {
 }
 
 impl XsnetDeviceSession<Win32DeviceTransport> {
+    /// Returns the interface LUID obtained from the same exclusive device handle used by this
+    /// session.
+    #[must_use]
+    pub const fn interface_luid(&self) -> u64 {
+        self.transport.interface_luid()
+    }
+
     /// Opens the unique xsnet interface and performs one fail-closed startup sequence.
     ///
     /// # Errors

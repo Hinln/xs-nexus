@@ -223,6 +223,8 @@
 ### M6.1 当前自动化覆盖
 
 - Windows 路由事务模型覆盖默认/保留/零 LUID、外部精确与部分重叠、manifest 所有权漂移、4096 条表上限、additions-first、逆序补偿、删除恢复、补偿失败显式上报、Tentative→Preferred、Duplicate 拒绝和路由失败后地址清理失败；Linux 模型 11 项、MSVC target check 与双平台 Clippy 通过。未覆盖 Windows IP Helper 运行、真实 DAD、PnP/睡眠、manifest 崩溃恢复或实际路由残留。
+- xsnet identity query 保持 ABI v1 六类消息不变，独立 schema v1 覆盖精确 8/16 字节、错误版本、非零 reserved、零 LUID 和短响应拒绝；源码门禁要求同一独占 handle、`NetAdapterGetNetLuid`、唯一 present interface 和六个集中 unsafe 块。Portable C 与 Rust transport 模型通过；未覆盖 WDK 编译、真实 device handle、NetAdapterCx 返回值或 PnP 后 LUID 行为。
+- 2026-07-31 完整 M6.1 聚合验证通过：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`。包含 workspace Clippy/单测、真实 Agent 控制面回归、C Release 与 ASan/UBSan、MSVC target check/Clippy、Windows 源码门禁、SBOM/秘密扫描、npm audit 和宿主网络状态前后比较。
 - 严格 manifest 增加 JSON round-trip、未知字段/尾随数据/超限拒绝、不安全地址、非规范 route order、缺失资源幂等恢复、exact route/address 清理选择与外部重叠拒绝；累计 15 项模型测试。仍未覆盖 NTFS 私有持久化、进程中止窗口和 Windows 实际恢复。
 - 受保护 manifest 平台边界增加私有读取、原子写入和验证删除源码路径；恢复执行测试证明逆序尝试全部 exact route、随后地址删除，并同时保留所有失败。累计 16 项模型测试，`windows-private-storage` 与 `windows-route-manager` 均通过 MSVC target check/Clippy；仍未覆盖真实 NTFS、杀进程窗口和 IP Helper 残留。
 - `make test-windows-agent-routing` 增加 Agent Cargo/module/config/准备顺序、Preparing/Active、恢复/清理、runtime 未接入和禁止 unsafe/后台线程/子进程源码门禁，并复用 16 项模型与两个 Windows crate 交叉检查；该门禁不替代完整 Agent Windows 链接或 VM 执行。
@@ -243,7 +245,7 @@
 - 生命周期模型加入后再次连续三轮通过五组 Release/ASan/UBSan、源码与安装器门禁；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
 - `apps/agent/src/windows_xsnet.rs` 的前 8 个测试覆盖 C ABI/IOCTL 固定向量、完整 Hello/Attach/SetLink/TX 流程、规范 IPv4 批次、单飞请求、已知拒绝复用 sequence、未知结果强制重连、畸形响应失败关闭、transport 分类和非 Windows 拒绝；原契约证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`；
 - 新增 10 个 `XsnetDeviceSession` 测试固定配置先于设备打开校验、无重试的 Hello/Attach/SetLink 启动、由 MTU/深度推导的 TX 容量、单步 TX/RX、权威拒绝保持 sequence、不确定结果毒化、失败启动立即停止并释放 transport、无效 RX 零 I/O、Drop 零 I/O、LinkDown/Detach 顺序、重复 Detach 和 shutdown 显式重试；适配层没有后台线程、轮询或 Drop I/O，且未接入 Agent runtime；
-- `crates/windows-transport` 以 `no_std + alloc` 实现精确 GUID 单接口解析、独占同步 handle、六个 IOCTL、buffered/IN_DIRECT/OUT_DIRECT 映射、初始化输出、输入复制和全失败 Indeterminate；Agent 保持 `#![forbid(unsafe_code)]`，五个 unsafe 块只存在于平台文件；
+- `crates/windows-transport` 以 `no_std + alloc` 实现精确 GUID 单接口解析、独占同步 handle、六个 ABI IOCTL、独立 identity IOCTL、buffered/IN_DIRECT/OUT_DIRECT 映射、初始化输出、输入复制和全失败 Indeterminate；Agent 保持 `#![forbid(unsafe_code)]`，六个 unsafe 块只存在于平台文件；
 - `scripts/test-windows-xsnet-transport.sh` 先运行全部 18 个 Agent xsnet 测试，再实际为 `x86_64-pc-windows-msvc` 构建 core/alloc 与 transport，并对同一 target 运行 Clippy `-D warnings`；transport crate 的 2 个 Linux 测试覆盖超限、未知 IOCTL 和空/多接口，Agent 覆盖配置先于设备打开校验、失败释放、无效数据零 I/O、析构边界及非 Windows 打开拒绝；最新证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T033841Z`；
 - `scripts/validate-windows-xsnet-source.py` 额外固定 session 必需实现与负向测试、配置校验先于首个 IOCTL 和设备打开，并在 WDK/VM 门禁前拒绝 Agent runtime 引用、后台线程、sleep 或 session Drop I/O；
 - `crates/windows-local-ipc` 将 SDDL 转换、`SECURITY_ATTRIBUTES` 和 Tokio 原始创建调用限制在三个可计数 unsafe 块；固定管道名、first-instance、拒绝远程客户端、仅 LocalSystem/Administrators DACL、不可继承 handle、4 KiB 请求、512 KiB 响应和 17 个 OS 实例上限；
