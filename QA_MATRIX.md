@@ -369,11 +369,11 @@
 - `make test-controller-scale` 使用真实 PostgreSQL、Controller Router 和 `/v1/enroll` API，32 路并发完成 100、500、1000 节点注册；同时读取真实 Console 快照、节点计数和虚拟地址唯一性。证据：`/srv/xs-nexus/artifacts/qa/controller-scale-20260731T210210Z`。
 - 注册吞吐基线：100 节点批次 39.18/s，500 节点增量 18.20/s，1000 节点增量 8.66/s；Console 快照分别约 50.2、130.9、192.6 ms；数据库计数查询分别约 2.72、1.70、2.30 ms。该结果是当前测试主机和独立 schema 的基线，不构成公网容量承诺。
 - `XS_STABILITY_DURATION_SECONDS=30 XS_STABILITY_SAMPLE_INTERVAL_SECONDS=5 make test-docker-deployment` 通过，证据：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T205004Z`。采样覆盖完整容器进程树，Controller/Relay/Console 分别验证重启恢复、RSS、FD、线程、日志大小和进程 PID 变化。
-- 24 小时稳定性、加密吞吐、Direct/Relay RTT、WebSocket 广播、Relay 限速拥塞和长时间日志曲线仍未完成，不得以本节短时证据勾选 M7.3 全部 MUST。
+- 加密吞吐、真实 Relay 吞吐、Direct/Relay RTT、Agent 空闲资源和 WebSocket 广播均已完成；24 小时稳定性与长时间日志/资源曲线仍在运行，不得以短时证据勾选 M7.3 全部 MUST。
 - `make test-protocol-throughput` 在 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 seal/open，结果 161,314 往返/s、184.61 MiB/s；证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`。该结果覆盖 AEAD 与协议校验，但不包含 TUN、UDP socket、Relay 或公网路径开销。
 - `make test-relay-throughput` 使用真实 UDP Relay、认证注册和两节点 Lease 转发 10,000 个帧，64 帧窗口下为 87,822 包/s、18.09 MiB/s，内部转发延迟平均 4 µs、最大 161 µs，指标断言零协议丢弃；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z`。首次无限突发因测试接收 socket 缓冲区丢包失败，未作为产品结论；有界窗口保留真实 Relay 全路径。
 - Controller 配置事务提交后通过有界 Tokio broadcast 通道按 network ID 通知控制连接；集成测试使用同一凭据建立两条真实 WebSocket，在候选广告生成版本 5 后断言第二条连接自动收到相同签名配置，同时保持唯一节点 presence 语义和连接引用计数。`make test-controller-db` 通过。
-- `make test-agent-rtt` 在同一真实双 Agent/namespace/TUN 环境中先强制 Relay fallback，再恢复认证 Direct 路径；每条路径采样 30 次业务 ICMP。Direct 平均/p95 为 2.87/2.19 ms，Relay 为 4.38/27.21 ms，平均增量 1.51 ms；证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T214224Z`。报告保留 Direct 31.31 ms 和 Relay 41.83 ms 最大尖峰，不以裁剪样本美化结果。
+- `make test-agent-rtt` 在同一真实双 Agent/namespace/TUN 环境中先强制 Relay fallback，再恢复认证 Direct 路径；每条路径采样 30 次业务 ICMP。脚本强制 release profile，并断言实际 Agent 进程指向配置的 release 二进制。Direct 平均/p95 为 0.91/1.13 ms，Relay 为 1.16/1.45 ms，平均增量 0.25 ms；两个 Agent 的 10 秒空闲基线平均为 0.55% 单核 CPU、7.95 MiB RSS、9 线程、15 FD；证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T221036Z`。debug profile 的约 8.5% CPU 不作为性能结论。
 
 - 首次聚合第 1 轮通过 Linux 全链路、M6.1 源码门禁、UI 与供应链处置；第 2 轮在候选路径测试捕获单向探测被误当作双向就绪的竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`。
 - 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。

@@ -198,11 +198,11 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 
 - 新增 `scripts/test-runtime-stability.sh`，接入 `make test-docker-deployment` 的可配置 `XS_STABILITY_DURATION_SECONDS`；采集 Controller、Relay、Console 完整进程树的 RSS、线程、FD、CPU ticks 和 Docker 日志大小，并对三个项目容器分别重启后验证健康恢复。短时校准 30 秒通过，证据 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T205004Z`；Docker/1Panel、备份恢复、失败迁移和镜像激活回滚均通过。
 - 新增 Controller 真实 API 规模测试 `make test-controller-scale`，使用独立 `xs_nexus_scale` schema、20 个受限 token、32 路并发注册，验证 100/500/1000 活动节点、地址唯一性、Console 快照和数据库查询。证据 `/srv/xs-nexus/artifacts/qa/controller-scale-20260731T210210Z`：100 节点 39.18 注册/s，500 节点增量 18.20/s，1000 节点增量 8.66/s；快照 50/131/193 ms，计数查询约 2 ms，总耗时 83 秒。
-- 运行时稳定性仍需完整 24 小时曲线；当前短时资源数据用于校准，不替代 24 小时验收。加密吞吐、Direct/Relay RTT、WebSocket 广播和 Relay 拥塞长测仍待补齐。
+- 运行时稳定性仍需完整 24 小时曲线；当前短时资源数据用于校准，不替代 24 小时验收。加密吞吐、Direct/Relay RTT、WebSocket 广播和真实 Relay 吞吐基线已完成。
 - 新增 `make test-protocol-throughput`，以 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 ChaCha20-Poly1305 seal/open、身份绑定、重放窗口和 IPv4 校验；有效证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z` 为 161,314 次加密+解密往返/s、184.61 MiB/s 明文吞吐。该单进程 loopback CPU 基线不等于 Agent/TUN 或公网端到端吞吐。
 - 新增 `make test-relay-throughput`，在 release profile 通过真实 UDP Relay、两份认证 Lease、重放/速率/队列门禁和 64 帧有界窗口转发 10,000 个 216 字节 XSR/1 帧；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z` 为 87,822 包/s、18.09 MiB/s，Relay 内部转发延迟平均 4 µs、最大 161 µs，零协议丢弃。该 loopback 基线不等于公网 Relay 容量或 RTT。
 - Controller 新增按 network ID 隔离的 WebSocket 配置广播：所有配置写入仅在数据库事务成功提交后发布事件，同网络已认证连接读取最新签名配置；不同网络不会收到事件。真实 PostgreSQL 集成测试以同一节点两条控制连接验证发起连接直接响应、观察连接收到相同版本 5 广播、唯一节点在线计数和多连接关闭生命周期；`make test-controller-db`、Clippy 和秘密扫描通过。
-- 新增 `make test-agent-rtt`，复用真实双 Agent namespace、TUN、XSP/1、Relay fallback/failover 和 Direct 恢复测试，各路径采样 30 次业务 ICMP。证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T214224Z`：Direct 平均 2.87 ms、p50 1.88 ms、p95 2.19 ms；Relay 平均 4.38 ms、p50 2.30 ms、p95 27.21 ms；Relay 平均增量 1.51 ms、p95 增量 25.02 ms。最大值 Direct 31.31 ms、Relay 41.83 ms 原样保留，未删除调度尖峰。
+- 新增 `make test-agent-rtt`，复用真实双 Agent namespace、TUN、XSP/1、Relay fallback/failover 和 Direct 恢复测试，各路径采样 30 次业务 ICMP，并采集两个 Agent 的 10 秒空闲 CPU、RSS、线程和 FD。脚本强制 release profile，并核对实际 `/proc/<pid>/exe`。有效证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T221036Z`：Direct 平均/p95 0.91/1.13 ms，Relay 平均/p95 1.16/1.45 ms，平均增量 0.25 ms；Agent 平均空闲 CPU 0.55% 单核、RSS 7.95 MiB、9 线程、15 FD。早期 debug profile 的资源结果已排除，不作为产品基线。
 - 已建立 `docs/PERFORMANCE_REPORT.md`，统一绑定吞吐、规模、查询、RTT、短时资源和 24 小时长测方法；当前状态保持 `IN_PROGRESS`，不提前勾选性能报告 MUST。
 
 ## 恢复说明

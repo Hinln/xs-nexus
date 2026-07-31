@@ -3,12 +3,20 @@ set -Eeuo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PROBE="$ROOT_DIR/scripts/xsp-network-probe.py"
-CONTROLLER="$ROOT_DIR/target/debug/xs-controller"
-RELAY="$ROOT_DIR/target/debug/xs-relay"
-AGENT="$ROOT_DIR/target/debug/xs-agent"
-CLI="$ROOT_DIR/target/debug/xs"
-KEY_DERIVER="$ROOT_DIR/target/debug/examples/derive_ed25519_public"
-SCHEMA_RESET="$ROOT_DIR/target/debug/examples/reset_test_schema"
+BUILD_PROFILE=${XS_AGENT_TEST_PROFILE:-debug}
+if [[ $BUILD_PROFILE == release ]]; then
+    TARGET_PROFILE=release
+    CARGO_PROFILE_ARGS=(--release)
+else
+    TARGET_PROFILE=debug
+    CARGO_PROFILE_ARGS=()
+fi
+CONTROLLER="$ROOT_DIR/target/$TARGET_PROFILE/xs-controller"
+RELAY="$ROOT_DIR/target/$TARGET_PROFILE/xs-relay"
+AGENT="$ROOT_DIR/target/$TARGET_PROFILE/xs-agent"
+CLI="$ROOT_DIR/target/$TARGET_PROFILE/xs"
+KEY_DERIVER="$ROOT_DIR/target/$TARGET_PROFILE/examples/derive_ed25519_public"
+SCHEMA_RESET="$ROOT_DIR/target/$TARGET_PROFILE/examples/reset_test_schema"
 TEMPORARY=$(mktemp -d /tmp/xs-m23-relay.XXXXXX)
 TEST_DATABASE_SCHEMA=xs_nexus_m23_relay_test
 SUFFIX=$(printf '%04x' "$(( $$ % 65536 ))")
@@ -37,6 +45,83 @@ if [[ -n $RTT_EVIDENCE_DIR ]]; then
     mkdir -p "$RTT_EVIDENCE_DIR"
     chmod 0700 "$RTT_EVIDENCE_DIR"
 fi
+
+measure_agent_idle() {
+    local output=$1
+    local perf_pid=
+    if [[ ${XS_AGENT_PERF:-0} == 1 ]] && command -v perf >/dev/null; then
+        perf record -F 99 -g -p "$AGENT_A_PID,$AGENT_B_PID" \
+            -o "$RTT_EVIDENCE_DIR/agent-idle.perf.data" -- sleep 10 \
+            >"$RTT_EVIDENCE_DIR/agent-idle.perf.log" 2>&1 &
+        perf_pid=$!
+    fi
+    python3 - "$AGENT_A_PID" "$AGENT_B_PID" "$output" "$BUILD_PROFILE" "$AGENT" <<'PY'
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+pids = [int(sys.argv[1]), int(sys.argv[2])]
+duration = 10.0
+clock_ticks = os.sysconf("SC_CLK_TCK")
+
+def sample(pid):
+    proc = Path("/proc") / str(pid)
+    values = {}
+    for line in (proc / "status").read_text().splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key in {"VmRSS", "Threads"}:
+            values[key] = int(value.strip().split()[0])
+    stat = (proc / "stat").read_text().rsplit(") ", 1)[1].split()
+    return {
+        "rss_kib": values["VmRSS"],
+        "threads": values["Threads"],
+        "fds": len(list((proc / "fd").iterdir())),
+        "cpu_ticks": int(stat[11]) + int(stat[12]),
+    }
+
+before = [sample(pid) for pid in pids]
+started = time.monotonic()
+time.sleep(duration)
+elapsed = time.monotonic() - started
+after = [sample(pid) for pid in pids]
+agents = []
+for index, pid in enumerate(pids):
+    cpu_seconds = (after[index]["cpu_ticks"] - before[index]["cpu_ticks"]) / clock_ticks
+    agents.append({
+        "pid": pid,
+        "rss_kib": after[index]["rss_kib"],
+        "threads": after[index]["threads"],
+        "fds": after[index]["fds"],
+        "idle_cpu_percent_one_core": cpu_seconds / elapsed * 100.0,
+    })
+report = {
+    "build_profile": sys.argv[4],
+    "configured_agent_binary": str(Path(sys.argv[5]).resolve()),
+    "sample_duration_seconds": elapsed,
+    "agents": agents,
+    "rss_kib_average": sum(item["rss_kib"] for item in agents) / len(agents),
+    "idle_cpu_percent_one_core_average": sum(
+        item["idle_cpu_percent_one_core"] for item in agents
+    ) / len(agents),
+}
+for item in agents:
+    item["executable"] = str((Path("/proc") / str(item["pid"]) / "exe").resolve())
+    if item["executable"] != report["configured_agent_binary"]:
+        raise RuntimeError("sampled Agent executable does not match configured binary")
+Path(sys.argv[3]).write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+PY
+    if [[ -n $perf_pid ]]; then
+        wait "$perf_pid" || true
+        perf report --stdio -i "$RTT_EVIDENCE_DIR/agent-idle.perf.data" \
+            >"$RTT_EVIDENCE_DIR/agent-idle.perf-report.txt" 2>&1 || true
+    fi
+}
 
 cleanup() {
     local status=$?
@@ -442,12 +527,12 @@ fi
 
 cd "$ROOT_DIR"
 umask 077
-cargo build -p xs-controller
-cargo build -p xs-controller --example reset_test_schema
-cargo build -p xs-relay
-cargo build -p xs-agent --features privileged-network-tests --bin xs-agent
-cargo build -p xs-cli
-cargo build -p xs-protocol --example derive_ed25519_public
+cargo build "${CARGO_PROFILE_ARGS[@]}" -p xs-controller
+cargo build "${CARGO_PROFILE_ARGS[@]}" -p xs-controller --example reset_test_schema
+cargo build "${CARGO_PROFILE_ARGS[@]}" -p xs-relay
+cargo build "${CARGO_PROFILE_ARGS[@]}" -p xs-agent --features privileged-network-tests --bin xs-agent
+cargo build "${CARGO_PROFILE_ARGS[@]}" -p xs-cli
+cargo build "${CARGO_PROFILE_ARGS[@]}" -p xs-protocol --example derive_ed25519_public
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
     "$SCHEMA_RESET"
@@ -666,6 +751,9 @@ endpoint_b=$(candidate_endpoint "$TEMPORARY/node-b/run/agent.sock" "$CONTROL_IP_
 wait_relay_metric "$RELAY_HEALTH_1" active_leases 2
 wait_relay_metric "$RELAY_HEALTH_2" active_leases 2
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_fallback
+if [[ -n $RTT_EVIDENCE_DIR ]]; then
+    measure_agent_idle "$RTT_EVIDENCE_DIR/agent-idle.json"
+fi
 
 virtual_ip_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-a/state/node-state.json")
 virtual_ip_b=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-b/state/node-state.json")

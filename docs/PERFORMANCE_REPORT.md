@@ -13,6 +13,7 @@
 - Direct/Relay RTT 使用两个真实 Agent、TUN、network namespace、XSP/1 和业务 ICMP；不使用独立 UDP echo 代替产品路径。
 - 保留全部样本和最大尖峰，不裁剪异常值。
 - 短时资源校准不能替代 24 小时稳定性。
+- Agent RTT 与空闲资源脚本强制构建并运行 release profile，同时把配置二进制路径和两个进程的 `/proc/<pid>/exe` 写入证据；路径不一致时测试失败。此前 debug profile 的约 8.5% 单核 CPU 与约 16 MiB RSS 仅用于发现基准配置错误，不作为产品性能结论。
 
 ## 2. 当前结果
 
@@ -26,9 +27,10 @@
 | Controller 1000 节点增量注册 | 8.66/s | 同上 |
 | 100/500/1000 节点 Console 快照 | 50.2 / 130.9 / 192.6 ms | 同上 |
 | PostgreSQL 节点计数查询 | 1.70–2.72 ms | 同上 |
-| Direct RTT，30 样本 | 平均 2.87 ms；p50 1.88 ms；p95 2.19 ms；最大 31.31 ms | `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T214224Z` |
-| Relay RTT，30 样本 | 平均 4.38 ms；p50 2.30 ms；p95 27.21 ms；最大 41.83 ms | 同上 |
-| Relay RTT 增量 | 平均 +1.51 ms；p95 +25.02 ms | 同上 |
+| Direct RTT，30 样本 | 平均 0.91 ms；p50 0.90 ms；p95 1.13 ms；最大 1.18 ms | `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T221036Z` |
+| Relay RTT，30 样本 | 平均 1.16 ms；p50 1.13 ms；p95 1.45 ms；最大 1.45 ms | 同上 |
+| Relay RTT 增量 | 平均 +0.25 ms；p95 +0.32 ms | 同上 |
+| Linux Agent 空闲资源（每实例） | 平均 0.55% 单核 CPU；7.95 MiB RSS；9 线程；15 FD | 同上 |
 
 ## 3. 运行时短时校准
 
