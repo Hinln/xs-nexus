@@ -26,6 +26,7 @@ uuid.workspace = true
 zeroize.workspace = true
 xs-core = { path = "../../crates/core" }
 xs-protocol = { path = "../../crates/protocol" }
+xs-windows-transport = { path = "../../crates/windows-transport" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 netlink-sys.workspace = true

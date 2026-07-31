@@ -192,6 +192,8 @@ M5.1 在开发服务器安装并验证以下发行版构建包：
 
 这些是构建主机工具，不进入 Agent 运行时产物。实际 x86_64 与 aarch64 构建证据位于 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。正式签名私钥不得安装或持久化在该开发服务器。
 
+M6.1 进一步确认当前 Rust 1.93.1 包含匹配 `rust-src`，Cargo 可在 `RUSTC_BOOTSTRAP=1` 下使用 `-Z build-std`。`crates/windows-transport` 不依赖 `std` 或 SDK C 头，已用 `core,alloc,panic_abort` 为 `x86_64-pc-windows-msvc` 实际 check 和 Clippy。完整 Agent 的 Windows check 会在 TLS 依赖 `ring` 编译时因缺少 Windows SDK `assert.h`、`lib.exe` 等失败；服务器仍没有 Windows SDK、WDK、MSBuild、UMDF/NetAdapterCx targets 或 VM。证据：`/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`。
+
 ---
 
 ## 11. Docker / 1Panel 部署环境

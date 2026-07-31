@@ -2,15 +2,22 @@
 
 ## Status
 
-The safe transport contract is implemented in `apps/agent/src/windows_xsnet.rs`. The Win32 device transport is not implemented or compiled. This document is a build and review specification, not Windows execution evidence.
+The safe transport contract is implemented in `apps/agent/src/windows_xsnet.rs`. The isolated `no_std + alloc` Win32 boundary is implemented in `crates/windows-transport` and compiles for `x86_64-pc-windows-msvc` with `windows-sys`; the Agent adapter maps it to `XsnetTransport`. This is source and cross-target compile evidence only: the complete Agent is not linked for Windows, and no device, WDK, VM, cancellation, PnP, or packet I/O has executed.
 
 Runtime version and package replacement rules are defined in `WINDOWS_XSNET_COMPATIBILITY.md`. The current transport contract is eligible only for exact ABI v1; no cross-ABI fallback or hot upgrade is implied.
 
 ## Boundary
 
-The Win32 implementation must live in a dedicated target-specific module or crate. It may only enumerate the `GUID_DEVINTERFACE_XSNET` interface, own one exclusive device handle, issue the six fixed IOCTLs, return owned response bytes, cancel or close the handle, and classify the result. It must not parse protocol state, inspect packets, perform cryptography, manage routes, log payloads, or retain borrowed request buffers.
+The Win32 implementation lives in a dedicated crate. It only enumerates the `GUID_DEVINTERFACE_XSNET` interface, owns one exclusive device handle, issues the six fixed IOCTLs, returns owned response bytes, closes the handle, and classifies the result. It does not parse protocol state, inspect packets, perform cryptography, manage routes, log payloads, or retain borrowed request buffers.
 
-The existing Agent crate remains `#![forbid(unsafe_code)]`. Any required Win32 `unsafe` must be isolated behind the `XsnetTransport` trait, use the smallest possible blocks, deny unsafe operations inside unsafe functions, and receive a separate source audit. The workspace lint must not be weakened globally to admit the transport.
+The existing Agent crate remains `#![forbid(unsafe_code)]`. The transport crate denies unsafe by default and permits it only in `platform.rs`; five explicit blocks cover two Configuration Manager calls, `CreateFileW`, `DeviceIoControl`, and `CloseHandle`. Unsafe operations inside unsafe functions are denied, and the source validator fixes the block count and required calls. The workspace lint is not weakened globally.
+
+## Compile boundary
+
+- `scripts/test-windows-xsnet-transport.sh` uses the repository's locked dependencies and matching `rust-src` to build only `core`, `alloc`, and `panic_abort` for `x86_64-pc-windows-msvc`;
+- the same target runs Clippy with warnings denied, so `platform.rs` is compiled and linted rather than text-scanned alone;
+- the crate intentionally avoids `std`, networking, threads, async runtimes and SDK C headers; this keeps the FFI boundary independently checkable on the Linux development server;
+- the full Agent still requires a Windows Rust/SDK C environment because its TLS dependency builds `ring`; the driver still requires WDK/NetAdapterCx. Neither result is inferred from the minimal crate check.
 
 ## Handle lifecycle
 
@@ -42,10 +49,10 @@ No result path may retry automatically. Known rejection reuses the same sequence
 
 ## Required validation
 
-Before the Win32 transport can be connected to runtime, all of the following are mandatory:
+Before the Win32 transport can be enabled by the Windows runtime, all of the following are mandatory:
 
-- compile the actual Windows target with the pinned SDK and Rust toolchain;
-- source-audit every unsafe block and handle conversion;
+- compile and link the complete Agent Windows target with the pinned SDK and Rust toolchain;
+- repeat the completed unsafe source audit in the pinned Windows build environment;
 - run ABI/IOCTL fixed vectors against the built driver;
 - inject every documented driver rejection and verify sequence reuse only for proven no-commit statuses;
 - cancel and remove the device around every IOCTL and verify reconnect without double completion;

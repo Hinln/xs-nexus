@@ -21,7 +21,7 @@
   - Relay；
   - Console；
   - 驱动代码和交叉构建准备。
-- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；Clang Release、ASan/UBSan、workspace 单测、Agent Clippy、源码不变量和本地 PowerShell 语法验证已通过。测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows 操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
+- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 `no_std + alloc` Win32 transport、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；transport 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、Agent Clippy、源码不变量和本地 PowerShell 语法验证已通过。完整 Agent 在缺少 Windows SDK C 头时无法构建，测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows API 和设备操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
 - 解除步骤：用户提供可测试 VM，Codex执行安装和验证。
 
 ---

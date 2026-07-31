@@ -1,0 +1,16 @@
+[package]
+name = "xs-windows-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

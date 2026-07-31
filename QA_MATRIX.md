@@ -237,7 +237,10 @@
 - 2026-07-31 连续三轮源码门禁、四组 Release/ASan/UBSan 测试和安装器门禁均通过；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`；
 - 生命周期模型加入后再次连续三轮通过五组 Release/ASan/UBSan、源码与安装器门禁；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
 - `apps/agent/src/windows_xsnet.rs` 的 6 个测试覆盖 C ABI/IOCTL 固定向量、完整 Hello/Attach/SetLink/TX 流程、规范 IPv4 批次、单飞请求、已知拒绝复用 sequence、未知结果强制重连和畸形响应失败关闭；完整 workspace 单测、真实 PostgreSQL Agent 控制面、Clippy、五组 C 测试和安装器门禁证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`；
-- 第 7 个 transport 分类测试覆盖权威拒绝保留状态、不确定结果强制重连和畸形成功响应毒化；完整回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`。Win32 transport 仍未实现，`docs/WINDOWS_XSNET_TRANSPORT.md` 的设备枚举、同步 buffer 映射、取消和 `unsafe` 审计只能在 Windows 构建与 VM 中验收；
+- 第 7 个 transport 分类测试覆盖权威拒绝保留状态、不确定结果强制重连和畸形成功响应毒化；原契约证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`；
+- `crates/windows-transport` 以 `no_std + alloc` 实现精确 GUID 单接口解析、独占同步 handle、六个 IOCTL、buffered/IN_DIRECT/OUT_DIRECT 映射、初始化输出、输入复制和全失败 Indeterminate；Agent 保持 `#![forbid(unsafe_code)]`，五个 unsafe 块只存在于平台文件；
+- `scripts/test-windows-xsnet-transport.sh` 实际为 `x86_64-pc-windows-msvc` 构建 core/alloc 与 transport，并对同一 target 运行 Clippy `-D warnings`；Linux 测试覆盖错误映射、超限、未知 IOCTL、空/多接口和非 Windows 打开拒绝；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`；
+- 以上未链接完整 Windows Agent，未调用真实 Configuration Manager、CreateFileW、DeviceIoControl 或 CloseHandle，也未执行取消、设备移除或 WDK/VM；这些验收继续由 `BLK-001` 阻塞；
 - `scripts/windows/build-xsnet-test-package.ps1` 只在显式确认的 Windows 11 26100+ 管理员测试 VM 中运行，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先嵌入签名 DLL 再生成并签名 `10_GE_X64` catalog、SHA-256 test signer 和精确 INF/CAT/DLL allowlist；不修改 BCD、信任根或测试签名策略；
 - `scripts/windows/invoke-xsnet-test-vm-stage.ps1` 以 Initialize/Install/EnableVerifier/CollectVerifier/DisableVerifier/Uninstall 六个不可复用阶段保存系统、网卡、路由、设备、驱动、Verifier 和错误事件证据；要求相同 VM/快照声明、Verifier 前后两次人工重启、精确健康状态和卸载零残留，最终生成 SHA-256 证据清单；
 - `scripts/validate-windows-xsnet-vm.py` 禁止下载、BCD、执行策略绕过、自动重启、无限等待和验收伪声明；本地 Windows PowerShell parser 已对两份新增脚本零语法错误解析。以上仅证明源码门禁，未执行 WDK、签名、Verifier 或任何设备操作；

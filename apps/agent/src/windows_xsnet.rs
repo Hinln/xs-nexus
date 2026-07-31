@@ -99,6 +99,41 @@ pub trait XsnetTransport {
     fn execute(&mut self, request: &PreparedRequest) -> TransportOutcome;
 }
 
+#[derive(Debug)]
+pub struct Win32DeviceTransport {
+    inner: xs_windows_transport::DeviceTransport,
+}
+
+impl Win32DeviceTransport {
+    /// Opens the single present xsnet device interface with an exclusive synchronous handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the platform is unsupported or the interface cannot be uniquely opened.
+    pub fn open() -> Result<Self, xs_windows_transport::OpenError> {
+        Ok(Self {
+            inner: xs_windows_transport::DeviceTransport::open()?,
+        })
+    }
+}
+
+impl XsnetTransport for Win32DeviceTransport {
+    fn execute(&mut self, request: &PreparedRequest) -> TransportOutcome {
+        let Ok(request) = xs_windows_transport::Request::new(
+            request.ioctl(),
+            request.buffered_input(),
+            request.direct_input(),
+            request.direct_output_capacity(),
+        ) else {
+            return TransportOutcome::Indeterminate;
+        };
+        match self.inner.execute(request) {
+            xs_windows_transport::Outcome::Success(response) => TransportOutcome::Success(response),
+            xs_windows_transport::Outcome::Indeterminate => TransportOutcome::Indeterminate,
+        }
+    }
+}
+
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ExecutionError {
     #[error(transparent)]
@@ -802,5 +837,14 @@ mod tests {
             Err(ExecutionError::Client(ClientError::InvalidResponse))
         );
         assert_eq!(malformed_client.state(), ClientState::ReconnectRequired);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn win32_transport_rejects_non_windows_hosts() {
+        assert!(matches!(
+            Win32DeviceTransport::open(),
+            Err(xs_windows_transport::OpenError::UnsupportedPlatform)
+        ));
     }
 }

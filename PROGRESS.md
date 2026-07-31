@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 02:45 UTC
-当前 Git 提交：源码供应链与独立实现验收检查点准备中（以本文件所在提交为准）
+最后更新时间：2026-07-31 03:14 UTC
+当前 Git 提交：M6.1 隔离 Win32 transport 检查点准备中（以本文件所在提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
 当前里程碑：`M6.1 Windows 驱动设计和构建`
 
@@ -92,8 +92,8 @@
 - 已实现 NetAdapterCx 有界 ring 复制、同步 direct-I/O 请求、双队列 SetLink 门禁、协商深度限制和停止/取消断链，并加入快照测试 VM 专用的严格安装/卸载脚本；Windows 源码和脚本均未执行真实 WDK/设备操作。
 - 固定种子压力测试分别执行 30,000 轮任意消息、写入、批次、会话和队列操作，并对六类有效消息逐字节变异；2026-07-31 三轮严格回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`。
 - 生命周期 harness 穷举 cleanup、双队列 cancel、D0 exit、hardware release 和 I/O stop 的全部 720 种顺序，验证取消/完成单次归属、睡眠后重新认证、队列重启和重复 teardown 幂等；三轮证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`。
-- Rust Agent 侧 ABI 客户端完成固定 IOCTL/字节布局、单飞请求、成功后提交、已知拒绝重试、不确定结果强制重连及 TX/RX 规范 IPv4 批次校验；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`，尚未实现 Windows API transport。
-- 安全 `XsnetTransport` 契约完成只读请求、Success/Rejected/Indeterminate 分类和畸形成功响应毒化；同步 Win32 handle/buffer/取消/unsafe 规范写入 `docs/WINDOWS_XSNET_TRANSPORT.md`，实际 FFI 因缺少 Windows 标准库保持未实现并登记 `KI-018`。
+- Rust Agent 侧 ABI 客户端完成固定 IOCTL/字节布局、单飞请求、成功后提交、已知拒绝重试、不确定结果强制重连及 TX/RX 规范 IPv4 批次校验；原证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-client-20260731T015229Z`。
+- 安全 `XsnetTransport` 契约已接入隔离 `no_std + alloc` Win32 crate；精确 GUID 单接口、独占同步 handle、六 IOCTL、三类 buffer 映射、初始化所有权和五个 unsafe 块通过实际 MSVC target check、交叉 Clippy 和源码门禁，证据 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`。
 - transport 契约完整回归证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`，覆盖 workspace 单测、真实 PostgreSQL Agent 控制面、Clippy、C Release/ASan/UBSan、安装器、秘密扫描和宿主残留复核。
 - 新增只面向快照 VM 的测试包构建脚本，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先签 DLL 再生成 catalog 并签 catalog、`10_GE_X64`、SHA-256 test signing、精确三文件 allowlist 和哈希清单；不创建证书、不修改 BCD、信任或测试签名策略。
 - 新增 Initialize/Install/EnableVerifier/CollectVerifier/DisableVerifier/Uninstall 六阶段 VM 编排，要求可识别 VM、相同快照声明、阶段不可覆盖、Verifier 前后人工重启、精确设备状态、卸载零残留和最终证据哈希；CollectVerifier 明确不包含场景结果或验收声明。
@@ -112,15 +112,15 @@
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步仍是最小 Windows transport，但当前没有可编译 Windows Rust/SDK 环境；
+- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步是完整 Agent Windows 编译链接与 VM 执行，当前缺少 Windows SDK/WDK/VM；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 - Acceptance A 已有源码和文档证据；容器操作系统 SBOM、许可证全文和构建来源证明仍留在 Release Checklist，不提前宣称完整 RC 供应链。
 
 ## 下一步
 
-1. 获得可编译 Windows Rust target/SDK 后实现并审计最小 Win32 transport；
-2. 获得 Windows VM 后执行 WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
+1. 获得 Windows Rust/SDK 环境后编译链接完整 Agent，并复核隔离 unsafe 与句柄 ABI；
+2. 获得 Windows VM 后执行设备枚举、六 IOCTL、WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
 3. 在 VM 中验证 exact ABI 拒绝、重复 clean install 和快照回滚，再设计生产升级事务；
 4. 保持 M6.2 驱动签名人工门禁，不提前进入依赖核心完成的 M7。
 
@@ -128,20 +128,20 @@
 
 ```bash
 git status --short --branch
-command -v rustup || true
-rustc --print target-libdir --target x86_64-pc-windows-msvc 2>&1 || true
+make test-windows-xsnet-transport
+make test-windows-xsnet-source
 sed -n '1,260p' docs/WINDOWS_XSNET_TRANSPORT.md
 sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 ```
 
 ## 最近测试
 
-- 时间：2026-07-31 02:45 UTC；
+- 时间：2026-07-31 03:09 UTC；
 - 环境：Ubuntu 26.04 LTS，Linux 7.0.0-1008-gcp，x86_64；
-- 命令：`make test-independent-implementation`、`make test-source-sbom`、实际 `make source-sbom`、`make test-spec`、`make security-check`、`npm audit --audit-level=high`、Python bytecode 检查、JSON 结构/计数检查和 `git diff --check`；
+- 命令：`make test-windows-xsnet-transport`、`make test-windows-xsnet-source`、transport/Agent 单测、Linux 与 MSVC target Clippy、workspace 全量构建/测试、C Release/ASan/UBSan、安装器/VM/兼容门禁、供应链与秘密扫描；
 - 结果：通过；
-- 证据：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`；
-- 覆盖：全运行源码禁用引用、clean-room/协议原创性文档、431 个锁定源码依赖、全部许可证、Cargo SHA-256、npm SHA-512 integrity、CycloneDX 1.6、SPDX 2.3、确定性输出和拒绝路径；namespace/TUN、默认路由、规范化 nftables、失败服务和完整 `1panel-network` 前后比较。
+- 证据：`/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`；
+- 覆盖：`no_std + alloc` Win32 crate、实际 MSVC target check、交叉 Clippy、精确 GUID/接口、独占同步 handle、六 IOCTL、buffer mapping、五个 unsafe 块、全失败 Indeterminate、Agent 适配与非 Windows 拒绝；以及 workspace、C 驱动模型、安装器、供应链、秘密、namespace/TUN、默认路由、规范化 nftables、失败服务和完整 `1panel-network` 前后比较。
 
 ## 当前失败
 
@@ -172,7 +172,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 ## 当前风险
 
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
-- Windows 驱动源码尚未经过 WDK 编译和 VM 执行，真实设备尚未接入；
+- Windows transport 最小 crate 已通过 MSVC target 编译，但完整 Agent/驱动尚未经过 Windows SDK/WDK 编译链接和 VM 执行，真实设备尚未接入；
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
 - 源码依赖 SBOM 已可复现生成，但容器操作系统包、许可证全文和最终构建来源证明尚未完成；
 - PostgreSQL、Redis 现有公网端口仍可达；

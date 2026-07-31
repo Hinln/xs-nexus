@@ -632,3 +632,15 @@
 - 原因：同时覆盖当前主机未安装的可选平台包、保留锁文件内容身份、消除生成期网络依赖，并使依赖变化必须通过可审查的 lock/snapshot diff 和负向测试。
 - 代价：npm 依赖变化必须通过独立受控步骤刷新许可证快照；源码 SBOM 不含容器操作系统包、许可证全文或最终镜像摘要，不能直接满足完整 RC 供应链清单。
 - 安全影响：未知许可证、快照缺项或多项、checksum/integrity 缺失、禁用产品依赖和新增运行路径引用都会阻断 CI；允许许可证表达式保留原始选择语义，只把非标准斜杠写法规范化为 SPDX `OR`，不把未知条款误标为已批准。
+
+---
+
+## ADR-054：Win32 FFI 使用独立 no_std crate 和五块可计数 unsafe
+
+- 状态：接受
+- 日期：2026-07-31
+- 背景：Agent 全局禁止 unsafe；开发服务器没有 Windows SDK/WDK，完整 Agent 的 TLS 依赖需要 SDK C 头，但 Cargo 能从匹配 `rust-src` 为 MSVC target 构建 core/alloc。继续等待 VM 会让最小 FFI 长期无编译证据，直接放宽 Agent lint 又会扩大审计面。
+- 决策：新增 `xs-windows-transport` workspace crate，使用 `no_std + alloc` 和 target-specific `windows-sys 0.61.2`。crate 默认 deny unsafe，只在 `platform.rs` 允许五个块，分别包围两次 Configuration Manager 查询、`CreateFileW`、`DeviceIoControl` 与 `CloseHandle`；Agent 只通过安全请求/结果类型和 `XsnetTransport` 适配。MSVC target 只构建 core/alloc/panic_abort，并同时运行 Clippy warnings-as-errors。
+- 原因：无需伪造 SDK/WDK 即可真实编译 Windows API 绑定和所有 unsafe 路径，同时保持 Agent、协议、密码学、路由和包解析完全安全 Rust；固定块数让新增 unsafe 必须显式修改门禁与评审。
+- 代价：最小 crate check 不能证明完整 Agent 链接、Windows loader、设备 ACL、真实 buffer 映射、取消、PnP/power 或驱动行为；`RUSTC_BOOTSTRAP=1 -Z build-std` 只作为当前 Linux 准备门禁，正式构建仍需固定 Windows 工具链。
+- 安全影响：接口列表必须恰有一个规范 `\\?\` 路径，handle 读写且零共享、非 overlapped；所有长度先转 u32，输出预初始化，RX 使用自有副本并检测写入；任何 Win32 失败或异常成功都为 Indeterminate，不复用 sequence。

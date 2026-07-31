@@ -235,16 +235,16 @@
 
 ---
 
-## KI-018 Windows Agent Win32 transport 尚未实现
+## KI-018 Windows Agent Win32 transport 尚未完成整包和实机验证
 
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-07-31
-- 影响：Rust Agent 已能编码、验证和恢复 xsnet ABI 状态，但尚不能枚举设备接口、打开独占 handle 或调用 `DeviceIoControl`，因此不能在 Windows 收发数据。
-- 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果，所有未知结果和畸形成功响应强制重连；`docs/WINDOWS_XSNET_TRANSPORT.md` 固定同步 I/O、buffer 方向、句柄和 `unsafe` 隔离边界，不提交未编译 FFI。
-- 已完成缓解：7 个 Rust 测试覆盖固定 ABI/IOCTL、单飞、明确拒绝、不确定结果、畸形成功响应和恢复状态；源码门禁要求 transport 契约持续存在。
-- 计划：在具备 Windows Rust 标准库与 SDK 的受控构建环境中实现独立最小 transport，编译实际 Windows target 后进入 `BLK-001` VM 验收。
-- 解除条件：实际 Windows transport 通过编译、unsafe 审计、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。
+- 影响：隔离 Win32 transport 已实现并通过最小 Windows target 编译，但完整 Agent 因缺少 SDK C 头尚未链接，且没有在 Windows 调用设备枚举、独占 handle 或 `DeviceIoControl`；因此仍不能声明 Windows 可收发数据。
+- 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果；平台 crate 不把任何 Win32 失败映射为 Rejected，所有未知结果、异常字节数、direct 输入变异和畸形成功响应强制重连。Agent 保持全局禁止 unsafe。
+- 已完成缓解：10 个 Rust 测试覆盖 ABI/IOCTL、状态、buffer mapping、长度、接口列表与非 Windows 拒绝；五个 unsafe 块被源码门禁固定；`x86_64-pc-windows-msvc` core/alloc check 和交叉 Clippy 实际通过，证据 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`。
+- 计划：在具备 Windows Rust 标准库、SDK 和 WDK 的受控环境编译链接完整 Agent/驱动，随后进入 `BLK-001` VM 设备枚举、六 IOCTL、取消与生命周期验收。
+- 解除条件：完整 Windows Agent 与驱动通过编译、unsafe 复核、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。
 
 ---
 

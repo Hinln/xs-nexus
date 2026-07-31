@@ -188,3 +188,12 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 首次 CycloneDX/SPDX 实际生成保留 Cargo metadata 中 `Apache-2.0/MIT` 与 `MIT/Apache-2.0` 历史写法；策略解析虽能判断，但斜杠不是规范 SPDX 运算符。生成器现只把这两种明确写法规范化为 `OR`，测试要求所有组件表达式不含 `/`，未丢弃原许可证选择。
 - 独立实现扫描器首轮把 SBOM 生成器和测试自身的禁用词策略表判为运行依赖并失败；修复只排除三份策略工具本身，Agent、Controller、Relay、协议、驱动、安装器、部署及其他脚本仍全量扫描，三个真实负向引用继续按路径、词和精确数量固定。
 - 早期证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731T024136Z` 保留，仅证明首版结构和主机基线；由于包含非规范斜杠许可证表达式，不作为验收证据。最终证据为 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。
+
+---
+
+## M6.1 Win32 transport 已闭环缺陷
+
+- 首次完整 Agent MSVC check 成功构建 Windows core/std 后在 `ring` 找不到 `lib.exe`，指定 `clang-cl` 后进一步证明缺少 Windows SDK `assert.h`；未把该失败写成 transport 编译结果，也未安装或伪造 SDK。transport 被隔离为不依赖 TLS/C 头的最小 crate，完整 Agent 继续由 `BLK-001` 阻塞。
+- 最小 crate 初次 `-Z build-std=std` 因发行版 rust-src 的 Windows std 内部 `windows_targets` 不完整失败；将 crate 收紧为 `no_std + alloc`，只构建实际需要的 core/alloc/panic_abort，随后 MSVC target check 通过。
+- Linux Clippy 首次拒绝只在 Windows 使用的私有访问器 dead code；用 `cfg(windows)` 限定真实使用点、接口解析保留 `cfg(test)`，没有添加 allow。交叉 Clippy 随后拒绝两个隐式 borrow-to-pointer，改为 Rust 2024 `&raw mut` 后 warnings-as-errors 通过。
+- 一次同步命令把 Agent 源文件误放到 `apps/agent/windows_xsnet.rs`；删除前逐字节 SHA-256 核对它等于本地待同步文件，再写入正确 `src/` 路径。错误文件未进入 Git，Agent 新增非 Windows 拒绝测试随后从 31 增至 32 个并实际执行。

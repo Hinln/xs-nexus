@@ -222,6 +222,12 @@ def validate_portable_tests() -> None:
 
 
 def validate_agent_client() -> None:
+    transport = (ROOT / "crates" / "windows-transport" / "src" / "lib.rs").read_text(
+        encoding="utf-8"
+    )
+    platform = (
+        ROOT / "crates" / "windows-transport" / "src" / "platform.rs"
+    ).read_text(encoding="utf-8")
     require_text(
         ROOT / "apps" / "agent" / "src" / "windows_xsnet.rs",
         [
@@ -239,12 +245,53 @@ def validate_agent_client() -> None:
             "transport_classification_controls_recovery",
             "0x8337_e00e",
             "0x8337_e011",
+            "pub struct Win32DeviceTransport",
+            "xs_windows_transport::Request::new",
+            "xs_windows_transport::Outcome::Indeterminate",
         ],
     )
     require_text(
         ROOT / "apps" / "agent" / "src" / "lib.rs",
         ["pub mod windows_xsnet;"],
     )
+    for value in (
+        "#![no_std]",
+        "#![deny(unsafe_code)]",
+        "#[allow(unsafe_code)]\nmod platform;",
+        "RequestKind::Buffered",
+        "RequestKind::Dequeue",
+        "RequestKind::Enqueue",
+        "UnsupportedIoctl",
+        "InvalidBuffers",
+        "AmbiguousInterface",
+    ):
+        if value not in transport:
+            fail(f"Windows transport boundary missing invariant: {value}")
+    for value in (
+        "CM_Get_Device_Interface_List_SizeW",
+        "CM_Get_Device_Interface_ListW",
+        "GUID_DEVINTERFACE_XSNET",
+        "GENERIC_READ | GENERIC_WRITE",
+        "CreateFileW",
+        "DeviceIoControl",
+        "direct_input.as_slice() == request.direct_input()",
+        "Outcome::Indeterminate",
+        "&raw mut character_count",
+        "&raw mut bytes_returned",
+    ):
+        if value not in platform:
+            fail(f"Win32 platform transport missing invariant: {value}")
+    if transport.count("unsafe {") != 0 or platform.count("unsafe {") != 5:
+        fail("Win32 unsafe blocks must remain isolated and exactly counted")
+    for forbidden in (
+        "FILE_FLAG_OVERLAPPED",
+        "GetLastError",
+        "loop {",
+        "std::thread",
+        "METHOD_NEITHER",
+    ):
+        if forbidden in platform:
+            fail(f"Win32 platform transport contains forbidden behavior: {forbidden}")
     require_text(
         ROOT / "docs" / "WINDOWS_XSNET_TRANSPORT.md",
         [
