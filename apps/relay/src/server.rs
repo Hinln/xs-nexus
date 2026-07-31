@@ -688,7 +688,10 @@ fn unix_time() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::{
+        fs,
+        net::{Ipv4Addr, SocketAddrV4},
+    };
 
     use ed25519_dalek::VerifyingKey;
     use tokio::time::{sleep, timeout};
@@ -818,6 +821,67 @@ mod tests {
         relay.shutdown().await;
     }
 
+    #[tokio::test]
+    async fn udp_relay_throughput_baseline() {
+        const PACKETS: u32 = 10_000;
+        let relay = start_test_relay(100_000).await;
+        let first = register(&relay.context, 35, [55_u8; 16]).await;
+        let second = register(&relay.context, 36, [56_u8; 16]).await;
+        let inner = framed_xsp_keepalive(relay.context.network_id, first.node_id, second.node_id);
+        let frames = (1..=u64::from(PACKETS))
+            .map(|sequence| relay_frame(&relay.context, &first, &second, sequence, &inner))
+            .collect::<Vec<_>>();
+        let frame_bytes = u32::try_from(frames[0].len()).expect("frame length fits u32");
+        let started = Instant::now();
+        let mut received = [0_u8; RELAY_MAX_FRAME_LENGTH];
+        for window in frames.chunks(64) {
+            for frame in window {
+                first
+                    .socket
+                    .send_to(frame, relay.context.relay_endpoint)
+                    .await
+                    .expect("send throughput frame");
+            }
+            for _ in window {
+                timeout(
+                    Duration::from_secs(10),
+                    second.socket.recv_from(&mut received),
+                )
+                .await
+                .expect("throughput receive timeout")
+                .expect("receive throughput frame");
+            }
+        }
+        let elapsed = started.elapsed();
+        let snapshot = relay.metrics.snapshot();
+        assert_eq!(snapshot.packets_forwarded, u64::from(PACKETS));
+        assert_eq!(snapshot.packets_dropped, 0);
+        let total_bytes = PACKETS
+            .checked_mul(frame_bytes)
+            .expect("byte count fits u32");
+        let report = serde_json::json!({
+            "packets": PACKETS,
+            "frame_bytes": frame_bytes,
+            "elapsed_ms": elapsed.as_secs_f64() * 1000.0,
+            "packets_per_second": f64::from(PACKETS) / elapsed.as_secs_f64(),
+            "mib_per_second": f64::from(total_bytes) / elapsed.as_secs_f64() / 1_048_576.0,
+            "forwarding_latency_microseconds_average": snapshot.forwarding_latency_microseconds_average,
+            "forwarding_latency_microseconds_max": snapshot.forwarding_latency_microseconds_max,
+        });
+        if let Some(path) = std::env::var_os("XS_RELAY_THROUGHPUT_REPORT") {
+            fs::write(
+                path,
+                serde_json::to_vec_pretty(&report).expect("serialize Relay throughput report"),
+            )
+            .expect("write Relay throughput report");
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&report).expect("Relay throughput JSON")
+        );
+        relay.shutdown().await;
+    }
+
     fn test_config(
         relay_id: [u8; 16],
         controller_credential_key: VerifyingKey,
@@ -847,6 +911,11 @@ mod tests {
         let metrics = RelayMetrics::default();
         let mut config = test_config(relay_id, controller_key.verifying_key(), relay_key.clone());
         config.packets_per_lease_per_second = packets_per_second;
+        if packets_per_second > 1_000 {
+            config.bytes_per_lease_per_second = 100_000_000;
+            config.queue_packets_per_node = 16_384;
+            config.queue_bytes_per_node = 32_000_000;
+        }
         let server = RelayServer::new(config, metrics.clone());
         let socket = Arc::new(
             UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))

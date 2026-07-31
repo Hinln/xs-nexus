@@ -371,6 +371,7 @@
 - `XS_STABILITY_DURATION_SECONDS=30 XS_STABILITY_SAMPLE_INTERVAL_SECONDS=5 make test-docker-deployment` 通过，证据：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T205004Z`。采样覆盖完整容器进程树，Controller/Relay/Console 分别验证重启恢复、RSS、FD、线程、日志大小和进程 PID 变化。
 - 24 小时稳定性、加密吞吐、Direct/Relay RTT、WebSocket 广播、Relay 限速拥塞和长时间日志曲线仍未完成，不得以本节短时证据勾选 M7.3 全部 MUST。
 - `make test-protocol-throughput` 在 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 seal/open，结果 161,314 往返/s、184.61 MiB/s；证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`。该结果覆盖 AEAD 与协议校验，但不包含 TUN、UDP socket、Relay 或公网路径开销。
+- `make test-relay-throughput` 使用真实 UDP Relay、认证注册和两节点 Lease 转发 10,000 个帧，64 帧窗口下为 87,822 包/s、18.09 MiB/s，内部转发延迟平均 4 µs、最大 161 µs，指标断言零协议丢弃；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z`。首次无限突发因测试接收 socket 缓冲区丢包失败，未作为产品结论；有界窗口保留真实 Relay 全路径。
 
 - 首次聚合第 1 轮通过 Linux 全链路、M6.1 源码门禁、UI 与供应链处置；第 2 轮在候选路径测试捕获单向探测被误当作双向就绪的竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`。
 - 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。

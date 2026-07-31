@@ -200,6 +200,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 新增 Controller 真实 API 规模测试 `make test-controller-scale`，使用独立 `xs_nexus_scale` schema、20 个受限 token、32 路并发注册，验证 100/500/1000 活动节点、地址唯一性、Console 快照和数据库查询。证据 `/srv/xs-nexus/artifacts/qa/controller-scale-20260731T210210Z`：100 节点 39.18 注册/s，500 节点增量 18.20/s，1000 节点增量 8.66/s；快照 50/131/193 ms，计数查询约 2 ms，总耗时 83 秒。
 - 运行时稳定性仍需完整 24 小时曲线；当前短时资源数据用于校准，不替代 24 小时验收。加密吞吐、Direct/Relay RTT、WebSocket 广播和 Relay 拥塞长测仍待补齐。
 - 新增 `make test-protocol-throughput`，以 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 ChaCha20-Poly1305 seal/open、身份绑定、重放窗口和 IPv4 校验；有效证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z` 为 161,314 次加密+解密往返/s、184.61 MiB/s 明文吞吐。该单进程 loopback CPU 基线不等于 Agent/TUN 或公网端到端吞吐。
+- 新增 `make test-relay-throughput`，在 release profile 通过真实 UDP Relay、两份认证 Lease、重放/速率/队列门禁和 64 帧有界窗口转发 10,000 个 216 字节 XSR/1 帧；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z` 为 87,822 包/s、18.09 MiB/s，Relay 内部转发延迟平均 4 µs、最大 161 µs，零协议丢弃。该 loopback 基线不等于公网 Relay 容量或 RTT。
 
 ## 恢复说明
 
