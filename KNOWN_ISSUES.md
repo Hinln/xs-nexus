@@ -251,10 +251,7 @@
 ## KI-019 源码 SBOM 尚未覆盖容器操作系统包和许可证全文（已解除）
 
 - 严重度：中
-- 状态：开放
-- 首次发现：2026-07-31
-- 影响：CycloneDX/SPDX 已覆盖全部 431 个 Cargo/npm 锁定依赖，但 Controller、Relay、Console、PostgreSQL 运维镜像中的 Debian、Alpine、NGINX 和系统包尚未逐镜像固定摘要、导出包清单与许可证文本，因此不能把源码 SBOM 描述为完整 RC SBOM。
-- 临时缓解（历史）：manifest 明确区分源码依赖与运行镜像，避免过度声明。
+- 状态：已解除\n- 首次发现：2026-07-31\n- 影响（历史）：源码 SBOM 不能单独证明运行镜像中的 Debian、Alpine、NGINX 和系统包。\n- 临时缓解（历史）：manifest 明确区分源码依赖与运行镜像，避免过度声明。manifest 明确区分源码依赖与运行镜像，避免过度声明。
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final` 验证 321 个 Cargo、110 个 npm、许可证策略、禁用依赖、确定性双格式输出和宿主基线不变。
 - 已完成：从 exact image rootfs 生成 dpkg/apk OS 包 CycloneDX、113/113 包逐包许可证全文闭包、Dockerfile hash 和 in-toto/SLSA provenance；四镜像干净构建、双生成一致性、revision mismatch 拒绝和宿主保护验证均通过。
 - 解除证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z` 绑定精确 revision、四个 image ID、113 个 OS 包、逐包许可证材料和 provenance；Grype 扫描与 disposition 另有同目录证据。
