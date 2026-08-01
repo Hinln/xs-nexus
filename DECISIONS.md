@@ -789,3 +789,13 @@
 - Decision: Every installed OS package must have one deterministic closure record. Debian packages resolve to exact package copyright material, following only a safe one-component `/usr/share/doc` link. Alpine SPDX expressions resolve to official text files copied from the distribution's `spdx-licenses-text` build package; that package is removed before the final package database is recorded. Public-domain and virtual package cases are explicit states, while non-SPDX nginx declarations require package-specific COPYRIGHT material.
 - Rationale: A package-manager declaration or an arbitrary collection of rootfs license files does not prove that the exact installed package set has complete corresponding material. Package-count equality, exact paths and content hashes make omissions and package-set drift detectable offline.
 - Security impact: Missing text, wrong SPDX mapping, unsafe paths/links, duplicate package identities, unbound material and closure-count drift fail closed. The validator independently hashes every referenced file.
+
+---
+
+## ADR-068: Stability acceptance must prove restart identity transitions
+
+- Date: 2026-08-01
+- Status: Accepted
+- Decision: A long-run stability result is insufficient if it only observes health after a restart command. The evidence summary must prove each service's container PID changed and its Docker restart counter increased, while retaining resource and log bounds.
+- Rationale: A restart command can target the wrong container, fail silently, or leave the original process alive. PID and counter assertions bind the claimed recovery to the service under test.
+- Scope: This hardening affects future runs of `scripts/test-runtime-stability.sh`; the currently running 24-hour run remains separately identified by its recorded start revision and evidence directory.
