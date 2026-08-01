@@ -193,6 +193,10 @@ for service in ("controller", "relay", "console"):
     assert max(item["fds"] for item in samples) < 512, f"{service} exceeded 512 file descriptors"
     assert max(item["threads"] for item in samples) < 256, f"{service} exceeded 256 threads"
     assert max(item["log_bytes"] for item in samples) <= 50 * 1024 * 1024, f"{service} log rotation bound exceeded"
+    observed_pids = sorted({item["pid"] for item in samples})
+    assert len(observed_pids) >= 2, f"{service} restart did not change the container PID"
+    restart_counts = [item["restart_count"] for item in samples]
+    assert max(restart_counts) >= before["restart_count"] + 1, f"{service} restart counter did not increase"
     summary[service] = {
         "samples": len(samples),
         "rss_kib_min": min(item["rss_kib"] for item in samples),
@@ -204,7 +208,9 @@ for service in ("controller", "relay", "console"):
         "cpu_ticks_delta": max(item["cpu_ticks"] for item in samples) - min(item["cpu_ticks"] for item in samples),
         "log_bytes_start": before["log_bytes"],
         "log_bytes_end": after["log_bytes"],
-        "observed_pids": sorted({item["pid"] for item in samples}),
+        "restart_count_start": before["restart_count"],
+        "restart_count_end": after["restart_count"],
+        "observed_pids": observed_pids,
     }
 
 Path(sys.argv[2]).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
