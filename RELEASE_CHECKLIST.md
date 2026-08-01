@@ -4,12 +4,12 @@
 
 ## 源代码
 
-- [ ] Git 状态干净
-- [ ] 固定提交哈希
-- [ ] 无秘密
-- [ ] 无未知大文件
-- [ ] 格式化通过
-- [ ] 静态分析通过
+- [x] Git 状态干净（当前检查点）
+- [x] 固定提交哈希（Git 检查点）
+- [x] 无秘密（秘密扫描通过）
+- [x] 无未知大文件（仓库清单审计）
+- [x] 格式化通过
+- [x] 静态分析通过
 - [x] 依赖锁定（Cargo/npm 源码依赖）
 - [x] THIRD_PARTY 完整（431 个源码依赖与许可证）
 - [x] SBOM 生成（源码 CycloneDX/SPDX 与四个运行镜像 OS 包/逐包许可证闭包均完成）
@@ -26,27 +26,27 @@
 - [ ] Windows Agent
 - [ ] Windows Driver
 - [x] 安装包（M5.1 测试签名范围）
-- [ ] 确定性或可追溯构建信息
+- [x] 确定性或可追溯构建信息（image digest、Dockerfile hash、revision、provenance）
 
 ## 测试
 
-- [ ] 单元
-- [ ] 集成
-- [ ] 网络实验
-- [ ] 协议负向
-- [ ] NAT
-- [ ] Relay
-- [ ] ACL
-- [ ] 子网路由
-- [ ] Playwright
-- [ ] 视觉
+- [x] 单元
+- [x] 集成
+- [x] 网络实验
+- [x] 协议负向
+- [x] NAT
+- [x] Relay
+- [x] ACL
+- [x] 子网路由
+- [x] Playwright
+- [x] 视觉
 - [x] 安装（Linux M5.1）
 - [x] 升级（Linux M5.1）
 - [x] 回滚（Linux M5.1）
 - [x] 卸载（Linux M5.1）
 - [ ] 稳定性（24 小时长测仍在运行）
-- [ ] 安全检查
-- [ ] Driver Verifier，或明确外部阻塞
+- [x] 安全检查
+- [x] Driver Verifier，或明确外部阻塞（BLK-001）
 
 ## 部署
 
