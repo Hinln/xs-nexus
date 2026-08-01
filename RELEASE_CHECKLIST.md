@@ -12,7 +12,7 @@
 - [ ] 静态分析通过
 - [x] 依赖锁定（Cargo/npm 源码依赖）
 - [x] THIRD_PARTY 完整（431 个源码依赖与许可证）
-- [ ] SBOM 生成（源码 CycloneDX/SPDX 已完成；容器操作系统包未完成）
+- [x] SBOM 生成（源码 CycloneDX/SPDX 与四个运行镜像 OS 包/逐包许可证闭包均完成）
 - [ ] 漏洞扫描完成
 
 ## 构建
@@ -110,4 +110,4 @@
 - [x] Exact installed OS package set has one closure record per package in implementation dry runs.
 - [x] Referenced license materials are path/size/SHA-256 bound and independently rehashed.
 - [x] Missing SPDX text, unsafe rootfs paths and package identity drift fail closed.
-- [ ] Clean-commit full image build, deterministic regeneration, vulnerability scan and disposition evidence completed for this change.
+- [x] Clean-commit full image build, deterministic regeneration, vulnerability scan and disposition evidence completed at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`.

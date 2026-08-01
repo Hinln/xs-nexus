@@ -189,7 +189,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
 - Windows transport 最小 crate 已通过 MSVC target 编译，单步设备会话已通过 Linux fake transport 测试，但完整 Agent/驱动尚未经过 Windows SDK/WDK 编译链接和 VM 执行，空 TX/满 RX 权威状态和真实设备尚未验证；
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
-- 源码依赖 SBOM 已可复现生成，但容器操作系统包、许可证全文和最终构建来源证明尚未完成；
+- 源码依赖 SBOM 与四个运行镜像的 OS 包 SBOM、逐包许可证全文闭包及最终构建来源证明均已可复现生成；当前精确证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`。剩余 glibc Critical/High 有界处置不是漏洞修复，仍须按 2026-08-31 到期日或镜像/扫描/API 导入变化提前复核；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
 - 临时凭据后续必须轮换。
@@ -246,7 +246,7 @@ make clean
 - Console and db-tools retain the official Alpine SPDX text corpus while removing the build-only `spdx-licenses-text` package before final package inspection.
 - Real rootfs dry-run results: Controller 10/10, Relay 10/10, Console 32/32, db-tools 61/61 packages have closure records. Console and db-tools bind 783 and 758 license materials respectively; these dry runs are implementation evidence, not the final clean-commit QA artifact.
 - Unit coverage includes missing Alpine text, unsafe rootfs paths, safe Debian documentation links, malformed package metadata, duplicate image mappings and deterministic publication.
-- Next command after commit: `make validate-image-supply-chain`, followed by the digest-bound vulnerability scan and disposition verifier.
+- Clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z` passed deterministic image generation, package/license closure, provenance, host-state invariants, Grype scanning and the digest/API-bound vulnerability disposition verifier. Result: Critical 2, High 4, Medium 16, Negligible 24, with no currently advertised fix.
 
 该命令只删除项目 Rust 构建目录和控制台 `dist`，不操作 Docker、1Panel、网络或外部秘密。
 ## 2026-07-31 运行时镜像漏洞收敛检查点
