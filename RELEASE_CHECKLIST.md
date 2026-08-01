@@ -13,7 +13,7 @@
 - [x] 依赖锁定（Cargo/npm 源码依赖）
 - [x] THIRD_PARTY 完整（431 个源码依赖与许可证）
 - [x] SBOM 生成（源码 CycloneDX/SPDX 与四个运行镜像 OS 包/逐包许可证闭包均完成）
-- [ ] 漏洞扫描完成
+- [x] 漏洞扫描完成（Grype 0.116.1；`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`；处置门禁通过）
 
 ## 构建
 
@@ -44,7 +44,7 @@
 - [x] 升级（Linux M5.1）
 - [x] 回滚（Linux M5.1）
 - [x] 卸载（Linux M5.1）
-- [ ] 稳定性
+- [ ] 稳定性（24 小时长测仍在运行）
 - [ ] 安全检查
 - [ ] Driver Verifier，或明确外部阻塞
 
@@ -83,9 +83,9 @@
 - [x] 卸载（Linux）
 - [x] 恢复（Linux Agent 生命周期）
 - [x] 1Panel（项目部署与恢复；既有公网数据库端口仍由 `BLK-005` 阻塞）
-- [ ] 测试报告
-- [ ] 性能报告
-- [ ] FINAL_REPORT
+- [x] 测试报告（`QA_MATRIX.md` 与各阶段证据目录）
+- [x] 性能报告（`docs/PERFORMANCE_REPORT.md`；24 小时长测部分仍未完成）
+- [x] FINAL_REPORT（如实标记部分完成和生产不适用）
 
 ## 实机门禁
 
@@ -100,7 +100,7 @@
 ## 结论
 
 - [ ] 可标记 Release Candidate
-- [ ] 仍为部分完成
+- [x] 仍为部分完成
 - [ ] 不适合生产
 
 必须三选一，并在 `FINAL_REPORT.md` 给出证据。

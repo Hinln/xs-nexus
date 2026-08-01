@@ -1,7 +1,7 @@
 # XS Nexus 最终交付报告
 
 报告日期：2026-07-31  
-当前检查点：`9c89909 fix(windows): tighten route ownership semantics`
+当前检查点：`1185e12 docs(supply-chain): record license closure evidence`
 
 ## 1. 结论
 
@@ -14,11 +14,11 @@
 
 ## 2. 版本和构建
 
-- Git：`9c89909`；工作树在本报告生成前保持干净。
+- Git：`1185e12`；工作树在本报告生成前保持干净。
 - 环境：Ubuntu x86_64 开发服务器，Rust workspace；Linux 与隔离 network namespace 测试。
 - 构建：Linux x86_64/aarch64 发布构建与 Windows 相关最小 crate 的 `x86_64-pc-windows-msvc` target check 已验证。
 - 签名：Linux 测试签名流程已验证；正式离线签名密钥和签名仪式未完成。
-- SBOM：源码 CycloneDX/SPDX 与容器镜像 OS 包 SBOM 已生成；漏洞报告使用固定 Grype 0.116.1 并绑定镜像 digest。完整许可证全文和最终构建来源证明仍未完成。
+- SBOM：源码 CycloneDX/SPDX 与四个容器镜像 OS 包逐包许可证闭包、Dockerfile/revision/image digest 和 in-toto/SLSA provenance 已生成；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`。固定 Grype 0.116.1 报告为 Critical 2、High 4、Medium 16、Negligible 24，无当前可修复项；有界 disposition 已通过，但不等于漏洞修复。
 
 ## 3. 已完成功能
 
@@ -32,8 +32,8 @@
 
 ## 4. 部分完成功能
 
-- 性能报告和 24 小时稳定性测试：长测已启动，证据目录为 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，当前尚未生成最终 `summary.json`，不能提前勾选稳定性 MUST。
-- 容器镜像供应链：镜像 digest、OS SBOM、Grype 报告和 disposition 已验证；当前报告包含 2 Critical、4 High、16 Medium、24 Negligible，均无可修复版本，需 RC 前逐项复核。
+- 性能报告和 24 小时稳定性测试：长测已启动，证据目录为 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，当前已运行约 2 小时 50 分钟，尚未生成最终 `summary.json`，不能提前勾选稳定性 MUST。
+- 容器镜像供应链：113/113 个已安装 OS 包均有逐包许可证闭包；镜像 digest、OS SBOM、构建来源、Grype 报告和 disposition 已验证。当前报告包含 2 Critical、4 High、16 Medium、24 Negligible，均无可修复版本；glibc 处置有效期至 2026-08-31，变化时需提前复核。
 - Windows 路由：模型和平台 FFI 已完成静态/交叉验证，但没有 Windows SDK/WDK 编译、真实 IP Helper、DAD、PnP、睡眠恢复或设备实机证据。
 
 ## 5. 未完成功能与外部门禁
