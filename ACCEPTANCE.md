@@ -201,19 +201,21 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更�
 
 ## M. 最终文档
 
-- [ ] MUST：架构。
-- [ ] MUST：协议。
-- [ ] MUST：API。
-- [ ] MUST：安装。
-- [ ] MUST：升级。
-- [ ] MUST：卸载。
-- [ ] MUST：灾难恢复。
-- [ ] MUST：安全假设。
-- [ ] MUST：测试报告。
+- [x] MUST：架构。
+- [x] MUST：协议。
+- [x] MUST：API。
+- [x] MUST：安装。
+- [x] MUST：升级。
+- [x] MUST：卸载。
+- [x] MUST：灾难恢复。
+- [x] MUST：安全假设。
+- [x] MUST：测试报告。
 - [ ] MUST：性能报告。
-- [ ] MUST：第三方依赖。
-- [ ] MUST：最终真实报告。
-- [ ] MUST：明确当前是否适合生产。
+- [x] MUST：第三方依赖。
+- [x] MUST：最终真实报告。
+- [x] MUST：明确当前是否适合生产。
+
+证据：`docs/ARCHITECTURE.md`、`docs/XSP1_PROTOCOL.md`、`docs/CONTROLLER_API.md`、`docs/LINUX_INSTALLATION.md`、`RECOVERY_RUNBOOK.md`、`docs/SECURITY_ASSUMPTIONS.md`、`docs/THREAT_MODEL.md`、`QA_MATRIX.md`、`THIRD_PARTY.md` 与 `FINAL_REPORT.md`。性能报告 `docs/PERFORMANCE_REPORT.md` 已建立但仍为 `IN_PROGRESS`，须等待 24 小时稳定性证据后再勾选。
 
 ---
 
