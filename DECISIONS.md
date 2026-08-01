@@ -796,6 +796,6 @@
 
 - Date: 2026-08-01
 - Status: Accepted
-- Decision: A long-run stability result is insufficient if it only observes health after a restart command. The evidence summary must prove each service's container PID changed and its Docker restart counter increased, while retaining resource and log bounds.
-- Rationale: A restart command can target the wrong container, fail silently, or leave the original process alive. PID and counter assertions bind the claimed recovery to the service under test.
+- Decision: A long-run stability result is insufficient if it only observes health after a restart command. The restart command must return exactly the full target container ID, and the evidence summary must prove exactly one PID transition per service. Docker `RestartCount` must remain fixed at its pre-injection baseline because an operator-requested `docker restart` does not increment the restart-policy counter; any counter change instead proves an additional automatic restart and fails the run.
+- Rationale: A restart command can target the wrong container, fail silently, or leave the original process alive. Exact command output and PID cardinality bind the claimed recovery to the intended service, while a stable restart-policy counter excludes hidden crash recovery before or after the injected restart.
 - Scope: This hardening affects future runs of `scripts/test-runtime-stability.sh`; the currently running 24-hour run remains separately identified by its recorded start revision and evidence directory.

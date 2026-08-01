@@ -273,6 +273,8 @@ make clean
 
 ## 2026-08-01 stability gate hardening
 
-- Strengthened `scripts/test-runtime-stability.sh`: final summary now fails closed unless every controller/relay/console service shows a post-restart PID transition and an increased Docker `RestartCount`, in addition to RSS/FD/thread/log bounds.
+- Corrected `scripts/test-runtime-stability.sh` after live evidence disproved the initial `RestartCount` assumption: an operator-requested `docker restart` changes the container PID but does not increment the restart-policy counter. The future-run gate now requires exactly two observed PIDs per service and a counter fixed at its baseline, so any additional automatic restart fails closed.
+- Restart injection now uses the supported `docker restart --timeout 20` form and requires its single output line to exactly equal the full target container ID before accepting health recovery.
 - Current long test remains the pre-change run started at 2026-07-31T21:22:42Z; the script hardening applies to future runs and does not alter the active process.
 - Current HEAD static regression (`make fmt-check`, `make lint`, `make test-image-sbom`, `make security-check`) passed.
+- The incorrect intermediate gate is tracked and closed as `XS-2026-0004`; a short post-run integration will exercise the corrected script after the active 24-hour process releases its Compose environment.

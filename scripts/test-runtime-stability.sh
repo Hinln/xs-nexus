@@ -150,7 +150,11 @@ while (( $(date +%s) < deadline )); do
     if (( faults_injected == 0 && $(date +%s) >= fault_epoch )); then
         for service in controller relay console; do
             container=$(compose ps -q "$service")
-            docker restart --time 20 "$container" >"$EVIDENCE_DIR/restart-$service.txt"
+            restart_file="$EVIDENCE_DIR/restart-$service.txt"
+            docker restart --timeout 20 "$container" >"$restart_file"
+            mapfile -t restart_output <"$restart_file"
+            (( ${#restart_output[@]} == 1 ))
+            [[ ${restart_output[0]} == "$container" ]]
             wait_for_service "$service"
             sample_service "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$service"
         done
@@ -194,9 +198,11 @@ for service in ("controller", "relay", "console"):
     assert max(item["threads"] for item in samples) < 256, f"{service} exceeded 256 threads"
     assert max(item["log_bytes"] for item in samples) <= 50 * 1024 * 1024, f"{service} log rotation bound exceeded"
     observed_pids = sorted({item["pid"] for item in samples})
-    assert len(observed_pids) >= 2, f"{service} restart did not change the container PID"
+    assert len(observed_pids) == 2, f"{service} observed unexpected PID cardinality: {observed_pids}"
     restart_counts = [item["restart_count"] for item in samples]
-    assert max(restart_counts) >= before["restart_count"] + 1, f"{service} restart counter did not increase"
+    assert set(restart_counts) == {before["restart_count"]}, (
+        f"{service} had an unexpected restart-policy restart: {restart_counts}"
+    )
     summary[service] = {
         "samples": len(samples),
         "rss_kib_min": min(item["rss_kib"] for item in samples),
