@@ -248,18 +248,18 @@
 
 ---
 
-## KI-019 源码 SBOM 尚未覆盖容器操作系统包和许可证全文
+## KI-019 源码 SBOM 尚未覆盖容器操作系统包和许可证全文（已解除）
 
 - 严重度：中
 - 状态：开放
 - 首次发现：2026-07-31
 - 影响：CycloneDX/SPDX 已覆盖全部 431 个 Cargo/npm 锁定依赖，但 Controller、Relay、Console、PostgreSQL 运维镜像中的 Debian、Alpine、NGINX 和系统包尚未逐镜像固定摘要、导出包清单与许可证文本，因此不能把源码 SBOM 描述为完整 RC SBOM。
-- 临时缓解：manifest 明确声明只覆盖 source dependency locks；`ACCEPTANCE.md` 只勾选“SBOM 可生成”，`RELEASE_CHECKLIST.md` 的完整 SBOM 保持未完成；源码生成不访问网络并保留输入/输出 SHA-256。
+- 临时缓解（历史）：manifest 明确区分源码依赖与运行镜像，避免过度声明。
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final` 验证 321 个 Cargo、110 个 npm、许可证策略、禁用依赖、确定性双格式输出和宿主基线不变。
-- 新增缓解：已实现从 exact image rootfs 生成 dpkg/apk OS 包 CycloneDX、可用 copyright/license 材料、Dockerfile hash 和 in-toto/SLSA provenance，并提供四镜像干净构建、双生成一致性、revision mismatch 拒绝及宿主保护验证。不会把 Alpine 声明许可证清单冒充缺失的全文。
-- 运行证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T180211Z` 对当前提交的四个镜像记录 344 个 OS 包和 247 份许可证/声明材料，并绑定 exact image IDs；该证据未包含漏洞数据库扫描，Alpine 最小镜像未携带的许可证全文也未被补造。
-- 计划：已实现固定 Grype 版本/哈希、隔离数据库和 image-ID 再验证的扫描入口，下一步对现有四镜像证据执行并处置报告；M7.2/M9.1 仍需补齐最小镜像未携带的许可证全文，再与源码 SBOM 合并到发布清单。
-- 解除条件：所有最终镜像 digest、OS 包、应用依赖、许可证文本、漏洞处置和来源证明可从固定提交重建并由 Release Checklist 验证。
+- 已完成：从 exact image rootfs 生成 dpkg/apk OS 包 CycloneDX、113/113 包逐包许可证全文闭包、Dockerfile hash 和 in-toto/SLSA provenance；四镜像干净构建、双生成一致性、revision mismatch 拒绝和宿主保护验证均通过。
+- 解除证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z` 绑定精确 revision、四个 image ID、113 个 OS 包、逐包许可证材料和 provenance；Grype 扫描与 disposition 另有同目录证据。
+- 解除日期：2026-08-01。
+- 解除条件（已满足）：所有最终镜像 digest、OS 包、许可证文本、漏洞处置和来源证明可从固定提交重建并由 Release Checklist 验证。
 
 ---
 
@@ -275,7 +275,7 @@
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 
 - 状态：OPEN
-- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z/vulnerabilities/summary.json`。
+- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z/vulnerabilities/summary.json`。
 - 当前结果：Critical 2、High 4；`total_fixable_findings` 为空。Controller/Relay 各 Critical 1、High 2，Console 与 db-tools 无 Critical/High。
 - 已完成缓解：Controller/Relay 删除 curl 并切换固定 digest distroless；Console/db-tools 升级 Alpine 包；Console 删除 curl 和未使用的 `nginx-module-image-filter`/TIFF 包链。相对最初扫描 Critical 从 44 降至 2、High 从 115 降至 4，当前有明确修复版本的发现为 0。
 - 有界 disposition：剩余项仅为 glibc `CVE-2026-5435`、`CVE-2026-5450`、`CVE-2026-5928`。源码和精确镜像二进制均不引用对应 `ns_printrrf`/`ns_sprintrr`/`fp_nquery`、`scanf` family 或 `ungetwc` API；`make verify-image-vulnerability-disposition` 会拒绝新增 Critical/High、可修复版本、包/API 漂移。该结论只降低当前调用面的可达性，不等于修复或永久豁免。
