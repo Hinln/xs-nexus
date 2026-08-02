@@ -11,6 +11,7 @@ BAD_DATABASE_ENVIRONMENT="$TEMPORARY/bad-database.compose.env"
 BAD_IMAGE_ENVIRONMENT="$TEMPORARY/bad-image.compose.env"
 BAD_HTTP_BIND_ENVIRONMENT="$TEMPORARY/bad-http-bind.compose.env"
 BAD_UDP_BIND_ENVIRONMENT="$TEMPORARY/bad-udp-bind.compose.env"
+BAD_PORT_ENVIRONMENT="$TEMPORARY/bad-port.compose.env"
 CONTROLLER_SECRETS="$TEMPORARY/controller"
 BAD_CONTROLLER_SECRETS="$TEMPORARY/bad-controller"
 RELAY_SECRETS="$TEMPORARY/relay"
@@ -32,6 +33,8 @@ FIREWALL_BEFORE=''
 LOCAL_RETENTION_DAYS=30
 REPLICA_RETENTION_DAYS=180
 MIN_RETAINED_BACKUPS=3
+OCCUPIED_PORT=38182
+OCCUPIED_PID=''
 
 compose() {
     docker compose --env-file "$ENVIRONMENT_FILE" -f "$COMPOSE_FILE" "$@"
@@ -68,6 +71,10 @@ reset_schema() {
 
 cleanup() {
     local status=$?
+    if [[ -n $OCCUPIED_PID ]]; then
+        kill "$OCCUPIED_PID" >/dev/null 2>&1 || true
+        wait "$OCCUPIED_PID" 2>/dev/null || true
+    fi
     if [[ -f $ENVIRONMENT_FILE ]]; then
         "$STACK" --env-file "$ENVIRONMENT_FILE" down >/dev/null 2>&1 || true
     fi
@@ -254,6 +261,22 @@ if "$STACK" --env-file "$BAD_UDP_BIND_ENVIRONMENT" preflight >/dev/null 2>&1; th
     printf 'unapproved UDP bind unexpectedly passed preflight\n' >&2
     exit 1
 fi
+cp -- "$ENVIRONMENT_FILE" "$BAD_PORT_ENVIRONMENT"
+sed -i "s/^XS_CONTROLLER_HTTP_PORT=.*/XS_CONTROLLER_HTTP_PORT=$OCCUPIED_PORT/" "$BAD_PORT_ENVIRONMENT"
+chmod 0600 "$BAD_PORT_ENVIRONMENT"
+python3 -m http.server "$OCCUPIED_PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
+OCCUPIED_PID=$!
+for _attempt in $(seq 1 20); do
+    ss -H -ltn "sport = :$OCCUPIED_PORT" | grep -q . && break
+    sleep 0.1
+done
+if "$STACK" --env-file "$BAD_PORT_ENVIRONMENT" preflight >/dev/null 2>&1; then
+    printf 'occupied Controller HTTP port unexpectedly passed preflight\n' >&2
+    exit 1
+fi
+kill "$OCCUPIED_PID"
+wait "$OCCUPIED_PID" 2>/dev/null || true
+OCCUPIED_PID=''
 
 reset_schema
 "$STACK" --env-file "$ENVIRONMENT_FILE" preflight

@@ -39,6 +39,7 @@ def main() -> int:
             "edge image revision does not match the deployment revision",
             "validate_private_path",
             "require_application",
+            "validate_available_port",
             "--pull never",
             "caddy reload",
         ),
@@ -65,6 +66,8 @@ def main() -> int:
             "XS_UDP_BIND_ADDRESS",
             "HTTP services must bind to 127.0.0.1",
             "UDP services must bind to 127.0.0.1 or 0.0.0.0",
+            "label=com.docker.compose.service",
+            "port is already in use",
         ),
     )
     if stack.count("HTTP services must bind to 127.0.0.1") != 1:

@@ -269,3 +269,7 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0009`：首次 Edge 预检发现官方 Caddy 镜像的 `/usr/bin/caddy` 带 `cap_net_bind_service=ep` 文件能力；在项目要求的 `cap_drop: ALL` 和 `no-new-privileges` 下，tini 无法 exec 该二进制。直接增加 capability 会扩大运行时权限并违背 Edge 零 capability 目标。
 - 修复：新增项目 Edge Dockerfile，基础镜像固定到官方 Caddy 2.10.2 Alpine 的 amd64 manifest digest；构建阶段升级安全补丁并显式移除不需要的文件能力，最终固定 UID 65532 和 revision 标签。Edge 在容器内只监听 8080/8443，宿主端口映射不需要进程获得低端口能力。
 - 回归：相同 `cap_drop: ALL`、`no-new-privileges`、只读根和非 root UID 下，`caddy validate` 已真实执行通过；完整 HTTPS 容器启动和证书签发继续由本次域名集成证据闭环。
+
+- `XS-2026-0010`：第一次正式域名激活在迁移完成后才发现默认 Controller 宿主端口 `18080` 已被无关容器绑定到 `0.0.0.0`。激活按设计清理了新容器，但可避免的端口冲突不应发生在迁移之后。
+- 修复：应用栈预检现在校验四个 TCP/UDP 端口的格式、范围和同协议唯一性，并用 `ss` 检查实际监听；只有当前同一 Compose 项目已持有的端口可用于幂等重部署。Edge 对 80/443 执行相同检查且只允许当前 Edge 容器占用。
+- 回归：M5.2 新增真实回环监听占用负向测试，要求在镜像构建、备份或迁移之前失败；已运行项目的原端口仍必须通过幂等预检。

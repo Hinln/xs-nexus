@@ -82,8 +82,31 @@ validate_state_directory() {
     (( (8#$mode & 077) == 0 )) || fail "state directory permissions are too broad: $path"
 }
 
+validate_port() {
+    local value=$1 name=$2 numeric
+    [[ $value =~ ^[1-9][0-9]{0,4}$ ]] || fail "$name must be a decimal port"
+    numeric=$((10#$value))
+    (( numeric <= 65535 )) || fail "$name is out of range"
+}
+
+validate_available_port() {
+    local protocol=$1 port=$2 project=$3 service=$4 listeners own_binding
+    if [[ $protocol == tcp ]]; then
+        listeners=$(ss -H -ltn "sport = :$port" 2>/dev/null || true)
+    else
+        listeners=$(ss -H -lun "sport = :$port" 2>/dev/null || true)
+    fi
+    [[ -z $listeners ]] && return
+    own_binding=$(docker ps \
+        --filter "label=com.docker.compose.project=$project" \
+        --filter "label=com.docker.compose.service=$service" \
+        --format '{{.Ports}}' | grep -E ":${port}->[0-9]+/${protocol}" || true)
+    [[ -n $own_binding ]] || fail "$protocol port is already in use: $port"
+}
+
 preflight() {
-    local deployment project schema http_bind udp_bind controller_secrets relay_secrets backup_directory replica_directory state_directory
+    local deployment project schema http_bind udp_bind controller_port console_port discovery_port relay_port
+    local controller_secrets relay_secrets backup_directory replica_directory state_directory
     local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
         XS_DEPLOYMENT
@@ -105,6 +128,10 @@ preflight() {
         XS_DATABASE_SCHEMA
         XS_BIND_ADDRESS
         XS_UDP_BIND_ADDRESS
+        XS_CONTROLLER_HTTP_PORT
+        XS_CONSOLE_HTTP_PORT
+        XS_DISCOVERY_UDP_PORT
+        XS_RELAY_UDP_PORT
         XS_DISCOVERY_PUBLIC_ENDPOINT
         XS_RELAY_ID_BASE64
     )
@@ -117,11 +144,26 @@ preflight() {
     schema=$(environment_value XS_DATABASE_SCHEMA)
     http_bind=$(environment_value XS_BIND_ADDRESS)
     udp_bind=$(environment_value XS_UDP_BIND_ADDRESS)
+    controller_port=$(environment_value XS_CONTROLLER_HTTP_PORT)
+    console_port=$(environment_value XS_CONSOLE_HTTP_PORT)
+    discovery_port=$(environment_value XS_DISCOVERY_UDP_PORT)
+    relay_port=$(environment_value XS_RELAY_UDP_PORT)
     [[ $deployment == dev || $deployment == rc ]] || fail 'XS_DEPLOYMENT must be dev or rc'
     [[ $project == "xs-nexus-$deployment" ]] || fail 'XS_COMPOSE_PROJECT_NAME must isolate the selected deployment'
     [[ $schema =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'XS_DATABASE_SCHEMA is invalid'
     [[ $http_bind == 127.0.0.1 ]] || fail 'HTTP services must bind to 127.0.0.1 behind the TLS reverse proxy'
     [[ $udp_bind == 127.0.0.1 || $udp_bind == 0.0.0.0 ]] || fail 'UDP services must bind to 127.0.0.1 or 0.0.0.0'
+    command -v ss >/dev/null 2>&1 || fail 'ss is required for host port validation'
+    validate_port "$controller_port" XS_CONTROLLER_HTTP_PORT
+    validate_port "$console_port" XS_CONSOLE_HTTP_PORT
+    validate_port "$discovery_port" XS_DISCOVERY_UDP_PORT
+    validate_port "$relay_port" XS_RELAY_UDP_PORT
+    [[ $controller_port != "$console_port" ]] || fail 'Controller and Console HTTP ports must differ'
+    [[ $discovery_port != "$relay_port" ]] || fail 'Discovery and Relay UDP ports must differ'
+    validate_available_port tcp "$controller_port" "$project" controller
+    validate_available_port tcp "$console_port" "$project" console
+    validate_available_port udp "$discovery_port" "$project" controller
+    validate_available_port udp "$relay_port" "$project" relay
     if [[ $deployment == dev ]]; then
         [[ $schema == *_dev ]] || fail 'development schema must end in _dev'
     else

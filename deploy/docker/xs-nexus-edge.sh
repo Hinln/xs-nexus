@@ -49,8 +49,20 @@ validate_private_path() {
     (( (8#$mode & 022) == 0 )) || fail "edge path is group or other writable: $path"
 }
 
+validate_available_port() {
+    local port=$1 project=$2 listeners own_binding
+    listeners=$(ss -H -ltn "sport = :$port" 2>/dev/null || true)
+    [[ -z $listeners ]] && return
+    own_binding=$(docker ps \
+        --filter "label=com.docker.compose.project=$project" \
+        --filter "label=com.docker.compose.service=edge" \
+        --format '{{.Ports}}' | grep -E ":${port}->[0-9]+/tcp" || true)
+    [[ -n $own_binding ]] || fail "TCP port is already in use: $port"
+}
+
 preflight() {
-    local project deployment image revision label config data bind_address http_port https_port network_definition config_json
+    local project deployment image revision label config data bind_address http_port https_port http_port_number https_port_number
+    local network_definition config_json
     project=$(environment_value XS_COMPOSE_PROJECT_NAME)
     deployment=$(environment_value XS_DEPLOYMENT)
     image=$(environment_value XS_EDGE_IMAGE)
@@ -68,8 +80,13 @@ preflight() {
     label=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
     [[ -n $revision && $label == "$revision" ]] || fail 'edge image revision does not match the deployment revision'
     [[ $bind_address == 0.0.0.0 || $bind_address == 127.0.0.1 ]] || fail 'edge bind address is invalid'
-    [[ $http_port =~ ^[0-9]+$ && $https_port =~ ^[0-9]+$ ]] || fail 'edge ports must be decimal integers'
-    (( http_port > 0 && http_port <= 65535 && https_port > 0 && https_port <= 65535 && http_port != https_port )) || fail 'edge ports are invalid'
+    [[ $http_port =~ ^[1-9][0-9]{0,4}$ && $https_port =~ ^[1-9][0-9]{0,4}$ ]] || fail 'edge ports must be decimal integers'
+    http_port_number=$((10#$http_port))
+    https_port_number=$((10#$https_port))
+    (( http_port_number <= 65535 && https_port_number <= 65535 && http_port_number != https_port_number )) || fail 'edge ports are invalid'
+    command -v ss >/dev/null 2>&1 || fail 'ss is required for host port validation'
+    validate_available_port "$http_port" "$project"
+    validate_available_port "$https_port" "$project"
     validate_private_path "$config" file 0
     validate_private_path "$data" directory 65532
 
