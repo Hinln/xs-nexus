@@ -124,7 +124,7 @@ sudo "$STACK" --env-file "$ENV_FILE" deploy
 sudo "$STACK" --env-file "$ENV_FILE" status
 ```
 
-公网 HTTPS 部署不依赖 1Panel 站点配置。项目提供独立、digest-pinned 的 Caddy Edge；它以非 root UID、只读根文件系统、零 capability 和持久证书目录运行，端口 80/443 只反向代理同一 Compose 项目内的 Console。Console 再代理 `/v1/`、`/health/` 和 WebSocket 到 Controller，因此 Controller 与 Console 的宿主 HTTP 端口始终保持 `127.0.0.1`。把 `Caddyfile.example` 复制到仓库外，逐个域名使用独立站点块，避免一个错误 DNS 记录阻塞其他证书：
+公网 HTTPS 部署不依赖 1Panel 站点配置。项目提供独立 Caddy Edge；其 Dockerfile 固定官方基础镜像 digest，并移除容器内监听高端口时不需要的 `cap_net_bind_service` 文件能力。最终镜像以非 root UID、只读根文件系统、零 capability 和持久证书目录运行，端口 80/443 只反向代理同一 Compose 项目内的 Console。Console 再代理 `/v1/`、`/health/` 和 WebSocket 到 Controller，因此 Controller 与 Console 的宿主 HTTP 端口始终保持 `127.0.0.1`。把 `Caddyfile.example` 复制到仓库外，逐个域名使用独立站点块，避免一个错误 DNS 记录阻塞其他证书：
 
 ```bash
 sudo install -o root -g root -m 0444 deploy/docker/Caddyfile.example \
@@ -139,7 +139,7 @@ sudo "$PUBLIC_STACK" --env-file "$ENV_FILE" deploy
 sudo "$PUBLIC_STACK" --env-file "$ENV_FILE" status
 ```
 
-`XS_EDGE_IMAGE` 必须包含 SHA-256 digest；Edge 脚本拒绝 tag-only 镜像、宽权限配置/证书目录、root 用户、可写根文件系统、额外 capability、错误外部网络和无健康应用上游。Caddy 自动执行 ACME HTTP-01/HTTPS、HTTP 到 HTTPS 跳转、证书续期及 WebSocket 透传。公网部署前必须确保每个域名只有指向当前服务器的批准 A/AAAA 记录，并开放 TCP 80/443；错误或多余地址属于证书和流量一致性失败。
+Edge 脚本要求本地镜像使用隔离的 `xs-nexus/edge:*` 标签且 OCI revision 精确匹配部署版本；同时拒绝宽权限配置/证书目录、root 用户、可写根文件系统、额外 capability、错误外部网络和无健康应用上游。Caddy 自动执行 ACME HTTP-01/HTTPS、HTTP 到 HTTPS 跳转、证书续期及 WebSocket 透传。公网部署前必须确保每个域名只有指向当前服务器的批准 A/AAAA 记录，并开放 TCP 80/443；错误或多余地址属于证书和流量一致性失败。
 
 `preflight` 会验证环境隔离、Secret 权限、备份 public recipient、副本设备/marker/保留期、外部网络精确定义、Compose 安全属性、无数据库服务和无数据库端口。`deploy` 的顺序固定为：
 

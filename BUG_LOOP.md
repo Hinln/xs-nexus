@@ -265,3 +265,7 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0008`：域名测试部署预检发现 HTTP、Discovery UDP 和 Relay UDP 共用 `XS_BIND_ADDRESS`。保持回环会阻止外部节点发现/中继，改为 `0.0.0.0` 又会把 Controller 与 Console 的明文 HTTP 端口一起暴露公网。
 - 修复：HTTP 继续由 `XS_BIND_ADDRESS` 控制且部署预检强制为 `127.0.0.1`；新增独立、显式的 `XS_UDP_BIND_ADDRESS`，只允许回环或全 IPv4 监听，默认回环。Compose 仅把 Discovery/Relay 两个 UDP 发布切换到新变量。
 - 回归：Compose 预检、完整 M5.2 部署生命周期、回环 HTTP 与公网 UDP 实际监听、HTTPS/WSS 反向代理及外部节点路径测试必须同时通过；不得把测试开放描述为生产防火墙验收。
+
+- `XS-2026-0009`：首次 Edge 预检发现官方 Caddy 镜像的 `/usr/bin/caddy` 带 `cap_net_bind_service=ep` 文件能力；在项目要求的 `cap_drop: ALL` 和 `no-new-privileges` 下，tini 无法 exec 该二进制。直接增加 capability 会扩大运行时权限并违背 Edge 零 capability 目标。
+- 修复：新增项目 Edge Dockerfile，基础镜像固定到官方 Caddy 2.10.2 Alpine 的 amd64 manifest digest；构建阶段升级安全补丁并显式移除不需要的文件能力，最终固定 UID 65532 和 revision 标签。Edge 在容器内只监听 8080/8443，宿主端口映射不需要进程获得低端口能力。
+- 回归：相同 `cap_drop: ALL`、`no-new-privileges`、只读根和非 root UID 下，`caddy validate` 已真实执行通过；完整 HTTPS 容器启动和证书签发继续由本次域名集成证据闭环。

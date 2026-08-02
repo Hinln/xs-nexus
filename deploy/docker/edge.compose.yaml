@@ -1,6 +1,11 @@
 services:
   edge:
     image: ${XS_EDGE_IMAGE:?set XS_EDGE_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/edge.Dockerfile
+      args:
+        VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
     user: "65532:65532"
     restart: unless-stopped
     init: true
@@ -13,7 +18,6 @@ services:
     environment:
       XDG_CONFIG_HOME: /config
       XDG_DATA_HOME: /data
-    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     volumes:
       - type: bind
         source: ${XS_EDGE_CONFIG_FILE:?set XS_EDGE_CONFIG_FILE}

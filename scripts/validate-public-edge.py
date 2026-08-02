@@ -26,6 +26,7 @@ def main() -> int:
             "target: 8443",
             "create_host_path: false",
             "1panel-network:",
+            "deploy/docker/edge.Dockerfile",
         ),
     )
     if "privileged:" in compose or "network_mode: host" in compose:
@@ -34,8 +35,8 @@ def main() -> int:
     edge = require(
         ROOT / "deploy/docker/xs-nexus-edge.sh",
         (
-            "@sha256:[0-9a-f]{64}",
-            "edge image must be pinned by SHA-256 digest",
+            "edge image must use an isolated XS Nexus tag",
+            "edge image revision does not match the deployment revision",
             "validate_private_path",
             "require_application",
             "--pull never",
@@ -44,6 +45,18 @@ def main() -> int:
     )
     if "docker compose down" in edge or "docker system prune" in edge:
         raise SystemExit("edge lifecycle must not tear down unrelated resources")
+
+    dockerfile = require(
+        ROOT / "deploy/docker/edge.Dockerfile",
+        (
+            "caddy:2.10.2-alpine@sha256:d8c17a862962def15cde69863a3a463f25a2664942eafd7bdbf050e9c3116b83",
+            "setcap -r /usr/bin/caddy",
+            "USER 65532:65532",
+            'org.opencontainers.image.revision="$VCS_REF"',
+        ),
+    )
+    if "latest" in dockerfile:
+        raise SystemExit("edge base image must not use latest")
 
     stack = require(
         ROOT / "deploy/docker/xs-nexus-stack.sh",

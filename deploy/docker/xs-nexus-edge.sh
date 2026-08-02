@@ -11,7 +11,7 @@ fail() {
 }
 
 usage() {
-    printf 'usage: xs-nexus-edge.sh --env-file FILE pull|preflight|deploy|reload|status|down\n' >&2
+    printf 'usage: xs-nexus-edge.sh --env-file FILE build|preflight|deploy|reload|status|down\n' >&2
     exit 2
 }
 
@@ -50,10 +50,11 @@ validate_private_path() {
 }
 
 preflight() {
-    local project deployment image config data bind_address http_port https_port network_definition config_json
+    local project deployment image revision label config data bind_address http_port https_port network_definition config_json
     project=$(environment_value XS_COMPOSE_PROJECT_NAME)
     deployment=$(environment_value XS_DEPLOYMENT)
     image=$(environment_value XS_EDGE_IMAGE)
+    revision=$(environment_value XS_RELEASE_REVISION)
     config=$(environment_value XS_EDGE_CONFIG_FILE)
     data=$(environment_value XS_EDGE_DATA_DIR)
     bind_address=$(environment_value XS_EDGE_BIND_ADDRESS)
@@ -62,8 +63,10 @@ preflight() {
 
     [[ $deployment == dev || $deployment == rc ]] || fail 'XS_DEPLOYMENT must be dev or rc'
     [[ $project == "xs-nexus-$deployment" ]] || fail 'edge project must match the application deployment'
-    [[ $image =~ @sha256:[0-9a-f]{64}$ ]] || fail 'edge image must be pinned by SHA-256 digest'
+    [[ $image =~ ^xs-nexus/edge:[A-Za-z0-9._-]+$ ]] || fail 'edge image must use an isolated XS Nexus tag'
     docker image inspect "$image" >/dev/null 2>&1 || fail 'pinned edge image is unavailable'
+    label=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+    [[ -n $revision && $label == "$revision" ]] || fail 'edge image revision does not match the deployment revision'
     [[ $bind_address == 0.0.0.0 || $bind_address == 127.0.0.1 ]] || fail 'edge bind address is invalid'
     [[ $http_port =~ ^[0-9]+$ && $https_port =~ ^[0-9]+$ ]] || fail 'edge ports must be decimal integers'
     (( http_port > 0 && http_port <= 65535 && https_port > 0 && https_port <= 65535 && http_port != https_port )) || fail 'edge ports are invalid'
@@ -109,10 +112,9 @@ require_application() {
 }
 
 case $COMMAND in
-    pull)
-        edge_image=$(environment_value XS_EDGE_IMAGE)
-        [[ $edge_image =~ @sha256:[0-9a-f]{64}$ ]] || fail 'edge image must be pinned by SHA-256 digest'
-        docker pull "$edge_image"
+    build)
+        "${COMPOSE[@]}" build edge
+        preflight
         ;;
     preflight)
         preflight

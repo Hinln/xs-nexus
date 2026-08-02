@@ -19,8 +19,7 @@ shift 3
 case $COMMAND in
     build)
         "$STACK" --env-file "$ENVIRONMENT_FILE" build
-        "$EDGE" --env-file "$ENVIRONMENT_FILE" pull
-        "$EDGE" --env-file "$ENVIRONMENT_FILE" preflight
+        "$EDGE" --env-file "$ENVIRONMENT_FILE" build
         ;;
     preflight)
         "$STACK" --env-file "$ENVIRONMENT_FILE" preflight
