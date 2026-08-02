@@ -24,6 +24,7 @@
 - Linux 安装、升级、回滚和卸载：`docs/LINUX_INSTALLATION.md`
 - 签名更新、灰度策略和权限边界：`docs/UPDATE_SYSTEM.md`
 - 1Panel 隔离部署及项目自带 HTTPS Edge：`docs/DOCKER_1PANEL_DEPLOYMENT.md`
+- 生产部署、验收与运维总手册：`docs/PRODUCTION_DEPLOYMENT_GUIDE.md`
 - 一键公网栈：`deploy/docker/xs-nexus-public-deploy.sh`（不依赖 1Panel 站点配置）
 - 恢复手册：`RECOVERY_RUNBOOK.md`
 - 性能与稳定性：`docs/PERFORMANCE_REPORT.md`

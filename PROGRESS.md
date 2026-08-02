@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-08-02 10:15 UTC
-当前 Git 提交：CLI 与文档总审计工作树（以本文件后续提交为准）
+当前 Git 提交：生产部署总手册与 GitHub 交付工作树（以本文件后续提交为准）
 当前总状态：`BLOCKED_EXTERNAL`
 当前里程碑：`所有当前环境可完成工作已闭环；等待外部门禁`
 
@@ -319,3 +319,10 @@ make clean
 - 更新到 Alpine edge 的 age 1.3.1-r6 后，`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T090303Z` 仍因内嵌 `golang.org/x/crypto v0.45.0` 的 `GHSA-w879-237q-wc7r` 被 disposition 门禁拒绝。
 - 最终 db-tools 使用 digest 固定的 Go 构建阶段，从 age `v1.3.1` 精确提交 `b8564adb6d58329b8a3e267360ca2b0abc4efe1d` 构建 `age`/`age-keygen`，强制并验证 `x/crypto v0.52.0`，运行镜像只复制静态二进制和上游许可证。
 - 正式提交 `a120688b4fd25cb22f0d081e77e9923daceafaef` 的完整 Docker 备份生命周期、确定性镜像 SBOM/许可证闭包、Grype 扫描和 disposition 均通过；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`，结果恢复为 Critical 2、High 4、Medium 16、Negligible 24，可修复项为 0。
+
+## 2026-08-02 GitHub 交付与生产部署总手册
+
+- 新增 `docs/PRODUCTION_DEPLOYMENT_GUIDE.md`，把现有架构、Docker/1Panel、项目自带 Caddy Edge、Secret、DNS/HTTPS/WebSocket、Linux Agent、虚拟网络验收、加密备份恢复、镜像供应链、回滚、监控、故障排查和最终放行门禁整理为单一生产操作入口；
+- 手册不写入真实密码、Token、数据库 URI、私钥、证书私钥或服务器登录信息，并明确当前部分完成、Windows 未实机、正式密钥/异地恢复/第三方审计未完成的边界；
+- `README.md` 已增加总手册入口；发布分支从本地最终开发检查点创建，GitHub `main` 是该分支历史祖先，不需要强制推送或改写远端历史；
+- 本地 Windows 环境没有 Python 解释器；发布前的 Python/秘密扫描门禁在 Linux 测试服务器的隔离工作树执行，不修改在线 `/srv/xs-nexus` 部署或运行容器。
