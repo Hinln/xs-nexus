@@ -17,7 +17,8 @@ use sha2::{Digest as _, Sha256};
 use tokio::sync::{RwLock, oneshot, watch};
 use xs_agent::{
     config::AgentConfig,
-    control::run_control_loop,
+    control::{ControlContext, run_control_loop},
+    data_plane::DataPlaneStatus,
     enrollment::enroll,
     health::AgentHealth,
     state::NodeState,
@@ -32,6 +33,7 @@ use xs_core::{
 const ADMIN_TOKEN: &str = "agent-integration-admin-token-32-characters";
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     let controller_config = controller_config();
     let (router, controller_state) = xs_controller::build(&controller_config)
@@ -105,11 +107,16 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     let (candidate_tx, candidate_rx) = watch::channel(None);
     let (subnet_route_tx, subnet_route_rx) = watch::channel(None);
     let (control_shutdown_tx, control_shutdown_rx) = watch::channel(false);
+    let data_plane_status = Arc::new(RwLock::new(DataPlaneStatus::default()));
     let control = tokio::spawn(run_control_loop(
-        config.clone(),
-        Arc::clone(&identity),
-        Arc::clone(&shared_state),
-        Arc::clone(&health),
+        ControlContext {
+            config: config.clone(),
+            identity: Arc::clone(&identity),
+            state: Arc::clone(&shared_state),
+            health: Arc::clone(&health),
+            data_plane_status,
+            telemetry_boot_id_base64: "AQEBAQEBAQEBAQEBAQEBAQ".to_owned(),
+        },
         candidate_rx,
         subnet_route_rx,
         control_shutdown_rx,

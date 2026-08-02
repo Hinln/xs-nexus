@@ -8,6 +8,8 @@ use crate::{
     state::AppState,
 };
 
+const CONTROL_MESSAGE_LIMIT: usize = 512 * 1024;
+
 pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
     let mut challenge = [0_u8; 32];
     if getrandom::fill(&mut challenge).is_err() {
@@ -217,7 +219,7 @@ async fn handle_authenticated_message(
     message: Message,
 ) -> bool {
     match message {
-        Message::Text(text) if text.len() <= 64 * 1024 => {
+        Message::Text(text) if text.len() <= CONTROL_MESSAGE_LIMIT => {
             handle_authenticated_text(socket, state, authenticated, &text).await
         }
         Message::Ping(payload) => socket.send(Message::Pong(payload)).await.is_ok(),
@@ -306,6 +308,23 @@ async fn handle_authenticated_text(
                 return false;
             };
             ControlServerMessage::UpdateDirective { directive }
+        }
+        ControlClientMessage::ReportTelemetry {
+            report,
+            signature_base64,
+        } => {
+            let Ok(sequence) = crate::telemetry::record_agent_report(
+                state,
+                authenticated,
+                report,
+                &signature_base64,
+            )
+            .await
+            else {
+                send_error(socket, "telemetry_report_rejected").await;
+                return false;
+            };
+            ControlServerMessage::TelemetryAccepted { sequence }
         }
         ControlClientMessage::Authenticate { .. } => {
             send_error(socket, "invalid_control_message").await;

@@ -6,7 +6,10 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::FromRow;
 use uuid::Uuid;
-use xs_core::{CandidateAdvertisement, SubnetRouteAdvertisement};
+use xs_core::{
+    AgentPathKind, AgentTelemetryReport, CandidateAdvertisement, RelayTelemetryReport,
+    SubnetRouteAdvertisement,
+};
 use xs_protocol::controller_key_id;
 
 use crate::{error::ApiError, state::AppState};
@@ -112,6 +115,18 @@ struct NodeSummary {
     update_release_id: Option<Uuid>,
     update_error_code: Option<String>,
     update_reported_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    telemetry: Option<AgentTelemetryReport>,
+    #[serde(skip)]
+    telemetry_fresh: bool,
+    #[serde(skip)]
+    handshake_attempts_24h: Option<u64>,
+    #[serde(skip)]
+    handshake_successes_24h: Option<u64>,
+    #[serde(skip)]
+    latency_samples_24h: Option<u64>,
+    #[serde(skip)]
+    latency_microseconds_24h: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -184,6 +199,27 @@ struct RelaySummary {
     expires_at: DateTime<Utc>,
     health: Availability<&'static str>,
     metrics: Availability<Value>,
+}
+
+#[derive(FromRow)]
+struct RelayTelemetryRow {
+    relay_id: Vec<u8>,
+    report: Value,
+    generated_at: DateTime<Utc>,
+    packets_received_24h: i64,
+    bytes_received_24h: i64,
+    packets_forwarded_24h: i64,
+    bytes_forwarded_24h: i64,
+    packets_dropped_24h: i64,
+    io_errors_24h: i64,
+    latency_samples_24h: i64,
+    latency_microseconds_24h: i64,
+}
+
+struct RelayTelemetryView {
+    report: RelayTelemetryReport,
+    generated_at: DateTime<Utc>,
+    window_24h: Value,
 }
 
 #[derive(Serialize)]
@@ -286,6 +322,14 @@ struct NodeRow {
     update_release_id: Option<Uuid>,
     update_error_code: Option<String>,
     update_reported_at: Option<DateTime<Utc>>,
+    telemetry_report: Option<Value>,
+    telemetry_reported_at: Option<DateTime<Utc>>,
+    telemetry_tx_bytes_24h: Option<i64>,
+    telemetry_rx_bytes_24h: Option<i64>,
+    telemetry_handshake_attempts_24h: Option<i64>,
+    telemetry_handshake_successes_24h: Option<i64>,
+    telemetry_latency_samples_24h: Option<i64>,
+    telemetry_latency_microseconds_24h: Option<i64>,
 }
 
 #[derive(FromRow)]
@@ -383,14 +427,16 @@ pub(crate) async fn snapshot(state: &AppState) -> Result<ConsoleSnapshot, ApiErr
     let enrollment_tokens = load_tokens(state, collected_at).await?;
     let acl_rules = load_acl_rules(state).await?;
     let security_alerts_24h = load_security_alert_count(state).await?;
+    let relay_telemetry = load_relay_telemetry(state).await?;
+    let relays = relay_summaries(state, &relay_telemetry, collected_at);
     let dashboard = dashboard_summary(
         &nodes,
+        &relays,
         &suggestions,
         &routes,
         &audit_events,
         security_alerts_24h,
     )?;
-    let relays = relay_summaries(state);
     let topology = topology_summary(&nodes, &routes);
     let alerts = alerts_from_audit(&audit_events);
     let system = system_summary(state);
@@ -415,20 +461,102 @@ pub(crate) async fn snapshot(state: &AppState) -> Result<ConsoleSnapshot, ApiErr
 
 fn dashboard_summary(
     nodes: &[NodeSummary],
+    relays: &[RelaySummary],
     suggestions: &[SubnetRouteSuggestionSummary],
     routes: &[SubnetRouteSummary],
     audit_events: &[AuditEventSummary],
     security_alerts_24h: i64,
 ) -> Result<DashboardSummary, ApiError> {
+    let managed_nodes = nodes
+        .iter()
+        .filter(|node| node.state != "revoked")
+        .collect::<Vec<_>>();
+    let current_paths_complete = managed_nodes.iter().all(|node| node.telemetry_fresh);
+    let direct_count = managed_nodes
+        .iter()
+        .filter(|node| matches!(node.current_path.value.as_deref(), Some("direct" | "mixed")))
+        .count();
+    let relay_count = managed_nodes
+        .iter()
+        .filter(|node| matches!(node.current_path.value.as_deref(), Some("relay" | "mixed")))
+        .count();
+    let traffic_complete = managed_nodes
+        .iter()
+        .all(|node| node.traffic_bytes_24h.status == "available");
+    let traffic = managed_nodes.iter().try_fold(0_u64, |total, node| {
+        total
+            .checked_add(node.traffic_bytes_24h.value.unwrap_or_default())
+            .ok_or_else(ApiError::internal)
+    })?;
+    let handshake_complete = managed_nodes.iter().all(|node| {
+        node.handshake_attempts_24h.is_some() && node.handshake_successes_24h.is_some()
+    });
+    let handshake_attempts = managed_nodes.iter().try_fold(0_u64, |total, node| {
+        total
+            .checked_add(node.handshake_attempts_24h.unwrap_or_default())
+            .ok_or_else(ApiError::internal)
+    })?;
+    let handshake_successes = managed_nodes.iter().try_fold(0_u64, |total, node| {
+        total
+            .checked_add(node.handshake_successes_24h.unwrap_or_default())
+            .ok_or_else(ApiError::internal)
+    })?;
+    let latency_complete = managed_nodes
+        .iter()
+        .all(|node| node.latency_samples_24h.is_some() && node.latency_microseconds_24h.is_some());
+    let latency_samples = managed_nodes.iter().try_fold(0_u64, |total, node| {
+        total
+            .checked_add(node.latency_samples_24h.unwrap_or_default())
+            .ok_or_else(ApiError::internal)
+    })?;
+    let latency_microseconds = managed_nodes.iter().try_fold(0_u64, |total, node| {
+        total
+            .checked_add(node.latency_microseconds_24h.unwrap_or_default())
+            .ok_or_else(ApiError::internal)
+    })?;
     Ok(DashboardSummary {
         online_nodes: nodes.iter().filter(|node| node.state == "online").count(),
         offline_nodes: nodes.iter().filter(|node| node.state == "offline").count(),
-        direct_nodes: Availability::unavailable("Agent 尚未上报当前路径遥测"),
-        relay_nodes: Availability::unavailable("Agent 尚未上报当前路径遥测"),
-        relay_health: Availability::unavailable("Relay 目录未包含健康指标端点"),
-        traffic_bytes_24h: Availability::unavailable("Agent 尚未上报流量遥测"),
-        connection_success_percent_24h: Availability::unavailable("Agent 尚未上报连接结果遥测"),
-        average_latency_ms_24h: Availability::unavailable("Agent 尚未上报路径延迟遥测"),
+        direct_nodes: if current_paths_complete {
+            Availability::available(direct_count)
+        } else {
+            Availability::unavailable("部分 Agent 当前路径遥测缺失或过期")
+        },
+        relay_nodes: if current_paths_complete {
+            Availability::available(relay_count)
+        } else {
+            Availability::unavailable("部分 Agent 当前路径遥测缺失或过期")
+        },
+        relay_health: if relays.is_empty() {
+            Availability::unavailable("Relay 目录为空")
+        } else if relays
+            .iter()
+            .all(|relay| relay.health.value == Some("healthy"))
+        {
+            Availability::available("healthy")
+        } else if relays
+            .iter()
+            .any(|relay| relay.health.value == Some("stale"))
+        {
+            Availability::available("degraded")
+        } else {
+            Availability::unavailable("部分 Relay 尚未上报认证指标")
+        },
+        traffic_bytes_24h: if traffic_complete {
+            Availability::available(traffic)
+        } else {
+            Availability::unavailable("部分 Agent 尚未形成 24 小时流量窗口")
+        },
+        connection_success_percent_24h: if handshake_complete && handshake_attempts > 0 {
+            Availability::available(percentage(handshake_successes, handshake_attempts))
+        } else {
+            Availability::unavailable("24 小时窗口内没有完整握手样本")
+        },
+        average_latency_ms_24h: if latency_complete && latency_samples > 0 {
+            Availability::available(average_latency_ms(latency_microseconds, latency_samples))
+        } else {
+            Availability::unavailable("24 小时窗口内没有完整认证 RTT 样本")
+        },
         pending_route_suggestions: count_pending_suggestions(suggestions, routes),
         security_alerts_24h: u64::try_from(security_alerts_24h)
             .map_err(|_| ApiError::internal())?,
@@ -436,22 +564,119 @@ fn dashboard_summary(
     })
 }
 
-fn relay_summaries(state: &AppState) -> Vec<RelaySummary> {
+#[allow(clippy::cast_precision_loss)]
+fn percentage(numerator: u64, denominator: u64) -> f64 {
+    numerator as f64 * 100.0 / denominator as f64
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn average_latency_ms(total_microseconds: u64, samples: u64) -> f64 {
+    total_microseconds as f64 / samples as f64 / 1_000.0
+}
+
+fn relay_summaries(
+    state: &AppState,
+    telemetry: &HashMap<String, RelayTelemetryView>,
+    now: DateTime<Utc>,
+) -> Vec<RelaySummary> {
     state
         .relays
         .iter()
-        .map(|relay| RelaySummary {
-            relay_id_base64: relay.relay_id_base64.clone(),
-            endpoint: relay.endpoint.to_string(),
-            priority: relay.priority,
-            expires_at: relay.expires_at,
-            health: Availability::unavailable("Relay 健康指标端点未配置"),
-            metrics: Availability::unavailable("Relay 指标端点未配置"),
+        .map(|relay| {
+            let telemetry = telemetry.get(&relay.relay_id_base64);
+            let fresh = telemetry.is_some_and(|telemetry| {
+                telemetry.generated_at >= now - chrono::Duration::minutes(2)
+            });
+            RelaySummary {
+                relay_id_base64: relay.relay_id_base64.clone(),
+                endpoint: relay.endpoint.to_string(),
+                priority: relay.priority,
+                expires_at: relay.expires_at,
+                health: match telemetry {
+                    Some(_) if fresh => Availability::available("healthy"),
+                    Some(_) => Availability::available("stale"),
+                    None => Availability::unavailable("Relay 尚未上报认证指标"),
+                },
+                metrics: telemetry.map_or_else(
+                    || Availability::unavailable("Relay 尚未上报认证指标"),
+                    |telemetry| {
+                        Availability::available(serde_json::json!({
+                            "reported_at": telemetry.generated_at,
+                            "current": telemetry.report.metrics,
+                            "window_24h": telemetry.window_24h,
+                        }))
+                    },
+                ),
+            }
         })
         .collect()
 }
 
 fn topology_summary(nodes: &[NodeSummary], routes: &[SubnetRouteSummary]) -> TopologySummary {
+    let mut link_samples = HashMap::<(String, String), (HashSet<&'static str>, Vec<u64>)>::new();
+    for node in nodes.iter().filter(|node| node.telemetry_fresh) {
+        let Some(telemetry) = &node.telemetry else {
+            continue;
+        };
+        for peer in telemetry
+            .peers
+            .iter()
+            .filter(|peer| peer.session_established)
+        {
+            let (source, destination) = if node.node_id_base64 <= peer.peer_node_id_base64 {
+                (
+                    node.node_id_base64.clone(),
+                    peer.peer_node_id_base64.clone(),
+                )
+            } else {
+                (
+                    peer.peer_node_id_base64.clone(),
+                    node.node_id_base64.clone(),
+                )
+            };
+            let path = match peer.path {
+                AgentPathKind::Direct => "direct",
+                AgentPathKind::Relay => "relay",
+                AgentPathKind::Disconnected => continue,
+            };
+            let sample = link_samples.entry((source, destination)).or_default();
+            sample.0.insert(path);
+            if let Some(latency) = peer.last_latency_microseconds {
+                sample.1.push(latency);
+            }
+        }
+    }
+    let mut links = link_samples
+        .into_iter()
+        .map(|((source, destination), (paths, latencies))| {
+            let path = if paths.len() == 1 {
+                paths.into_iter().next().unwrap_or("direct").to_owned()
+            } else {
+                "mixed".to_owned()
+            };
+            let latency_ms = (!latencies.is_empty()).then(|| {
+                average_latency_ms(
+                    latencies.iter().copied().fold(0_u64, u64::saturating_add),
+                    u64::try_from(latencies.len()).unwrap_or(u64::MAX),
+                )
+            });
+            TopologyLink {
+                source_node_id_base64: source,
+                destination_node_id_base64: destination,
+                path,
+                latency_ms,
+            }
+        })
+        .collect::<Vec<_>>();
+    links.sort_by(|left, right| {
+        left.source_node_id_base64
+            .cmp(&right.source_node_id_base64)
+            .then_with(|| {
+                left.destination_node_id_base64
+                    .cmp(&right.destination_node_id_base64)
+            })
+    });
+    let telemetry_available = nodes.is_empty() || nodes.iter().any(|node| node.telemetry_fresh);
     TopologySummary {
         nodes: nodes
             .iter()
@@ -462,7 +687,7 @@ fn topology_summary(nodes: &[NodeSummary], routes: &[SubnetRouteSummary]) -> Top
                 state: node.state,
             })
             .collect(),
-        links: Vec::new(),
+        links,
         subnets: routes
             .iter()
             .map(|route| TopologySubnet {
@@ -471,7 +696,11 @@ fn topology_summary(nodes: &[NodeSummary], routes: &[SubnetRouteSummary]) -> Top
                 state: route.state.clone(),
             })
             .collect(),
-        link_telemetry: Availability::unavailable("Agent 尚未上报已选链路"),
+        link_telemetry: if telemetry_available {
+            Availability::available("agent_signed_v1")
+        } else {
+            Availability::unavailable("Agent 尚未上报新鲜已选链路")
+        },
     }
 }
 
@@ -509,8 +738,8 @@ fn system_summary(state: &AppState) -> SystemSummary {
             Availability::unavailable("Controller 尚未配置离线更新签名公钥")
         },
         backup_restore: Availability::unavailable("备份恢复流程将在 M8.1 实现"),
-        relay_metrics: Availability::unavailable("Relay 指标端点未配置"),
-        path_telemetry: Availability::unavailable("Agent 路径遥测尚未接入控制面"),
+        relay_metrics: Availability::available("relay_signed_v1_25h_bounded"),
+        path_telemetry: Availability::available("agent_signed_v1_25h_bounded"),
     }
 }
 
@@ -542,7 +771,32 @@ async fn load_networks(state: &AppState) -> Result<Vec<NetworkRow>, ApiError> {
 
 async fn load_nodes(state: &AppState) -> Result<Vec<NodeRow>, ApiError> {
     sqlx::query_as::<_, NodeRow>(
-        "SELECT n.id, n.network_id, w.name AS network_name, n.node_id, n.name,
+        "WITH per_boot AS (
+           SELECT node_id, boot_id,
+                  greatest(max(tx_bytes_total) - min(tx_bytes_total), 0) AS tx_bytes,
+                  greatest(max(rx_bytes_total) - min(rx_bytes_total), 0) AS rx_bytes,
+                  greatest(max(handshake_attempts_total) - min(handshake_attempts_total), 0)
+                    AS handshake_attempts,
+                  greatest(max(handshake_successes_total) - min(handshake_successes_total), 0)
+                    AS handshake_successes,
+                  greatest(max(latency_samples_total) - min(latency_samples_total), 0)
+                    AS latency_samples,
+                  greatest(max(latency_microseconds_total) - min(latency_microseconds_total), 0)
+                    AS latency_microseconds
+           FROM node_telemetry_samples
+           WHERE received_at >= now() - interval '24 hours'
+           GROUP BY node_id, boot_id
+         ), telemetry_24h AS (
+           SELECT node_id,
+                  sum(tx_bytes)::bigint AS tx_bytes,
+                  sum(rx_bytes)::bigint AS rx_bytes,
+                  sum(handshake_attempts)::bigint AS handshake_attempts,
+                  sum(handshake_successes)::bigint AS handshake_successes,
+                  sum(latency_samples)::bigint AS latency_samples,
+                  sum(latency_microseconds)::bigint AS latency_microseconds
+           FROM per_boot GROUP BY node_id
+         )
+         SELECT n.id, n.network_id, w.name AS network_name, n.node_id, n.name,
                 n.device_type, n.virtual_ip::text AS virtual_ip, n.tags,
                 n.credential_not_after, n.revoked_at, n.last_control_connected_at,
                 n.last_control_disconnected_at, c.payload AS candidate_payload,
@@ -550,17 +804,116 @@ async fn load_nodes(state: &AppState) -> Result<Vec<NodeRow>, ApiError> {
                 n.update_channel AS assigned_update_channel,
                 u.update_state, u.observed_release_id AS update_release_id,
                 u.last_error_code AS update_error_code,
-                u.generated_at AS update_reported_at
+                u.generated_at AS update_reported_at,
+                t.report AS telemetry_report,
+                t.generated_at AS telemetry_reported_at,
+                h.tx_bytes AS telemetry_tx_bytes_24h,
+                h.rx_bytes AS telemetry_rx_bytes_24h,
+                h.handshake_attempts AS telemetry_handshake_attempts_24h,
+                h.handshake_successes AS telemetry_handshake_successes_24h,
+                h.latency_samples AS telemetry_latency_samples_24h,
+                h.latency_microseconds AS telemetry_latency_microseconds_24h
          FROM nodes n
          JOIN networks w ON w.id = n.network_id
          LEFT JOIN node_candidate_advertisements c
            ON c.node_id = n.id AND c.expires_at > now()
          LEFT JOIN node_update_reports u ON u.node_id = n.node_id
+         LEFT JOIN node_telemetry_reports t ON t.node_id = n.node_id
+         LEFT JOIN telemetry_24h h ON h.node_id = n.node_id
          ORDER BY lower(n.name), n.id",
     )
     .fetch_all(&state.pool)
     .await
     .map_err(database_error)
+}
+
+async fn load_relay_telemetry(
+    state: &AppState,
+) -> Result<HashMap<String, RelayTelemetryView>, ApiError> {
+    let rows = sqlx::query_as::<_, RelayTelemetryRow>(
+        "WITH per_boot AS (
+           SELECT relay_id, boot_id,
+                  greatest(max(packets_received) - min(packets_received), 0) AS packets_received,
+                  greatest(max(bytes_received) - min(bytes_received), 0) AS bytes_received,
+                  greatest(max(packets_forwarded) - min(packets_forwarded), 0) AS packets_forwarded,
+                  greatest(max(bytes_forwarded) - min(bytes_forwarded), 0) AS bytes_forwarded,
+                  greatest(max(packets_dropped) - min(packets_dropped), 0) AS packets_dropped,
+                  greatest(max(io_errors) - min(io_errors), 0) AS io_errors,
+                  greatest(max(forwarding_latency_samples) - min(forwarding_latency_samples), 0)
+                    AS latency_samples,
+                  greatest(
+                    max(forwarding_latency_microseconds_total)
+                    - min(forwarding_latency_microseconds_total), 0
+                  ) AS latency_microseconds
+           FROM relay_telemetry_samples
+           WHERE received_at >= now() - interval '24 hours'
+           GROUP BY relay_id, boot_id
+         ), telemetry_24h AS (
+           SELECT relay_id,
+                  sum(packets_received)::bigint AS packets_received,
+                  sum(bytes_received)::bigint AS bytes_received,
+                  sum(packets_forwarded)::bigint AS packets_forwarded,
+                  sum(bytes_forwarded)::bigint AS bytes_forwarded,
+                  sum(packets_dropped)::bigint AS packets_dropped,
+                  sum(io_errors)::bigint AS io_errors,
+                  sum(latency_samples)::bigint AS latency_samples,
+                  sum(latency_microseconds)::bigint AS latency_microseconds
+           FROM per_boot GROUP BY relay_id
+         )
+         SELECT r.relay_id, r.report, r.generated_at,
+                coalesce(h.packets_received, 0) AS packets_received_24h,
+                coalesce(h.bytes_received, 0) AS bytes_received_24h,
+                coalesce(h.packets_forwarded, 0) AS packets_forwarded_24h,
+                coalesce(h.bytes_forwarded, 0) AS bytes_forwarded_24h,
+                coalesce(h.packets_dropped, 0) AS packets_dropped_24h,
+                coalesce(h.io_errors, 0) AS io_errors_24h,
+                coalesce(h.latency_samples, 0) AS latency_samples_24h,
+                coalesce(h.latency_microseconds, 0) AS latency_microseconds_24h
+         FROM relay_telemetry_reports r
+         LEFT JOIN telemetry_24h h ON h.relay_id = r.relay_id",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(database_error)?;
+    rows.into_iter()
+        .map(|row| {
+            let relay_id: [u8; 16] = row
+                .relay_id
+                .as_slice()
+                .try_into()
+                .map_err(|_| ApiError::internal())?;
+            let report = serde_json::from_value::<RelayTelemetryReport>(row.report)
+                .map_err(|_| ApiError::internal())?;
+            let latency_samples =
+                u64::try_from(row.latency_samples_24h).map_err(|_| ApiError::internal())?;
+            let latency_microseconds =
+                u64::try_from(row.latency_microseconds_24h).map_err(|_| ApiError::internal())?;
+            Ok((
+                URL_SAFE_NO_PAD.encode(relay_id),
+                RelayTelemetryView {
+                    report,
+                    generated_at: row.generated_at,
+                    window_24h: serde_json::json!({
+                        "packets_received": u64::try_from(row.packets_received_24h)
+                            .map_err(|_| ApiError::internal())?,
+                        "bytes_received": u64::try_from(row.bytes_received_24h)
+                            .map_err(|_| ApiError::internal())?,
+                        "packets_forwarded": u64::try_from(row.packets_forwarded_24h)
+                            .map_err(|_| ApiError::internal())?,
+                        "bytes_forwarded": u64::try_from(row.bytes_forwarded_24h)
+                            .map_err(|_| ApiError::internal())?,
+                        "packets_dropped": u64::try_from(row.packets_dropped_24h)
+                            .map_err(|_| ApiError::internal())?,
+                        "io_errors": u64::try_from(row.io_errors_24h)
+                            .map_err(|_| ApiError::internal())?,
+                        "forwarding_latency_samples": latency_samples,
+                        "forwarding_latency_microseconds_average": (latency_samples > 0)
+                            .then(|| latency_microseconds / latency_samples),
+                    }),
+                },
+            ))
+        })
+        .collect()
 }
 
 async fn load_memberships(state: &AppState) -> Result<Vec<MembershipRow>, ApiError> {
@@ -769,6 +1122,7 @@ fn groups_from_memberships(memberships: &[MembershipRow]) -> Result<Vec<GroupSum
     Ok(groups)
 }
 
+#[allow(clippy::too_many_lines)]
 fn nodes_from_rows(
     rows: Vec<NodeRow>,
     online_node_ids: &HashSet<[u8; 16]>,
@@ -816,6 +1170,34 @@ fn nodes_from_rows(
             } else {
                 "active"
             };
+            let telemetry = row
+                .telemetry_report
+                .map(serde_json::from_value::<AgentTelemetryReport>)
+                .transpose()
+                .map_err(|_| ApiError::internal())?;
+            let telemetry_fresh = row.revoked_at.is_none()
+                && row
+                    .telemetry_reported_at
+                    .is_some_and(|reported_at| reported_at >= now - chrono::Duration::minutes(3));
+            let (current_path, relay, latency_ms) =
+                node_path_summary(telemetry.as_ref(), telemetry_fresh);
+            let traffic_bytes_24h = match (
+                telemetry.as_ref(),
+                row.telemetry_tx_bytes_24h,
+                row.telemetry_rx_bytes_24h,
+            ) {
+                (Some(_), Some(tx), Some(rx)) => Availability::available(
+                    u64::try_from(tx)
+                        .map_err(|_| ApiError::internal())?
+                        .checked_add(u64::try_from(rx).map_err(|_| ApiError::internal())?)
+                        .ok_or_else(ApiError::internal)?,
+                ),
+                _ => Availability::unavailable("Agent 尚未形成 24 小时流量遥测窗口"),
+            };
+            let handshake_attempts_24h = optional_u64(row.telemetry_handshake_attempts_24h)?;
+            let handshake_successes_24h = optional_u64(row.telemetry_handshake_successes_24h)?;
+            let latency_samples_24h = optional_u64(row.telemetry_latency_samples_24h)?;
+            let latency_microseconds_24h = optional_u64(row.telemetry_latency_microseconds_24h)?;
             Ok(NodeSummary {
                 id: row.id,
                 network_id: row.network_id,
@@ -834,10 +1216,10 @@ fn nodes_from_rows(
                 ),
                 public_endpoint,
                 local_endpoints,
-                current_path: Availability::unavailable("Agent 尚未上报当前路径"),
-                relay: Availability::unavailable("Agent 尚未上报当前 Relay"),
-                latency_ms: Availability::unavailable("Agent 尚未上报路径延迟"),
-                traffic_bytes_24h: Availability::unavailable("Agent 尚未上报流量"),
+                current_path,
+                relay,
+                latency_ms,
+                traffic_bytes_24h,
                 state,
                 last_seen_at,
                 groups,
@@ -853,9 +1235,91 @@ fn nodes_from_rows(
                 update_release_id: row.update_release_id,
                 update_error_code: row.update_error_code,
                 update_reported_at: row.update_reported_at,
+                telemetry,
+                telemetry_fresh,
+                handshake_attempts_24h,
+                handshake_successes_24h,
+                latency_samples_24h,
+                latency_microseconds_24h,
             })
         })
         .collect()
+}
+
+fn node_path_summary(
+    telemetry: Option<&AgentTelemetryReport>,
+    fresh: bool,
+) -> (
+    Availability<String>,
+    Availability<String>,
+    Availability<f64>,
+) {
+    let Some(telemetry) = telemetry else {
+        return (
+            Availability::unavailable("Agent 尚未上报当前路径"),
+            Availability::unavailable("Agent 尚未上报当前 Relay"),
+            Availability::unavailable("Agent 尚未上报路径延迟"),
+        );
+    };
+    if !fresh {
+        return (
+            Availability::unavailable("Agent 路径遥测已过期"),
+            Availability::unavailable("Agent Relay 遥测已过期"),
+            Availability::unavailable("Agent 路径延迟遥测已过期"),
+        );
+    }
+    let direct = telemetry
+        .peers
+        .iter()
+        .filter(|peer| peer.path == AgentPathKind::Direct)
+        .count();
+    let relayed = telemetry
+        .peers
+        .iter()
+        .filter(|peer| peer.path == AgentPathKind::Relay)
+        .count();
+    let path = match (direct, relayed) {
+        (0, 0) => "idle",
+        (_, 0) => "direct",
+        (0, _) => "relay",
+        _ => "mixed",
+    };
+    let relay_ids = telemetry
+        .peers
+        .iter()
+        .filter_map(|peer| peer.relay_id_base64.as_deref())
+        .collect::<HashSet<_>>();
+    let relay = match relay_ids.len() {
+        0 => "none".to_owned(),
+        1 => relay_ids.into_iter().next().unwrap_or_default().to_owned(),
+        _ => "multiple".to_owned(),
+    };
+    let latencies = telemetry
+        .peers
+        .iter()
+        .filter(|peer| peer.session_established)
+        .filter_map(|peer| peer.last_latency_microseconds)
+        .collect::<Vec<_>>();
+    let latency = if latencies.is_empty() {
+        Availability::unavailable("当前路径尚无认证 RTT 样本")
+    } else {
+        let total = latencies.iter().copied().fold(0_u64, u64::saturating_add);
+        Availability::available(average_latency_ms(
+            total,
+            u64::try_from(latencies.len()).unwrap_or(u64::MAX),
+        ))
+    };
+    (
+        Availability::available(path.to_owned()),
+        Availability::available(relay),
+        latency,
+    )
+}
+
+fn optional_u64(value: Option<i64>) -> Result<Option<u64>, ApiError> {
+    value
+        .map(|value| u64::try_from(value).map_err(|_| ApiError::internal()))
+        .transpose()
 }
 
 fn networks_from_rows(

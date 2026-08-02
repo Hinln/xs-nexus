@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
     config::AgentConfig,
-    control::run_control_loop,
+    control::{ControlContext, run_control_loop},
     data_plane::UdpDataPlane,
     error::{AgentError, Result},
     health::AgentHealth,
@@ -47,6 +48,9 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
     let network = TunNetwork::create(plan.clone(), &config.network_manifest_path()).await?;
     let data_plane = UdpDataPlane::bind(&state, Arc::clone(&identity)).await?;
     let data_plane_status = data_plane.status_handle();
+    let mut telemetry_boot_id = [0_u8; 16];
+    getrandom::fill(&mut telemetry_boot_id).map_err(|_| AgentError::State)?;
+    let telemetry_boot_id_base64 = URL_SAFE_NO_PAD.encode(telemetry_boot_id);
     let state = Arc::new(tokio::sync::RwLock::new(state));
     let health = Arc::new(AgentHealth::new());
     let (candidate_sender, candidate_receiver) = watch::channel(None);
@@ -57,10 +61,14 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
     };
 
     let control_task = tokio::spawn(run_control_loop(
-        config.clone(),
-        Arc::clone(&identity),
-        Arc::clone(&state),
-        Arc::clone(&health),
+        ControlContext {
+            config: config.clone(),
+            identity: Arc::clone(&identity),
+            state: Arc::clone(&state),
+            health: Arc::clone(&health),
+            data_plane_status: Arc::clone(&data_plane_status),
+            telemetry_boot_id_base64,
+        },
         candidate_receiver,
         subnet_route_receiver,
         shutdown.clone(),

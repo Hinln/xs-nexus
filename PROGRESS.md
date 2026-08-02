@@ -67,7 +67,7 @@
 - 三个隔离 namespace 已验证审批前不可达、纯路由/NAT ICMP/TCP、伪造源拒绝、网关离线撤销、暂停、shutdown 和崩溃恢复；
 - M3.2 全量证据 `/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`。
 - Controller 控制台用户、Argon2id 密码、登录限速、HttpOnly/SameSite 会话、CSRF 轮换、注销撤销和 administrator/operator/auditor 服务端授权；
-- 管理快照接入真实网络、节点、Token、组、ACL、子网、Relay、拓扑、用户、审计、告警和系统能力，任何未接入路径/流量/延迟/健康指标均显式“未采集”；
+- 管理快照接入真实网络、节点、Token、组、ACL、子网、Relay、拓扑、用户、审计、告警和系统能力；M4 当时尚未接入的路径/流量/延迟/健康指标显式“未采集”，后续状态见 2026-08-02 认证遥测闭环；
 - 节点在线状态只由当前进程已认证活跃控制连接决定，连接断开会实时移除并记录数据库时间；
 - React 控制台完成登录、首页、节点详情、网络、地址池、Token、组、路由审批、Relay、ACL、用户、审计、告警、更新、设置、备份和 404；
 - 6 项 Playwright 主流程、6 个固定视口、135 张截图、空/错误/无权限/大量数据/长 IPv6/离线/部分服务异常和键盘焦点恢复均通过；
@@ -289,3 +289,11 @@ make clean
 - Linux 包、安装、回滚和卸载现包含 `xs-agent-update.path/.service`；root helper 正常路径和归档篡改负向路径、systemd 沙箱及安装器生命周期均通过。
 - Console 更新页接入真实发布、策略、节点通道和签名状态 API，审计员只读；加载/空/403/503、显式确认、代次/配置版本冲突、9 条 Playwright 和 6 个固定视口通过。
 - 隔离验证通过：Core 26、Agent 48+3、Controller 10+1、真实 PostgreSQL、Agent 控制面、严格 Clippy、Console 构建/单测/E2E/视觉。正式仓库和生产容器在验证期间未被修改。
+
+## 2026-08-02 Agent/Relay 认证遥测闭环
+
+- Agent 数据面新增每 Peer 累计业务收发、握手和认证 RTT；计数只覆盖进入加密数据面的发送包及通过解密、来源绑定和 ACL 的接收包。被替换 Peer 的累计值滚入进程级退役计数，boot 总量不回退。
+- Agent 用节点身份密钥签名 Network/Node、随机 boot ID、单调 sequence、精确配置 Peer 集合、Direct/Relay 路径和累计值；Controller 拒绝错误签名、过期/未来报告、重放、同 boot 计数回滚、未知 Peer/Relay 和聚合不一致，保存最新值与 25 小时/1800 样本。Relay 最多保留 9000 样本，以覆盖最快 10 秒周期下的 25 小时窗口。
+- Relay 用目录身份密钥签名全局累计租约、字节、转发、分类丢弃、错误和延迟指标；报告明确不含 Network/Node、端点、Lease ID 或 payload。Controller 对同 boot 执行单调验证并以 Relay 目录公钥验签。
+- Console 首页、节点、Relay 和拓扑现展示新鲜认证报告派生的当前路径、Relay、24 小时流量、握手成功率、延迟和 Relay 健康；缺失/陈旧值继续显式不可用，不推断默认值。
+- 验证通过：Core 29 项、Relay 7+1 项、Agent 既有 48+3 项、严格 Clippy、真实 PostgreSQL签名/重放/回滚负向集成、双 Agent/双 Relay fallback/密文/failover/Direct 恢复与 Reporter 推送、Console 4 项单测和 10 条 Playwright 主流程。`KI-012` 已解除；真实公网 Relay 容量仍由 `KI-010` 跟踪。

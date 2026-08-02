@@ -65,6 +65,17 @@ test("所有管理页面可通过主导航访问", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("Relay 页面展示身份签名指标与 24 小时窗口", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  await page.goto("/#/relays");
+  await expect(page.getByRole("heading", { name: "Relay" })).toBeVisible();
+  await expect(page.getByText("签名指标新鲜")).toBeVisible();
+  await expect(page.getByText("2", { exact: true })).toBeVisible();
+  await expect(page.getByText("12.0 MiB / 12.0 MiB")).toBeVisible();
+  await expect(page.getByText("17,990 / 10")).toBeVisible();
+  await expect(page.getByText("6.50 ms")).toBeVisible();
+});
+
 test("空数据、无权限和服务错误均有明确状态", async ({ page }) => {
   await mockAuthenticatedApi(page, { snapshot: emptySnapshotFixture() });
   await page.goto("/#/nodes");

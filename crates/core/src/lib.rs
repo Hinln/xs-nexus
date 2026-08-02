@@ -12,6 +12,7 @@ use uuid::Uuid;
 mod acl;
 mod healthcheck;
 mod routes;
+mod telemetry;
 mod updates;
 
 pub use acl::{
@@ -21,6 +22,11 @@ pub use acl::{
 pub use healthcheck::{HttpHealthcheckError, check_local_http_health};
 pub use routes::validate_subnet_route_suggestion;
 pub use routes::{ResolvedSubnetRoute, SubnetRoutePolicy, SubnetRouteValidationError};
+pub use telemetry::{
+    AgentPathKind, AgentPeerTelemetry, AgentTelemetryReport, MAX_AGENT_TELEMETRY_PEERS,
+    RelayTelemetryMetrics, RelayTelemetryReport, SignedRelayTelemetryReport,
+    agent_telemetry_report_signing_input, relay_telemetry_report_signing_input,
+};
 pub use updates::{
     AgentRuntimeReport, AgentUpdateState, LinuxReleaseManifest, MAX_UPDATE_ARCHIVE_BYTES,
     ReleaseManifestError, ReleaseVersion, ReleaseVersionError, UpdateChannel, UpdateDecision,
@@ -336,6 +342,10 @@ pub enum ControlClientMessage {
         report: AgentRuntimeReport,
         signature_base64: String,
     },
+    ReportTelemetry {
+        report: AgentTelemetryReport,
+        signature_base64: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -356,6 +366,9 @@ pub enum ControlServerMessage {
     },
     UpdateDirective {
         directive: Option<UpdateDirective>,
+    },
+    TelemetryAccepted {
+        sequence: u64,
     },
     Error {
         code: String,

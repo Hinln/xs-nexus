@@ -161,7 +161,32 @@ export interface RelaySummary {
   priority: number;
   expires_at: string;
   health: Availability<string>;
-  metrics: Availability<Record<string, number>>;
+  metrics: Availability<RelayTelemetrySummary>;
+}
+
+export interface RelayTelemetrySummary {
+  reported_at: string;
+  current: {
+    active_leases: number;
+    packets_received: number;
+    bytes_received: number;
+    packets_forwarded: number;
+    bytes_forwarded: number;
+    packets_dropped: number;
+    io_errors: number;
+    forwarding_latency_samples: number;
+    forwarding_latency_microseconds_total: number;
+  };
+  window_24h: {
+    packets_received: number;
+    bytes_received: number;
+    packets_forwarded: number;
+    bytes_forwarded: number;
+    packets_dropped: number;
+    io_errors: number;
+    forwarding_latency_samples: number;
+    forwarding_latency_microseconds_average: number | null;
+  };
 }
 
 export interface TopologySummary {

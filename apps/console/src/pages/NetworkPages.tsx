@@ -5,7 +5,7 @@ import {
   createNetwork,
   replaceSubnetRoutes,
 } from "../api";
-import { availabilityText, formatDateTime, tokenStateLabel } from "../format";
+import { availabilityText, formatBytes, formatDateTime, tokenStateLabel } from "../format";
 import type {
   ConsoleSnapshot,
   ConsoleUser,
@@ -381,14 +381,27 @@ function makeRouteId(advertisement: RouteSuggestionAdvertisement, suggestion: Ro
 export function RelaysPage({ snapshot }: { snapshot: ConsoleSnapshot }) {
   return (
     <>
-      <PageHeader title="Relay" description="展示 Controller 签名目录；未配置指标端点时不推断健康。" />
+      <PageHeader title="Relay" description="展示 Controller 签名目录与 Relay 身份签名的运行指标。" />
       {snapshot.relays.length === 0 ? <EmptyState title="Relay 目录为空" description="当前签名配置没有可用 Relay。" /> : (
-        <div className="card-grid">{snapshot.relays.map((relay) => (
-          <article className="network-card" key={relay.relay_id_base64}>
-            <div className="network-card__head"><div><span className="eyebrow">XSR/1 Relay</span><h2><code>{relay.endpoint}</code></h2></div><StatusPill state="unknown" label={availabilityText(relay.health)} /></div>
-            <dl className="detail-list"><div><dt>优先级</dt><dd>{relay.priority}</dd></div><div><dt>目录过期</dt><dd>{formatDateTime(relay.expires_at)}</dd></div><div><dt>健康原因</dt><dd>{relay.health.reason ?? "已采集"}</dd></div></dl>
-          </article>
-        ))}</div>
+        <div className="card-grid">{snapshot.relays.map((relay) => {
+          const metrics = relay.metrics.value;
+          const window = metrics?.window_24h;
+          return (
+            <article className="network-card" key={relay.relay_id_base64}>
+              <div className="network-card__head"><div><span className="eyebrow">XSR/1 Relay</span><h2><code>{relay.endpoint}</code></h2></div><StatusPill state={relay.health.value === "healthy" ? "online" : "unknown"} label={availabilityText(relay.health)} /></div>
+              <dl className="detail-list">
+                <div><dt>优先级</dt><dd>{relay.priority}</dd></div>
+                <div><dt>活跃租约</dt><dd>{metrics?.current.active_leases ?? "未采集"}</dd></div>
+                <div><dt>24 小时接收 / 转发</dt><dd>{window ? `${formatBytes(window.bytes_received)} / ${formatBytes(window.bytes_forwarded)}` : "未采集"}</dd></div>
+                <div><dt>24 小时转发包 / 丢弃包</dt><dd>{window ? `${window.packets_forwarded.toLocaleString("zh-CN")} / ${window.packets_dropped.toLocaleString("zh-CN")}` : "未采集"}</dd></div>
+                <div><dt>24 小时平均转发延迟</dt><dd>{window?.forwarding_latency_microseconds_average === null || window === undefined ? "未采集" : `${(window.forwarding_latency_microseconds_average / 1000).toFixed(2)} ms`}</dd></div>
+                <div><dt>最近上报</dt><dd>{metrics ? formatDateTime(metrics.reported_at) : "未采集"}</dd></div>
+                <div><dt>目录过期</dt><dd>{formatDateTime(relay.expires_at)}</dd></div>
+                <div><dt>健康原因</dt><dd>{relay.health.reason ?? "签名指标新鲜"}</dd></div>
+              </dl>
+            </article>
+          );
+        })}</div>
       )}
     </>
   );

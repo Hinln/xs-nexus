@@ -2,7 +2,7 @@ use std::{ffi::OsString, process::ExitCode, sync::Arc, time::Duration};
 
 use tokio::{signal, sync::watch};
 use tracing_subscriber::EnvFilter;
-use xs_relay::{RelayMetrics, RelayServer, config::RelayConfig};
+use xs_relay::{RelayMetrics, RelayServer, RelayTelemetryReporter, config::RelayConfig};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -73,11 +73,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let relay_id = config.relay_id;
     let relay_public_key = config.identity_key.verifying_key();
     let metrics = RelayMetrics::default();
+    let reporter = RelayTelemetryReporter::new(&config, metrics.clone())?;
     let server = RelayServer::new(config, metrics.clone());
     let udp_socket = Arc::new(tokio::net::UdpSocket::bind(listen).await?);
     let health_listener = tokio::net::TcpListener::bind(health_listen).await?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut udp = tokio::spawn(server.serve(Arc::clone(&udp_socket), shutdown_rx.clone()));
+    let mut telemetry = tokio::spawn(reporter.run(shutdown_rx.clone()));
     let health_metrics = metrics.clone();
     let mut health = tokio::spawn(async move {
         axum::serve(health_listener, xs_relay::health_router(health_metrics))
@@ -96,18 +98,28 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let _ = shutdown_tx.send(true);
             udp.await??;
             health.await??;
+            telemetry.await??;
         }
         result = &mut udp => {
             let _ = shutdown_tx.send(true);
             health.await??;
+            telemetry.await??;
             result??;
             return Err("Relay UDP service stopped unexpectedly".into());
         }
         result = &mut health => {
             let _ = shutdown_tx.send(true);
             udp.await??;
+            telemetry.await??;
             result??;
             return Err("Relay health service stopped unexpectedly".into());
+        }
+        result = &mut telemetry => {
+            let _ = shutdown_tx.send(true);
+            udp.await??;
+            health.await??;
+            result??;
+            return Err("Relay telemetry reporter stopped unexpectedly".into());
         }
     }
     let snapshot = metrics.snapshot();

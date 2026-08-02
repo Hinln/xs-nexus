@@ -133,7 +133,7 @@
 - 会话有绝对到期、每用户最多 10 个、注销撤销和 CSRF 轮换；管理写操作同时要求有效会话角色和 CSRF；
 - 管理员、操作员和审计员权限全部在 Controller 强制执行，浏览器隐藏按钮不是授权边界；Bootstrap bearer Token 仍只供服务端自动化使用；
 - 快照和用户 API 不返回密码、会话、CSRF、Token、私钥或 hash；Enrollment Token 明文仍只在创建响应中出现一次；
-- 节点在线状态来自当前进程已认证控制连接，不以最近候选、固定夹具或数据库时间伪造；未接入指标显式不可用；
+- 节点在线状态来自当前进程已认证控制连接，不以最近候选、固定夹具或数据库时间伪造；路径/流量/RTT 只来自节点身份签名的新鲜报告，缺失或陈旧指标显式不可用；
 - 浏览器主流程覆盖安全 Cookie、CSRF、越权、注销、Console/Page Error 和未解释 4xx/5xx；秘密扫描和 npm audit 通过；
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`。
 
@@ -351,7 +351,7 @@
 - 指标只包含全局累计计数、字节数和从进入内存队列到 UDP send 成功的时长；不包含 XSP/1 密文、业务明文、节点 ID、网络 ID、端点或 lease ID。
 - 丢弃按 invalid/authentication/replay/rate-limit/queue/destination/send 分类，并提供可审计总数；不把不可观测的公网 UDP 丢失推断为零或精确比例。
 - 延迟使用单调 `Instant`，只在完整 datagram 成功发送后提交样本；失败发送计入 drop 与 I/O error，不污染成功延迟。
-- 指标端点与 health listener 共用，Compose 不向宿主或公网发布该 TCP 端口；Controller 集成前仍需定义认证、采集边界和保留策略。
+- 指标端点与 health listener 共用，Compose 不向宿主或公网发布该 TCP 端口；Relay 另用目录身份密钥在独立域下签名推送相同累计值，Controller 按 boot/sequence、时间、分类总和和同 boot 单调性验证，最多保留 25 小时/9000 样本。
 
 ## 13. M7.1 连续回归复核（2026-07-31）
 
@@ -377,3 +377,11 @@ Clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T23
 - Agent treats directives as untrusted scheduling input, checks the Controller-signed assigned channel, pins the offline public key, permits HTTPS only, applies connection/overall timeout and 512 MiB bounds, and publishes ready state atomically only after exact size/SHA-256/signature checks.
 - The systemd root helper has no network access, rejects unsafe paths/links/permissions, copies the archive into a private root-owned directory, re-verifies all public material after the privilege transition, and calls the existing signature-verifying atomic installer. Tampered archive tests prove the installer is not invoked.
 - Residual gates: the production offline signing ceremony, authenticated public-key distribution/rotation/revocation, real signed storage and RC rollback exercise remain `KI-013`; existing older Agents that reject unknown node fields require a two-phase fleet rollout.
+
+## 15. Authenticated telemetry review (2026-08-02)
+
+- Agent reports bind Network/Node, a random nonzero process boot ID, monotonic sequence and the exact active signed-configuration peer set. Ed25519 signing uses a domain distinct from control authentication, candidates, runtime updates and Relay reports.
+- TX counters advance only after a business packet enters the encrypted data plane; RX counters advance only after AEAD, source binding and ACL acceptance. Per-peer and aggregate cumulative counters cannot decrease within one boot; removed peers are folded into aggregate retired counters.
+- Active-path latency uses encrypted PathChallenge/PathResponse, not plaintext echo. Controller rejects unknown peers/Relays, impossible path state, malformed latency, aggregate inconsistency, stale/future reports, replay and per-peer/aggregate rollback.
+- Relay reports contain no Network/Node, endpoint, Lease ID or payload. The Controller trusts only the active catalog key, and the public HTTP route still requires a valid signature before storage.
+- PostgreSQL retains latest rows plus bounded 25-hour samples; Console freshness gates prevent stale reports from becoming authorization or health truth. Telemetry is operational evidence only and never changes ACL, path authorization or update eligibility.

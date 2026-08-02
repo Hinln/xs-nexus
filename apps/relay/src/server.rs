@@ -893,6 +893,10 @@ mod tests {
             relay_id,
             controller_credential_key,
             identity_key,
+            controller_metrics_url: "http://127.0.0.1/v1/relay-metrics"
+                .parse()
+                .expect("Controller metrics URL"),
+            metrics_report_interval_seconds: 10,
             lease_ttl_seconds: 120,
             idle_timeout_seconds: 60,
             max_leases: 8,

@@ -16,12 +16,14 @@
 | 服务 | 运行用户 | 持久状态 | 说明 |
 |---|---:|---|---|
 | Controller | `65532:65532` | 外部 PostgreSQL schema | HTTP、WebSocket 和地址发现 |
-| Relay | `65532:65532` | 无 | UDP Relay，身份密钥由只读 Secret 提供 |
+| Relay | `65532:65532` | 无 | UDP Relay；身份密钥由只读 Secret 提供，并向内部 Controller 推送身份签名的脱敏累计指标 |
 | Console | `101:101` | 无 | 静态资源和 Controller 反向代理 |
 | migration | `65532:65532` | 外部 PostgreSQL schema | 一次性执行，服务激活前退出 |
 | db-tools | `65532:65532` | 宿主备份目录 | 一次性备份、校验和恢复 |
 
 所有服务使用只读根文件系统、丢弃全部 capability、启用 `no-new-privileges`、PID 上限、tmpfs 和有界日志轮转。
+
+Compose 把 Relay 指标目标固定为同一隔离项目中的 Controller `/v1/relay-metrics`。容器内部 HTTP 必须显式设置隔离网络 opt-in；该选择只省略同主机容器链路的 TLS，不关闭 Ed25519 报告签名、Relay 目录公钥验证、重放/回滚拒绝或样本上限。跨主机和生产非隔离链路必须使用 HTTPS。
 
 ## 3. 环境隔离
 

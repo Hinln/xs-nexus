@@ -77,6 +77,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/enroll", post(enroll))
         .route("/v1/control", get(control))
+        .route("/v1/relay-metrics", post(record_relay_metrics))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(PropagateRequestIdLayer::x_request_id())
@@ -278,9 +279,16 @@ async fn enroll(
 
 async fn control(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
     upgrade
-        .max_message_size(64 * 1024)
-        .max_frame_size(64 * 1024)
+        .max_message_size(512 * 1024)
+        .max_frame_size(512 * 1024)
         .on_upgrade(move |socket| crate::control::serve(socket, state))
+}
+
+async fn record_relay_metrics(
+    State(state): State<AppState>,
+    Json(report): Json<xs_core::SignedRelayTelemetryReport>,
+) -> Result<Json<crate::relay_telemetry::RelayTelemetryAcknowledgement>, ApiError> {
+    Ok(Json(crate::relay_telemetry::record(&state, report).await?))
 }
 
 async fn not_found() -> ApiError {

@@ -59,6 +59,10 @@ const PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(30);
 #[cfg(feature = "privileged-network-tests")]
 const PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(3);
 #[cfg(not(feature = "privileged-network-tests"))]
+const LATENCY_PROBE_INTERVAL: Duration = Duration::from_secs(30);
+#[cfg(feature = "privileged-network-tests")]
+const LATENCY_PROBE_INTERVAL: Duration = Duration::from_secs(3);
+#[cfg(not(feature = "privileged-network-tests"))]
 const KEY_UPDATE_PACKET_LIMIT: u64 = 1 << 20;
 #[cfg(feature = "privileged-network-tests")]
 const KEY_UPDATE_PACKET_LIMIT: u64 = 4;
@@ -97,9 +101,48 @@ struct Peer {
     recent_client_hellos: VecDeque<([u8; 32], Instant)>,
     pending_path_probe: Option<PendingPathProbe>,
     path_probe_retry_after: Instant,
+    next_latency_probe_at: Instant,
     next_proactive_handshake_at: Instant,
     handshake_failures: u8,
     handshake_candidate_attempts: usize,
+    tx_packets_total: u64,
+    tx_bytes_total: u64,
+    rx_packets_total: u64,
+    rx_bytes_total: u64,
+    handshake_attempts_total: u64,
+    handshake_successes_total: u64,
+    latency_samples_total: u64,
+    latency_microseconds_total: u64,
+    last_latency_microseconds: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct TelemetryCounters {
+    tx_bytes: u64,
+    rx_bytes: u64,
+    handshake_attempts: u64,
+    handshake_successes: u64,
+    latency_samples: u64,
+    latency_microseconds: u64,
+}
+
+impl TelemetryCounters {
+    fn add_peer(&mut self, peer: &Peer) {
+        self.tx_bytes = self.tx_bytes.saturating_add(peer.tx_bytes_total);
+        self.rx_bytes = self.rx_bytes.saturating_add(peer.rx_bytes_total);
+        self.handshake_attempts = self
+            .handshake_attempts
+            .saturating_add(peer.handshake_attempts_total);
+        self.handshake_successes = self
+            .handshake_successes
+            .saturating_add(peer.handshake_successes_total);
+        self.latency_samples = self
+            .latency_samples
+            .saturating_add(peer.latency_samples_total);
+        self.latency_microseconds = self
+            .latency_microseconds
+            .saturating_add(peer.latency_microseconds_total);
+    }
 }
 
 struct QueuedPacket {
@@ -239,6 +282,12 @@ impl ProcessResult {
 pub struct DataPlaneStatus {
     pub local_candidates: Vec<EndpointCandidate>,
     pub peers: HashMap<Ipv4Addr, PeerPathStatus>,
+    pub tx_bytes_total: u64,
+    pub rx_bytes_total: u64,
+    pub handshake_attempts_total: u64,
+    pub handshake_successes_total: u64,
+    pub latency_samples_total: u64,
+    pub latency_microseconds_total: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -248,6 +297,15 @@ pub struct PeerPathStatus {
     pub active_candidate_kind: Option<EndpointCandidateKind>,
     pub path_reason: Option<PathSelectionReason>,
     pub session_established: bool,
+    pub tx_packets_total: u64,
+    pub tx_bytes_total: u64,
+    pub rx_packets_total: u64,
+    pub rx_bytes_total: u64,
+    pub handshake_attempts_total: u64,
+    pub handshake_successes_total: u64,
+    pub latency_samples_total: u64,
+    pub latency_microseconds_total: u64,
+    pub last_latency_microseconds: Option<u64>,
 }
 
 pub type SharedDataPlaneStatus = Arc<tokio::sync::RwLock<DataPlaneStatus>>;
@@ -271,6 +329,7 @@ pub struct UdpDataPlane {
     subnet_routes: SubnetRoutePolicy,
     local_node_id_base64: String,
     status: SharedDataPlaneStatus,
+    retired_telemetry: TelemetryCounters,
     configuration_version: u64,
     policy_version: u64,
 }
@@ -322,6 +381,7 @@ impl UdpDataPlane {
             subnet_routes,
             local_node_id_base64: state.node_id_base64.clone(),
             status,
+            retired_telemetry: TelemetryCounters::default(),
             configuration_version: state.configuration.version,
             policy_version: state.configuration_payload.policy_version,
         };
@@ -357,43 +417,48 @@ impl UdpDataPlane {
         let mut updated = HashMap::with_capacity(desired.len());
         let now = Instant::now();
         for (virtual_ip, mut replacement) in desired {
-            if let Some(mut existing) = self.peers_by_virtual_ip.remove(&virtual_ip)
-                && existing.node_id == replacement.node_id
-            {
-                if policy_changed {
-                    clear_queue(&mut existing);
-                }
-                let candidates_changed =
-                    candidate_routes_changed(&existing.candidates, &replacement.candidates);
-                existing.candidates = replacement.candidates;
-                if candidates_changed {
-                    existing.pending_path_probe = None;
-                    existing.path_probe_retry_after = now;
-                    if !matches!(existing.state, PeerState::Established(_)) {
-                        existing.state = PeerState::Idle;
-                        existing.handshake_candidate_attempts = 0;
-                        existing.next_proactive_handshake_at = now;
+            if let Some(mut existing) = self.peers_by_virtual_ip.remove(&virtual_ip) {
+                if existing.node_id == replacement.node_id {
+                    if policy_changed {
+                        clear_queue(&mut existing);
+                    }
+                    let candidates_changed =
+                        candidate_routes_changed(&existing.candidates, &replacement.candidates);
+                    existing.candidates = replacement.candidates;
+                    if candidates_changed {
+                        existing.pending_path_probe = None;
+                        existing.path_probe_retry_after = now;
+                        if !matches!(existing.state, PeerState::Established(_)) {
+                            existing.state = PeerState::Idle;
+                            existing.handshake_candidate_attempts = 0;
+                            existing.next_proactive_handshake_at = now;
+                            existing.active_endpoint = existing
+                                .candidates
+                                .first()
+                                .map(|candidate| candidate.endpoint);
+                            existing.path_reason = Some(PathSelectionReason::ConfigurationUpdate);
+                        }
+                    }
+                    if !matches!(existing.state, PeerState::Established(_))
+                        && existing
+                            .active_endpoint
+                            .is_none_or(|endpoint| !peer_has_endpoint(&existing, endpoint))
+                    {
                         existing.active_endpoint = existing
                             .candidates
                             .first()
                             .map(|candidate| candidate.endpoint);
                         existing.path_reason = Some(PathSelectionReason::ConfigurationUpdate);
                     }
+                    replacement = existing;
+                } else {
+                    self.retired_telemetry.add_peer(&existing);
                 }
-                if !matches!(existing.state, PeerState::Established(_))
-                    && existing
-                        .active_endpoint
-                        .is_none_or(|endpoint| !peer_has_endpoint(&existing, endpoint))
-                {
-                    existing.active_endpoint = existing
-                        .candidates
-                        .first()
-                        .map(|candidate| candidate.endpoint);
-                    existing.path_reason = Some(PathSelectionReason::ConfigurationUpdate);
-                }
-                replacement = existing;
             }
             updated.insert(virtual_ip, replacement);
+        }
+        for retired in self.peers_by_virtual_ip.values() {
+            self.retired_telemetry.add_peer(retired);
         }
         self.peers_by_virtual_ip = updated;
         for endpoint in failed_relays {
@@ -516,11 +581,19 @@ impl UdpDataPlane {
             };
             established.sent_packets_in_epoch = established.sent_packets_in_epoch.saturating_add(1);
             established.last_keepalive_at = now;
+            peer.tx_packets_total = peer.tx_packets_total.saturating_add(1);
+            peer.tx_bytes_total = peer
+                .tx_bytes_total
+                .saturating_add(u64::try_from(packet.len()).unwrap_or(u64::MAX));
             outbound
         } else {
             if !queue_packet(peer, packet, routed_packet) {
                 return Ok(true);
             }
+            peer.tx_packets_total = peer.tx_packets_total.saturating_add(1);
+            peer.tx_bytes_total = peer
+                .tx_bytes_total
+                .saturating_add(u64::try_from(packet.len()).unwrap_or(u64::MAX));
             if matches!(peer.state, PeerState::Idle) {
                 begin_client_handshake(&self.material, peer, now)?
             } else {
@@ -542,6 +615,7 @@ impl UdpDataPlane {
     /// # Errors
     ///
     /// Returns an Agent error only for local socket failures; untrusted protocol input is dropped.
+    #[allow(clippy::too_many_lines)]
     pub async fn receive(&mut self) -> Result<Option<Vec<u8>>> {
         let mut datagram = [0_u8; MAX_DATAGRAM_LENGTH];
         let (length, source) = self
@@ -606,17 +680,6 @@ impl UdpDataPlane {
             && result.path_authenticated
             && peer.active_endpoint == Some(source);
         let destination_node_id = peer.node_id;
-        if through_relay && result.path_authenticated {
-            self.relay_manager.authenticate_activity(source, now);
-        }
-        for outbound in result.outbound {
-            let _ = self
-                .send_xsp(source, destination_node_id, &outbound)
-                .await?;
-        }
-        if endpoint_index_changed {
-            self.rebuild_endpoint_index()?;
-        }
         let plaintext = result.plaintext.filter(|plaintext| {
             ipv4_flow(plaintext).is_some_and(|flow| {
                 let identity_bound = (flow.source == peer_ip
@@ -638,6 +701,23 @@ impl UdpDataPlane {
                 identity_bound && decision.allowed
             })
         });
+        if let Some(plaintext) = &plaintext {
+            peer.rx_packets_total = peer.rx_packets_total.saturating_add(1);
+            peer.rx_bytes_total = peer
+                .rx_bytes_total
+                .saturating_add(u64::try_from(plaintext.len()).unwrap_or(u64::MAX));
+        }
+        if through_relay && result.path_authenticated {
+            self.relay_manager.authenticate_activity(source, now);
+        }
+        for outbound in result.outbound {
+            let _ = self
+                .send_xsp(source, destination_node_id, &outbound)
+                .await?;
+        }
+        if endpoint_index_changed {
+            self.rebuild_endpoint_index()?;
+        }
         self.synchronize_status().await;
         Ok(plaintext)
     }
@@ -838,6 +918,16 @@ impl UdpDataPlane {
     async fn synchronize_status(&self) {
         let mut status = self.status.write().await;
         status.local_candidates = self.candidate_manager.candidates();
+        let mut totals = self.retired_telemetry;
+        for peer in self.peers_by_virtual_ip.values() {
+            totals.add_peer(peer);
+        }
+        status.tx_bytes_total = totals.tx_bytes;
+        status.rx_bytes_total = totals.rx_bytes;
+        status.handshake_attempts_total = totals.handshake_attempts;
+        status.handshake_successes_total = totals.handshake_successes;
+        status.latency_samples_total = totals.latency_samples;
+        status.latency_microseconds_total = totals.latency_microseconds;
         status.peers = self
             .peers_by_virtual_ip
             .iter()
@@ -855,6 +945,15 @@ impl UdpDataPlane {
                         }),
                         path_reason: peer.path_reason,
                         session_established: matches!(peer.state, PeerState::Established(_)),
+                        tx_packets_total: peer.tx_packets_total,
+                        tx_bytes_total: peer.tx_bytes_total,
+                        rx_packets_total: peer.rx_packets_total,
+                        rx_bytes_total: peer.rx_bytes_total,
+                        handshake_attempts_total: peer.handshake_attempts_total,
+                        handshake_successes_total: peer.handshake_successes_total,
+                        latency_samples_total: peer.latency_samples_total,
+                        latency_microseconds_total: peer.latency_microseconds_total,
+                        last_latency_microseconds: peer.last_latency_microseconds,
                     },
                 )
             })
@@ -937,9 +1036,19 @@ fn build_peer_directory(
                 recent_client_hellos: VecDeque::new(),
                 pending_path_probe: None,
                 path_probe_retry_after: now,
+                next_latency_probe_at: now,
                 next_proactive_handshake_at: now,
                 handshake_failures: 0,
                 handshake_candidate_attempts: 0,
+                tx_packets_total: 0,
+                tx_bytes_total: 0,
+                rx_packets_total: 0,
+                rx_bytes_total: 0,
+                handshake_attempts_total: 0,
+                handshake_successes_total: 0,
+                latency_samples_total: 0,
+                latency_microseconds_total: 0,
+                last_latency_microseconds: None,
             },
         );
     }
@@ -1201,6 +1310,7 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
             RetryAction::Expired => {
                 peer.pending_path_probe = None;
                 peer.path_probe_retry_after = now + PATH_PROBE_COOLDOWN;
+                peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
                 Ok(None)
             }
         };
@@ -1208,7 +1318,11 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
     if now < peer.path_probe_retry_after {
         return Ok(None);
     }
-    let target = best_probe_target(peer);
+    let target = best_probe_target(peer).or_else(|| {
+        (matches!(peer.state, PeerState::Established(_)) && now >= peer.next_latency_probe_at)
+            .then_some(peer.active_endpoint)
+            .flatten()
+    });
     let Some(endpoint) = target else {
         return Ok(None);
     };
@@ -1235,6 +1349,7 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
         token,
         retry: RetryState::path_probe(encoded.clone(), now),
     });
+    peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
     Ok(Some((endpoint, encoded)))
 }
 
@@ -1290,6 +1405,7 @@ fn begin_client_handshake(
         material.identity.signing_key(),
     )
     .map_err(|_| AgentError::DataPlane)?;
+    peer.handshake_attempts_total = peer.handshake_attempts_total.saturating_add(1);
     let encoded = machine.encoded().to_vec();
     peer.state = PeerState::ClientHello(Box::new(ClientHelloPending {
         machine,
@@ -1313,7 +1429,7 @@ fn process_datagram(
         Some(CLIENT_FINISH_TYPE) => handle_client_finish(peer, datagram),
         Some(SERVER_FINISH_TYPE) => handle_server_finish(peer, datagram),
         Some(value) if PacketType::try_from(value).is_ok() => {
-            handle_data(peer, source, datagram, allow_routed_data)
+            handle_data(peer, source, datagram, now, allow_routed_data)
         }
         _ => ProcessResult::empty(),
     }
@@ -1382,6 +1498,7 @@ fn handle_client_hello(
     ) else {
         return ProcessResult::empty();
     };
+    peer.handshake_attempts_total = peer.handshake_attempts_total.saturating_add(1);
     let encoded = machine.encoded().to_vec();
     remember_client_hello(peer, request_hash, now);
     peer.state = PeerState::ServerHello(Box::new(ServerHelloPending {
@@ -1477,9 +1594,10 @@ fn handle_data(
     peer: &mut Peer,
     source: SocketAddr,
     datagram: &[u8],
+    now: Instant,
     allow_routed_data: bool,
 ) -> ProcessResult {
-    let mut path_probe_succeeded = false;
+    let mut path_probe_latency = None;
     let result = {
         let PeerState::Established(established) = &mut peer.state else {
             return ProcessResult::empty();
@@ -1538,19 +1656,29 @@ fn handle_data(
                 path_authenticated: false,
             },
             PacketType::PathResponse => {
-                path_probe_succeeded = peer.pending_path_probe.as_ref().is_some_and(|pending| {
-                    pending.endpoint == source
+                path_probe_latency = peer.pending_path_probe.as_ref().and_then(|pending| {
+                    (pending.endpoint == source
                         && pending.path_id == opened.path_id
-                        && pending.token.as_slice() == opened.plaintext
+                        && pending.token.as_slice() == opened.plaintext)
+                        .then(|| now.saturating_duration_since(pending.retry.last_sent))
                 });
                 ProcessResult::empty()
             }
             PacketType::Close => ProcessResult::empty(),
         }
     };
-    if path_probe_succeeded {
+    if let Some(latency) = path_probe_latency {
         peer.pending_path_probe = None;
-        promote_path(peer, source, PathSelectionReason::AuthenticatedPathProbe);
+        let latency_microseconds = u64::try_from(latency.as_micros()).unwrap_or(u64::MAX);
+        peer.last_latency_microseconds = Some(latency_microseconds);
+        peer.latency_samples_total = peer.latency_samples_total.saturating_add(1);
+        peer.latency_microseconds_total = peer
+            .latency_microseconds_total
+            .saturating_add(latency_microseconds);
+        peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
+        if peer.active_endpoint != Some(source) {
+            promote_path(peer, source, PathSelectionReason::AuthenticatedPathProbe);
+        }
     }
     result
 }
@@ -1576,6 +1704,7 @@ fn install_session(peer: &mut Peer, session: EstablishedSession) -> Vec<Vec<u8>>
     peer.queued_bytes = 0;
     peer.handshake_failures = 0;
     peer.handshake_candidate_attempts = 0;
+    peer.handshake_successes_total = peer.handshake_successes_total.saturating_add(1);
     let now = Instant::now();
     peer.next_proactive_handshake_at = now;
     peer.state = PeerState::Established(Box::new(EstablishedPeer {

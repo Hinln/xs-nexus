@@ -27,9 +27,12 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use xs_controller::config::ControllerConfig;
 use xs_core::{
-    AgentRuntimeReport, AgentUpdateState, CandidateAdvertisement, EndpointCandidate,
-    EndpointCandidateKind, SubnetRouteAdvertisement, SubnetRouteSuggestion, UpdateChannel,
-    agent_runtime_report_signing_input,
+    AgentPathKind, AgentPeerTelemetry, AgentRuntimeReport, AgentTelemetryReport, AgentUpdateState,
+    CandidateAdvertisement, ConfigurationRelay, EndpointCandidate, EndpointCandidateKind,
+    RelayTelemetryMetrics, RelayTelemetryReport, SignedRelayTelemetryReport,
+    SubnetRouteAdvertisement, SubnetRouteSuggestion, UpdateChannel,
+    agent_runtime_report_signing_input, agent_telemetry_report_signing_input,
+    relay_telemetry_report_signing_input,
 };
 use xs_protocol::{
     CREDENTIAL_LENGTH, DiscoveryRequest, verify_credential, verify_discovery_response,
@@ -45,6 +48,7 @@ const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route adverti
 type ControlSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn controller_registration_ipam_configuration_and_control_flow() {
     let discovery_socket = UdpSocket::bind(("127.0.0.1", 0))
         .await
@@ -66,6 +70,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     let (status, ready) = request_json(&router, Method::GET, "/health/ready", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(ready["database"], "ok");
+    assert_relay_telemetry(&router, &state.pool).await;
 
     let network_request = json!({
         "name": "integration-network",
@@ -128,7 +133,14 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     let manual_enrollment = assert_manual_ip_assignment(&router, network_id).await;
 
     assert_audit_is_append_only_and_redacted(&state.pool, &token).await;
-    verify_websocket_control(&router, &enrollment, &identity, discovery_address).await;
+    verify_websocket_control(
+        &router,
+        &state.pool,
+        &enrollment,
+        &identity,
+        discovery_address,
+    )
+    .await;
     assert_acl_policy_explain_revoke_and_cooldown(
         &router,
         &state.pool,
@@ -1226,7 +1238,7 @@ async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str)
     .fetch_one(pool)
     .await
     .expect("control audit count");
-    assert_eq!(control_audits, 6);
+    assert_eq!(control_audits, 11);
 
     let stored_use_count: i32 =
         sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
@@ -1291,13 +1303,228 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
         update_signing_public_key: Some(SigningKey::from_bytes(&[23_u8; 32]).verifying_key()),
         credential_ttl_seconds: 86_400,
-        relays: Vec::new(),
+        relays: vec![ConfigurationRelay {
+            relay_id_base64: URL_SAFE_NO_PAD.encode([41_u8; 16]),
+            endpoint: "127.0.0.1:42001".parse().expect("Relay endpoint"),
+            identity_public_key_base64: URL_SAFE_NO_PAD.encode(
+                SigningKey::from_bytes(&[42_u8; 32])
+                    .verifying_key()
+                    .to_bytes(),
+            ),
+            priority: 100,
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+        }],
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn assert_relay_telemetry(router: &Router, pool: &sqlx::PgPool) {
+    let signing_key = SigningKey::from_bytes(&[42_u8; 32]);
+    let relay_id = [41_u8; 16];
+    let boot_id = [43_u8; 16];
+    let generated_at = Utc::now();
+    let report = RelayTelemetryReport {
+        schema_version: 1,
+        relay_id_base64: URL_SAFE_NO_PAD.encode(relay_id),
+        boot_id_base64: URL_SAFE_NO_PAD.encode(boot_id),
+        sequence: 1,
+        generated_at,
+        metrics: relay_metrics_fixture(),
+    };
+    let signed = sign_relay_report(report.clone(), &signing_key);
+    let (status, response) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(&signed).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["accepted_sequence"], 1);
+
+    let stored_sequence: i64 =
+        sqlx::query_scalar("SELECT sequence FROM relay_telemetry_reports WHERE relay_id = $1")
+            .bind(relay_id.as_slice())
+            .fetch_one(pool)
+            .await
+            .expect("latest Relay telemetry");
+    assert_eq!(stored_sequence, 1);
+    let sample_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM relay_telemetry_samples WHERE relay_id = $1")
+            .bind(relay_id.as_slice())
+            .fetch_one(pool)
+            .await
+            .expect("Relay telemetry samples");
+    assert_eq!(sample_count, 1);
+
+    let (status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(&signed).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let mut invalid_signature = sign_relay_report(
+        RelayTelemetryReport {
+            sequence: 2,
+            generated_at: generated_at + chrono::Duration::seconds(1),
+            ..report.clone()
+        },
+        &signing_key,
+    );
+    invalid_signature.signature_base64 = URL_SAFE_NO_PAD.encode([0_u8; 64]);
+    let (status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(invalid_signature).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let mut rolled_back_metrics = report.metrics.clone();
+    rolled_back_metrics.packets_received -= 1;
+    let rollback = sign_relay_report(
+        RelayTelemetryReport {
+            sequence: 2,
+            generated_at: generated_at + chrono::Duration::seconds(2),
+            metrics: rolled_back_metrics,
+            ..report.clone()
+        },
+        &signing_key,
+    );
+    let (status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(rollback).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let mut inconsistent_metrics = report.metrics.clone();
+    inconsistent_metrics.packets_dropped = 2;
+    let inconsistent = sign_relay_report(
+        RelayTelemetryReport {
+            sequence: 2,
+            generated_at: generated_at + chrono::Duration::seconds(3),
+            metrics: inconsistent_metrics,
+            ..report.clone()
+        },
+        &signing_key,
+    );
+    let (status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(inconsistent).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let stale = sign_relay_report(
+        RelayTelemetryReport {
+            sequence: 2,
+            generated_at: generated_at - chrono::Duration::minutes(11),
+            ..report.clone()
+        },
+        &signing_key,
+    );
+    let (status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(stale).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let mut next_metrics = report.metrics.clone();
+    next_metrics.packets_received += 10;
+    next_metrics.bytes_received += 1_000;
+    next_metrics.packets_forwarded += 8;
+    next_metrics.bytes_forwarded += 800;
+    next_metrics.forwarding_latency_samples += 8;
+    next_metrics.forwarding_latency_microseconds_total += 400;
+    let next = sign_relay_report(
+        RelayTelemetryReport {
+            sequence: 2,
+            generated_at: generated_at + chrono::Duration::seconds(4),
+            metrics: next_metrics,
+            ..report
+        },
+        &signing_key,
+    );
+    let (status, response) = request_json(
+        router,
+        Method::POST,
+        "/v1/relay-metrics",
+        Some(serde_json::to_value(next).expect("Relay telemetry JSON")),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["accepted_sequence"], 2);
+
+    let sample_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM relay_telemetry_samples WHERE relay_id = $1")
+            .bind(relay_id.as_slice())
+            .fetch_one(pool)
+            .await
+            .expect("Relay telemetry samples");
+    assert_eq!(sample_count, 2);
+}
+
+fn relay_metrics_fixture() -> RelayTelemetryMetrics {
+    RelayTelemetryMetrics {
+        active_leases: 2,
+        packets_received: 10,
+        bytes_received: 1_000,
+        registrations_accepted: 2,
+        registration_retries: 0,
+        registrations_rejected: 1,
+        packets_forwarded: 8,
+        bytes_forwarded: 800,
+        keepalives_accepted: 4,
+        invalid_drops: 1,
+        authentication_drops: 0,
+        replay_drops: 0,
+        rate_limit_drops: 0,
+        queue_drops: 0,
+        destination_drops: 0,
+        send_drops: 0,
+        packets_dropped: 1,
+        io_errors: 0,
+        forwarding_latency_samples: 8,
+        forwarding_latency_microseconds_total: 400,
+        forwarding_latency_microseconds_max: 80,
+    }
+}
+
+fn sign_relay_report(
+    report: RelayTelemetryReport,
+    signing_key: &SigningKey,
+) -> SignedRelayTelemetryReport {
+    let input = relay_telemetry_report_signing_input(&report).expect("Relay signing input");
+    SignedRelayTelemetryReport {
+        report,
+        signature_base64: URL_SAFE_NO_PAD.encode(signing_key.sign(&input).to_bytes()),
     }
 }
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE update_rollout_policies, update_releases,
+        "TRUNCATE relay_telemetry_samples, relay_telemetry_reports,
+                  node_telemetry_samples, node_telemetry_reports,
+                  update_rollout_policies, update_releases,
                   console_login_attempts, console_sessions, audit_events,
                   configuration_versions, subnet_routes,
                   node_subnet_route_advertisements, acl_rules,
@@ -1929,12 +2156,14 @@ async fn assert_audit_is_append_only_and_redacted(pool: &sqlx::PgPool, token: &s
 
 async fn verify_websocket_control(
     router: &Router,
+    pool: &sqlx::PgPool,
     enrollment: &Value,
     identity: &SigningKey,
     discovery_address: SocketAddr,
 ) {
     Box::pin(verify_websocket_control_inner(
         router,
+        pool,
         enrollment,
         identity,
         discovery_address,
@@ -1944,6 +2173,7 @@ async fn verify_websocket_control(
 
 async fn verify_websocket_control_inner(
     router: &Router,
+    pool: &sqlx::PgPool,
     enrollment: &Value,
     identity: &SigningKey,
     discovery_address: SocketAddr,
@@ -2011,6 +2241,11 @@ async fn verify_websocket_control_inner(
     send_signed_runtime_report(&mut socket, &runtime_report, identity).await;
     let runtime_response = receive_update_directive(&mut socket, updated_version).await;
     assert_eq!(runtime_response["type"], "update_directive");
+    send_initial_telemetry(pool, enrollment, identity, &mut socket).await;
+    Box::pin(assert_telemetry_report_rejections(
+        pool, address, enrollment, identity,
+    ))
+    .await;
     Box::pin(assert_runtime_report_rejections(
         address, enrollment, identity,
     ))
@@ -2032,6 +2267,171 @@ async fn verify_websocket_control_inner(
     .await
     .expect("control disconnect updates console presence");
     server.abort();
+}
+
+async fn send_initial_telemetry(
+    pool: &sqlx::PgPool,
+    enrollment: &Value,
+    identity: &SigningKey,
+    socket: &mut ControlSocket,
+) {
+    let mut report = telemetry_report_fixture(pool, enrollment, 1, Utc::now()).await;
+    if let Some(peer) = report.peers.first_mut() {
+        peer.tx_packets_total = 1;
+        peer.tx_bytes_total = 10;
+        report.tx_bytes_total = 10;
+    }
+    send_signed_telemetry_report(socket, &report, identity).await;
+    let response = socket
+        .next()
+        .await
+        .expect("telemetry response")
+        .expect("valid telemetry response");
+    let Message::Text(response) = response else {
+        panic!("expected telemetry response text");
+    };
+    let response: Value = serde_json::from_str(&response).expect("telemetry response JSON");
+    assert_eq!(response["type"], "telemetry_accepted");
+    assert_eq!(response["sequence"], 1);
+}
+
+async fn assert_telemetry_report_rejections(
+    pool: &sqlx::PgPool,
+    address: SocketAddr,
+    enrollment: &Value,
+    identity: &SigningKey,
+) {
+    let accepted = telemetry_report_fixture(pool, enrollment, 1, Utc::now()).await;
+    let (mut replay, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_signed_telemetry_report(&mut replay, &accepted, identity).await;
+    assert_control_error_and_close(&mut replay, "telemetry_report_rejected").await;
+
+    let stale = telemetry_report_fixture(
+        pool,
+        enrollment,
+        2,
+        Utc::now() - chrono::Duration::minutes(11),
+    )
+    .await;
+    let (mut stale_socket, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_signed_telemetry_report(&mut stale_socket, &stale, identity).await;
+    assert_control_error_and_close(&mut stale_socket, "telemetry_report_rejected").await;
+
+    let invalid = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    let (mut invalid_signature, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_telemetry_report_value(
+        &mut invalid_signature,
+        serde_json::to_value(invalid).expect("telemetry JSON"),
+        URL_SAFE_NO_PAD.encode([0_u8; 64]),
+    )
+    .await;
+    assert_control_error_and_close(&mut invalid_signature, "telemetry_report_rejected").await;
+
+    let mut inconsistent = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    inconsistent.handshake_successes_total = 1;
+    let (mut inconsistent_socket, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_signed_telemetry_report(&mut inconsistent_socket, &inconsistent, identity).await;
+    assert_control_error_and_close(&mut inconsistent_socket, "telemetry_report_rejected").await;
+
+    let mut peer_rollback = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    if let Some(peer) = peer_rollback.peers.first_mut() {
+        peer.tx_bytes_total = 9;
+        peer_rollback.tx_bytes_total = 10;
+    }
+    let (mut peer_rollback_socket, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_signed_telemetry_report(&mut peer_rollback_socket, &peer_rollback, identity).await;
+    assert_control_error_and_close(&mut peer_rollback_socket, "telemetry_report_rejected").await;
+}
+
+async fn telemetry_report_fixture(
+    pool: &sqlx::PgPool,
+    enrollment: &Value,
+    sequence: u64,
+    generated_at: chrono::DateTime<Utc>,
+) -> AgentTelemetryReport {
+    let network_id = Uuid::from_str(enrollment["network_id"].as_str().expect("network id"))
+        .expect("valid network id");
+    let local_node_id = URL_SAFE_NO_PAD
+        .decode(enrollment["node_id_base64"].as_str().expect("node id"))
+        .expect("node id base64");
+    let peer_ids = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT node_id FROM nodes
+         WHERE network_id = $1 AND node_id <> $2 AND revoked_at IS NULL
+         ORDER BY node_id",
+    )
+    .bind(network_id)
+    .bind(local_node_id)
+    .fetch_all(pool)
+    .await
+    .expect("load telemetry peers");
+    AgentTelemetryReport {
+        schema_version: 1,
+        network_id,
+        node_id_base64: enrollment["node_id_base64"]
+            .as_str()
+            .expect("node id")
+            .to_owned(),
+        boot_id_base64: "AQEBAQEBAQEBAQEBAQEBAQ".to_owned(),
+        sequence,
+        generated_at,
+        tx_bytes_total: 0,
+        rx_bytes_total: 0,
+        handshake_attempts_total: 0,
+        handshake_successes_total: 0,
+        latency_samples_total: 0,
+        latency_microseconds_total: 0,
+        peers: peer_ids
+            .into_iter()
+            .map(|node_id| AgentPeerTelemetry {
+                peer_node_id_base64: URL_SAFE_NO_PAD.encode(node_id),
+                path: AgentPathKind::Disconnected,
+                relay_id_base64: None,
+                session_established: false,
+                last_latency_microseconds: None,
+                tx_packets_total: 0,
+                tx_bytes_total: 0,
+                rx_packets_total: 0,
+                rx_bytes_total: 0,
+                handshake_attempts_total: 0,
+                handshake_successes_total: 0,
+                latency_samples_total: 0,
+                latency_microseconds_total: 0,
+            })
+            .collect(),
+    }
+}
+
+async fn send_signed_telemetry_report(
+    socket: &mut ControlSocket,
+    report: &AgentTelemetryReport,
+    identity: &SigningKey,
+) {
+    let input = agent_telemetry_report_signing_input(report).expect("telemetry signing input");
+    send_telemetry_report_value(
+        socket,
+        serde_json::to_value(report).expect("telemetry JSON"),
+        URL_SAFE_NO_PAD.encode(identity.sign(&input).to_bytes()),
+    )
+    .await;
+}
+
+async fn send_telemetry_report_value(
+    socket: &mut ControlSocket,
+    report: Value,
+    signature_base64: String,
+) {
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "report_telemetry",
+                "report": report,
+                "signature_base64": signature_base64
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send telemetry report");
 }
 
 async fn receive_update_directive(socket: &mut ControlSocket, expected_version: u64) -> Value {

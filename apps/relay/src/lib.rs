@@ -5,9 +5,11 @@ use serde::Serialize;
 
 pub mod config;
 mod metrics;
+mod reporter;
 mod server;
 
 pub use metrics::{RelayMetrics, RelayMetricsSnapshot};
+pub use reporter::{RelayTelemetryReporter, ReporterError};
 pub use server::RelayServer;
 
 #[derive(Clone, Copy, Serialize)]

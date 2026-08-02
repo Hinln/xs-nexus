@@ -36,6 +36,7 @@
 - [x] 协议负向
 - [x] NAT
 - [x] Relay
+- [x] Agent/Relay 身份签名遥测、重放/回滚拒绝与 Console 有界 24 小时聚合
 - [x] ACL
 - [x] 子网路由
 - [x] Playwright

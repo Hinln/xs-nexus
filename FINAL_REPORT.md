@@ -30,11 +30,11 @@
 - Windows 路由准备：精确 LUID、IP Helper、DAD、manifest、additions-first、补偿和恢复；`make test-windows-agent-routing` 通过 16 个单测、源码门禁、MSVC target check 和 Clippy。runtime 仍隔离。
 - 性能基线：XSP/1 161,314 seal+open/s；Relay 87,822 包/s；Controller 100/500/1000 节点规模；release Agent Direct/Relay RTT 0.91/1.16 ms；Agent 空闲 CPU 0.55% 单核、RSS 7.95 MiB。证据见 `docs/PERFORMANCE_REPORT.md`。
 - 签名更新：离线签名不可变发布、三通道确定性灰度、节点签名状态、Controller 签名通道、Agent/root helper 双重验证和原子回滚；见 `docs/UPDATE_SYSTEM.md`。
+- 认证遥测：Agent 节点身份签名当前路径、业务流量、握手与 RTT；Relay 目录身份签名脱敏累计指标；Controller 验签、拒绝重放/回滚并保存有界 25 小时窗口，Console 展示新鲜/陈旧状态。
 - 24 小时稳定性：三服务各 1420 次采样、一次受控 PID 转换、零额外自动重启；修正重启语义后的真实回归为 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`。
 
 ## 4. 部分完成功能
 
-- Agent 路径/流量遥测与 Relay 指标向 Controller/Console 的受控汇总尚未完成；现有 Console 对未知值继续显示不可用原因。
 - 数据库备份已验证本机私有归档、完整性和恢复回滚，但认证加密、异机复制接口和正式保留/销毁策略仍由 `KI-015` 跟踪。
 - 容器镜像供应链：113/113 个已安装 OS 包均有逐包许可证闭包；镜像 digest、OS SBOM、构建来源、Grype 报告和 disposition 已验证。当前报告包含 2 Critical、4 High、16 Medium、24 Negligible，均无可修复版本；glibc 处置有效期至 2026-08-31，变化时需提前复核。
 - Windows 路由：模型和平台 FFI 已完成静态/交叉验证，但没有 Windows SDK/WDK 编译、真实 IP Helper、DAD、PnP、睡眠恢复或设备实机证据。

@@ -7,7 +7,7 @@
 ## 1. 边界与传输
 
 - Controller 提供 enrollment、配置同步、健康检查和临时管理员入口；不承载节点业务数据。
-- HTTP JSON body 上限为 64 KiB；未知 JSON 字段拒绝。
+- HTTP JSON body 全局上限为 1 MiB；Relay 报告签名输入另限 64 KiB，Agent 控制消息和 Peer 数另有 512 KiB/1024 项边界；未知 JSON 字段拒绝。
 - enrollment、管理员 API 和 WebSocket 必须部署在 TLS 反向代理之后；明文监听只允许受控 loopback 或容器内部链路。
 - `X-Request-Id` 被生成并传播；HTTP tracing 不记录 header 或 body。
 - 所有错误使用固定信封，不暴露 SQL、签名、Token 或内部状态。
@@ -78,7 +78,7 @@
 
 ### `GET /v1/admin/console`
 
-返回控制台管理快照，包括网络、节点、Token 元数据、组、ACL、路由建议/审批、Relay 目录、拓扑、审计、告警和能力状态。节点在线只依据当前进程已认证控制连接；未接入遥测返回 `unavailable`、空值和原因，不推断默认健康或路径。任何秘密、Token 明文、会话和 hash 均不返回。
+返回控制台管理快照，包括网络、节点、Token 元数据、组、ACL、路由建议/审批、Relay 目录、拓扑、审计、告警和能力状态。节点在线只依据当前进程已认证控制连接；路径、流量、延迟和 Relay 健康只来自新鲜且验签通过的报告，缺失或陈旧数据返回 `unavailable`/`stale`，不推断默认健康或路径。任何秘密、Token 明文、会话和 hash 均不返回。
 
 所有会话管理写操作要求 `X-CSRF-Token`。`ADMIN_API_TOKEN` 仍可用于服务端自动化并视为 administrator，但不得交给浏览器。
 
@@ -167,7 +167,7 @@ Token 行锁、每网络 PostgreSQL transaction advisory lock、IP lease、节�
 
 ### `GET /v1/control`
 
-消息和 frame 上限均为 4096 字节。连接流程：
+消息和 frame 上限均为 512 KiB；配置、运行时和遥测结构仍分别执行更小的字段、列表与签名输入边界。连接流程：
 
 1. Controller 发送 `{"type":"challenge","challenge_base64":"..."}`。
 2. 节点在 10 秒内发送 `authenticate`，携带 Node ID、200 字节凭证和节点签名。
@@ -175,8 +175,15 @@ Token 行锁、每网络 PostgreSQL transaction advisory lock、IP lease、节�
 4. Controller 验证凭证、数据库身份、公钥、Network ID、有效期和签名后发送 `authenticated` 与最新配置。
 5. 节点发送 `{"type":"sync","last_version":2}`；服务端返回 `configuration` 或 `up_to_date`。
 6. 节点用身份密钥签名发送 `report_runtime`；Controller 验证身份、当前分配通道、时间和字段后保存单调报告，并只对 eligible/required 节点返回 `update_directive`。
+7. 节点用同一身份密钥、独立域标签签名发送 `report_telemetry`；报告绑定 Network/Node、随机非零 boot ID、单调 sequence、当前签名配置的精确 Peer 集合、路径和累计计数。Controller 验证后返回 `telemetry_accepted`；重放、过期、计数回滚、未知 Peer/Relay 或聚合不一致会关闭该控制连接。
 
 challenge 每连接一次性生成。二进制、未知或越序消息被拒绝；连接使用 ping/pong 心跳。控制通道只传签名配置和状态，不传业务数据。
+
+### `POST /v1/relay-metrics`
+
+该端点不使用浏览器会话或管理员 Token；请求必须包含目录中活动 Relay 的 ID、随机非零 boot ID、单调 sequence、生成时间、累计指标和 Ed25519 签名。签名输入为 `"XS Nexus relay telemetry report v1" || compact_report_json`，公钥只来自 Controller 的 Relay 目录。
+
+报告不包含 Network/Node、来源/目标端点、Lease ID 或业务载荷。Controller 拒绝未知/过期 Relay、错误签名、10 分钟以上陈旧报告、未来时间、同 boot 重放/计数回滚、分类丢弃和总丢弃不一致及异常延迟；只保存每 Relay 最新报告和最多 25 小时/9000 个样本，覆盖允许的最快 10 秒周期。生产使用 HTTPS；只有 loopback 或显式批准的隔离容器网络可允许 HTTP，签名验真不因此关闭。
 
 ## 9. 数据库与审计
 

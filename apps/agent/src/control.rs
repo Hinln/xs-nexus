@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
@@ -13,13 +13,16 @@ use tokio_tungstenite::{
     tungstenite::{Message, protocol::WebSocketConfig},
 };
 use xs_core::{
-    AgentRuntimeReport, AgentUpdateState, CandidateAdvertisement, ControlClientMessage,
-    ControlServerMessage, ReleaseVersion, SignedConfiguration, SubnetRouteAdvertisement,
+    AgentPathKind, AgentPeerTelemetry, AgentRuntimeReport, AgentTelemetryReport, AgentUpdateState,
+    CandidateAdvertisement, ControlClientMessage, ControlServerMessage, EndpointCandidateKind,
+    MAX_AGENT_TELEMETRY_PEERS, ReleaseVersion, SignedConfiguration, SubnetRouteAdvertisement,
     UpdateChannel, UpdateDirective, agent_runtime_report_signing_input,
+    agent_telemetry_report_signing_input,
 };
 
 use crate::{
     config::AgentConfig,
+    data_plane::SharedDataPlaneStatus,
     error::{AgentError, Result},
     health::AgentHealth,
     state::{NodeState, decode_fixed},
@@ -30,7 +33,8 @@ use crate::{
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
 const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route advertisement v1";
-const CONTROL_MESSAGE_LIMIT: usize = 64 * 1024;
+const CONTROL_MESSAGE_LIMIT: usize = 512 * 1024;
+const TELEMETRY_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
 struct RuntimeUpdateStatus {
@@ -49,25 +53,31 @@ impl RuntimeUpdateStatus {
     }
 }
 
+#[derive(Clone)]
+pub struct ControlContext {
+    pub config: AgentConfig,
+    pub identity: Arc<Identity>,
+    pub state: Arc<tokio::sync::RwLock<NodeState>>,
+    pub health: Arc<AgentHealth>,
+    pub data_plane_status: SharedDataPlaneStatus,
+    pub telemetry_boot_id_base64: String,
+}
+
 pub async fn run_control_loop(
-    config: AgentConfig,
-    identity: Arc<Identity>,
-    state: Arc<tokio::sync::RwLock<NodeState>>,
-    health: Arc<AgentHealth>,
+    context: ControlContext,
     mut candidates: watch::Receiver<Option<CandidateAdvertisement>>,
     mut subnet_routes: watch::Receiver<Option<SubnetRouteAdvertisement>>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
+    let mut telemetry_sequence = 0_u64;
     loop {
         if *shutdown.borrow() {
             return;
         }
         match control_session(
-            &config,
-            &identity,
-            &state,
-            &health,
+            &context,
+            &mut telemetry_sequence,
             &mut candidates,
             &mut subnet_routes,
             &mut shutdown,
@@ -76,8 +86,10 @@ pub async fn run_control_loop(
         {
             Ok(()) if *shutdown.borrow() => return,
             Ok(()) | Err(_) => {
-                health.set_controller_connected(false);
-                health.set_last_error(Some(AgentError::Control.code()));
+                context.health.set_controller_connected(false);
+                context
+                    .health
+                    .set_last_error(Some(AgentError::Control.code()));
             }
         }
 
@@ -93,15 +105,20 @@ pub async fn run_control_loop(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn control_session(
-    config: &AgentConfig,
-    identity: &Identity,
-    state: &tokio::sync::RwLock<NodeState>,
-    health: &AgentHealth,
+    context: &ControlContext,
+    telemetry_sequence: &mut u64,
     candidates: &mut watch::Receiver<Option<CandidateAdvertisement>>,
     subnet_routes: &mut watch::Receiver<Option<SubnetRouteAdvertisement>>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<()> {
+    let config = &context.config;
+    let identity = context.identity.as_ref();
+    let state = context.state.as_ref();
+    let health = context.health.as_ref();
+    let data_plane_status = &context.data_plane_status;
+    let telemetry_boot_id_base64 = context.telemetry_boot_id_base64.as_str();
     let websocket_config = WebSocketConfig::default()
         .max_message_size(Some(CONTROL_MESSAGE_LIMIT))
         .max_frame_size(Some(CONTROL_MESSAGE_LIMIT));
@@ -119,6 +136,15 @@ async fn control_session(
     let mut update_status = RuntimeUpdateStatus::idle();
     let mut attempted_update = None;
     send_runtime_report(&mut socket, identity, config, state, &update_status).await?;
+    send_telemetry_report(
+        &mut socket,
+        identity,
+        state,
+        data_plane_status,
+        telemetry_boot_id_base64,
+        telemetry_sequence,
+    )
+    .await?;
     let initial_advertisement = candidates.borrow().clone();
     if let Some(advertisement) = initial_advertisement {
         send_candidate_advertisement(&mut socket, identity, advertisement).await?;
@@ -132,6 +158,11 @@ async fn control_session(
     let first_synchronization = Instant::now() + Duration::from_secs(1).min(synchronization_period);
     let mut synchronization = interval_at(first_synchronization, synchronization_period);
     synchronization.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut telemetry = interval_at(
+        Instant::now() + TELEMETRY_REPORT_INTERVAL,
+        TELEMETRY_REPORT_INTERVAL,
+    );
+    telemetry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
@@ -145,6 +176,16 @@ async fn control_session(
                 let last_version = state.read().await.configuration.version;
                 send_json(&mut socket, &ControlClientMessage::Sync { last_version }).await?;
                 send_runtime_report(&mut socket, identity, config, state, &update_status).await?;
+            }
+            _ = telemetry.tick() => {
+                send_telemetry_report(
+                    &mut socket,
+                    identity,
+                    state,
+                    data_plane_status,
+                    telemetry_boot_id_base64,
+                    telemetry_sequence,
+                ).await?;
             }
             changed = candidates.changed() => {
                 if changed.is_err() {
@@ -169,6 +210,14 @@ async fn control_session(
                     ControlServerMessage::Configuration { configuration } => {
                         apply_configuration(state, identity, configuration, &config.node_state_path()).await?;
                         send_runtime_report(&mut socket, identity, config, state, &update_status).await?;
+                        send_telemetry_report(
+                            &mut socket,
+                            identity,
+                            state,
+                            data_plane_status,
+                            telemetry_boot_id_base64,
+                            telemetry_sequence,
+                        ).await?;
                     }
                     ControlServerMessage::UpToDate { version }
                         if version == state.read().await.configuration.version => {}
@@ -184,10 +233,15 @@ async fn control_session(
                             &mut attempted_update,
                         ).await?;
                     }
+                    ControlServerMessage::TelemetryAccepted { sequence }
+                        if sequence <= *telemetry_sequence => {}
                     ControlServerMessage::Error { .. }
                     | ControlServerMessage::Challenge { .. }
                     | ControlServerMessage::Authenticated { .. }
-                    | ControlServerMessage::UpToDate { .. } => return Err(AgentError::Control),
+                    | ControlServerMessage::UpToDate { .. }
+                    | ControlServerMessage::TelemetryAccepted { .. } => {
+                        return Err(AgentError::Control);
+                    }
                 }
             }
         }
@@ -288,6 +342,106 @@ where
     send_json(
         socket,
         &ControlClientMessage::ReportRuntime {
+            report,
+            signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+        },
+    )
+    .await
+}
+
+async fn send_telemetry_report<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    identity: &Identity,
+    state: &tokio::sync::RwLock<NodeState>,
+    data_plane_status: &SharedDataPlaneStatus,
+    boot_id_base64: &str,
+    sequence: &mut u64,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let state = state.read().await;
+    let status = data_plane_status.read().await;
+    let peers = state
+        .configuration_payload
+        .nodes
+        .iter()
+        .filter(|node| node.node_id_base64 != state.node_id_base64)
+        .map(|node| {
+            let virtual_ip = node
+                .virtual_ip
+                .parse::<Ipv4Addr>()
+                .map_err(|_| AgentError::State)?;
+            let peer = status.peers.get(&virtual_ip);
+            let session_established = peer.is_some_and(|peer| peer.session_established);
+            let path = if !session_established {
+                AgentPathKind::Disconnected
+            } else if peer.and_then(|peer| peer.active_candidate_kind)
+                == Some(EndpointCandidateKind::Relay)
+            {
+                AgentPathKind::Relay
+            } else {
+                AgentPathKind::Direct
+            };
+            let relay_id_base64 = if path == AgentPathKind::Relay {
+                let active_endpoint = peer.and_then(|peer| peer.active_endpoint);
+                Some(
+                    state
+                        .configuration_payload
+                        .relays
+                        .iter()
+                        .find(|relay| Some(relay.endpoint) == active_endpoint)
+                        .ok_or(AgentError::State)?
+                        .relay_id_base64
+                        .clone(),
+                )
+            } else {
+                None
+            };
+            Ok(AgentPeerTelemetry {
+                peer_node_id_base64: node.node_id_base64.clone(),
+                path,
+                relay_id_base64,
+                session_established,
+                last_latency_microseconds: peer.and_then(|peer| peer.last_latency_microseconds),
+                tx_packets_total: peer.map_or(0, |peer| peer.tx_packets_total),
+                tx_bytes_total: peer.map_or(0, |peer| peer.tx_bytes_total),
+                rx_packets_total: peer.map_or(0, |peer| peer.rx_packets_total),
+                rx_bytes_total: peer.map_or(0, |peer| peer.rx_bytes_total),
+                handshake_attempts_total: peer.map_or(0, |peer| peer.handshake_attempts_total),
+                handshake_successes_total: peer.map_or(0, |peer| peer.handshake_successes_total),
+                latency_samples_total: peer.map_or(0, |peer| peer.latency_samples_total),
+                latency_microseconds_total: peer.map_or(0, |peer| peer.latency_microseconds_total),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if peers.len() > MAX_AGENT_TELEMETRY_PEERS {
+        return Err(AgentError::State);
+    }
+    *sequence = sequence.checked_add(1).ok_or(AgentError::State)?;
+    let report = AgentTelemetryReport {
+        schema_version: 1,
+        network_id: state.network_id,
+        node_id_base64: state.node_id_base64.clone(),
+        boot_id_base64: boot_id_base64.to_owned(),
+        sequence: *sequence,
+        generated_at: Utc::now(),
+        tx_bytes_total: status.tx_bytes_total,
+        rx_bytes_total: status.rx_bytes_total,
+        handshake_attempts_total: status.handshake_attempts_total,
+        handshake_successes_total: status.handshake_successes_total,
+        latency_samples_total: status.latency_samples_total,
+        latency_microseconds_total: status.latency_microseconds_total,
+        peers,
+    };
+    drop(status);
+    drop(state);
+    let signing_input =
+        agent_telemetry_report_signing_input(&report).map_err(|_| AgentError::Control)?;
+    let signature = identity.signing_key().sign(&signing_input);
+    send_json(
+        socket,
+        &ControlClientMessage::ReportTelemetry {
             report,
             signature_base64: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
         },

@@ -8,8 +8,10 @@ pub mod db;
 pub mod discovery;
 mod error;
 pub mod model;
+mod relay_telemetry;
 mod service;
 mod state;
+mod telemetry;
 mod updates;
 
 use axum::Router;

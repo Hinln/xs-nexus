@@ -15,6 +15,8 @@ pub struct RelayConfig {
     pub relay_id: [u8; 16],
     pub controller_credential_key: VerifyingKey,
     pub identity_key: SigningKey,
+    pub controller_metrics_url: url::Url,
+    pub metrics_report_interval_seconds: u64,
     pub lease_ttl_seconds: u64,
     pub idle_timeout_seconds: u64,
     pub max_leases: usize,
@@ -33,6 +35,10 @@ pub enum ConfigError {
     Listen,
     #[error("invalid Relay ID")]
     RelayId,
+    #[error("invalid Controller metrics URL")]
+    ControllerMetricsUrl,
+    #[error("plain HTTP Controller metrics URL requires an explicit isolated-network opt-in")]
+    InsecureControllerMetricsUrl,
     #[error("unable to inspect key file")]
     KeyMetadata,
     #[error("key path must be a regular non-symlink file")]
@@ -63,6 +69,13 @@ impl RelayConfig {
             "CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH",
         )?))?;
         let identity_key = load_signing_key(Path::new(&required("RELAY_IDENTITY_KEY_PATH")?))?;
+        let allow_insecure_metrics = strict_bool("RELAY_ALLOW_INSECURE_CONTROLLER_METRICS", false)?;
+        let controller_metrics_url = parse_controller_metrics_url(
+            &required("CONTROLLER_METRICS_URL")?,
+            allow_insecure_metrics,
+        )?;
+        let metrics_report_interval_seconds =
+            bounded_u64("RELAY_METRICS_REPORT_INTERVAL_SECONDS", 30, 10, 300)?;
         let lease_ttl_seconds =
             bounded_u64("RELAY_LEASE_TTL_SECONDS", 120, 30, RELAY_MAX_LEASE_SECONDS)?;
         let idle_timeout_seconds =
@@ -104,6 +117,8 @@ impl RelayConfig {
             relay_id,
             controller_credential_key,
             identity_key,
+            controller_metrics_url,
+            metrics_report_interval_seconds,
             lease_ttl_seconds,
             idle_timeout_seconds,
             max_leases,
@@ -114,6 +129,41 @@ impl RelayConfig {
             queue_bytes_per_node,
         })
     }
+}
+
+fn strict_bool(name: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match env::var(name) {
+        Ok(value) if value == "true" => Ok(true),
+        Ok(value) if value == "false" => Ok(false),
+        Ok(_) | Err(env::VarError::NotUnicode(_)) => Err(ConfigError::Limit(name)),
+        Err(env::VarError::NotPresent) => Ok(default),
+    }
+}
+
+fn parse_controller_metrics_url(
+    value: &str,
+    allow_insecure: bool,
+) -> Result<url::Url, ConfigError> {
+    let url = url::Url::parse(value).map_err(|_| ConfigError::ControllerMetricsUrl)?;
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/v1/relay-metrics"
+        || !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+    {
+        return Err(ConfigError::ControllerMetricsUrl);
+    }
+    let loopback = url
+        .host_str()
+        .and_then(|host| host.parse::<std::net::IpAddr>().ok())
+        .is_some_and(|address| address.is_loopback())
+        || url.host_str() == Some("localhost");
+    if url.scheme() == "http" && !loopback && !allow_insecure {
+        return Err(ConfigError::InsecureControllerMetricsUrl);
+    }
+    Ok(url)
 }
 
 fn required(name: &'static str) -> Result<String, ConfigError> {
@@ -227,5 +277,37 @@ mod tests {
         );
         assert!(decode_relay_id("AAAAAAAAAAAAAAAAAAAAAA").is_err());
         assert!(decode_relay_id("not-base64").is_err());
+    }
+
+    #[test]
+    fn controller_metrics_url_is_exact_and_secure_by_default() {
+        assert!(
+            parse_controller_metrics_url("https://controller.example/v1/relay-metrics", false)
+                .is_ok()
+        );
+        assert!(
+            parse_controller_metrics_url("http://127.0.0.1:8080/v1/relay-metrics", false).is_ok()
+        );
+        assert!(matches!(
+            parse_controller_metrics_url(
+                "http://xs-nexus-dev-controller:8080/v1/relay-metrics",
+                false
+            ),
+            Err(ConfigError::InsecureControllerMetricsUrl)
+        ));
+        assert!(
+            parse_controller_metrics_url(
+                "http://xs-nexus-dev-controller:8080/v1/relay-metrics",
+                true
+            )
+            .is_ok()
+        );
+        for invalid in [
+            "https://user@controller.example/v1/relay-metrics",
+            "https://controller.example/metrics",
+            "https://controller.example/v1/relay-metrics?token=value",
+        ] {
+            assert!(parse_controller_metrics_url(invalid, false).is_err());
+        }
     }
 }

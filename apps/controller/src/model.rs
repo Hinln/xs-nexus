@@ -4,11 +4,11 @@ use uuid::Uuid;
 
 pub use xs_core::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
-    AgentRuntimeReport, CandidateAdvertisement, ConfigurationNode, ConfigurationPayload,
-    ConfigurationSubnetRoute, ControlClientMessage, ControlServerMessage, EndpointCandidate,
-    EndpointCandidateKind, EnrollRequest, EnrollResponse, PortRange, SignedConfiguration,
-    SubnetRouteAdvertisement, SubnetRouteMode, SubnetRouteSuggestion, UpdateChannel,
-    UpdateDirective,
+    AgentPathKind, AgentPeerTelemetry, AgentRuntimeReport, AgentTelemetryReport,
+    CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ConfigurationSubnetRoute,
+    ControlClientMessage, ControlServerMessage, EndpointCandidate, EndpointCandidateKind,
+    EnrollRequest, EnrollResponse, PortRange, SignedConfiguration, SubnetRouteAdvertisement,
+    SubnetRouteMode, SubnetRouteSuggestion, UpdateChannel, UpdateDirective,
 };
 
 #[derive(Debug, Deserialize)]

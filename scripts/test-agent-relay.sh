@@ -378,12 +378,12 @@ import json
 import sys
 
 endpoint = sys.argv[1]
-reason = sys.argv[2]
+reasons = set(sys.argv[2].split(","))
 response = json.loads(sys.argv[3])
 for peer in response["peers"]:
     if (
         peer.get("active_endpoint") == endpoint
-        and peer.get("path_reason") == reason
+        and peer.get("path_reason") in reasons
         and peer.get("session_established")
     ):
         raise SystemExit(0)
@@ -435,6 +435,41 @@ wait_relay_metric_kreater() {
         sleep 0.1
     done
     printf 'Relay metric did not increase: %s previous=%s\n' "$field" "$previous" >&2
+    exit 1
+}
+
+wait_controller_relay_reports() {
+    for _ in $(seq 1 300); do
+        local snapshot
+        snapshot=$(curl --fail --silent \
+            -H "Authorization: Bearer $fixture_bearer" \
+            "$CONTROLLER_BASE/v1/admin/console" 2>/dev/null || true)
+        if [[ -n $snapshot ]] && python3 - "$RELAY_ID_1" "$RELAY_ID_2" "$snapshot" <<'PY'
+import json
+import sys
+
+expected = set(sys.argv[1:3])
+snapshot = json.loads(sys.argv[3])
+relays = {relay["relay_id_base64"]: relay for relay in snapshot["relays"]}
+if set(relays) != expected:
+    raise SystemExit(1)
+for relay_id in expected:
+    relay = relays[relay_id]
+    if relay["health"] != {"status": "available", "value": "healthy", "reason": None}:
+        raise SystemExit(1)
+    metrics = relay["metrics"]
+    if metrics["status"] != "available" or metrics["value"] is None:
+        raise SystemExit(1)
+    if metrics["value"]["current"]["active_leases"] < 2:
+        raise SystemExit(1)
+raise SystemExit(0)
+PY
+        then
+            return
+        fi
+        sleep 0.1
+    done
+    printf 'Controller did not expose fresh signed Relay reports\n' >&2
     exit 1
 }
 
@@ -656,6 +691,9 @@ RELAY_HEALTH_LISTEN="127.0.0.1:$RELAY_HEALTH_PORT_1" \
 RELAY_ID_BASE64="$RELAY_ID_1" \
 CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH="$credential_public" \
 RELAY_IDENTITY_KEY_PATH="$relay_key_1" \
+CONTROLLER_METRICS_URL="http://$BRIDGE_IP:$CONTROLLER_PORT/v1/relay-metrics" \
+RELAY_ALLOW_INSECURE_CONTROLLER_METRICS=true \
+RELAY_METRICS_REPORT_INTERVAL_SECONDS=10 \
 RELAY_LEASE_TTL_SECONDS=30 \
 RELAY_IDLE_TIMEOUT_SECONDS=15 \
 RELAY_MAX_LEASES=16 \
@@ -672,6 +710,9 @@ RELAY_HEALTH_LISTEN="127.0.0.1:$RELAY_HEALTH_PORT_2" \
 RELAY_ID_BASE64="$RELAY_ID_2" \
 CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH="$credential_public" \
 RELAY_IDENTITY_KEY_PATH="$relay_key_2" \
+CONTROLLER_METRICS_URL="http://$BRIDGE_IP:$CONTROLLER_PORT/v1/relay-metrics" \
+RELAY_ALLOW_INSECURE_CONTROLLER_METRICS=true \
+RELAY_METRICS_REPORT_INTERVAL_SECONDS=10 \
 RELAY_LEASE_TTL_SECONDS=30 \
 RELAY_IDLE_TIMEOUT_SECONDS=15 \
 RELAY_MAX_LEASES=16 \
@@ -750,6 +791,7 @@ candidate_endpoint "$TEMPORARY/node-a/run/agent.sock" "$CONTROL_IP_A" >/dev/null
 endpoint_b=$(candidate_endpoint "$TEMPORARY/node-b/run/agent.sock" "$CONTROL_IP_B")
 wait_relay_metric "$RELAY_HEALTH_1" active_leases 2
 wait_relay_metric "$RELAY_HEALTH_2" active_leases 2
+wait_controller_relay_reports
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_fallback
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     measure_agent_idle "$RTT_EVIDENCE_DIR/agent-idle.json"
@@ -833,7 +875,8 @@ ip netns exec "$NETNS_A" "$PROBE" icmp \
 wait_relay_metric "$RELAY_HEALTH_2" packets_forwarded 1
 
 unblock_direct
-wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" authenticated_path_probe
+wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
+    authenticated_path_probe,authenticated_peer_traffic
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     ip netns exec "$NETNS_A" "$PROBE" icmp \
         --destination "$virtual_ip_b" \
@@ -856,7 +899,7 @@ ip netns exec "$NETNS_B" "$PROBE" icmp \
     --timeout 5
 "$CLI" peers --socket "$TEMPORARY/node-a/run/agent.sock" |
     grep -F "active=$endpoint_b" |
-    grep -F 'reason=authenticated_path_probe' >/dev/null
+    grep -E 'reason=(authenticated_path_probe|authenticated_peer_traffic)' >/dev/null
 
 kill -0 "$AGENT_A_PID"
 kill -0 "$AGENT_B_PID"

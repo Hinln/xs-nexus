@@ -55,6 +55,7 @@ pub struct RelayMetricsSnapshot {
     pub packets_dropped: u64,
     pub io_errors: u64,
     pub forwarding_latency_samples: u64,
+    pub forwarding_latency_microseconds_total: u64,
     pub forwarding_latency_microseconds_average: Option<u64>,
     pub forwarding_latency_microseconds_max: u64,
 }
@@ -170,6 +171,7 @@ impl RelayMetrics {
                 .saturating_add(send_drops),
             io_errors: self.inner.io_errors.load(Ordering::Relaxed),
             forwarding_latency_samples,
+            forwarding_latency_microseconds_total,
             forwarding_latency_microseconds_average: (forwarding_latency_samples != 0)
                 .then(|| forwarding_latency_microseconds_total / forwarding_latency_samples),
             forwarding_latency_microseconds_max: self
@@ -210,6 +212,7 @@ mod tests {
         assert_eq!(snapshot.packets_dropped, 3);
         assert_eq!(snapshot.io_errors, 1);
         assert_eq!(snapshot.forwarding_latency_samples, 2);
+        assert_eq!(snapshot.forwarding_latency_microseconds_total, 100);
         assert_eq!(snapshot.forwarding_latency_microseconds_average, Some(50));
         assert_eq!(snapshot.forwarding_latency_microseconds_max, 75);
     }

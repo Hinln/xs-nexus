@@ -154,6 +154,10 @@ Agent 必须维护项目资源清单：接口名、ifindex、地址、route、ru
 
 日志使用稳定错误码和结构化字段，不记录 Token、Cookie、私钥、会话密钥或业务内容。指标区分 Direct、Relay、握手、重放、AEAD、ACL、配置版本、路由和恢复事件。诊断包默认脱敏公网地址并排除秘密文件。
 
+Agent 只统计进入已认证加密数据面的发送业务包，以及完成解密、来源绑定和 ACL 后接受的接收业务包。每个进程生成随机 boot ID，计数在该 boot 内单调；每份报告由节点身份密钥在独立域下签名，并绑定 Network、Node、sequence、当前配置的精确 Peer 集合和 Direct/Relay 路径。认证 PathChallenge/PathResponse 提供活动路径 RTT 样本，不发送明文探测。
+
+Relay 保留本地累计转发指标，但推送给 Controller 的签名报告不包含节点身份、端点、Lease ID、Network 或 payload。Controller 只信任 Relay 目录中的身份公钥，拒绝重放、计数回滚和分类不一致；Agent 限制为 25 小时/1800 样本，Relay 限制为 25 小时/9000 样本以覆盖最快 10 秒上报周期。Console 只把三分钟内的 Agent 报告和两分钟内的 Relay 报告视为新鲜；缺失或陈旧数据必须显式显示不可用/陈旧，不能推断 Direct、零流量或健康。
+
 ## 10. 实施顺序
 
 1. M1.1：Controller 注册、IPAM、配置签名和审计；

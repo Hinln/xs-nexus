@@ -237,3 +237,8 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0005`：首版灰度 UI 可以创建 testing/development 策略，但节点通道只来自 Agent 本地静态配置，导致策略无法由控制面安全激活；长连接还缓存认证时通道，数据库手工修改后会错误拒绝新报告。
 - 修复：节点通道进入 Controller 签名配置，管理 API 使用网络配置版本发布新配置和审计；Agent 从自身签名节点条目取值并立即重报；Controller 每次对照数据库当前分配，不再信任连接建立时快照。Console 对所有节点提供显式确认的通道切换，审计员只读。
 - 回归：真实 PostgreSQL 覆盖成功、旧版本 409、签名 payload 与审计脱敏；Playwright 断言精确请求体和确认；严格 Clippy、Agent 控制面及 6 视口视觉测试通过。
+
+## 认证遥测闭环缺陷
+
+- 双 Relay 全链路首次加入 Reporter 后在 Direct 恢复末端出现测试假失败：活动端点已是经过认证的本地候选，但周期 PathResponse 建立的 `authenticated_path_probe` 原因被随后合法 AEAD 流量更新为 `authenticated_peer_traffic`。测试现只接受这两个认证直连状态，不接受普通候选、未认证流量或 Relay 状态；原样重跑通过 fallback、密文不可见、主备切换和双向 Direct 恢复。
+- 首次 Agent 控制测试在 `/tmp` 的 tmpfs 内生成独立 Cargo target 并耗尽空间；确认精确生成目录后删除，只把隔离仓库的 `target` 链接到 `/root/.cache` 的共享构建缓存。没有删除项目证据、正式仓库、容器、网络或 1Panel 数据。
