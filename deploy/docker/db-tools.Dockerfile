@@ -4,7 +4,10 @@ LABEL org.opencontainers.image.title="XS Nexus PostgreSQL Operations" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="XS Nexus clean-room repository"
 RUN apk upgrade --no-cache \
-    && apk add --no-cache age bash coreutils spdx-licenses-text \
+    && apk add --no-cache bash coreutils spdx-licenses-text \
+    && apk add --no-cache \
+        --repository https://dl-cdn.alpinelinux.org/alpine/edge/community \
+        age=1.3.1-r6 \
     && install -d /tmp/xs-spdx /usr/share/licenses/spdx \
     && cp -a /usr/share/spdx/text/. /tmp/xs-spdx/ \
     && apk del --no-cache spdx-licenses-text \
