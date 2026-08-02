@@ -117,19 +117,22 @@ sudo "$STACK" --env-file "$ENV_FILE" down
 ```bash
 sudo "$STACK" --env-file "$ENV_FILE" backup incident-before-change
 sudo "$STACK" --env-file "$ENV_FILE" verify-backup incident-before-change
+sudo "$STACK" --env-file "$ENV_FILE" verify-backup-deep incident-before-change \
+  --identity-file /media/offline/xs-nexus-backup-identity.txt
 sudo "$STACK" --env-file "$ENV_FILE" restore incident-before-change \
-  --confirm-schema xs_nexus_dev
+  --confirm-schema xs_nexus_dev \
+  --identity-file /media/offline/xs-nexus-backup-identity.txt
 ```
 
 恢复前必须：
 
 1. 保存数据库、Controller 和部署脚本脱敏日志；
-2. 校验 `.dump` 和 `.manifest` 同时存在且均非符号链接；
-3. 执行 `verify-backup`；
-4. 将归档和清单复制到受控离线位置；
-5. 精确核对环境文件中的 schema，不得恢复到其他环境。
+2. 校验本地和副本的 `.dump.age`、`.manifest.age`、`.index` 与复制回执同时存在且均非符号链接；
+3. 执行无私钥 `verify-backup`，再从离线只读介质挂载 identity 执行 `verify-backup-deep`；
+4. 若本地副本丢失，先执行 `fetch-backup NAME` 从带 marker 的独立副本挂载取回；
+5. 精确核对环境文件中的 schema，不得恢复到其他环境；identity 使用后立即卸载，不得复制到数据库主机持久目录。
 
-恢复脚本停止 Controller、创建恢复前安全备份、删除并重建目标 schema，再受限恢复。恢复失败会删除失败状态并从安全备份回滚；若安全回滚也失败，立即按 P0 处理，不得启动写流量或手工修改其他 schema。备份静态加密和异机复制见 `KI-015`。
+恢复脚本停止 Controller、创建并自动复制恢复前加密安全备份、删除并重建目标 schema，再把 age 明文流直接送入 `pg_restore`。恢复失败会删除失败状态并从安全备份回滚；若安全回滚也失败，立即按 P0 处理，不得启动写流量或手工修改其他 schema。密文篡改、错误 identity、不同 schema、缺少副本或不匹配 marker 均失败关闭；正式异地主机和密钥仪式见 `BLK-007`。
 
 ---
 

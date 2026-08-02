@@ -13,6 +13,7 @@ CONTROLLER_SECRETS="$TEMPORARY/controller"
 BAD_CONTROLLER_SECRETS="$TEMPORARY/bad-controller"
 RELAY_SECRETS="$TEMPORARY/relay"
 BACKUP_DIRECTORY="$TEMPORARY/backups"
+REPLICA_DIRECTORY=$(mktemp -d /dev/shm/xs-m52-replica.XXXXXX)
 STATE_DIRECTORY="$TEMPORARY/state"
 TEST_DATABASE_SCHEMA=xs_nexus_m52_deploy_dev
 CONTROLLER_PORT=38180
@@ -26,6 +27,9 @@ NETWORK_MEMBERS_BEFORE=''
 DOCKER_NETWORKS_BEFORE=''
 DEFAULT_ROUTES_BEFORE=''
 FIREWALL_BEFORE=''
+LOCAL_RETENTION_DAYS=30
+REPLICA_RETENTION_DAYS=180
+MIN_RETAINED_BACKUPS=3
 
 compose() {
     docker compose --env-file "$ENVIRONMENT_FILE" -f "$COMPOSE_FILE" "$@"
@@ -67,6 +71,9 @@ cleanup() {
     fi
     reset_schema || true
     rm -rf -- "$TEMPORARY"
+    if [[ $REPLICA_DIRECTORY == /dev/shm/xs-m52-replica.* && -d $REPLICA_DIRECTORY ]]; then
+        rm -rf -- "$REPLICA_DIRECTORY"
+    fi
     exit "$status"
 }
 trap cleanup EXIT INT TERM
@@ -96,6 +103,10 @@ XS_DB_TOOLS_IMAGE=xs-nexus/db-tools:m52test
 XS_CONTROLLER_SECRETS_DIR=$controller_secrets
 XS_RELAY_SECRETS_DIR=$RELAY_SECRETS
 XS_BACKUP_DIR=$BACKUP_DIRECTORY
+XS_BACKUP_REPLICA_DIR=$REPLICA_DIRECTORY
+XS_BACKUP_LOCAL_RETENTION_DAYS=$LOCAL_RETENTION_DAYS
+XS_BACKUP_REPLICA_RETENTION_DAYS=$REPLICA_RETENTION_DAYS
+XS_BACKUP_MIN_RETAINED=$MIN_RETAINED_BACKUPS
 XS_STATE_DIR=$STATE_DIRECTORY
 XS_DATABASE_SCHEMA=$database_schema
 XS_BIND_ADDRESS=127.0.0.1
@@ -171,8 +182,8 @@ print(urlunsplit((parsed.scheme, f"{userinfo}127.0.0.1{port}", parsed.path, pars
 unset DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
 
 mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY"
-chown 65532:65532 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY"
-chmod 0700 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY"
+chown 65532:65532 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY"
+chmod 0700 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" "$STATE_DIRECTORY"
 
 ADMIN_TOKEN=$(openssl rand -hex 32)
 CONSOLE_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
@@ -181,7 +192,13 @@ printf '%s' "$ADMIN_TOKEN" >"$CONTROLLER_SECRETS/admin-api-token"
 printf '%s' "$CONSOLE_PASSWORD" >"$CONTROLLER_SECRETS/console-bootstrap-password"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/credential-signing-key"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/configuration-signing-key"
+printf '%s\n' 'age1wcd4cep4z26php4gteja7n2wgxyukpe4nc5xn8dr6zk85gg26chsy9qyj8' >"$CONTROLLER_SECRETS/backup-recipient"
 head -c 32 /dev/urandom >"$RELAY_SECRETS/identity-key"
+{
+    printf 'format=xs-nexus-replica-v1\n'
+    printf 'deployment=dev\n'
+    printf 'target_id=m52-distinct-filesystem-test\n'
+} >"$REPLICA_DIRECTORY/.xs-nexus-replica"
 
 cargo run --quiet -p xs-protocol --example derive_ed25519_public -- \
     "$CONTROLLER_SECRETS/credential-signing-key" "$RELAY_SECRETS/controller-credential-public-key"
@@ -209,7 +226,9 @@ Path(sys.argv[1]).write_text(json.dumps(catalog), encoding="utf-8")
 PY
 rm -f -- "$TEMPORARY/relay-public-key"
 chown -R 65532:65532 "$CONTROLLER_SECRETS" "$RELAY_SECRETS"
+chown 65532:65532 "$REPLICA_DIRECTORY/.xs-nexus-replica"
 find "$CONTROLLER_SECRETS" "$RELAY_SECRETS" -type f -exec chmod 0400 {} +
+chmod 0600 "$REPLICA_DIRECTORY/.xs-nexus-replica"
 
 cp -a "$CONTROLLER_SECRETS/." "$BAD_CONTROLLER_SECRETS/"
 printf '%s' 'postgresql://127.0.0.1:1/invalid' >"$BAD_CONTROLLER_SECRETS/database-url"
@@ -223,6 +242,22 @@ write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$T
 reset_schema
 "$STACK" --env-file "$ENVIRONMENT_FILE" preflight
 "$STACK" --env-file "$ENVIRONMENT_FILE" build
+BACKUP_KEY_DIRECTORY="$TEMPORARY/backup-key"
+mkdir -m 0700 "$BACKUP_KEY_DIRECTORY"
+chown 65532:65532 "$BACKUP_KEY_DIRECTORY"
+docker run --rm --user 65532:65532 \
+    --volume "$BACKUP_KEY_DIRECTORY:/keys" \
+    --entrypoint /bin/sh xs-nexus/db-tools:m52test \
+    -c 'age-keygen -o /keys/identity 2>/keys/keygen.log'
+BACKUP_RECIPIENT=$(sed -n 's/^Public key: //p' "$BACKUP_KEY_DIRECTORY/keygen.log")
+[[ $BACKUP_RECIPIENT =~ ^age1[0-9a-z]{58}$ ]]
+printf '%s\n' "$BACKUP_RECIPIENT" >"$CONTROLLER_SECRETS/backup-recipient"
+printf '%s\n' "$BACKUP_RECIPIENT" >"$BAD_CONTROLLER_SECRETS/backup-recipient"
+chown 65532:65532 "$CONTROLLER_SECRETS/backup-recipient" \
+    "$BAD_CONTROLLER_SECRETS/backup-recipient" "$BACKUP_KEY_DIRECTORY/identity"
+chmod 0400 "$CONTROLLER_SECRETS/backup-recipient" \
+    "$BAD_CONTROLLER_SECRETS/backup-recipient" "$BACKUP_KEY_DIRECTORY/identity"
+rm -- "$BACKUP_KEY_DIRECTORY/keygen.log"
 "$STACK" --env-file "$ENVIRONMENT_FILE" deploy
 
 wait_for_http "http://127.0.0.1:$CONTROLLER_PORT/health/ready"
@@ -245,21 +280,60 @@ first_network=$(create_network m52-before-backup 100.120.52.0/24)
 first_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$first_network")
 "$STACK" --env-file "$ENVIRONMENT_FILE" backup m52-snapshot
 "$STACK" --env-file "$ENVIRONMENT_FILE" verify-backup m52-snapshot
+"$STACK" --env-file "$ENVIRONMENT_FILE" verify-backup-deep m52-snapshot \
+    --identity-file "$BACKUP_KEY_DIRECTORY/identity"
+mv -- "$REPLICA_DIRECTORY/m52-snapshot.replication" "$TEMPORARY/m52-snapshot.replication"
+if "$STACK" --env-file "$ENVIRONMENT_FILE" prune-backups \
+    --confirm-before "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --identity-file "$BACKUP_KEY_DIRECTORY/identity" >/dev/null 2>&1; then
+    printf 'retention accepted a replica without its replication receipt\n' >&2
+    exit 1
+fi
+mv -- "$TEMPORARY/m52-snapshot.replication" "$REPLICA_DIRECTORY/m52-snapshot.replication"
+[[ -f $BACKUP_DIRECTORY/m52-snapshot.dump.age ]]
+[[ -f $BACKUP_DIRECTORY/m52-snapshot.manifest.age ]]
+[[ -f $BACKUP_DIRECTORY/m52-snapshot.index ]]
+[[ -f $BACKUP_DIRECTORY/m52-snapshot.replicated ]]
+[[ -f $REPLICA_DIRECTORY/m52-snapshot.dump.age ]]
+[[ -f $REPLICA_DIRECTORY/m52-snapshot.replication ]]
+[[ ! -e $BACKUP_DIRECTORY/m52-snapshot.dump ]]
 second_network=$(create_network m52-after-backup 100.121.52.0/24)
 second_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$second_network")
 
-cp "$BACKUP_DIRECTORY/m52-snapshot.dump" "$BACKUP_DIRECTORY/m52-tampered.dump"
-sed 's/archive=m52-snapshot.dump/archive=m52-tampered.dump/' \
-    "$BACKUP_DIRECTORY/m52-snapshot.manifest" >"$BACKUP_DIRECTORY/m52-tampered.manifest"
-printf 'x' >>"$BACKUP_DIRECTORY/m52-tampered.dump"
-chown 65532:65532 "$BACKUP_DIRECTORY/m52-tampered.dump" "$BACKUP_DIRECTORY/m52-tampered.manifest"
-chmod 0600 "$BACKUP_DIRECTORY/m52-tampered.dump" "$BACKUP_DIRECTORY/m52-tampered.manifest"
-if "$STACK" --env-file "$ENVIRONMENT_FILE" verify-backup m52-tampered >/dev/null 2>&1; then
+cp "$BACKUP_DIRECTORY/m52-snapshot.dump.age" "$TEMPORARY/original.dump.age"
+printf 'x' >>"$BACKUP_DIRECTORY/m52-snapshot.dump.age"
+if "$STACK" --env-file "$ENVIRONMENT_FILE" verify-backup m52-snapshot >/dev/null 2>&1; then
     printf 'tampered backup was accepted\n' >&2
     exit 1
 fi
+mv -- "$TEMPORARY/original.dump.age" "$BACKUP_DIRECTORY/m52-snapshot.dump.age"
+chown 65532:65532 "$BACKUP_DIRECTORY/m52-snapshot.dump.age"
+chmod 0600 "$BACKUP_DIRECTORY/m52-snapshot.dump.age"
 
-"$STACK" --env-file "$ENVIRONMENT_FILE" restore m52-snapshot --confirm-schema "$TEST_DATABASE_SCHEMA"
+WRONG_KEY_DIRECTORY="$TEMPORARY/wrong-backup-key"
+mkdir -m 0700 "$WRONG_KEY_DIRECTORY"
+chown 65532:65532 "$WRONG_KEY_DIRECTORY"
+docker run --rm --user 65532:65532 \
+    --volume "$WRONG_KEY_DIRECTORY:/keys" \
+    --entrypoint /bin/sh xs-nexus/db-tools:m52test \
+    -c 'age-keygen -o /keys/identity 2>/dev/null'
+chmod 0400 "$WRONG_KEY_DIRECTORY/identity"
+if "$STACK" --env-file "$ENVIRONMENT_FILE" verify-backup-deep m52-snapshot \
+    --identity-file "$WRONG_KEY_DIRECTORY/identity" >/dev/null 2>&1; then
+    printf 'backup decrypted with an unrelated identity\n' >&2
+    exit 1
+fi
+
+mkdir "$TEMPORARY/local-backup-copy"
+mv -- "$BACKUP_DIRECTORY"/m52-snapshot.* "$TEMPORARY/local-backup-copy/"
+"$STACK" --env-file "$ENVIRONMENT_FILE" fetch-backup m52-snapshot
+cmp -s "$BACKUP_DIRECTORY/m52-snapshot.dump.age" \
+    "$TEMPORARY/local-backup-copy/m52-snapshot.dump.age"
+rm -rf -- "$TEMPORARY/local-backup-copy"
+
+"$STACK" --env-file "$ENVIRONMENT_FILE" restore m52-snapshot \
+    --confirm-schema "$TEST_DATABASE_SCHEMA" \
+    --identity-file "$BACKUP_KEY_DIRECTORY/identity"
 networks_after_restore=$(list_networks)
 python3 - "$first_id" "$second_id" "$networks_after_restore" <<'PY'
 import json
@@ -269,6 +343,40 @@ networks = {item["id"] for item in json.loads(sys.argv[3])}
 assert sys.argv[1] in networks
 assert sys.argv[2] not in networks
 PY
+
+sleep 1
+"$STACK" --env-file "$ENVIRONMENT_FILE" backup m52-retention-newest
+sleep 1
+LOCAL_RETENTION_DAYS=0
+REPLICA_RETENTION_DAYS=3650
+MIN_RETAINED_BACKUPS=1
+write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
+RETENTION_CONFIRMATION=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+"$STACK" --env-file "$ENVIRONMENT_FILE" prune-backups \
+    --confirm-before "$RETENTION_CONFIRMATION" \
+    --identity-file "$BACKUP_KEY_DIRECTORY/identity"
+[[ ! -e $BACKUP_DIRECTORY/m52-snapshot.index ]]
+[[ -e $REPLICA_DIRECTORY/m52-snapshot.index ]]
+"$STACK" --env-file "$ENVIRONMENT_FILE" fetch-backup m52-snapshot
+
+sleep 1
+REPLICA_RETENTION_DAYS=0
+write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
+RETENTION_CONFIRMATION=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+"$STACK" --env-file "$ENVIRONMENT_FILE" prune-backups \
+    --confirm-before "$RETENTION_CONFIRMATION" \
+    --identity-file "$BACKUP_KEY_DIRECTORY/identity"
+[[ -d $REPLICA_DIRECTORY/.destroyed ]]
+[[ -n $(find "$REPLICA_DIRECTORY/.destroyed" -maxdepth 1 -type f -name '*.tombstone' -print -quit) ]]
+[[ -z $(find "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" -maxdepth 1 -type f -name '*.dump' -print -quit) ]]
+if "$STACK" --env-file "$ENVIRONMENT_FILE" backup m52-snapshot >/dev/null 2>&1; then
+    printf 'destroyed immutable backup name was reused\n' >&2
+    exit 1
+fi
 
 controller_before_failed_migration=$(compose ps -q controller)
 if "$STACK" --env-file "$BAD_DATABASE_ENVIRONMENT" deploy >/dev/null 2>&1; then

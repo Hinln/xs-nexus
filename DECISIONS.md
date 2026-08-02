@@ -499,7 +499,7 @@
 - 决策：Controller 提供独立 `migrate` 命令；部署先用 PostgreSQL 18 客户端备份既有 schema，再迁移，成功后才激活服务。激活失败恢复上一组镜像。备份使用自定义归档与固定清单；恢复要求精确 schema 确认、恢复前安全备份，并在失败时回滚数据库。
 - 原因：把数据状态和进程状态分开验证，使迁移失败不替换健康服务、镜像失败不破坏已有 schema、恢复失败仍有明确逆操作。
 - 代价：部署和恢复需要私有宿主备份目录、额外磁盘和短暂停止 Controller；破坏性迁移仍需前向兼容分阶段设计。
-- 安全影响：Secret 文件权限、归档大小/SHA-256/格式、目标 schema 和 PostgreSQL 主版本均失败关闭；备份静态加密和异机复制仍由 `KI-015` 跟踪。
+- 安全影响：Secret 文件权限、归档大小/SHA-256/格式、目标 schema 和 PostgreSQL 主版本均失败关闭；后续静态加密、复制和保留边界由 ADR-071 完成。
 
 ---
 
@@ -819,3 +819,14 @@
 - Decision: The node's assigned stable/testing/development channel is an optional field in its Controller-signed configuration. Administrative change uses the network configuration version, publishes a new signed configuration, and causes the Agent to report immediately. Runtime reports and directives must match the current database assignment; an authentication-time channel snapshot is not authoritative for a long-lived connection.
 - Rationale: A local-only channel cannot be managed consistently, while an unsigned directive could silently widen rollout exposure. Signed configuration preserves the existing monotonic trust chain and allows connected Agents to change channel without reconnecting.
 - Compatibility: Configurations without the field decode as `None` and use the local Agent setting as a legacy fallback. Rollout should first deploy an Agent that understands the optional field before the Controller begins emitting it to existing fleets.
+
+---
+
+## ADR-071：数据库备份私钥离线，数据库主机只做流式公钥加密
+
+- 日期：2026-08-02
+- 状态：接受
+- 决策：数据库主机只保存 age X25519 public recipient。`pg_dump` custom archive 通过完整消费校验后直接流入 age，持久目录不写明文归档；认证加密 manifest 绑定 schema、备份名、密文字节数/hash、recipient Key ID 和创建时间。每份备份自动复制到带 deployment/target marker 的不同文件系统挂载。离线 identity 只在深度认证、保留销毁和恢复时临时只读挂载。
+- 原因：把数据库主机或本地备份介质泄露与备份内容保密分离，同时让无私钥日常校验、异地传输和有私钥灾难恢复各自具有明确证据。不同设备号和 marker 防止把同盘目录误报成异地副本。
+- 代价：正式部署必须维护离线 identity、独立故障域挂载和恢复演练；副本不可用、marker 不匹配或 identity 不可用时高风险操作失败关闭。
+- 安全影响：公开 index/回执不作为真实性依据；深度校验先完整验证 age 密文和认证 manifest，再校验 PostgreSQL 目录。保留销毁只处理早于显式确认时间的已认证备份，保留最小份数并写不可复用墓碑。正式密钥仪式和真实异地主机由 `BLK-007` 跟踪。

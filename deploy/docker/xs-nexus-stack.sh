@@ -20,8 +20,12 @@ commands:
   deploy
   rollback
   backup NAME
+  replicate-backup NAME
+  fetch-backup NAME
   verify-backup NAME
-  restore NAME --confirm-schema SCHEMA
+  verify-backup-deep NAME --identity-file FILE
+  restore NAME --confirm-schema SCHEMA --identity-file FILE
+  prune-backups --confirm-before UTC_TIMESTAMP --identity-file FILE
   status
   down
 EOF
@@ -62,7 +66,7 @@ validate_private_directory() {
 
 validate_private_file() {
     local path=$1 expected_owner=$2 mode owner size
-    [[ ! -L $path && -f $path ]] || fail "secret file is missing or invalid: $path"
+    [[ $path == /* && ! -L $path && -f $path ]] || fail "secret file is missing or invalid: $path"
     mode=$(stat -c '%a' "$path")
     owner=$(stat -c '%u' "$path")
     size=$(stat -c '%s' "$path")
@@ -79,7 +83,8 @@ validate_state_directory() {
 }
 
 preflight() {
-    local deployment project schema controller_secrets relay_secrets backup_directory state_directory network_definition config_json
+    local deployment project schema controller_secrets relay_secrets backup_directory replica_directory state_directory
+    local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
         XS_DEPLOYMENT
         XS_COMPOSE_PROJECT_NAME
@@ -92,6 +97,10 @@ preflight() {
         XS_CONTROLLER_SECRETS_DIR
         XS_RELAY_SECRETS_DIR
         XS_BACKUP_DIR
+        XS_BACKUP_REPLICA_DIR
+        XS_BACKUP_LOCAL_RETENTION_DAYS
+        XS_BACKUP_REPLICA_RETENTION_DAYS
+        XS_BACKUP_MIN_RETAINED
         XS_STATE_DIR
         XS_DATABASE_SCHEMA
         XS_DISCOVERY_PUBLIC_ENDPOINT
@@ -118,17 +127,36 @@ preflight() {
     controller_secrets=$(environment_value XS_CONTROLLER_SECRETS_DIR)
     relay_secrets=$(environment_value XS_RELAY_SECRETS_DIR)
     backup_directory=$(environment_value XS_BACKUP_DIR)
+    replica_directory=$(environment_value XS_BACKUP_REPLICA_DIR)
     state_directory=$(environment_value XS_STATE_DIR)
     validate_private_directory "$controller_secrets" 65532
     validate_private_directory "$relay_secrets" 65532
     validate_private_directory "$backup_directory" 65532
+    validate_private_directory "$replica_directory" 65532
+    [[ $(stat -c '%d' "$backup_directory") != "$(stat -c '%d' "$replica_directory")" ]] || fail 'backup replica must be a distinct mounted filesystem'
     validate_state_directory "$state_directory"
-    for file in database-url admin-api-token console-bootstrap-password credential-signing-key configuration-signing-key relay-catalog.json; do
+    for file in database-url admin-api-token console-bootstrap-password credential-signing-key configuration-signing-key relay-catalog.json backup-recipient; do
         validate_private_file "$controller_secrets/$file" 65532
     done
     for file in controller-credential-public-key identity-key; do
         validate_private_file "$relay_secrets/$file" 65532
     done
+    [[ $(<"$controller_secrets/backup-recipient") =~ ^age1[0-9a-z]{58}$ ]] || fail 'backup recipient is invalid'
+    marker="$replica_directory/.xs-nexus-replica"
+    validate_private_file "$marker" 65532
+    [[ $(file_value "$marker" format) == xs-nexus-replica-v1 ]] || fail 'backup replica marker format is invalid'
+    [[ $(file_value "$marker" deployment) == "$deployment" ]] || fail 'backup replica marker deployment is invalid'
+    target_id=$(file_value "$marker" target_id)
+    [[ $target_id =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || fail 'backup replica target ID is invalid'
+    local_retention=$(environment_value XS_BACKUP_LOCAL_RETENTION_DAYS)
+    replica_retention=$(environment_value XS_BACKUP_REPLICA_RETENTION_DAYS)
+    minimum_retained=$(environment_value XS_BACKUP_MIN_RETAINED)
+    [[ $local_retention =~ ^[0-9]+$ && $replica_retention =~ ^[0-9]+$ && $minimum_retained =~ ^[0-9]+$ ]] || fail 'backup retention values are invalid'
+    (( local_retention <= 3650 && replica_retention >= local_retention && replica_retention <= 3650 )) || fail 'backup retention values are out of range'
+    (( minimum_retained >= 1 && minimum_retained <= 1000 )) || fail 'backup minimum retained count is out of range'
+    if [[ $deployment == rc ]]; then
+        (( local_retention >= 7 && replica_retention >= 30 && minimum_retained >= 3 )) || fail 'RC backup retention is below the required minimum'
+    fi
 
     network_definition=$(docker network inspect 1panel-network --format '{{.Name}} {{.Driver}} {{range .IPAM.Config}}{{.Subnet}} {{end}}')
     [[ $network_definition == '1panel-network bridge 172.18.0.0/16 ' ]] || fail '1panel-network definition does not match the approved external network'
@@ -183,8 +211,8 @@ build_images() {
 
 run_db_tools() {
     local -a options=()
-    while [[ ${1:-} == -e ]]; do
-        [[ -n ${2:-} ]] || fail 'missing db-tools environment assignment'
+    while [[ ${1:-} == -e || ${1:-} == -v ]]; do
+        [[ -n ${2:-} ]] || fail 'missing db-tools option value'
         options+=("$1" "$2")
         shift 2
     done
@@ -301,23 +329,45 @@ deploy_stack() {
 }
 
 restore_backup() {
-    local name=${1:-} confirmation_flag=${2:-} confirmation=${3:-} schema container was_running=0 status
-    [[ -n $name && $confirmation_flag == --confirm-schema && -n $confirmation ]] || usage
+    local name=${1:-} confirmation_flag=${2:-} confirmation=${3:-} identity_flag=${4:-} identity=${5:-}
+    local schema container was_running=0 status
+    [[ -n $name && $confirmation_flag == --confirm-schema && -n $confirmation && $identity_flag == --identity-file && -n $identity ]] || usage
     schema=$(environment_value XS_DATABASE_SCHEMA)
     [[ $confirmation == "$schema" ]] || fail 'restore confirmation does not match the configured schema'
+    validate_private_file "$identity" 65532
     container=$("${COMPOSE[@]}" ps -q controller)
     if [[ -n $container ]]; then
         was_running=1
         "${COMPOSE[@]}" stop --timeout 20 controller
     fi
     set +e
-    run_db_tools -e "BACKUP_NAME=$name" -e "CONFIRM_SCHEMA=$confirmation" restore
+    run_db_tools -e "BACKUP_NAME=$name" -e "CONFIRM_SCHEMA=$confirmation" \
+        -e 'BACKUP_IDENTITY_FILE=/run/secrets/xs-backup/identity' \
+        -v "$identity:/run/secrets/xs-backup/identity:ro" restore
     status=$?
     set -e
     if (( was_running == 1 )); then
         "${COMPOSE[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 90 controller
     fi
     (( status == 0 )) || fail 'database restore failed'
+}
+
+verify_backup_deep() {
+    local name=${1:-} identity_flag=${2:-} identity=${3:-}
+    [[ -n $name && $identity_flag == --identity-file && -n $identity ]] || usage
+    validate_private_file "$identity" 65532
+    run_db_tools -e "BACKUP_NAME=$name" \
+        -e 'BACKUP_IDENTITY_FILE=/run/secrets/xs-backup/identity' \
+        -v "$identity:/run/secrets/xs-backup/identity:ro" verify-deep
+}
+
+prune_backups() {
+    local confirmation_flag=${1:-} confirmation=${2:-} identity_flag=${3:-} identity=${4:-}
+    [[ $confirmation_flag == --confirm-before && -n $confirmation && $identity_flag == --identity-file && -n $identity ]] || usage
+    validate_private_file "$identity" 65532
+    run_db_tools -e "CONFIRM_BEFORE=$confirmation" \
+        -e 'BACKUP_IDENTITY_FILE=/run/secrets/xs-backup/identity' \
+        -v "$identity:/run/secrets/xs-backup/identity:ro" prune
 }
 
 case $COMMAND in
@@ -350,16 +400,38 @@ case $COMMAND in
         verify_images
         run_db_tools -e "BACKUP_NAME=$1" backup
         ;;
+    replicate-backup)
+        [[ $# -eq 1 ]] || usage
+        preflight
+        verify_images
+        run_db_tools -e "BACKUP_NAME=$1" replicate
+        ;;
+    fetch-backup)
+        [[ $# -eq 1 ]] || usage
+        preflight
+        verify_images
+        run_db_tools -e "BACKUP_NAME=$1" fetch
+        ;;
     verify-backup)
         [[ $# -eq 1 ]] || usage
         preflight
         verify_images
         run_db_tools -e "BACKUP_NAME=$1" verify
         ;;
+    verify-backup-deep)
+        preflight
+        verify_images
+        verify_backup_deep "$@"
+        ;;
     restore)
         preflight
         verify_images
         restore_backup "$@"
+        ;;
+    prune-backups)
+        preflight
+        verify_images
+        prune_backups "$@"
         ;;
     status)
         [[ $# -eq 0 ]] || usage

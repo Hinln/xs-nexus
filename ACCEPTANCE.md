@@ -166,7 +166,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [x] MUST：开发和 RC 隔离。
 - [x] MUST：不影响 1Panel 现有服务。
 
-证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`。项目 Compose 不包含数据库服务或数据库端口，但既有 1Panel PostgreSQL/Redis 公网暴露仍由 `KI-006`/`BLK-005` 阻塞宿主级“数据库不向公网暴露”，因此该项不勾选。
+证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及 2026-08-02 隔离 `make test-docker-deployment`。后者覆盖数据库明文不落盘的 age 加密、认证 manifest、不同文件系统自动复制、公开/离线 identity 深度校验、篡改与错误 identity 拒绝、异地取回、恢复回滚、保留和销毁墓碑。项目 Compose 不包含数据库服务或数据库端口，但既有 1Panel PostgreSQL/Redis 公网暴露仍由 `KI-006`/`BLK-005` 阻塞宿主级“数据库不向公网暴露”，因此该项不勾选。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
 
 ---
 

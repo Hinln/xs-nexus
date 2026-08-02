@@ -391,6 +391,14 @@
 - `make test-agent-rtt` 在同一真实双 Agent/namespace/TUN 环境中先强制 Relay fallback，再恢复认证 Direct 路径；每条路径采样 30 次业务 ICMP。脚本强制 release profile，并断言实际 Agent 进程指向配置的 release 二进制。Direct 平均/p95 为 0.91/1.13 ms，Relay 为 1.16/1.45 ms，平均增量 0.25 ms；两个 Agent 的 10 秒空闲基线平均为 0.55% 单核 CPU、7.95 MiB RSS、9 线程、15 FD；证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T221036Z`。debug profile 的约 8.5% CPU 不作为性能结论。
 - `make test-windows-agent-routing` 通过：16 个 `xs-windows-route-manager` 事务/DAD/manifest/恢复单元测试、Windows 路由源码门禁、x86_64-pc-windows-msvc target check 和交叉 Clippy；新增 IP Helper `SitePrefixLength` 精确所有权约束。证据日志为服务器临时 `/tmp/xs-windows-routing-2.log`；该证据不代表 WDK 编译或 Windows 实机验收，runtime 仍保持隔离。
 
+## 13. 数据库加密备份与异地边界（2026-08-02）
+
+- `make test-docker-deployment` 使用真实 PostgreSQL 测试 schema 和独立 `/dev/shm` 文件系统副本挂载，证明 `pg_dump` custom stream 直接进入 age X25519 加密，本地与副本均不存在 `.dump` 明文文件；
+- 正向覆盖自动复制、两端密文/index/回执一致、离线 identity 完整解密认证、`pg_restore --list`、从副本取回、恢复前安全备份、目标恢复和 Controller 健康恢复；
+- 负向覆盖密文尾部篡改、无关 identity、冲突/缺失副本状态和已销毁备份名复用；公开校验不被描述为身份认证，深度校验必须显式只读挂载离线 identity；
+- 保留测试把本地保留期降为 0、保留副本，再从副本取回；随后把副本保留期降为 0，验证最小保留、认证时间边界、销毁墓碑、原 hashes/target ID 记录和两端明文缺失；
+- `bash -n`、ShellCheck、`make security-check` 和宿主 Docker/`1panel-network`/默认路由/nftables 前后基线必须同时通过。隔离测试证明产品边界，不替代 `BLK-007` 的正式 identity、真实异地主机和生产数据恢复。
+
 - 首次聚合第 1 轮通过 Linux 全链路、M6.1 源码门禁、UI 与供应链处置；第 2 轮在候选路径测试捕获单向探测被误当作双向就绪的竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`。
 - 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。
 - 双向等待版在下一次聚合首轮仍失败，但旧 ERR trap 被 cleanup 覆盖；诊断已改为只保留首错误并保留失败临时目录。随后 fallback/path 组合 12 轮和完整 M5.2 通过，证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194855Z`；连续三轮尚未重新建立。

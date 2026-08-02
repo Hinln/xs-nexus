@@ -317,8 +317,8 @@
 - Secret 只从仓库外、非符号链接、私有权限文件只读挂载；Controller 直接环境值与 `_FILE` 同时出现时失败关闭；
 - Compose 只引用名称、driver 和子网均匹配基线的外部 `1panel-network`，不创建数据库容器、不发布数据库端口、不执行 prune 或网络变更；
 - dev/RC 分离项目、schema、端口、Secret、备份和状态路径；RC 还要求干净 Git、固定 HEAD revision 和一致镜像标签；
-- 迁移在服务激活前运行；激活失败恢复上一镜像集合。备份使用 PostgreSQL 18 客户端、私有目录、自定义归档和大小/SHA-256/时间清单，恢复要求精确 schema 确认并先做安全备份；
-- 备份静态加密、异机复制和恢复保留策略尚未完成，记录为 `KI-015`；既有 1Panel 数据库公网端口仍为 `KI-006`/`BLK-005`；
+- 迁移在服务激活前运行；激活失败恢复上一镜像集合。备份把 PostgreSQL 18 custom stream 直接送入 age X25519，加密 manifest 绑定 schema、密文字节数/hash、recipient Key ID 和时间；恢复要求离线 identity、精确 schema 确认并先做自动复制的加密安全备份；
+- 每次备份自动复制到不同文件系统且带 deployment/target marker 的挂载，公开校验与离线 identity 深度认证职责分离，保留删除需要显式时间确认并写不可复用销毁墓碑。`KI-015` 已解除；正式 identity/真实异地主机由 `BLK-007` 阻塞，既有 1Panel 数据库公网端口仍为 `KI-006`/`BLK-005`；
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`。
 
 ---

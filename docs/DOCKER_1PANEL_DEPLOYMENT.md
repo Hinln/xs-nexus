@@ -19,7 +19,7 @@
 | Relay | `65532:65532` | 无 | UDP Relay；身份密钥由只读 Secret 提供，并向内部 Controller 推送身份签名的脱敏累计指标 |
 | Console | `101:101` | 无 | 静态资源和 Controller 反向代理 |
 | migration | `65532:65532` | 外部 PostgreSQL schema | 一次性执行，服务激活前退出 |
-| db-tools | `65532:65532` | 宿主备份目录 | 一次性备份、校验和恢复 |
+| db-tools | `65532:65532` | 本地加密备份目录和独立副本挂载 | 一次性加密、复制、校验、取回、保留和恢复 |
 
 所有服务使用只读根文件系统、丢弃全部 capability、启用 `no-new-privileges`、PID 上限、tmpfs 和有界日志轮转。
 
@@ -43,7 +43,7 @@ sudo install -m 0600 deploy/docker/rc.compose.env.example \
 - schema：后缀 `_dev` / `_rc`；
 - Controller、Console、Discovery、Relay 端口；
 - Controller/Relay Secret 目录；
-- 备份目录和部署状态目录；
+- 本地备份目录、独立副本挂载和部署状态目录；
 - 镜像标签。RC 的 `XS_RELEASE_REVISION` 必须等于干净 Git HEAD，镜像 revision 标签必须一致。
 
 ## 4. Secret 和目录
@@ -57,18 +57,21 @@ sudo install -m 0600 deploy/docker/rc.compose.env.example \
 <controller-secret-dir>/credential-signing-key
 <controller-secret-dir>/configuration-signing-key
 <controller-secret-dir>/relay-catalog.json
+<controller-secret-dir>/backup-recipient
 <relay-secret-dir>/controller-credential-public-key
 <relay-secret-dir>/identity-key
 ```
 
 要求：
 
-- Secret 目录和备份目录 UID 为 `65532`、模式 `0700`；
+- Secret、本地备份和副本目录 UID 为 `65532`、模式 `0700`；
 - Secret 文件 UID 为 `65532`、模式 `0400` 或 `0600`；
 - 状态目录模式不允许 group/other 权限；
 - 所有路径必须是绝对路径、非符号链接；
 - `database-url`、管理 Token 和 Bootstrap 密码为单行；两个 Controller 私钥、Relay 私钥和 Controller 公钥均为精确 32 个原始字节；
 - `relay-catalog.json` 必须使用 Controller 认可的严格格式，不得包含 Relay 私钥。
+- `backup-recipient` 只包含一行 age X25519 public recipient；对应 identity 不得存放在数据库主机或 Controller Secret 目录。
+- `XS_BACKUP_REPLICA_DIR` 必须是与本地备份目录不同设备号的独立挂载，并含 UID `65532`、模式 `0600` 的 `.xs-nexus-replica` marker；仅创建另一个本机目录不会通过预检。
 
 示例目录初始化：
 
@@ -79,6 +82,33 @@ sudo install -d -o 65532 -g 65532 -m 0700 \
   /var/backups/xs-nexus/dev
 sudo install -d -m 0700 /var/lib/xs-nexus-deploy/dev
 ```
+
+在独立的离线设备生成 identity；只把输出的 public recipient 通过认证渠道写入数据库主机：
+
+```bash
+umask 077
+age-keygen -o xs-nexus-backup-identity.txt 2>age-keygen.log
+# 从 age-keygen.log 取得 Public key: age1...；identity 留在离线设备。
+
+printf '%s\n' 'age1REPLACE_WITH_OFFLINE_PUBLIC_RECIPIENT' |
+  sudo install -o 65532 -g 65532 -m 0400 /dev/stdin \
+    /etc/xs-nexus/deployments/dev/controller/backup-recipient
+```
+
+把异地主机、网络文件系统或受控对象存储网关挂载到环境文件的 `XS_BACKUP_REPLICA_DIR`，然后初始化 marker；`target_id` 必须稳定标识真实故障域：
+
+```bash
+REPLICA=/mnt/xs-nexus-offsite/dev
+sudo install -d -o 65532 -g 65532 -m 0700 "$REPLICA"
+printf '%s\n' \
+  'format=xs-nexus-replica-v1' \
+  'deployment=dev' \
+  'target_id=backup-host-a' |
+  sudo install -o 65532 -g 65532 -m 0600 /dev/stdin \
+    "$REPLICA/.xs-nexus-replica"
+```
+
+环境文件同时设置 `XS_BACKUP_LOCAL_RETENTION_DAYS`、`XS_BACKUP_REPLICA_RETENTION_DAYS` 和 `XS_BACKUP_MIN_RETAINED`。副本保留期不得短于本地；RC 最低分别为 7 天、30 天和 3 份。
 
 不得把数据库 URI、管理 Token、密码或私钥作为命令参数、Compose 环境变量或镜像构建参数。初始化完成后运行仓库秘密扫描。
 
@@ -94,7 +124,7 @@ sudo "$STACK" --env-file "$ENV_FILE" deploy
 sudo "$STACK" --env-file "$ENV_FILE" status
 ```
 
-`preflight` 会验证环境隔离、Secret 权限、外部网络精确定义、Compose 安全属性、无数据库服务和无数据库端口。`deploy` 的顺序固定为：
+`preflight` 会验证环境隔离、Secret 权限、备份 public recipient、副本设备/marker/保留期、外部网络精确定义、Compose 安全属性、无数据库服务和无数据库端口。`deploy` 的顺序固定为：
 
 1. 验证镜像；
 2. schema 已存在时创建迁移前备份；
@@ -110,15 +140,32 @@ sudo "$STACK" --env-file "$ENV_FILE" status
 ```bash
 sudo "$STACK" --env-file "$ENV_FILE" backup before-change-20260731
 sudo "$STACK" --env-file "$ENV_FILE" verify-backup before-change-20260731
+sudo "$STACK" --env-file "$ENV_FILE" verify-backup-deep before-change-20260731 \
+  --identity-file /media/offline/xs-nexus-backup-identity.txt
 sudo "$STACK" --env-file "$ENV_FILE" restore before-change-20260731 \
-  --confirm-schema xs_nexus_dev
+  --confirm-schema xs_nexus_dev \
+  --identity-file /media/offline/xs-nexus-backup-identity.txt
 ```
 
-备份由 PostgreSQL 18 `pg_dump` 生成自定义格式归档，并写入固定五字段清单：schema、归档名、字节数、SHA-256 和 UTC 时间。校验同时执行大小、SHA-256、时间格式和 `pg_restore --list` 检查。
+PostgreSQL 18 `pg_dump` 自定义格式流直接进入 age X25519 加密；明文数据库归档不写入本地或副本目录。每个不可变备份包含 `.dump.age`、`.manifest.age`、公开 `.index` 和复制回执；认证 manifest 绑定 schema、备份名、密文字节数/SHA-256、recipient Key ID 和 UTC 时间。每次 `backup` 自动复制到独立挂载并在两端写入一致回执。
 
-恢复必须精确确认当前 schema。脚本先停止 Controller，再创建恢复前安全备份、删除目标 schema、创建空 schema 并受限恢复；恢复失败时删除失败 schema 并用安全备份回滚，最后按原状态恢复 Controller。
+`verify-backup` 不需要私钥，验证两端文件、密文 hash、index 和复制回执一致；它只能证明传输完整性。`verify-backup-deep` 需要临时只读挂载离线 identity，完整认证 manifest 和归档密文，再执行 `pg_restore --list`；错误 identity、任意密文篡改或字段漂移均失败关闭。identity 文件必须是绝对路径、非链接、UID `65532` 且无 group/other 权限，操作结束后立即卸载离线介质。
 
-当前本机备份尚未实现静态加密、异机复制和正式保留策略，见 `KI-015`。任何恢复前先把归档和清单复制到受控离线位置。
+recipient 轮换后，历史备份仍由其原 recipient Key ID 绑定。跨轮换恢复时，传入的受控 identity 文件必须包含目标历史 key 与当前 public recipient 对应 key；脚本会先证明目标备份可解密，再证明当前 key 创建的恢复前安全备份也可解密，任一缺失都在删除 schema 前失败关闭。
+
+恢复必须精确确认当前 schema 并提供离线 identity。脚本先停止 Controller，再创建并自动复制恢复前加密安全备份、删除目标 schema、创建空 schema并受限流式解密恢复；恢复失败时删除失败 schema 并用安全备份回滚，最后按原状态恢复 Controller。
+
+异地取回、幂等重试和保留清理命令：
+
+```bash
+sudo "$STACK" --env-file "$ENV_FILE" replicate-backup before-change-20260731
+sudo "$STACK" --env-file "$ENV_FILE" fetch-backup before-change-20260731
+sudo "$STACK" --env-file "$ENV_FILE" prune-backups \
+  --confirm-before 2026-08-02T00:00:00Z \
+  --identity-file /media/offline/xs-nexus-backup-identity.txt
+```
+
+`prune-backups` 只处理时间早于显式确认值且通过 identity 认证的备份，始终保留最新的最小份数。本地删除前必须有有效副本；副本销毁前写入包含原始 hashes、创建/销毁时间和 target ID 的不可覆盖墓碑，已销毁名称不能复用。生产 identity 仪式、真实异地主机和生产恢复演练仍由 `BLK-007` 阻塞。
 
 ## 7. 手工回滚和停止
 
@@ -135,7 +182,7 @@ sudo "$STACK" --env-file "$ENV_FILE" down
 - 只开放获批的 Controller/Discovery/Relay 端口，Console 管理面不得裸露 HTTP；
 - 修复并复测 `KI-006` 中既有 PostgreSQL/Redis 公网暴露；
 - 使用固定摘要和干净提交构建 RC 镜像，生成 SBOM、漏洞报告和来源证明；
-- 配置备份加密、异机复制、保留/删除策略并再次演练恢复；
+- 完成 `BLK-007` 的正式 identity 仪式、真实异地主机挂载和生产恢复演练；
 - 轮换所有临时密码、Bootstrap 密码、管理 Token 和在线签名密钥。
 
 ## 9. 验证

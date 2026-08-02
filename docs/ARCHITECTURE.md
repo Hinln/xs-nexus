@@ -93,6 +93,8 @@ Controller 下发签名、单调递增的配置快照或增量，内容包含节
 
 所有服务默认非 root、只读根文件系统、删除全部 capability 后按需增加最小权限。Compose 只引用外部 `1panel-network`，不创建数据库容器，不发布数据库端口。
 
+一次性 db-tools 从 PostgreSQL 把 custom archive 明文流直接送入 age X25519 加密，本地持久目录只保存密文、认证 manifest、公开 index 和复制回执。每份备份自动复制到不同文件系统且带部署/目标 marker 的挂载；数据库主机只持 public recipient，离线 identity 仅在深度校验、保留销毁和恢复时临时只读挂载。真实异地主机与 identity 仪式是 `BLK-007` 外部门禁。
+
 ### 4.2 宿主机 systemd
 
 - `xs-agent`；
@@ -114,6 +116,7 @@ Agent 以最小 capability 运行。初始化阶段可由受控 helper 完成接
 | TUN / xsnet → Agent | 本机不可信输入 | 包长、IP 版本、源地址和路由验证 |
 | Console → Controller | 管理员但可能越权 | 后端 RBAC、CSRF、审计、高风险确认 |
 | Agent → OS 网络 | 高风险系统操作 | 项目命名、状态快照、幂等回滚、默认路由保护 |
+| 数据库主机 → 备份副本 | 可能被攻陷或与主机同故障域 | 流式 age 加密、认证 manifest、不同设备 marker、自动复制、离线 identity 深度校验和销毁墓碑 |
 
 ## 6. 状态存储
 

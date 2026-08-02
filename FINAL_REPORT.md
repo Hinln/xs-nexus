@@ -10,7 +10,7 @@
 - [ ] 不适合生产
 - [ ] 仅研究/原型
 
-核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、24 小时稳定性、协议安全边界和 Windows 路由准备已完成可复现验证；项目仍受 Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改、备份异机边界和第三方审计等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
+核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、认证加密备份/复制边界、24 小时稳定性、协议安全边界和 Windows 路由准备已完成可复现验证；项目仍受 Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改、正式备份 identity/真实异地主机和第三方审计等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
 
 ## 2. 版本和构建
 
@@ -25,7 +25,7 @@
 - Controller、PostgreSQL schema/IPAM、Enrollment、凭据和签名配置：M1.1/M1.2 证据。
 - XSP/1 身份认证、X25519、AEAD、抗重放、Key Epoch、双向 TUN/UDP：M1.3 证据 `/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`。
 - NAT 候选、打洞、Relay fallback/failover、ACL、子网路由和 Console：M2–M4 证据及三轮回归 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`。
-- Linux 安装、升级、回滚、卸载、备份恢复和部署隔离：M5.1/M5.2 证据。
+- Linux 安装、升级、回滚、卸载、备份恢复和部署隔离：M5.1/M5.2 证据；备份又完成 age 流式加密、不同文件系统自动复制、深度认证、取回、保留和销毁墓碑。
 - Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`。
 - Windows 路由准备：精确 LUID、IP Helper、DAD、manifest、additions-first、补偿和恢复；`make test-windows-agent-routing` 通过 16 个单测、源码门禁、MSVC target check 和 Clippy。runtime 仍隔离。
 - 性能基线：XSP/1 161,314 seal+open/s；Relay 87,822 包/s；Controller 100/500/1000 节点规模；release Agent Direct/Relay RTT 0.91/1.16 ms；Agent 空闲 CPU 0.55% 单核、RSS 7.95 MiB。证据见 `docs/PERFORMANCE_REPORT.md`。
@@ -35,7 +35,6 @@
 
 ## 4. 部分完成功能
 
-- 数据库备份已验证本机私有归档、完整性和恢复回滚，但认证加密、异机复制接口和正式保留/销毁策略仍由 `KI-015` 跟踪。
 - 容器镜像供应链：113/113 个已安装 OS 包均有逐包许可证闭包；镜像 digest、OS SBOM、构建来源、Grype 报告和 disposition 已验证。当前报告包含 2 Critical、4 High、16 Medium、24 Negligible，均无可修复版本；glibc 处置有效期至 2026-08-31，变化时需提前复核。
 - Windows 路由：模型和平台 FFI 已完成静态/交叉验证，但没有 Windows SDK/WDK 编译、真实 IP Helper、DAD、PnP、睡眠恢复或设备实机证据。
 
@@ -47,6 +46,7 @@
 - 现有 PostgreSQL/Redis 公网端口整改和临时凭据轮换：`BLK-005`。
 - DNS、生产防火墙、正式公网容量和第三方安全审计：人工/外部门禁。
 - 正式离线发布签名、公钥认证分发/轮换和 RC 更新回滚：`BLK-006`。
+- 正式备份 identity、真实异地主机/对象存储挂载和生产恢复演练：`BLK-007`。
 
 ## 6. 架构概览
 
@@ -62,7 +62,7 @@
 
 - 开发服务器 Docker Compose 使用既有 external `1panel-network`，未重建或修改该网络。
 - PostgreSQL/Redis 使用仓库外 secret 文件；项目未暴露新的生产端口。
-- Controller/Relay/Console 非 root、健康检查、日志轮转和备份恢复演练已通过。
+- Controller/Relay/Console 非 root、健康检查、日志轮转，以及 age 加密/自动复制/取回/保留/恢复演练已通过。
 - 生产 TLS/DNS/防火墙和数据库公网端口仍为外部门禁；不记录任何密码或 token。
 
 ## 8. 测试
@@ -95,7 +95,7 @@
 
 - 个人隔离测试：适合。
 - 小规模可信设备：Linux 测试范围内可继续验证，但需接受未完成门禁。
-- 公网生产：不适合，需先完成数据库暴露整改、正式签名、Windows/NAS、备份异机边界和第三方审计门禁。
+- 公网生产：不适合，需先完成数据库暴露整改、正式签名、Windows/NAS、真实备份异地主机/密钥仪式和第三方审计门禁。
 - 企业关键网络：不适合，另需第三方协议/密码学审计、真实故障演练和正式供应链复核。
 
 ## 13. 凭据轮换
@@ -104,7 +104,7 @@
 
 ## 14. 后续优先级
 
-1. 完成 Agent/Relay 遥测汇总和备份认证加密/异机复制边界。
+1. 完成 `BLK-007` 的正式备份 identity 仪式、真实异地主机挂载和生产恢复演练。
 2. 获取 Windows VM/WDK/签名环境，执行 M6.1 实机门禁并决定是否接入 runtime。
 3. 完成数据库公网端口整改、正式离线签名和最终 RC 供应链复核。
 

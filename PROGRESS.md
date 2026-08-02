@@ -297,3 +297,11 @@ make clean
 - Relay 用目录身份密钥签名全局累计租约、字节、转发、分类丢弃、错误和延迟指标；报告明确不含 Network/Node、端点、Lease ID 或 payload。Controller 对同 boot 执行单调验证并以 Relay 目录公钥验签。
 - Console 首页、节点、Relay 和拓扑现展示新鲜认证报告派生的当前路径、Relay、24 小时流量、握手成功率、延迟和 Relay 健康；缺失/陈旧值继续显式不可用，不推断默认值。
 - 验证通过：Core 29 项、Relay 7+1 项、Agent 既有 48+3 项、严格 Clippy、真实 PostgreSQL签名/重放/回滚负向集成、双 Agent/双 Relay fallback/密文/failover/Direct 恢复与 Reporter 推送、Console 4 项单测和 10 条 Playwright 主流程。`KI-012` 已解除；真实公网 Relay 容量仍由 `KI-010` 跟踪。
+
+## 2026-08-02 数据库认证加密与异地副本闭环
+
+- db-tools 只持有 age X25519 public recipient；`pg_dump` custom stream 在 FIFO 消费完整性与 `PGDMP` 头校验后直接进入 age，不在本地或副本挂载写入数据库明文。
+- 加密 manifest 认证 schema、备份名、密文字节数/SHA-256、recipient Key ID 和 UTC 时间；公开 index/复制回执支持无私钥传输校验，离线 identity 深度校验先完整认证 age 密文，再由 `pg_restore --list` 校验归档目录。
+- 每次备份自动复制到不同文件系统且带 deployment/target marker 的挂载；支持幂等复制、仅从完整副本取回、本地/副本独立保留期、最小保留数、显式时间确认和不可复用销毁墓碑。RC 预检强制 7/30 天和至少 3 份。
+- 完整 Docker 生命周期覆盖篡改、错误 identity、取回、恢复前安全备份、恢复、两阶段保留/销毁和同名复用拒绝，并在退出后确认测试容器/schema 清理和 `1panel-network` 不变。`KI-015` 已解除。
+- 正式离线 identity 仪式、真实异地主机/对象存储和生产恢复演练不能由当前环境代办，转为 `BLK-007`，没有被标记为生产已完成。
