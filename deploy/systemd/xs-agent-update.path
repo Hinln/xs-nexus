@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for XS Nexus signed Agent updates
+Documentation=file:/usr/local/lib/xs-nexus/current/share/doc/xs-nexus/LINUX_INSTALLATION.md
+After=local-fs.target
+
+[Path]
+PathChanged=/var/lib/xs-nexus/update-request.json
+Unit=xs-agent-update.service
+
+[Install]
+WantedBy=multi-user.target

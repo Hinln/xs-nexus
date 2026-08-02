@@ -198,6 +198,7 @@ fn test_config() -> ControllerConfig {
         console_session_ttl_seconds: 28_800,
         credential_signing_key: SigningKey::from_bytes(&[31_u8; 32]),
         config_signing_key: SigningKey::from_bytes(&[32_u8; 32]),
+        update_signing_public_key: None,
         credential_ttl_seconds: 86_400,
         relays: Vec::new(),
     }
@@ -205,7 +206,8 @@ fn test_config() -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE console_login_attempts, console_sessions, audit_events,
+        "TRUNCATE update_rollout_policies, update_releases,
+                  console_login_attempts, console_sessions, audit_events,
                   configuration_versions, subnet_routes,
                   node_subnet_route_advertisements, acl_rules,
                   node_group_memberships, node_groups, ip_leases, nodes,

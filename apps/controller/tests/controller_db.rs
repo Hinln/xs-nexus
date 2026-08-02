@@ -27,8 +27,9 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use xs_controller::config::ControllerConfig;
 use xs_core::{
-    CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind, SubnetRouteAdvertisement,
-    SubnetRouteSuggestion,
+    AgentRuntimeReport, AgentUpdateState, CandidateAdvertisement, EndpointCandidate,
+    EndpointCandidateKind, SubnetRouteAdvertisement, SubnetRouteSuggestion, UpdateChannel,
+    agent_runtime_report_signing_input,
 };
 use xs_protocol::{
     CREDENTIAL_LENGTH, DiscoveryRequest, verify_credential, verify_discovery_response,
@@ -144,7 +145,7 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         &identity,
     )
     .await;
-    assert_console_snapshot(&router).await;
+    assert_node_update_channel_and_console(&router, &state.pool, network_id, &enrollment).await;
 
     assert_control_audit_and_token_use(&state.pool, &token_id).await;
 
@@ -165,6 +166,243 @@ async fn assert_network_persistence_guards(
 ) {
     assert_overlapping_network_rejected(router).await;
     assert_database_pool_recovers_after_backend_termination(router, pool, config, network_id).await;
+    assert_update_release_and_rollout(router, pool, network_id).await;
+}
+
+async fn assert_update_release_and_rollout(router: &Router, pool: &sqlx::PgPool, network_id: &str) {
+    let fixture = update_release_fixture();
+    let release_id = assert_update_release_import(router, &fixture).await;
+    assert_update_policy_lifecycle(router, pool, network_id, &release_id, &fixture).await;
+}
+
+struct UpdateReleaseFixture {
+    manifest: &'static str,
+    signature: [u8; 64],
+    request: Value,
+}
+
+fn update_release_fixture() -> UpdateReleaseFixture {
+    let manifest = concat!(
+        "schema_version=1\n",
+        "product=xs-nexus\n",
+        "version=0.2.0\n",
+        "platform=linux\n",
+        "architecture=x86_64\n",
+        "target=x86_64-unknown-linux-gnu\n",
+        "archive=xs-nexus-0.2.0-x86_64-unknown-linux-gnu.tar.gz\n",
+        "archive_size=4096\n",
+        "archive_sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+    );
+    let signing_key = SigningKey::from_bytes(&[23_u8; 32]);
+    let signature = signing_key.sign(manifest.as_bytes()).to_bytes();
+    let request = json!({
+        "manifest_base64": URL_SAFE_NO_PAD.encode(manifest),
+        "signature_base64": URL_SAFE_NO_PAD.encode(signature),
+        "archive_url": "https://updates.example.test/linux/xs-nexus-0.2.0-x86_64-unknown-linux-gnu.tar.gz"
+    });
+    UpdateReleaseFixture {
+        manifest,
+        signature,
+        request,
+    }
+}
+
+async fn assert_update_release_import(router: &Router, fixture: &UpdateReleaseFixture) -> String {
+    let (unauthorized_status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/update-releases",
+        Some(fixture.request.clone()),
+        None,
+    )
+    .await;
+    assert_eq!(unauthorized_status, StatusCode::UNAUTHORIZED);
+
+    let mut invalid_signature = fixture.request.clone();
+    invalid_signature["signature_base64"] = json!(URL_SAFE_NO_PAD.encode([0_u8; 64]));
+    let (invalid_status, invalid_body) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/update-releases",
+        Some(invalid_signature),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(invalid_status, StatusCode::BAD_REQUEST);
+    assert_eq!(invalid_body["error"]["code"], "invalid_request");
+
+    let mut wrong_url = fixture.request.clone();
+    wrong_url["archive_url"] = json!("https://updates.example.test/linux/wrong.tar.gz");
+    let (wrong_url_status, _) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/update-releases",
+        Some(wrong_url),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(wrong_url_status, StatusCode::BAD_REQUEST);
+
+    let (created_status, release) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/update-releases",
+        Some(fixture.request.clone()),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(created_status, StatusCode::CREATED);
+    assert_eq!(release["version"], "0.2.0");
+    assert_eq!(release["platform"], "linux");
+    assert_eq!(release["architecture"], "x86_64");
+    assert_eq!(release["archive_size"], 4096);
+    assert!(release.get("manifest_base64").is_none());
+    assert!(release.get("signature_base64").is_none());
+    let release_id = release["id"].as_str().expect("release id").to_owned();
+
+    let (duplicate_status, duplicate_body) = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/update-releases",
+        Some(fixture.request.clone()),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(duplicate_status, StatusCode::CONFLICT);
+    assert_eq!(duplicate_body["error"]["code"], "resource_conflict");
+
+    let (list_status, releases) = request_json(
+        router,
+        Method::GET,
+        "/v1/admin/update-releases",
+        None,
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(list_status, StatusCode::OK);
+    assert_eq!(releases.as_array().map(Vec::len), Some(1));
+    release_id
+}
+
+async fn assert_update_policy_lifecycle(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    release_id: &str,
+    fixture: &UpdateReleaseFixture,
+) {
+    let policy_path =
+        format!("/v1/admin/networks/{network_id}/update-policies/stable/linux/x86_64");
+    let initial_policy = json!({
+        "expected_generation": 0,
+        "release_id": release_id,
+        "minimum_version": "0.1.0",
+        "rollout_basis_points": 2500,
+        "paused": false
+    });
+    let (policy_status, policy) = request_json(
+        router,
+        Method::PUT,
+        &policy_path,
+        Some(initial_policy.clone()),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(policy_status, StatusCode::OK);
+    assert_eq!(policy["generation"], 1);
+    assert_eq!(policy["channel"], "stable");
+    assert_eq!(policy["rollout_basis_points"], 2500);
+    assert_eq!(policy["paused"], false);
+
+    let (stale_status, stale_body) = request_json(
+        router,
+        Method::PUT,
+        &policy_path,
+        Some(initial_policy),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(stale_status, StatusCode::CONFLICT);
+    assert_eq!(stale_body["error"]["code"], "resource_conflict");
+
+    let (invalid_minimum_status, _) = request_json(
+        router,
+        Method::PUT,
+        &policy_path,
+        Some(json!({
+            "expected_generation": 1,
+            "release_id": release_id,
+            "minimum_version": "0.3.0",
+            "rollout_basis_points": 2500,
+            "paused": false
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(invalid_minimum_status, StatusCode::BAD_REQUEST);
+
+    let (paused_status, paused) = request_json(
+        router,
+        Method::PUT,
+        &policy_path,
+        Some(json!({
+            "expected_generation": 1,
+            "release_id": release_id,
+            "minimum_version": "0.1.0",
+            "rollout_basis_points": 2500,
+            "paused": true
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(paused_status, StatusCode::OK);
+    assert_eq!(paused["generation"], 2);
+    assert_eq!(paused["paused"], true);
+
+    let policy_list_path = format!("/v1/admin/networks/{network_id}/update-policies");
+    let (policies_status, policies) = request_json(
+        router,
+        Method::GET,
+        &policy_list_path,
+        None,
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(policies_status, StatusCode::OK);
+    assert_eq!(policies.as_array().map(Vec::len), Some(1));
+    assert_eq!(policies[0]["generation"], 2);
+
+    assert_update_persistence_and_audit(pool, fixture).await;
+}
+
+async fn assert_update_persistence_and_audit(pool: &sqlx::PgPool, fixture: &UpdateReleaseFixture) {
+    let stored: (Vec<u8>, Vec<u8>, i32, bool) = sqlx::query_as(
+        "SELECT r.manifest, r.signature, p.rollout_basis_points, p.paused
+         FROM update_releases r
+         JOIN update_rollout_policies p ON p.release_id = r.id",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("stored signed rollout");
+    assert_eq!(stored.0, fixture.manifest.as_bytes());
+    assert_eq!(stored.1, fixture.signature);
+    assert_eq!(stored.2, 2500);
+    assert!(stored.3);
+
+    let audit_metadata: Vec<String> = sqlx::query_scalar(
+        "SELECT metadata::text FROM audit_events
+         WHERE action IN ('update.release.create', 'update.policy.replace')
+         ORDER BY occurred_at",
+    )
+    .fetch_all(pool)
+    .await
+    .expect("update audit metadata");
+    assert_eq!(audit_metadata.len(), 3);
+    for metadata in audit_metadata {
+        assert!(!metadata.contains(&URL_SAFE_NO_PAD.encode(fixture.manifest)));
+        assert!(!metadata.contains(&URL_SAFE_NO_PAD.encode(fixture.signature)));
+        assert!(!metadata.contains("updates.example.test"));
+    }
 }
 
 async fn assert_database_pool_recovers_after_backend_termination(
@@ -918,6 +1156,69 @@ async fn assert_configuration_subnet_routes(
     }
 }
 
+async fn assert_node_update_channel_and_console(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    enrollment: &Value,
+) {
+    let node_id_base64 = enrollment["node_id_base64"].as_str().expect("node id");
+    let path = format!("/v1/admin/networks/{network_id}/nodes/{node_id_base64}/update-channel");
+    let request = json!({
+        "expected_configuration_version": 12,
+        "update_channel": "testing"
+    });
+    let (status, replaced) = request_json(
+        router,
+        Method::PUT,
+        &path,
+        Some(request.clone()),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(replaced["update_channel"], "testing");
+    assert_eq!(replaced["configuration_version"], 13);
+
+    let (status, conflict) =
+        request_json(router, Method::PUT, &path, Some(request), Some(ADMIN_TOKEN)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(conflict["error"]["code"], "resource_conflict");
+
+    let payload: Vec<u8> = sqlx::query_scalar(
+        "SELECT payload FROM configuration_versions
+         WHERE network_id = $1 AND version = 13",
+    )
+    .bind(Uuid::from_str(network_id).expect("network id"))
+    .fetch_one(pool)
+    .await
+    .expect("channel configuration payload");
+    let payload: Value = serde_json::from_slice(&payload).expect("channel configuration JSON");
+    let node = payload["nodes"]
+        .as_array()
+        .expect("configuration nodes")
+        .iter()
+        .find(|node| node["node_id_base64"] == node_id_base64)
+        .expect("updated node");
+    assert_eq!(node["update_channel"], "testing");
+
+    let metadata: Value = sqlx::query_scalar(
+        "SELECT metadata FROM audit_events
+         WHERE action = 'node.update_channel.replace'
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("channel audit metadata");
+    assert_eq!(metadata["node_id_base64"], node_id_base64);
+    assert_eq!(metadata["update_channel"], "testing");
+    assert_eq!(metadata["configuration_version"], 13);
+    let encoded = serde_json::to_string(&metadata).expect("serialize audit metadata");
+    assert!(!encoded.contains("signature"));
+    assert!(!encoded.contains("private"));
+    assert_console_snapshot(router).await;
+}
+
 async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str) {
     let control_audits: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM audit_events WHERE action = 'control.authenticate'",
@@ -925,7 +1226,7 @@ async fn assert_control_audit_and_token_use(pool: &sqlx::PgPool, token_id: &str)
     .fetch_one(pool)
     .await
     .expect("control audit count");
-    assert_eq!(control_audits, 3);
+    assert_eq!(control_audits, 6);
 
     let stored_use_count: i32 =
         sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
@@ -988,6 +1289,7 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
         console_session_ttl_seconds: 28_800,
         credential_signing_key: SigningKey::from_bytes(&[21_u8; 32]),
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
+        update_signing_public_key: Some(SigningKey::from_bytes(&[23_u8; 32]).verifying_key()),
         credential_ttl_seconds: 86_400,
         relays: Vec::new(),
     }
@@ -995,7 +1297,8 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE console_login_attempts, console_sessions, audit_events,
+        "TRUNCATE update_rollout_policies, update_releases,
+                  console_login_attempts, console_sessions, audit_events,
                   configuration_versions, subnet_routes,
                   node_subnet_route_advertisements, acl_rules,
                   node_group_memberships, node_groups, ip_leases, nodes,
@@ -1305,6 +1608,21 @@ async fn assert_console_snapshot(router: &Router) {
             .is_some_and(|items| !items.is_empty())
     );
     assert_eq!(snapshot["system"]["database"]["value"], "ok");
+    assert_eq!(
+        snapshot["system"]["update_management"]["status"],
+        "available"
+    );
+    let reported_node = snapshot["nodes"]
+        .as_array()
+        .expect("console nodes")
+        .iter()
+        .find(|node| node["agent_version"]["status"] == "available")
+        .expect("runtime-reported node");
+    assert_eq!(reported_node["agent_version"]["value"], "0.1.0");
+    assert_eq!(reported_node["architecture"]["value"], "x86_64");
+    assert_eq!(reported_node["update_channel"]["value"], "testing");
+    assert_eq!(reported_node["update_state"]["value"], "idle");
+    assert!(reported_node["update_reported_at"].is_string());
     let encoded = serde_json::to_string(&snapshot).expect("serialize console snapshot");
     assert!(!encoded.contains("token_hash"));
     assert!(!encoded.contains("password_hash"));
@@ -1615,6 +1933,21 @@ async fn verify_websocket_control(
     identity: &SigningKey,
     discovery_address: SocketAddr,
 ) {
+    Box::pin(verify_websocket_control_inner(
+        router,
+        enrollment,
+        identity,
+        discovery_address,
+    ))
+    .await;
+}
+
+async fn verify_websocket_control_inner(
+    router: &Router,
+    enrollment: &Value,
+    identity: &SigningKey,
+    discovery_address: SocketAddr,
+) {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
         .await
         .expect("bind test controller");
@@ -1626,12 +1959,14 @@ async fn verify_websocket_control(
             .expect("serve test controller");
     });
 
-    let mut socket = authenticate_websocket(address, enrollment, identity).await;
-    let mut observer = authenticate_websocket(address, enrollment, identity).await;
+    let (mut socket, initial_version) = authenticate_websocket(address, enrollment, identity).await;
+    let (mut observer, observer_version) =
+        authenticate_websocket(address, enrollment, identity).await;
+    assert_eq!(observer_version, initial_version);
 
     socket
         .send(Message::Text(
-            json!({"type": "sync", "last_version": 4})
+            json!({"type": "sync", "last_version": initial_version})
                 .to_string()
                 .into(),
         ))
@@ -1647,9 +1982,19 @@ async fn verify_websocket_control(
     };
     let synchronized: Value = serde_json::from_str(&synchronized).expect("sync JSON");
     assert_eq!(synchronized["type"], "up_to_date");
-    assert_eq!(synchronized["version"], 4);
+    assert_eq!(synchronized["version"], initial_version);
 
-    advertise_candidates_and_verify(&mut socket, enrollment, identity, discovery_address).await;
+    let updated_version = initial_version
+        .checked_add(1)
+        .expect("configuration version");
+    advertise_candidates_and_verify(
+        &mut socket,
+        enrollment,
+        identity,
+        discovery_address,
+        updated_version,
+    )
+    .await;
     let broadcast = timeout(Duration::from_secs(2), observer.next())
         .await
         .expect("configuration broadcast timeout")
@@ -1660,8 +2005,16 @@ async fn verify_websocket_control(
     };
     let broadcast: Value = serde_json::from_str(&broadcast).expect("broadcast JSON");
     assert_eq!(broadcast["type"], "configuration");
-    assert_eq!(broadcast["configuration"]["version"], 5);
+    assert_eq!(broadcast["configuration"]["version"], updated_version);
     assert_console_online_count(router, 1).await;
+    let runtime_report = runtime_report_fixture(enrollment, Utc::now());
+    send_signed_runtime_report(&mut socket, &runtime_report, identity).await;
+    let runtime_response = receive_update_directive(&mut socket, updated_version).await;
+    assert_eq!(runtime_response["type"], "update_directive");
+    Box::pin(assert_runtime_report_rejections(
+        address, enrollment, identity,
+    ))
+    .await;
 
     socket.close(None).await.expect("close websocket");
     observer
@@ -1681,11 +2034,141 @@ async fn verify_websocket_control(
     server.abort();
 }
 
+async fn receive_update_directive(socket: &mut ControlSocket, expected_version: u64) -> Value {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            let response = socket
+                .next()
+                .await
+                .expect("runtime response")
+                .expect("valid runtime response");
+            let Message::Text(response) = response else {
+                panic!("expected runtime response text");
+            };
+            let response: Value = serde_json::from_str(&response).expect("runtime response JSON");
+            if response["type"] == "update_directive" {
+                break response;
+            }
+            assert_eq!(response["type"], "configuration");
+            assert_eq!(response["configuration"]["version"], expected_version);
+        }
+    })
+    .await
+    .expect("runtime response timeout")
+}
+
+async fn assert_runtime_report_rejections(
+    address: SocketAddr,
+    enrollment: &Value,
+    identity: &SigningKey,
+) {
+    let report = runtime_report_fixture(enrollment, Utc::now());
+    let (mut malformed, _) = authenticate_websocket(address, enrollment, identity).await;
+    let mut malformed_value = serde_json::to_value(&report).expect("runtime report JSON");
+    malformed_value["unexpected"] = json!(true);
+    send_runtime_report_value(
+        &mut malformed,
+        malformed_value,
+        URL_SAFE_NO_PAD.encode(identity.sign(b"not-the-report").to_bytes()),
+    )
+    .await;
+    assert_control_error_and_close(&mut malformed, "invalid_control_message").await;
+
+    let stale_report =
+        runtime_report_fixture(enrollment, Utc::now() - chrono::Duration::minutes(10));
+    let (mut stale, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_signed_runtime_report(&mut stale, &stale_report, identity).await;
+    assert_control_error_and_close(&mut stale, "runtime_report_rejected").await;
+
+    let (mut invalid_signature, _) = authenticate_websocket(address, enrollment, identity).await;
+    send_runtime_report_value(
+        &mut invalid_signature,
+        serde_json::to_value(report).expect("runtime report JSON"),
+        URL_SAFE_NO_PAD.encode([0_u8; 64]),
+    )
+    .await;
+    assert_control_error_and_close(&mut invalid_signature, "runtime_report_rejected").await;
+}
+
+fn runtime_report_fixture(
+    enrollment: &Value,
+    generated_at: chrono::DateTime<Utc>,
+) -> AgentRuntimeReport {
+    AgentRuntimeReport {
+        schema_version: 1,
+        network_id: Uuid::from_str(enrollment["network_id"].as_str().expect("network id"))
+            .expect("valid network id"),
+        node_id_base64: enrollment["node_id_base64"]
+            .as_str()
+            .expect("node id")
+            .to_owned(),
+        agent_version: "0.1.0".parse().expect("Agent version"),
+        platform: "linux".to_owned(),
+        architecture: "x86_64".to_owned(),
+        update_channel: UpdateChannel::Stable,
+        update_state: AgentUpdateState::Idle,
+        observed_release_id: None,
+        last_error_code: None,
+        generated_at,
+    }
+}
+
+async fn send_signed_runtime_report(
+    socket: &mut ControlSocket,
+    report: &AgentRuntimeReport,
+    identity: &SigningKey,
+) {
+    let signing_input = agent_runtime_report_signing_input(report).expect("runtime signing input");
+    send_runtime_report_value(
+        socket,
+        serde_json::to_value(report).expect("runtime report JSON"),
+        URL_SAFE_NO_PAD.encode(identity.sign(&signing_input).to_bytes()),
+    )
+    .await;
+}
+
+async fn send_runtime_report_value(
+    socket: &mut ControlSocket,
+    report: Value,
+    signature_base64: String,
+) {
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "report_runtime",
+                "report": report,
+                "signature_base64": signature_base64
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send runtime report");
+}
+
+async fn assert_control_error_and_close(socket: &mut ControlSocket, expected_code: &str) {
+    let response = socket
+        .next()
+        .await
+        .expect("control error response")
+        .expect("valid control error response");
+    let Message::Text(response) = response else {
+        panic!("expected control error text");
+    };
+    let response: Value = serde_json::from_str(&response).expect("control error JSON");
+    assert_eq!(response["type"], "error");
+    assert_eq!(response["code"], expected_code);
+    assert!(matches!(
+        socket.next().await,
+        Some(Ok(Message::Close(_))) | None
+    ));
+}
+
 async fn authenticate_websocket(
     address: SocketAddr,
     enrollment: &Value,
     identity: &SigningKey,
-) -> ControlSocket {
+) -> (ControlSocket, u64) {
     let (mut socket, _) = connect_async(format!("ws://{address}/v1/control"))
         .await
         .expect("connect control websocket");
@@ -1737,8 +2220,10 @@ async fn authenticate_websocket(
     };
     let authenticated: Value = serde_json::from_str(&authenticated).expect("authenticated JSON");
     assert_eq!(authenticated["type"], "authenticated");
-    assert_eq!(authenticated["configuration"]["version"], 4);
-    socket
+    let version = authenticated["configuration"]["version"]
+        .as_u64()
+        .expect("configuration version");
+    (socket, version)
 }
 
 async fn assert_console_online_count(router: &Router, expected: u64) {
@@ -1774,6 +2259,7 @@ async fn advertise_candidates_and_verify(
     enrollment: &Value,
     identity: &SigningKey,
     discovery_address: SocketAddr,
+    expected_version: u64,
 ) {
     let now = Utc::now();
     let advertisement = CandidateAdvertisement {
@@ -1831,7 +2317,7 @@ async fn advertise_candidates_and_verify(
     let configuration: Value =
         serde_json::from_str(&configuration).expect("configuration response JSON");
     assert_eq!(configuration["type"], "configuration");
-    assert_eq!(configuration["configuration"]["version"], 5);
+    assert_eq!(configuration["configuration"]["version"], expected_version);
     let configuration_payload = URL_SAFE_NO_PAD
         .decode(
             configuration["configuration"]["payload_base64"]
@@ -1861,13 +2347,14 @@ async fn advertise_candidates_and_verify(
     assert_eq!(advertised_node["candidates"][0]["priority"], 200);
     assert_eq!(advertised_node["candidates"][0]["kind"], "mapped");
 
-    verify_idempotent_advertisement(socket, advertisement, signature).await;
+    verify_idempotent_advertisement(socket, advertisement, signature, expected_version).await;
 }
 
 async fn verify_idempotent_advertisement(
     socket: &mut ControlSocket,
     advertisement: CandidateAdvertisement,
     signature: Signature,
+    expected_version: u64,
 ) {
     socket
         .send(Message::Text(
@@ -1891,5 +2378,5 @@ async fn verify_idempotent_advertisement(
     };
     let repeated: Value = serde_json::from_str(&repeated).expect("idempotent response JSON");
     assert_eq!(repeated["type"], "configuration");
-    assert_eq!(repeated["configuration"]["version"], 5);
+    assert_eq!(repeated["configuration"]["version"], expected_version);
 }

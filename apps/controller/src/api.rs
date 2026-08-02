@@ -14,8 +14,10 @@ use crate::{
     auth::{self, Permission},
     error::ApiError,
     model::{
-        CreateEnrollmentTokenRequest, CreateNetworkRequest, EnrollRequest, ExplainAclRequest,
-        HealthResponse, ReplaceAclPolicyRequest, ReplaceSubnetRoutesRequest, RevokeNodeRequest,
+        CreateEnrollmentTokenRequest, CreateNetworkRequest, CreateUpdateReleaseRequest,
+        EnrollRequest, ExplainAclRequest, HealthResponse, ReplaceAclPolicyRequest,
+        ReplaceNodeUpdateChannelRequest, ReplaceSubnetRoutesRequest, ReplaceUpdatePolicyRequest,
+        RevokeNodeRequest,
     },
     state::AppState,
 };
@@ -32,6 +34,10 @@ pub fn router(state: AppState) -> Router {
             get(auth::list_users).post(auth::create_user),
         )
         .route("/v1/admin/console", get(console_snapshot))
+        .route(
+            "/v1/admin/update-releases",
+            get(list_update_releases).post(create_update_release),
+        )
         .route(
             "/v1/admin/networks",
             get(list_networks).post(create_network),
@@ -52,6 +58,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/admin/networks/{network_id}/subnet-routes",
             put(replace_subnet_routes),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/update-policies",
+            get(list_update_policies),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/update-policies/{channel}/{platform}/{architecture}",
+            put(replace_update_policy),
+        )
+        .route(
+            "/v1/admin/networks/{network_id}/nodes/{node_id_base64}/update-channel",
+            put(replace_node_update_channel),
         )
         .route(
             "/v1/admin/networks/{network_id}/nodes/{node_id_base64}/revoke",
@@ -125,6 +143,56 @@ async fn create_enrollment_token(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
+async fn create_update_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<CreateUpdateReleaseRequest>,
+) -> Result<(StatusCode, Json<crate::model::UpdateReleaseResponse>), ApiError> {
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    let response = crate::updates::create_release(&state, request, &actor).await?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn list_update_releases(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::model::UpdateReleaseResponse>>, ApiError> {
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
+    Ok(Json(crate::updates::list_releases(&state).await?))
+}
+
+async fn list_update_policies(
+    State(state): State<AppState>,
+    Path(network_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::model::UpdatePolicyResponse>>, ApiError> {
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
+    Ok(Json(
+        crate::updates::list_policies(&state, network_id).await?,
+    ))
+}
+
+async fn replace_update_policy(
+    State(state): State<AppState>,
+    Path((network_id, channel, platform, architecture)): Path<(uuid::Uuid, String, String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<ReplaceUpdatePolicyRequest>,
+) -> Result<Json<crate::model::UpdatePolicyResponse>, ApiError> {
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    Ok(Json(
+        crate::updates::replace_policy(
+            &state,
+            network_id,
+            &channel,
+            &platform,
+            &architecture,
+            request,
+            &actor,
+        )
+        .await?,
+    ))
+}
+
 async fn replace_acl_policy(
     State(state): State<AppState>,
     Path(network_id): Path<uuid::Uuid>,
@@ -156,6 +224,24 @@ async fn revoke_node(
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response =
         crate::service::revoke_node(&state, network_id, &node_id_base64, request, &actor).await?;
+    Ok(Json(response))
+}
+
+async fn replace_node_update_channel(
+    State(state): State<AppState>,
+    Path((network_id, node_id_base64)): Path<(uuid::Uuid, String)>,
+    headers: HeaderMap,
+    Json(request): Json<ReplaceNodeUpdateChannelRequest>,
+) -> Result<Json<crate::model::ReplaceNodeUpdateChannelResponse>, ApiError> {
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    let response = crate::service::replace_node_update_channel(
+        &state,
+        network_id,
+        &node_id_base64,
+        request,
+        &actor,
+    )
+    .await?;
     Ok(Json(response))
 }
 

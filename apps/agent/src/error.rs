@@ -20,6 +20,8 @@ pub enum AgentError {
     Ipc,
     #[error("agent runtime failed")]
     Runtime,
+    #[error("agent update operation failed")]
+    Update,
     #[error("requested operation is unsupported on this platform")]
     UnsupportedPlatform,
 }
@@ -37,6 +39,7 @@ impl AgentError {
             Self::DataPlane => "agent_data_plane_failed",
             Self::Ipc => "agent_ipc_failed",
             Self::Runtime => "agent_runtime_failed",
+            Self::Update => "agent_update_failed",
             Self::UnsupportedPlatform => "agent_platform_unsupported",
         }
     }

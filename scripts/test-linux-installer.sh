@@ -5,7 +5,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BUILDER="$ROOT_DIR/installers/linux/build-package.sh"
 INSTALLER="$ROOT_DIR/installers/linux/xs-nexus-installer.sh"
 
-for command in bash gcc gzip openssl sha256sum stat tar; do
+for command in bash gcc gzip openssl sha256sum stat systemd-analyze tar; do
     command -v "$command" >/dev/null || { printf 'required command is unavailable: %s\n' "$command" >&2; exit 2; }
 done
 
@@ -35,6 +35,9 @@ state_directory="$root/run/fake-systemctl"
 mkdir -p "$state_directory"
 operation=$1
 shift
+printf '%s' "$operation" >>"$state_directory/calls"
+printf ' %s' "$@" >>"$state_directory/calls"
+printf '\n' >>"$state_directory/calls"
 case "$operation" in
     is-active)
         [[ -f "$state_directory/active" ]]
@@ -144,6 +147,13 @@ assert_active() {
     [[ -f "$test_root/run/fake-systemctl/active" ]] || { printf 'fixture service is not active\n' >&2; exit 1; }
 }
 
+assert_service_call() {
+    grep -Fx "$1" "$test_root/run/fake-systemctl/calls" >/dev/null || {
+        printf 'missing fake systemctl call: %s\n' "$1" >&2
+        exit 1
+    }
+}
+
 for version in 0.9.0 1.0.0 1.1.0 1.2.0; do
     build_package "$version"
 done
@@ -162,6 +172,17 @@ install_package 1.0.0 >/dev/null
 assert_active
 [[ -L "$test_root/usr/local/bin/xs" ]]
 [[ $("$test_root/usr/local/bin/xs" --version) == 'xs 1.0.0' ]]
+[[ -f "$test_root/etc/systemd/system/xs-agent-update.service" ]]
+[[ -f "$test_root/etc/systemd/system/xs-agent-update.path" ]]
+[[ -x "$test_root/usr/local/lib/xs-nexus/current/share/xs-nexus/xs-nexus-installer.sh" ]]
+cmp "$test_root/etc/systemd/system/xs-agent-update.service" \
+    "$test_root/usr/local/lib/xs-nexus/current/lib/systemd/system/xs-agent-update.service"
+cmp "$test_root/etc/systemd/system/xs-agent-update.path" \
+    "$test_root/usr/local/lib/xs-nexus/current/lib/systemd/system/xs-agent-update.path"
+systemd-analyze verify --recursive-errors=no --root="$test_root" \
+    xs-agent-update.service xs-agent-update.path
+assert_service_call 'enable xs-agent-update.path'
+assert_service_call 'start xs-agent-update.path'
 install_package 1.0.0 >/dev/null
 [[ $(current_release) == 1.0.0-x86_64-unknown-linux-gnu ]]
 assert_active
@@ -230,6 +251,10 @@ assert_active
 "$INSTALLER" rollback --version 1.0.0 --root "$test_root" --service-manager "$fake_service_manager" >/dev/null
 [[ $(current_release) == 1.0.0-x86_64-unknown-linux-gnu ]]
 assert_active
+cmp "$test_root/etc/systemd/system/xs-agent-update.service" \
+    "$test_root/usr/local/lib/xs-nexus/current/lib/systemd/system/xs-agent-update.service"
+cmp "$test_root/etc/systemd/system/xs-agent-update.path" \
+    "$test_root/usr/local/lib/xs-nexus/current/lib/systemd/system/xs-agent-update.path"
 
 touch "$test_root/fail-cleanup"
 assert_fails "$INSTALLER" uninstall --root "$test_root" --service-manager "$fake_service_manager"
@@ -246,6 +271,10 @@ status_output=$("$INSTALLER" status --root "$test_root" --service-manager "$fake
 [[ ! -e "$test_root/usr/local/lib/xs-nexus" ]]
 [[ ! -e "$test_root/usr/local/bin/xs" ]]
 [[ ! -e "$test_root/etc/systemd/system/xs-agent.service" ]]
+[[ ! -e "$test_root/etc/systemd/system/xs-agent-update.service" ]]
+[[ ! -e "$test_root/etc/systemd/system/xs-agent-update.path" ]]
+assert_service_call 'stop xs-agent-update.path'
+assert_service_call 'disable xs-agent-update.path'
 [[ -f "$test_root/etc/xs-nexus/agent.json" ]]
 [[ -f "$test_root/var/lib/xs-nexus/identity.key" ]]
 [[ $(sha256sum "$test_root/var/lib/xs-nexus/identity.key" | awk '{print $1}') == "$identity_hash" ]]

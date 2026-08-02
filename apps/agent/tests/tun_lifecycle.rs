@@ -330,6 +330,7 @@ fn subnet_route_state(prefix: Ipv4Net, local_node_id: &str, gateway_online: bool
             role_bitmap: 1,
             groups: Vec::new(),
             tags: vec!["client".to_owned()],
+            update_channel: None,
         },
         ConfigurationNode {
             node_id_base64: "gateway-node".to_owned(),
@@ -342,6 +343,7 @@ fn subnet_route_state(prefix: Ipv4Net, local_node_id: &str, gateway_online: bool
             role_bitmap: 1,
             groups: Vec::new(),
             tags: vec!["gateway".to_owned()],
+            update_channel: None,
         },
     ];
     NodeState {

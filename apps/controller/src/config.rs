@@ -7,7 +7,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use xs_core::ConfigurationRelay;
@@ -29,6 +29,7 @@ pub struct ControllerConfig {
     pub console_session_ttl_seconds: u64,
     pub credential_signing_key: SigningKey,
     pub config_signing_key: SigningKey,
+    pub update_signing_public_key: Option<VerifyingKey>,
     pub credential_ttl_seconds: u64,
     pub relays: Vec<ConfigurationRelay>,
 }
@@ -68,6 +69,8 @@ pub enum ConfigError {
     KeyLength,
     #[error("credential and configuration signing keys must be different")]
     KeyReuse,
+    #[error("invalid UPDATE_SIGNING_PUBLIC_KEY_PATH")]
+    UpdateSigningPublicKey,
     #[error("invalid RELAY_CATALOG_PATH")]
     RelayCatalog,
     #[error("{0} and {0}_FILE must not both be set")]
@@ -154,6 +157,10 @@ impl ControllerConfig {
         if credential_signing_key.to_bytes() == config_signing_key.to_bytes() {
             return Err(ConfigError::KeyReuse);
         }
+        let update_signing_public_key = env::var("UPDATE_SIGNING_PUBLIC_KEY_PATH")
+            .ok()
+            .map(|path| load_update_verifying_key(Path::new(&path)))
+            .transpose()?;
 
         let credential_ttl_seconds = env::var("NODE_CREDENTIAL_TTL_SECONDS")
             .unwrap_or_else(|_| "2592000".to_owned())
@@ -181,6 +188,7 @@ impl ControllerConfig {
             console_session_ttl_seconds,
             credential_signing_key,
             config_signing_key,
+            update_signing_public_key,
             credential_ttl_seconds,
             relays,
         })
@@ -315,6 +323,24 @@ fn load_signing_key(path: &Path) -> Result<SigningKey, ConfigError> {
     Ok(SigningKey::from_bytes(seed))
 }
 
+fn load_update_verifying_key(path: &Path) -> Result<VerifyingKey, ConfigError> {
+    let metadata = path
+        .symlink_metadata()
+        .map_err(|_| ConfigError::UpdateSigningPublicKey)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() != 32 {
+        return Err(ConfigError::UpdateSigningPublicKey);
+    }
+    #[cfg(unix)]
+    if metadata.permissions().mode() & 0o022 != 0 {
+        return Err(ConfigError::UpdateSigningPublicKey);
+    }
+    let bytes = fs::read(path).map_err(|_| ConfigError::UpdateSigningPublicKey)?;
+    let encoded: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| ConfigError::UpdateSigningPublicKey)?;
+    VerifyingKey::from_bytes(&encoded).map_err(|_| ConfigError::UpdateSigningPublicKey)
+}
+
 fn load_relay_catalog(path: &Path) -> Result<Vec<ConfigurationRelay>, ConfigError> {
     let metadata = path
         .symlink_metadata()
@@ -426,6 +452,19 @@ mod tests {
 
         std::fs::write(secret.path(), b"line-one\nline-two\n").expect("write invalid secret");
         assert!(read_secret_file("TEST_SECRET", secret.path()).is_err());
+    }
+
+    #[test]
+    fn update_verifying_key_is_raw_and_rejects_wrong_length() {
+        let key = NamedTempFile::new().expect("temporary update key");
+        let expected = SigningKey::from_bytes(&[44_u8; 32]).verifying_key();
+        std::fs::write(key.path(), expected.to_bytes()).expect("write update key");
+        assert_eq!(
+            load_update_verifying_key(key.path()).expect("valid update key"),
+            expected
+        );
+        std::fs::write(key.path(), [1_u8; 31]).expect("write invalid update key");
+        assert!(load_update_verifying_key(key.path()).is_err());
     }
 
     #[cfg(unix)]

@@ -434,6 +434,7 @@ mod tests {
             role_bitmap: 0,
             groups: groups.iter().map(|value| (*value).to_owned()).collect(),
             tags: tags.iter().map(|value| (*value).to_owned()).collect(),
+            update_channel: None,
         }
     }
 

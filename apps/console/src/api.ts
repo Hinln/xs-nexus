@@ -5,6 +5,9 @@ import type {
   EnrollmentTokenCreated,
   SessionPayload,
   SubnetRouteSummary,
+  UpdateChannel,
+  UpdatePolicy,
+  UpdateRelease,
 } from "./types";
 
 interface ErrorEnvelope {
@@ -139,6 +142,88 @@ function validSnapshot(snapshot: ConsoleSnapshot): boolean {
 
 export async function loadUsers(): Promise<ConsoleUser[]> {
   return request<ConsoleUser[]>("/v1/admin/users");
+}
+
+export async function loadUpdateReleases(): Promise<UpdateRelease[]> {
+  return request<UpdateRelease[]>("/v1/admin/update-releases");
+}
+
+export async function loadUpdatePolicies(networkId: string): Promise<UpdatePolicy[]> {
+  return request<UpdatePolicy[]>(
+    `/v1/admin/networks/${encodeURIComponent(networkId)}/update-policies`,
+  );
+}
+
+export async function createUpdateRelease(
+  input: {
+    manifest_base64: string;
+    signature_base64: string;
+    archive_url: string;
+  },
+  csrfToken: string,
+): Promise<UpdateRelease> {
+  return request<UpdateRelease>(
+    "/v1/admin/update-releases",
+    { method: "POST", body: JSON.stringify(input) },
+    csrfToken,
+  );
+}
+
+export async function replaceUpdatePolicy(
+  networkId: string,
+  channel: UpdateChannel,
+  platform: "linux",
+  architecture: "x86_64" | "aarch64",
+  input: {
+    expected_generation: number;
+    release_id: string;
+    minimum_version: string | null;
+    rollout_basis_points: number;
+    paused: boolean;
+  },
+  csrfToken: string,
+): Promise<UpdatePolicy> {
+  const path = [
+    "/v1/admin/networks",
+    encodeURIComponent(networkId),
+    "update-policies",
+    encodeURIComponent(channel),
+    platform,
+    architecture,
+  ].join("/");
+  return request<UpdatePolicy>(
+    path,
+    { method: "PUT", body: JSON.stringify(input) },
+    csrfToken,
+  );
+}
+
+export async function replaceNodeUpdateChannel(
+  networkId: string,
+  nodeIdBase64: string,
+  input: {
+    expected_configuration_version: number;
+    update_channel: UpdateChannel;
+  },
+  csrfToken: string,
+): Promise<{
+  network_id: string;
+  node_id_base64: string;
+  update_channel: UpdateChannel;
+  configuration_version: number;
+}> {
+  const path = [
+    "/v1/admin/networks",
+    encodeURIComponent(networkId),
+    "nodes",
+    encodeURIComponent(nodeIdBase64),
+    "update-channel",
+  ].join("/");
+  return request(
+    path,
+    { method: "PUT", body: JSON.stringify(input) },
+    csrfToken,
+  );
 }
 
 export async function createUser(

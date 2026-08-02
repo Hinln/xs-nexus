@@ -3,6 +3,7 @@ set -euo pipefail
 
 INSTALLER_SCHEMA=1
 UNIT_NAME=xs-agent.service
+UPDATE_PATH_NAME=xs-agent-update.path
 install_root=/
 service_manager=systemctl
 archive=
@@ -111,6 +112,8 @@ current_link="$lib_directory/current"
 previous_link="$lib_directory/previous"
 cli_link=$(root_path /usr/local/bin/xs)
 unit_path=$(root_path /etc/systemd/system/xs-agent.service)
+update_service_path=$(root_path /etc/systemd/system/xs-agent-update.service)
+update_path_path=$(root_path /etc/systemd/system/xs-agent-update.path)
 config_directory=$(root_path /etc/xs-nexus)
 config_path="$config_directory/agent.json"
 pinned_key="$config_directory/release-public-key.pem"
@@ -183,10 +186,10 @@ verify_manifest_signature() {
 verify_payload_manifest() {
     local package_root=$1
     local expected_payload actual_payload line
-    expected_payload=$'bin/xs\nbin/xs-agent\nlib/systemd/system/xs-agent.service\nshare/doc/xs-nexus/LINUX_INSTALLATION.md\nshare/xs-nexus/agent.example.json'
+    expected_payload=$'bin/xs\nbin/xs-agent\nlib/systemd/system/xs-agent-update.path\nlib/systemd/system/xs-agent-update.service\nlib/systemd/system/xs-agent.service\nshare/doc/xs-nexus/LINUX_INSTALLATION.md\nshare/xs-nexus/agent.example.json\nshare/xs-nexus/xs-nexus-installer.sh'
     actual_payload=
     while IFS= read -r line; do
-        [[ "$line" =~ ^[0-9a-f]{64}\ \ (bin/xs|bin/xs-agent|lib/systemd/system/xs-agent\.service|share/doc/xs-nexus/LINUX_INSTALLATION\.md|share/xs-nexus/agent\.example\.json)$ ]] || fail 'payload hash manifest is invalid'
+        [[ "$line" =~ ^[0-9a-f]{64}\ \ (bin/xs|bin/xs-agent|lib/systemd/system/xs-agent\.service|lib/systemd/system/xs-agent-update\.service|lib/systemd/system/xs-agent-update\.path|share/doc/xs-nexus/LINUX_INSTALLATION\.md|share/xs-nexus/agent\.example\.json|share/xs-nexus/xs-nexus-installer\.sh)$ ]] || fail 'payload hash manifest is invalid'
         if [[ -n "$actual_payload" ]]; then
             actual_payload+=$'\n'
         fi
@@ -212,13 +215,16 @@ verify_archive() {
         "$package_name/lib/" \
         "$package_name/lib/systemd/" \
         "$package_name/lib/systemd/system/" \
+        "$package_name/lib/systemd/system/xs-agent-update.path" \
+        "$package_name/lib/systemd/system/xs-agent-update.service" \
         "$package_name/lib/systemd/system/xs-agent.service" \
         "$package_name/share/" \
         "$package_name/share/doc/" \
         "$package_name/share/doc/xs-nexus/" \
         "$package_name/share/doc/xs-nexus/LINUX_INSTALLATION.md" \
         "$package_name/share/xs-nexus/" \
-        "$package_name/share/xs-nexus/agent.example.json" | LC_ALL=C sort)
+        "$package_name/share/xs-nexus/agent.example.json" \
+        "$package_name/share/xs-nexus/xs-nexus-installer.sh" | LC_ALL=C sort)
     actual_members=$(tar -tzf "$archive" | LC_ALL=C sort) || fail 'release archive cannot be listed'
     [[ "$actual_members" == "$expected_members" ]] || fail 'release archive member allowlist verification failed'
     if tar -tvzf "$archive" | cut -c1 | grep -qvE '^[-d]$'; then
@@ -285,6 +291,40 @@ prepare_account_and_directories() {
     install -d -m 0755 "$versions_directory" "$metadata_directory" "$(dirname "$cli_link")" "$(dirname "$unit_path")"
 }
 
+install_release_units() {
+    local release_root=$1
+    install -m 0644 "$release_root/lib/systemd/system/xs-agent.service" "$unit_path"
+    install -m 0644 "$release_root/lib/systemd/system/xs-agent-update.service" "$update_service_path"
+    install -m 0644 "$release_root/lib/systemd/system/xs-agent-update.path" "$update_path_path"
+}
+
+backup_release_units() {
+    local backup_directory=$1
+    install -d -m 0700 "$backup_directory"
+    [[ ! -f "$unit_path" ]] || cp "$unit_path" "$backup_directory/xs-agent.service"
+    [[ ! -f "$update_service_path" ]] || cp "$update_service_path" "$backup_directory/xs-agent-update.service"
+    [[ ! -f "$update_path_path" ]] || cp "$update_path_path" "$backup_directory/xs-agent-update.path"
+}
+
+restore_release_units() {
+    local backup_directory=$1 source_name destination
+    for source_name in xs-agent.service xs-agent-update.service xs-agent-update.path; do
+        case "$source_name" in
+            xs-agent.service) destination=$unit_path ;;
+            xs-agent-update.service) destination=$update_service_path ;;
+            xs-agent-update.path) destination=$update_path_path ;;
+        esac
+        if [[ -f "$backup_directory/$source_name" ]]; then
+            install -m 0644 "$backup_directory/$source_name" "$destination"
+        else
+            rm -f "$destination"
+        fi
+    done
+    if [[ ! -f "$backup_directory/xs-agent-update.path" ]]; then
+        service_call disable "$UPDATE_PATH_NAME" >/dev/null 2>&1 || true
+    fi
+}
+
 verify_installed_release() {
     local release=$1
     local release_manifest="$metadata_directory/$release.manifest"
@@ -316,7 +356,7 @@ verify_installed_release() {
 }
 
 restore_activation() {
-    local old_release=$1 old_unit_backup=$2 was_active=$3 created_release=$4 created_pin=$5 created_config=$6 identity_existed=$7 state_existed=$8
+    local old_release=$1 old_units_backup=$2 was_active=$3 created_release=$4 created_pin=$5 created_config=$6 identity_existed=$7 state_existed=$8
     service_call stop "$UNIT_NAME" >/dev/null 2>&1 || true
     if [[ -n "$old_release" ]]; then
         atomic_release_link "$current_link" "$old_release"
@@ -324,11 +364,7 @@ restore_activation() {
         rm -f "$current_link" "$cli_link"
         service_call disable "$UNIT_NAME" >/dev/null 2>&1 || true
     fi
-    if [[ -f "$old_unit_backup" ]]; then
-        install -m 0644 "$old_unit_backup" "$unit_path"
-    else
-        rm -f "$unit_path"
-    fi
+    restore_release_units "$old_units_backup"
     service_call daemon-reload >/dev/null 2>&1 || true
     if [[ "$was_active" == true && -n "$old_release" ]]; then
         service_call start "$UNIT_NAME" >/dev/null 2>&1 || printf 'warning: previous Agent service could not be restarted\n' >&2
@@ -357,9 +393,11 @@ install_release() {
     if [[ -e "$cli_link" && ! -L "$cli_link" ]]; then
         fail 'CLI destination exists and is not a symlink'
     fi
-    if [[ -e "$unit_path" && ! -f "$unit_path" ]]; then
-        fail 'systemd unit destination exists and is not a regular file'
-    fi
+    for systemd_path in "$unit_path" "$update_service_path" "$update_path_path"; do
+        if [[ -e "$systemd_path" && ! -f "$systemd_path" ]]; then
+            fail 'systemd unit destination exists and is not a regular file'
+        fi
+    done
     if [[ -n "$config_source" ]]; then
         validate_regular_file "$config_source" 'Agent configuration'
         if [[ -f "$config_path" ]]; then
@@ -400,8 +438,15 @@ install_release() {
         install -d -m 0755 "$staging_root"
         cp -a "$extracted_package/." "$staging_root/"
         find "$staging_root" -type d -exec chmod 0755 {} +
-        chmod 0755 "$staging_root/bin/xs" "$staging_root/bin/xs-agent"
-        find "$staging_root" -type f ! -path '*/bin/xs' ! -path '*/bin/xs-agent' -exec chmod 0644 {} +
+        chmod 0755 \
+            "$staging_root/bin/xs" \
+            "$staging_root/bin/xs-agent" \
+            "$staging_root/share/xs-nexus/xs-nexus-installer.sh"
+        find "$staging_root" -type f \
+            ! -path '*/bin/xs' \
+            ! -path '*/bin/xs-agent' \
+            ! -path '*/share/xs-nexus/xs-nexus-installer.sh' \
+            -exec chmod 0644 {} +
         mv "$staging_root" "$release_root"
         install -m 0644 "$manifest" "$metadata_directory/$release_name.manifest"
         install -m 0644 "$signature" "$metadata_directory/$release_name.manifest.sig"
@@ -425,8 +470,8 @@ install_release() {
         [[ -f "$config_path" ]] || fail 'enrollment requires an installed Agent configuration'
     fi
 
-    old_unit_backup="$temporary/old-xs-agent.service"
-    [[ ! -f "$unit_path" ]] || cp "$unit_path" "$old_unit_backup"
+    old_units_backup="$temporary/old-units"
+    backup_release_units "$old_units_backup"
     was_active=false
     service_is_active && was_active=true
     identity_existed=false
@@ -443,7 +488,7 @@ install_release() {
         ln -sfn ../lib/xs-nexus/current/bin/xs "$cli_link" || activation_failed=true
     fi
     if [[ "$activation_failed" == false ]]; then
-        install -m 0644 "$release_root/lib/systemd/system/xs-agent.service" "$unit_path" || activation_failed=true
+        install_release_units "$release_root" || activation_failed=true
     fi
     if [[ "$activation_failed" == false ]]; then
         service_call daemon-reload || activation_failed=true
@@ -466,6 +511,9 @@ install_release() {
     if [[ "$activation_failed" == false ]]; then
         service_call enable "$UNIT_NAME" || activation_failed=true
     fi
+    if [[ "$activation_failed" == false ]]; then
+        service_call enable "$UPDATE_PATH_NAME" || activation_failed=true
+    fi
     should_start=false
     if [[ "$was_active" == true || ( -f "$config_path" && -f "$node_state_path" ) ]]; then
         should_start=true
@@ -474,8 +522,11 @@ install_release() {
         service_call start "$UNIT_NAME" || activation_failed=true
         service_is_active || activation_failed=true
     fi
+    if [[ "$activation_failed" == false ]]; then
+        service_call start "$UPDATE_PATH_NAME" || activation_failed=true
+    fi
     if [[ "$activation_failed" == true ]]; then
-        restore_activation "$old_release" "$old_unit_backup" "$was_active" "$created_release" "$created_pin" "$created_config" "$identity_existed" "$state_existed"
+        restore_activation "$old_release" "$old_units_backup" "$was_active" "$created_release" "$created_pin" "$created_config" "$identity_existed" "$state_existed"
         fail 'release activation failed and the previous release was restored'
     fi
     if [[ -n "$old_release" && "$old_release" != "$release_name" ]]; then
@@ -508,14 +559,16 @@ rollback_release() {
     verify_installed_release "$release_name"
     was_active=false
     service_is_active && was_active=true
-    old_unit_backup=$(mktemp)
-    trap 'rm -f "$old_unit_backup"' EXIT INT TERM
-    [[ ! -f "$unit_path" ]] || cp "$unit_path" "$old_unit_backup"
+    old_units_backup=$(mktemp -d)
+    trap 'rm -rf "$old_units_backup"' EXIT INT TERM
+    backup_release_units "$old_units_backup"
     [[ "$was_active" == false ]] || service_call stop "$UNIT_NAME" || fail 'could not stop the current Agent service'
     atomic_release_link "$current_link" "$release_name"
-    install -m 0644 "$versions_directory/$release_name/lib/systemd/system/xs-agent.service" "$unit_path"
+    install_release_units "$versions_directory/$release_name"
     service_call daemon-reload
     rollback_failed=false
+    service_call enable "$UPDATE_PATH_NAME" || rollback_failed=true
+    service_call start "$UPDATE_PATH_NAME" || rollback_failed=true
     if [[ "$was_active" == true ]]; then
         service_call start "$UNIT_NAME" || rollback_failed=true
         service_is_active || rollback_failed=true
@@ -523,7 +576,7 @@ rollback_release() {
     if [[ "$rollback_failed" == true ]]; then
         service_call stop "$UNIT_NAME" >/dev/null 2>&1 || true
         atomic_release_link "$current_link" "$old_release"
-        [[ ! -s "$old_unit_backup" ]] || install -m 0644 "$old_unit_backup" "$unit_path"
+        restore_release_units "$old_units_backup"
         service_call daemon-reload >/dev/null 2>&1 || true
         [[ "$was_active" == false ]] || service_call start "$UNIT_NAME" >/dev/null 2>&1 || true
         fail 'rollback activation failed; the original release was restored'
@@ -558,8 +611,16 @@ uninstall_release() {
     managed_group=false
     [[ -f "$user_marker" ]] && managed_user=true
     [[ -f "$group_marker" ]] && managed_group=true
+    service_call stop "$UPDATE_PATH_NAME" >/dev/null 2>&1 || true
+    service_call disable "$UPDATE_PATH_NAME" >/dev/null 2>&1 || true
     service_call disable "$UNIT_NAME" >/dev/null 2>&1 || true
-    rm -f "$unit_path" "$cli_link" "$current_link" "$previous_link"
+    rm -f \
+        "$unit_path" \
+        "$update_service_path" \
+        "$update_path_path" \
+        "$cli_link" \
+        "$current_link" \
+        "$previous_link"
     service_call daemon-reload >/dev/null 2>&1 || true
     if [[ -d "$lib_directory" && ! -L "$lib_directory" ]]; then
         rm -rf "$lib_directory"

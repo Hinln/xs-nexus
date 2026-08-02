@@ -799,3 +799,23 @@
 - Decision: A long-run stability result is insufficient if it only observes health after a restart command. The restart command must return exactly the full target container ID, and the evidence summary must prove exactly one PID transition per service. Docker `RestartCount` must remain fixed at its pre-injection baseline because an operator-requested `docker restart` does not increment the restart-policy counter; any counter change instead proves an additional automatic restart and fails the run.
 - Rationale: A restart command can target the wrong container, fail silently, or leave the original process alive. Exact command output and PID cardinality bind the claimed recovery to the intended service, while a stable restart-policy counter excludes hidden crash recovery before or after the injected restart.
 - Scope: This hardening affects future runs of `scripts/test-runtime-stability.sh`; the currently running 24-hour run remains separately identified by its recorded start revision and evidence directory.
+
+---
+
+## ADR-069: The offline release key authorizes code; the Controller only schedules it
+
+- Date: 2026-08-02
+- Status: Accepted
+- Decision: The release private key never enters the Controller. Controller storage is limited to verified immutable manifests, detached signatures, exact HTTPS archive metadata, and rollout policy. Agent staging and the privileged helper each independently verify the offline signature and archive; the helper then reuses the existing installer transaction.
+- Rationale: Compromise of the online Controller may change scheduling or withhold an update, but must not be sufficient to authorize arbitrary root code. Re-verification after a private root-owned copy closes the unprivileged staging substitution boundary.
+- Trade-off: Operators must distribute the same public key in raw Controller form and PEM Agent form through authenticated channels, and maintain an external signing/rotation ceremony.
+
+---
+
+## ADR-070: Node update channel is Controller-signed configuration state
+
+- Date: 2026-08-02
+- Status: Accepted
+- Decision: The node's assigned stable/testing/development channel is an optional field in its Controller-signed configuration. Administrative change uses the network configuration version, publishes a new signed configuration, and causes the Agent to report immediately. Runtime reports and directives must match the current database assignment; an authentication-time channel snapshot is not authoritative for a long-lived connection.
+- Rationale: A local-only channel cannot be managed consistently, while an unsigned directive could silently widen rollout exposure. Signed configuration preserves the existing monotonic trust chain and allows connected Agents to change channel without reconnecting.
+- Compatibility: Configurations without the field decode as `None` and use the local Agent setting as a legacy fallback. Rollout should first deploy an Agent that understands the optional field before the Controller begins emitting it to existing fleets.

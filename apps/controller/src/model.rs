@@ -4,10 +4,11 @@ use uuid::Uuid;
 
 pub use xs_core::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
-    CandidateAdvertisement, ConfigurationNode, ConfigurationPayload, ConfigurationSubnetRoute,
-    ControlClientMessage, ControlServerMessage, EndpointCandidate, EndpointCandidateKind,
-    EnrollRequest, EnrollResponse, PortRange, SignedConfiguration, SubnetRouteAdvertisement,
-    SubnetRouteMode, SubnetRouteSuggestion,
+    AgentRuntimeReport, CandidateAdvertisement, ConfigurationNode, ConfigurationPayload,
+    ConfigurationSubnetRoute, ControlClientMessage, ControlServerMessage, EndpointCandidate,
+    EndpointCandidateKind, EnrollRequest, EnrollResponse, PortRange, SignedConfiguration,
+    SubnetRouteAdvertisement, SubnetRouteMode, SubnetRouteSuggestion, UpdateChannel,
+    UpdateDirective,
 };
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +122,21 @@ pub struct RevokeNodeResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ReplaceNodeUpdateChannelRequest {
+    pub expected_configuration_version: u64,
+    pub update_channel: UpdateChannel,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplaceNodeUpdateChannelResponse {
+    pub network_id: Uuid,
+    pub node_id_base64: String,
+    pub update_channel: UpdateChannel,
+    pub configuration_version: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubnetRouteApprovalRequest {
     pub route_id: String,
     pub gateway_node_id_base64: String,
@@ -163,4 +179,50 @@ pub struct SubnetRouteSuggestionResponse {
 pub struct HealthResponse {
     pub status: &'static str,
     pub database: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateUpdateReleaseRequest {
+    pub manifest_base64: String,
+    pub signature_base64: String,
+    pub archive_url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct UpdateReleaseResponse {
+    pub id: Uuid,
+    pub version: String,
+    pub platform: String,
+    pub architecture: String,
+    pub target: String,
+    pub archive_name: String,
+    pub archive_size: u64,
+    pub archive_sha256: String,
+    pub archive_url: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceUpdatePolicyRequest {
+    pub expected_generation: u64,
+    pub release_id: Uuid,
+    pub minimum_version: Option<String>,
+    pub rollout_basis_points: u16,
+    pub paused: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct UpdatePolicyResponse {
+    pub network_id: Uuid,
+    pub channel: UpdateChannel,
+    pub platform: String,
+    pub architecture: String,
+    pub release: UpdateReleaseResponse,
+    pub minimum_version: Option<String>,
+    pub rollout_basis_points: u16,
+    pub paused: bool,
+    pub generation: u64,
+    pub updated_at: DateTime<Utc>,
 }

@@ -22,6 +22,7 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
         return;
     };
     let mut configuration_events = state.subscribe_configuration_events();
+    let mut update_events = state.subscribe_update_events();
     if send_initial_configuration(&mut socket, &state, &authenticated)
         .await
         .is_err()
@@ -40,6 +41,7 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
         &state,
         &authenticated,
         &mut configuration_events,
+        &mut update_events,
     )
     .await;
     if state.mark_node_offline(authenticated.node_id).await
@@ -139,6 +141,7 @@ async fn serve_authenticated_loop(
     state: &AppState,
     authenticated: &AuthenticatedNode,
     configuration_events: &mut tokio::sync::broadcast::Receiver<uuid::Uuid>,
+    update_events: &mut tokio::sync::broadcast::Receiver<uuid::Uuid>,
 ) {
     let mut heartbeat = interval(Duration::from_secs(30));
     heartbeat.tick().await;
@@ -159,6 +162,16 @@ async fn serve_authenticated_loop(
                     return;
                 }
             }
+            event = update_events.recv() => {
+                let Ok(network_id) = event else {
+                    continue;
+                };
+                if network_id == authenticated.network_id
+                    && send_current_update_directive(socket, state, authenticated).await.is_err()
+                {
+                    return;
+                }
+            }
             incoming = socket.recv() => {
                 let Some(Ok(message)) = incoming else {
                     return;
@@ -169,6 +182,17 @@ async fn serve_authenticated_loop(
             }
         }
     }
+}
+
+async fn send_current_update_directive(
+    socket: &mut WebSocket,
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+) -> Result<(), axum::Error> {
+    let directive = crate::updates::current_update_directive(state, authenticated)
+        .await
+        .map_err(|_| axum::Error::new(std::io::Error::other("update directive unavailable")))?;
+    send_json(socket, &ControlServerMessage::UpdateDirective { directive }).await
 }
 
 async fn send_latest_configuration(
@@ -265,6 +289,23 @@ async fn handle_authenticated_text(
                 return false;
             };
             ControlServerMessage::Configuration { configuration }
+        }
+        ControlClientMessage::ReportRuntime {
+            report,
+            signature_base64,
+        } => {
+            let Ok(directive) = crate::updates::record_runtime_report(
+                state,
+                authenticated,
+                report,
+                &signature_base64,
+            )
+            .await
+            else {
+                send_error(socket, "runtime_report_rejected").await;
+                return false;
+            };
+            ControlServerMessage::UpdateDirective { directive }
         }
         ControlClientMessage::Authenticate { .. } => {
             send_error(socket, "invalid_control_message").await;

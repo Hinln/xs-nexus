@@ -107,7 +107,11 @@ struct NodeSummary {
     published_subnets: Vec<String>,
     credential_expires_at: DateTime<Utc>,
     credential_state: &'static str,
+    update_channel: Availability<String>,
     update_state: Availability<String>,
+    update_release_id: Option<Uuid>,
+    update_error_code: Option<String>,
+    update_reported_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -275,6 +279,13 @@ struct NodeRow {
     last_control_connected_at: Option<DateTime<Utc>>,
     last_control_disconnected_at: Option<DateTime<Utc>>,
     candidate_payload: Option<Vec<u8>>,
+    agent_version: Option<String>,
+    architecture: Option<String>,
+    assigned_update_channel: String,
+    update_state: Option<String>,
+    update_release_id: Option<Uuid>,
+    update_error_code: Option<String>,
+    update_reported_at: Option<DateTime<Utc>>,
 }
 
 #[derive(FromRow)]
@@ -492,7 +503,11 @@ fn system_summary(state: &AppState) -> SystemSummary {
         database: Availability::available("ok"),
         credential_signing_key_id: controller_key_id(&state.credential_signing_key.verifying_key()),
         configuration_signing_key_id: controller_key_id(&state.config_signing_key.verifying_key()),
-        update_management: Availability::unavailable("更新签名与发布通道将在 M6.1 实现"),
+        update_management: if state.update_signing_public_key.is_some() {
+            Availability::available("signed_release_v1")
+        } else {
+            Availability::unavailable("Controller 尚未配置离线更新签名公钥")
+        },
         backup_restore: Availability::unavailable("备份恢复流程将在 M8.1 实现"),
         relay_metrics: Availability::unavailable("Relay 指标端点未配置"),
         path_telemetry: Availability::unavailable("Agent 路径遥测尚未接入控制面"),
@@ -530,11 +545,17 @@ async fn load_nodes(state: &AppState) -> Result<Vec<NodeRow>, ApiError> {
         "SELECT n.id, n.network_id, w.name AS network_name, n.node_id, n.name,
                 n.device_type, n.virtual_ip::text AS virtual_ip, n.tags,
                 n.credential_not_after, n.revoked_at, n.last_control_connected_at,
-                n.last_control_disconnected_at, c.payload AS candidate_payload
+                n.last_control_disconnected_at, c.payload AS candidate_payload,
+                u.agent_version, u.architecture,
+                n.update_channel AS assigned_update_channel,
+                u.update_state, u.observed_release_id AS update_release_id,
+                u.last_error_code AS update_error_code,
+                u.generated_at AS update_reported_at
          FROM nodes n
          JOIN networks w ON w.id = n.network_id
          LEFT JOIN node_candidate_advertisements c
            ON c.node_id = n.id AND c.expires_at > now()
+         LEFT JOIN node_update_reports u ON u.node_id = n.node_id
          ORDER BY lower(n.name), n.id",
     )
     .fetch_all(&state.pool)
@@ -803,8 +824,14 @@ fn nodes_from_rows(
                 name: row.name,
                 virtual_ip: row.virtual_ip,
                 device_type: row.device_type,
-                architecture: Availability::unavailable("Agent 尚未上报系统架构"),
-                agent_version: Availability::unavailable("Agent 尚未上报版本"),
+                architecture: row.architecture.map_or_else(
+                    || Availability::unavailable("Agent 尚未上报系统架构"),
+                    Availability::available,
+                ),
+                agent_version: row.agent_version.map_or_else(
+                    || Availability::unavailable("Agent 尚未上报版本"),
+                    Availability::available,
+                ),
                 public_endpoint,
                 local_endpoints,
                 current_path: Availability::unavailable("Agent 尚未上报当前路径"),
@@ -818,7 +845,14 @@ fn nodes_from_rows(
                 published_subnets,
                 credential_expires_at: row.credential_not_after,
                 credential_state,
-                update_state: Availability::unavailable("更新管理将在 M6.1 实现"),
+                update_channel: Availability::available(row.assigned_update_channel),
+                update_state: row.update_state.map_or_else(
+                    || Availability::unavailable("Agent 尚未上报更新状态"),
+                    Availability::available,
+                ),
+                update_release_id: row.update_release_id,
+                update_error_code: row.update_error_code,
+                update_reported_at: row.update_reported_at,
             })
         })
         .collect()

@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-07-31 18:57 UTC
-当前 Git 提交：`b80d780ab2788f9913b4b80997a220c099c40f0f`（以本文件后续文档提交为准）
+最后更新时间：2026-08-02 07:00 UTC
+当前 Git 提交：升级框架验证工作树（以本文件后续提交为准）
 当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M6.1 Windows 驱动设计和构建`
+当前里程碑：`M7.3 稳定性完成；签名更新与灰度发布闭环`
 
 ---
 
@@ -278,3 +278,14 @@ make clean
 - Current long test remains the pre-change run started at 2026-07-31T21:22:42Z; the script hardening applies to future runs and does not alter the active process.
 - Current HEAD static regression (`make fmt-check`, `make lint`, `make test-image-sbom`, `make security-check`) passed.
 - The incorrect intermediate gate is tracked and closed as `XS-2026-0004`; a short post-run integration will exercise the corrected script after the active 24-hour process releases its Compose environment.
+
+## 2026-08-02 24 小时稳定性与签名更新闭环
+
+- 24 小时长测完成三服务各 1420 次采样和一次受控 PID 转换；Controller/Relay/Console 的 RSS、线程、FD 和日志增长均保持有界，`RestartCount` 全程为零。旧脚本只因 `XS-2026-0004` 的错误计数假设在最后退出非零，没有隐藏该失败。
+- 修正门禁后的真实 60 秒完整部署回归 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z` 通过：每服务 11 个样本、完整容器 ID 重启证据、恰好两个 PID、零额外自动重启，并完成数据库/容器/网络清理。
+- 实现不可变离线签名发布、stable/testing/development 通道、网络/平台/架构策略、暂停、最低版本和确定性基点灰度；Controller 只加载发布公钥，不接受私钥。
+- Agent 用身份密钥签名运行时版本/架构/通道/状态，Controller 验证当前分配通道和单调时间后才下发 eligible/required 指令。节点通道变更进入 Controller 签名配置并使用配置版本冲突保护。
+- Agent 对 HTTPS 下载执行大小、超时、文件名、SHA-256、离线清单和签名复验；私有 staging 就绪后由无网络 root helper 通过 no-follow 私有复制再次验证，再调用现有原子安装/健康/回滚事务。
+- Linux 包、安装、回滚和卸载现包含 `xs-agent-update.path/.service`；root helper 正常路径和归档篡改负向路径、systemd 沙箱及安装器生命周期均通过。
+- Console 更新页接入真实发布、策略、节点通道和签名状态 API，审计员只读；加载/空/403/503、显式确认、代次/配置版本冲突、9 条 Playwright 和 6 个固定视口通过。
+- 隔离验证通过：Core 26、Agent 48+3、Controller 10+1、真实 PostgreSQL、Agent 控制面、严格 Clippy、Console 构建/单测/E2E/视觉。正式仓库和生产容器在验证期间未被修改。

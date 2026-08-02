@@ -83,3 +83,17 @@ Before manual repair, preserve `readlink /usr/local/lib/xs-nexus/current`, the c
 metadata, `ip -details link`, `ip route`, `ip rule`, and `nft list ruleset`. Never delete unrelated
 routes, nftables tables, interfaces, Docker networks, or 1Panel resources. The Agent only cleans the
 interface and gateway resources bound to its validated local plan and recovery manifest.
+
+## Controller-managed staged updates
+
+When the Controller has imported a valid offline-signed release and an eligible rollout policy,
+the Agent downloads the exact HTTPS archive into a private staging directory, independently checks
+the pinned release key and archive metadata, and publishes an atomic update request. The installed
+`xs-agent-update.path` then invokes the network-disabled root helper, which copies the archive with
+link protection, verifies it again, and calls this same installer transaction. The root helper never
+trusts the Controller directive or the unprivileged staging result by itself.
+
+The Controller-assigned channel is carried inside the signed node configuration. New installations
+default to `stable`; an older signed configuration without the field falls back to the local Agent
+setting. Operators change channels and rollout policies in the Console with optimistic version or
+generation checks. See `docs/UPDATE_SYSTEM.md` for the full trust boundary and decision rules.

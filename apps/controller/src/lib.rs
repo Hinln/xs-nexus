@@ -10,6 +10,7 @@ mod error;
 pub mod model;
 mod service;
 mod state;
+mod updates;
 
 use axum::Router;
 use thiserror::Error;

@@ -28,6 +28,8 @@
 | `xsp-core` | XSP/1 编码、状态机、密钥派生调用、重放保护 | 自行实现密码学原语 |
 | `xsp-lab` | namespace、NAT、故障和攻击实验 | 替代真实设备最终验收 |
 
+更新控制面把离线签名发布、网络/通道/平台/架构灰度策略和节点签名运行时上报保存在 PostgreSQL。Controller 只持有离线发布公钥并决定资格；Agent 和受限 root helper 都必须重新验证清单、签名和归档，实际切换复用 Linux 安装器的原子升级/回滚事务。节点通道属于 Controller 签名配置，不能由未签名的在线指令单独改变。详细边界见 `docs/UPDATE_SYSTEM.md`。
+
 ## 3. 数据和控制流
 
 ```mermaid

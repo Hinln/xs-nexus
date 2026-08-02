@@ -367,6 +367,7 @@ mod tests {
             role_bitmap: 0,
             groups: Vec::new(),
             tags: Vec::new(),
+            update_channel: None,
         }
     }
 

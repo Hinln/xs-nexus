@@ -7,6 +7,7 @@ use xs_agent::{
     error::{AgentError, Result},
     lifecycle::cleanup_network,
     runtime::run_agent,
+    updates::apply_staged_update,
 };
 
 const WINDOWS_SERVICE_NAME: &str = "XsNexusAgent";
@@ -22,6 +23,12 @@ enum Command {
     },
     Run {
         config: PathBuf,
+    },
+    ApplyStagedUpdate {
+        config: PathBuf,
+        installer: PathBuf,
+        install_root: PathBuf,
+        service_manager: Option<PathBuf>,
     },
     Service {
         config: PathBuf,
@@ -63,6 +70,24 @@ async fn entrypoint() -> Result<()> {
             let _ = signal_task.await;
             result
         }
+        Command::ApplyStagedUpdate {
+            config,
+            installer,
+            install_root,
+            service_manager,
+        } => {
+            let config = AgentConfig::load(&config)?;
+            apply_staged_update(
+                &config,
+                &installer,
+                &install_root,
+                service_manager.as_deref(),
+            )
+            .map_err(|error| {
+                eprintln!("xs-agent update_error={}", error.code());
+                AgentError::Update
+            })
+        }
         Command::Service { config } => run_windows_service(config),
         Command::Cleanup { config } => {
             let config = AgentConfig::load(&config)?;
@@ -101,6 +126,9 @@ fn parse_command_from_with_platform(
 
     let mut config = None;
     let mut token_file = None;
+    let mut installer = None;
+    let mut install_root = None;
+    let mut service_manager = None;
     while let Some(argument) = arguments.next() {
         if argument == "--config" && config.is_none() {
             config = Some(PathBuf::from(
@@ -110,30 +138,52 @@ fn parse_command_from_with_platform(
             token_file = Some(PathBuf::from(
                 arguments.next().ok_or(AgentError::Configuration)?,
             ));
+        } else if argument == "--installer" && installer.is_none() {
+            installer = Some(PathBuf::from(
+                arguments.next().ok_or(AgentError::Configuration)?,
+            ));
+        } else if argument == "--root" && install_root.is_none() {
+            install_root = Some(PathBuf::from(
+                arguments.next().ok_or(AgentError::Configuration)?,
+            ));
+        } else if argument == "--service-manager" && service_manager.is_none() {
+            service_manager = Some(PathBuf::from(
+                arguments.next().ok_or(AgentError::Configuration)?,
+            ));
         } else {
             return Err(AgentError::Configuration);
         }
     }
 
-    if command == "run" && token_file.is_none() {
+    let update_options_absent =
+        installer.is_none() && install_root.is_none() && service_manager.is_none();
+    if command == "run" && token_file.is_none() && update_options_absent {
         return Ok(Command::Run {
             config: config.ok_or(AgentError::Configuration)?,
         });
     }
-    if windows && command == "service" && token_file.is_none() {
+    if windows && command == "service" && token_file.is_none() && update_options_absent {
         return Ok(Command::Service {
             config: config.ok_or(AgentError::Configuration)?,
         });
     }
-    if command == "cleanup" && token_file.is_none() {
+    if command == "cleanup" && token_file.is_none() && update_options_absent {
         return Ok(Command::Cleanup {
             config: config.ok_or(AgentError::Configuration)?,
         });
     }
-    if command == "enroll" {
+    if command == "enroll" && update_options_absent {
         return Ok(Command::Enroll {
             config: config.ok_or(AgentError::Configuration)?,
             token_file: token_file.ok_or(AgentError::Configuration)?,
+        });
+    }
+    if !windows && command == "apply-staged-update" && token_file.is_none() {
+        return Ok(Command::ApplyStagedUpdate {
+            config: config.ok_or(AgentError::Configuration)?,
+            installer: installer.ok_or(AgentError::Configuration)?,
+            install_root: install_root.unwrap_or_else(|| PathBuf::from("/")),
+            service_manager,
         });
     }
     Err(AgentError::Configuration)
@@ -243,6 +293,38 @@ mod tests {
                 ]),
                 true,
             )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn staged_update_command_is_linux_only_and_exact() {
+        let values = arguments(&[
+            "apply-staged-update",
+            "--config",
+            "/etc/xs-nexus/agent.json",
+            "--installer",
+            "/usr/local/lib/xs-nexus/current/share/xs-nexus/xs-nexus-installer.sh",
+        ]);
+        assert_eq!(
+            parse_command_from_with_platform(values.clone(), false).expect("Linux update helper"),
+            Command::ApplyStagedUpdate {
+                config: "/etc/xs-nexus/agent.json".into(),
+                installer: "/usr/local/lib/xs-nexus/current/share/xs-nexus/xs-nexus-installer.sh"
+                    .into(),
+                install_root: "/".into(),
+                service_manager: None,
+            }
+        );
+        assert!(parse_command_from_with_platform(values, true).is_err());
+        assert!(
+            parse_command_from(arguments(&[
+                "run",
+                "--config",
+                "/etc/xs-nexus/agent.json",
+                "--installer",
+                "/tmp/installer",
+            ]))
             .is_err()
         );
     }

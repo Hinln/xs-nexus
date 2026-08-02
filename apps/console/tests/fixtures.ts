@@ -1,6 +1,13 @@
 import type { Page, Route } from "@playwright/test";
 
-import type { ConsoleRole, ConsoleSnapshot, ConsoleUser, SessionPayload } from "../src/types";
+import type {
+  ConsoleRole,
+  ConsoleSnapshot,
+  ConsoleUser,
+  SessionPayload,
+  UpdatePolicy,
+  UpdateRelease,
+} from "../src/types";
 
 const now = "2026-07-30T21:45:00Z";
 
@@ -41,6 +48,12 @@ const unavailable = <T>(reason: string) => ({
   reason,
 });
 
+const available = <T>(value: T) => ({
+  status: "available" as const,
+  value,
+  reason: null,
+});
+
 export const snapshotFixture: ConsoleSnapshot = {
   collected_at: now,
   dashboard: {
@@ -79,8 +92,8 @@ export const snapshotFixture: ConsoleSnapshot = {
       name: "成都总部核心网关-超长设备名称用于验证表格截断与详情提示",
       virtual_ip: "100.88.0.16/32",
       device_type: "linux",
-      architecture: unavailable<string>("Agent 尚未上报系统架构"),
-      agent_version: unavailable<string>("Agent 尚未上报版本"),
+      architecture: available("x86_64"),
+      agent_version: available("0.1.0"),
       public_endpoint: "203.0.113.200:42001",
       local_endpoints: ["192.168.100.254:42001", "10.200.30.40:42001"],
       current_path: unavailable<string>("Agent 尚未上报当前路径"),
@@ -94,7 +107,11 @@ export const snapshotFixture: ConsoleSnapshot = {
       published_subnets: ["192.168.100.0/24"],
       credential_expires_at: "2026-08-30T00:00:00Z",
       credential_state: "active",
-      update_state: unavailable<string>("更新管理将在 M6.1 实现"),
+      update_channel: available("stable" as const),
+      update_state: available("idle"),
+      update_release_id: null,
+      update_error_code: null,
+      update_reported_at: now,
     },
     {
       id: "20000000-0000-4000-8000-000000000002",
@@ -119,7 +136,11 @@ export const snapshotFixture: ConsoleSnapshot = {
       published_subnets: [],
       credential_expires_at: "2026-08-30T00:00:00Z",
       credential_state: "active",
-      update_state: unavailable<string>("更新管理将在 M6.1 实现"),
+      update_channel: available("stable" as const),
+      update_state: unavailable<string>("Agent 尚未上报更新状态"),
+      update_release_id: null,
+      update_error_code: null,
+      update_reported_at: null,
     },
   ],
   enrollment_tokens: [
@@ -243,7 +264,7 @@ export const snapshotFixture: ConsoleSnapshot = {
     database: { status: "available", value: "ok", reason: null },
     credential_signing_key_id: 41231023,
     configuration_signing_key_id: 98230111,
-    update_management: unavailable<string>("更新签名与发布通道将在 M6.1 实现"),
+    update_management: available("signed_release_v1"),
     backup_restore: unavailable<string>("备份恢复流程将在 M8.1 实现"),
     relay_metrics: unavailable<string>("Relay 指标端点未配置"),
     path_telemetry: unavailable<string>("Agent 路径遥测尚未接入控制面"),
@@ -251,6 +272,36 @@ export const snapshotFixture: ConsoleSnapshot = {
 };
 
 snapshotFixture.dashboard.recent_activity = snapshotFixture.audit_events;
+
+export const updateReleasesFixture: UpdateRelease[] = [
+  {
+    id: "70000000-0000-4000-8000-000000000001",
+    version: "0.2.0",
+    platform: "linux",
+    architecture: "x86_64",
+    target: "x86_64-unknown-linux-gnu",
+    archive_name: "xs-nexus-0.2.0-x86_64-unknown-linux-gnu.tar.gz",
+    archive_size: 18_874_368,
+    archive_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    archive_url: "https://updates.example.test/xs-nexus-0.2.0-x86_64-unknown-linux-gnu.tar.gz",
+    created_at: now,
+  },
+];
+
+export const updatePoliciesFixture: UpdatePolicy[] = [
+  {
+    network_id: snapshotFixture.networks[0].id,
+    channel: "stable",
+    platform: "linux",
+    architecture: "x86_64",
+    release: updateReleasesFixture[0],
+    minimum_version: "0.1.0",
+    rollout_basis_points: 2500,
+    paused: false,
+    generation: 3,
+    updated_at: now,
+  },
+];
 
 export function emptySnapshotFixture(): ConsoleSnapshot {
   return {
@@ -311,9 +362,12 @@ export async function mockAuthenticatedApi(
 ) {
   const role = options.role ?? "administrator";
   const snapshot = options.snapshot ?? snapshotFixture;
+  const releases = snapshot.networks.length === 0 ? [] : updateReleasesFixture;
   await page.route("**/v1/auth/session", (route) => fulfillJson(route, 200, sessionFixture(role)));
   await page.route("**/v1/admin/console", (route) => fulfillJson(route, 200, snapshot));
   await page.route("**/v1/admin/users", (route) => fulfillJson(route, 200, usersFixture));
+  await page.route("**/v1/admin/update-releases", (route) => fulfillJson(route, 200, releases));
+  await page.route("**/v1/admin/networks/*/update-policies", (route) => fulfillJson(route, 200, updatePoliciesFixture));
 }
 
 export function fulfillJson(route: Route, status: number, body: unknown) {

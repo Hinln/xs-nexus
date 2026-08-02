@@ -1480,6 +1480,65 @@ input::placeholder {
   display: none;
 }
 
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.update-sections {
+  display: grid;
+  min-width: 0;
+  gap: 26px;
+  margin-top: 24px;
+}
+
+.update-sections > section {
+  min-width: 0;
+}
+
+.update-sections > section > h2 {
+  margin-bottom: 12px;
+  font-size: 1.05rem;
+}
+
+.inline-control {
+  display: flex;
+  min-width: 230px;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-control select {
+  min-width: 110px;
+}
+
+.inline-control .button {
+  min-height: 38px;
+  padding: 7px 12px;
+}
+
+.checkbox-field {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  margin: 2px 0 16px;
+}
+
+.checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+
+.table-shell a {
+  color: var(--brand-dark);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1380px) {
   .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1589,6 +1648,11 @@ input::placeholder {
   .inline-actions,
   .inline-actions label,
   .inline-actions .button {
+    width: 100%;
+  }
+
+  .update-actions,
+  .update-actions .button {
     width: 100%;
   }
 

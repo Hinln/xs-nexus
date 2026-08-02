@@ -529,6 +529,7 @@ mod tests {
                 role_bitmap,
                 groups: Vec::new(),
                 tags,
+                update_channel: None,
             }],
             relays: Vec::new(),
             policies: Vec::new(),

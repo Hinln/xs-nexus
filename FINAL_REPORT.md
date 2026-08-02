@@ -1,7 +1,7 @@
 # XS Nexus 最终交付报告
 
-报告日期：2026-07-31  
-当前检查点：`1185e12 docs(supply-chain): record license closure evidence`
+报告日期：2026-08-02  
+当前检查点：签名更新与 24 小时稳定性验证工作树（以本报告后续提交为准）
 
 ## 1. 结论
 
@@ -10,11 +10,11 @@
 - [ ] 不适合生产
 - [ ] 仅研究/原型
 
-核心 Linux/Controller/Relay/Console、安装生命周期、协议安全边界和 Windows 路由准备已完成可复现验证；项目仍受 Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改和 24 小时稳定性长测等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
+核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、24 小时稳定性、协议安全边界和 Windows 路由准备已完成可复现验证；项目仍受 Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改、备份异机边界和第三方审计等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
 
 ## 2. 版本和构建
 
-- Git：`1185e12`；工作树在本报告生成前保持干净。
+- Git：以本报告后续提交为准；签名更新先在隔离工作树和临时远程克隆完成验证。
 - 环境：Ubuntu x86_64 开发服务器，Rust workspace；Linux 与隔离 network namespace 测试。
 - 构建：Linux x86_64/aarch64 发布构建与 Windows 相关最小 crate 的 `x86_64-pc-windows-msvc` target check 已验证。
 - 签名：Linux 测试签名流程已验证；正式离线签名密钥和签名仪式未完成。
@@ -29,10 +29,13 @@
 - Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`。
 - Windows 路由准备：精确 LUID、IP Helper、DAD、manifest、additions-first、补偿和恢复；`make test-windows-agent-routing` 通过 16 个单测、源码门禁、MSVC target check 和 Clippy。runtime 仍隔离。
 - 性能基线：XSP/1 161,314 seal+open/s；Relay 87,822 包/s；Controller 100/500/1000 节点规模；release Agent Direct/Relay RTT 0.91/1.16 ms；Agent 空闲 CPU 0.55% 单核、RSS 7.95 MiB。证据见 `docs/PERFORMANCE_REPORT.md`。
+- 签名更新：离线签名不可变发布、三通道确定性灰度、节点签名状态、Controller 签名通道、Agent/root helper 双重验证和原子回滚；见 `docs/UPDATE_SYSTEM.md`。
+- 24 小时稳定性：三服务各 1420 次采样、一次受控 PID 转换、零额外自动重启；修正重启语义后的真实回归为 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`。
 
 ## 4. 部分完成功能
 
-- 性能报告和 24 小时稳定性测试：长测已启动，证据目录为 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，当前已运行约 2 小时 50 分钟，尚未生成最终 `summary.json`，不能提前勾选稳定性 MUST。
+- Agent 路径/流量遥测与 Relay 指标向 Controller/Console 的受控汇总尚未完成；现有 Console 对未知值继续显示不可用原因。
+- 数据库备份已验证本机私有归档、完整性和恢复回滚，但认证加密、异机复制接口和正式保留/销毁策略仍由 `KI-015` 跟踪。
 - 容器镜像供应链：113/113 个已安装 OS 包均有逐包许可证闭包；镜像 digest、OS SBOM、构建来源、Grype 报告和 disposition 已验证。当前报告包含 2 Critical、4 High、16 Medium、24 Negligible，均无可修复版本；glibc 处置有效期至 2026-08-31，变化时需提前复核。
 - Windows 路由：模型和平台 FFI 已完成静态/交叉验证，但没有 Windows SDK/WDK 编译、真实 IP Helper、DAD、PnP、睡眠恢复或设备实机证据。
 
@@ -43,6 +46,7 @@
 - 真实 NAS 安装、升级、Direct/Relay、子网审批和离线撤销：`BLK-002`。
 - 现有 PostgreSQL/Redis 公网端口整改和临时凭据轮换：`BLK-005`。
 - DNS、生产防火墙、正式公网容量和第三方安全审计：人工/外部门禁。
+- 正式离线发布签名、公钥认证分发/轮换和 RC 更新回滚：`BLK-006`。
 
 ## 6. 架构概览
 
@@ -52,7 +56,7 @@
 - XSP/1：Ed25519 身份、X25519 会话、HKDF、ChaCha20-Poly1305、重放窗口和 Key Epoch。
 - IPAM/ACL/路由：Controller 策略签名与 Agent 双端执行；Linux route manager 已实机隔离验证，Windows route manager 已静态/交叉验证。
 - Console：React/Vite，显示 Controller 已知事实和不可用原因。
-- 更新：Linux 测试签名包、哈希、回滚和身份保留；正式离线签名未完成。
+- 更新：Controller 只持发布公钥；不可变签名清单、灰度策略、签名运行时报告、Agent staging、无网络 root helper 和原子回滚已实现；正式离线签名仪式未完成。
 
 ## 7. 部署结果
 
@@ -66,7 +70,7 @@
 - 单元/集成/协议负向/NAT/Relay/ACL/子网路由/Playwright/视觉/安装升级回滚卸载：已有 M0–M7 证据和三轮回归。
 - Windows 路由专项：`make test-windows-agent-routing` 通过；不代表 Windows 实机。
 - 性能：`/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`、`relay-throughput-20260731T211903Z`、`agent-rtt-20260731T221036Z`、Controller scale 和报告中列出的证据。
-- 稳定性：`XS_STABILITY_DURATION_SECONDS=86400` 长测运行中，尚未完成最终审计。
+- 稳定性：24 小时长样本与修正后的完整部署/重启回归已审计，详见 `docs/PERFORMANCE_REPORT.md`。
 - 未运行/无法运行：WDK/Windows VM/Driver Verifier、真实 NAS、公网跨地域 Relay、正式签名和生产防火墙验证。
 
 ## 9. 缺陷与风险
@@ -85,13 +89,13 @@
 - Relay：87,822 包/s，18.09 MiB/s，内部平均 4 µs。
 - Agent RTT：release Direct 平均 0.91 ms，Relay 平均 1.16 ms，平均增量 0.25 ms。
 - Agent 空闲资源：0.55% 单核 CPU、7.95 MiB RSS、9 线程、15 FD。
-- 限制：loopback/namespace 和单机基线不能代表公网容量、运营商 NAT 或长期稳定性。
+- 限制：24 小时结果证明当前单机 Linux 容器基线稳定，不代表公网容量、运营商 NAT、多机水平扩展或 Windows/NAS 稳定性。
 
 ## 12. 当前生产适用性
 
 - 个人隔离测试：适合。
 - 小规模可信设备：Linux 测试范围内可继续验证，但需接受未完成门禁。
-- 公网生产：不适合，需先完成数据库暴露整改、正式签名、Windows/NAS 和长期稳定性门禁。
+- 公网生产：不适合，需先完成数据库暴露整改、正式签名、Windows/NAS、备份异机边界和第三方审计门禁。
 - 企业关键网络：不适合，另需第三方协议/密码学审计、真实故障演练和正式供应链复核。
 
 ## 13. 凭据轮换
@@ -100,9 +104,9 @@
 
 ## 14. 后续优先级
 
-1. 完成并审计 24 小时稳定性长测。
+1. 完成 Agent/Relay 遥测汇总和备份认证加密/异机复制边界。
 2. 获取 Windows VM/WDK/签名环境，执行 M6.1 实机门禁并决定是否接入 runtime。
-3. 完成数据库公网端口整改、正式离线签名、许可证全文/构建来源和最终 RC 复核。
+3. 完成数据库公网端口整改、正式离线签名和最终 RC 供应链复核。
 
 ## 15. 复现入口
 

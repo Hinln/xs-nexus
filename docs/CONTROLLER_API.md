@@ -30,6 +30,7 @@
 | `CONSOLE_SESSION_TTL_SECONDS` | `900..86400`，默认 8 小时 |
 | `CREDENTIAL_SIGNING_KEY_PATH` | 权限不宽于 `0600` 的 32 字节原始 Ed25519 seed 文件 |
 | `CONFIG_SIGNING_KEY_PATH` | 与凭证密钥不同的 32 字节原始 Ed25519 seed 文件 |
+| `UPDATE_SIGNING_PUBLIC_KEY_PATH` | 可选、权限不宽于 `0644` 的 32 字节原始 Ed25519 发布公钥；不配置时更新导入明确不可用 |
 | `NODE_CREDENTIAL_TTL_SECONDS` | `3600..31536000`，默认 30 天 |
 
 密钥文件和真实环境配置位于仓库外。Credential 与 Configuration key 复用会导致启动失败。
@@ -119,6 +120,15 @@
 - Token 由 CSPRNG 生成，只在 `201` 响应中返回一次；数据库和审计只保存域分离 SHA-256 hash。
 - Token 的角色、标签、网络、固定 IP、有效期和次数在创建后不可扩大。
 
+### 更新发布与灰度策略
+
+- `GET/POST /v1/admin/update-releases`：读取或导入离线签名的不可变 Linux 发布。POST 只接受 Base64URL 清单、64 字节签名和与清单归档名一致的 HTTPS URL；Controller 不接受或保存发布私钥。
+- `GET /v1/admin/networks/{network_id}/update-policies`：读取网络的通道/平台/架构策略。
+- `PUT /v1/admin/networks/{network_id}/update-policies/{channel}/{platform}/{architecture}`：以 `expected_generation`、发布 ID、可选最低版本、`0..10000` 基点和 pause 状态替换策略；代次冲突返回 409。
+- `PUT /v1/admin/networks/{network_id}/nodes/{node_id_base64}/update-channel`：以 `expected_configuration_version` 和 `update_channel` 修改活动节点的分配通道，发布新签名配置并写入审计；配置版本冲突返回 409。
+
+读取接口需要 Read 权限；导入、策略和节点通道写入需要 Manage 权限及有效 CSRF。发布内容不可变，策略 pause 始终覆盖最低版本和灰度资格。完整信任边界见 `docs/UPDATE_SYSTEM.md`。
+
 ## 6. 节点 Enrollment
 
 ### `POST /v1/enroll`
@@ -164,6 +174,7 @@ Token 行锁、每网络 PostgreSQL transaction advisory lock、IP lease、节�
 3. 签名输入为 `"XS Nexus control authentication v1" || challenge[32] || node_id[16]`。
 4. Controller 验证凭证、数据库身份、公钥、Network ID、有效期和签名后发送 `authenticated` 与最新配置。
 5. 节点发送 `{"type":"sync","last_version":2}`；服务端返回 `configuration` 或 `up_to_date`。
+6. 节点用身份密钥签名发送 `report_runtime`；Controller 验证身份、当前分配通道、时间和字段后保存单调报告，并只对 eligible/required 节点返回 `update_directive`。
 
 challenge 每连接一次性生成。二进制、未知或越序消息被拒绝；连接使用 ping/pong 心跳。控制通道只传签名配置和状态，不传业务数据。
 

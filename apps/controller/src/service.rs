@@ -27,9 +27,10 @@ use crate::{
         CreateEnrollmentTokenRequest, CreateNetworkRequest, EndpointCandidate,
         EndpointCandidateKind, EnrollRequest, EnrollResponse, EnrollmentTokenResponse,
         ExplainAclRequest, ExplainAclResponse, NetworkResponse, PortRange, ReplaceAclPolicyRequest,
-        ReplaceAclPolicyResponse, ReplaceSubnetRoutesRequest, ReplaceSubnetRoutesResponse,
+        ReplaceAclPolicyResponse, ReplaceNodeUpdateChannelRequest,
+        ReplaceNodeUpdateChannelResponse, ReplaceSubnetRoutesRequest, ReplaceSubnetRoutesResponse,
         RevokeNodeRequest, RevokeNodeResponse, SignedConfiguration, SubnetRouteAdvertisement,
-        SubnetRouteApprovalRequest, SubnetRouteMode, SubnetRouteSuggestionResponse,
+        SubnetRouteApprovalRequest, SubnetRouteMode, SubnetRouteSuggestionResponse, UpdateChannel,
     },
     state::AppState,
 };
@@ -80,6 +81,7 @@ struct ConfigurationNodeRow {
     credential_not_after: DateTime<Utc>,
     role_bitmap: i64,
     tags: Vec<String>,
+    update_channel: String,
     candidate_payload: Option<Vec<u8>>,
 }
 
@@ -930,6 +932,78 @@ pub(crate) async fn revoke_node(
     })
 }
 
+pub(crate) async fn replace_node_update_channel(
+    state: &AppState,
+    network_id: Uuid,
+    node_id_base64: &str,
+    request: ReplaceNodeUpdateChannelRequest,
+    actor: &ManagementActor,
+) -> Result<ReplaceNodeUpdateChannelResponse, ApiError> {
+    if request.expected_configuration_version == 0 {
+        return Err(ApiError::validation());
+    }
+    let node_id =
+        decode_canonical_array::<16>(node_id_base64).map_err(|()| ApiError::validation())?;
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    lock_network(&mut transaction, network_id).await?;
+    let current_version = sqlx::query_scalar::<_, i64>(
+        "SELECT config_version FROM networks WHERE id = $1 FOR UPDATE",
+    )
+    .bind(network_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    let current_version = u64::try_from(current_version).map_err(|_| ApiError::internal())?;
+    if current_version != request.expected_configuration_version {
+        return Err(ApiError::conflict());
+    }
+    let database_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM nodes
+         WHERE network_id = $1 AND node_id = $2 AND revoked_at IS NULL
+         FOR UPDATE",
+    )
+    .bind(network_id)
+    .bind(node_id.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    sqlx::query("UPDATE nodes SET update_channel = $2, updated_at = now() WHERE id = $1")
+        .bind(database_id)
+        .bind(update_channel_name(request.update_channel))
+        .execute(&mut *transaction)
+        .await
+        .map_err(internal_database)?;
+    let configuration = publish_configuration(&mut transaction, network_id, state).await?;
+    append_audit(
+        &mut transaction,
+        AuditEvent {
+            network_id: Some(network_id),
+            actor_type: actor.actor_type(),
+            actor_id: actor.actor_id(),
+            action: "node.update_channel.replace",
+            target_type: "node",
+            target_id: Some(database_id.to_string()),
+            outcome: "success",
+            metadata: json!({
+                "node_id_base64": node_id_base64,
+                "update_channel": update_channel_name(request.update_channel),
+                "configuration_version": configuration.version,
+            }),
+        },
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    state.notify_configuration_changed(network_id);
+    Ok(ReplaceNodeUpdateChannelResponse {
+        network_id,
+        node_id_base64: node_id_base64.to_owned(),
+        update_channel: request.update_channel,
+        configuration_version: configuration.version,
+    })
+}
+
 fn canonical_groups(mut groups: Vec<AclGroupRequest>) -> Result<Vec<AclGroupRequest>, ApiError> {
     for group in &mut groups {
         if !valid_acl_name(&group.name)
@@ -1086,6 +1160,7 @@ fn policy_validation_payload(
                 role_bitmap: 0,
                 groups,
                 tags,
+                update_channel: None,
             }
         })
         .collect();
@@ -1550,6 +1625,7 @@ pub(crate) struct AuthenticatedNode {
     pub network_id: Uuid,
     pub node_id_base64: String,
     pub node_id: [u8; 16],
+    pub identity_public_key: [u8; 32],
 }
 
 pub(crate) async fn authenticate_control(
@@ -1594,6 +1670,10 @@ pub(crate) async fn authenticate_control(
     let stored_public_key = stored
         .try_get::<Vec<u8>, _>("identity_public_key")
         .map_err(internal_database)?;
+    let stored_public_key_array: [u8; 32] = stored_public_key
+        .as_slice()
+        .try_into()
+        .map_err(|_| ApiError::unauthorized())?;
     if stored_credential.as_slice() != credential
         || stored_public_key.as_slice() != verified.identity_public_key
         || *network_id.as_bytes() != verified.network_id
@@ -1634,6 +1714,7 @@ pub(crate) async fn authenticate_control(
         network_id,
         node_id_base64: node_id_base64.to_owned(),
         node_id: claimed_node_id,
+        identity_public_key: stored_public_key_array,
     })
 }
 
@@ -2236,6 +2317,7 @@ async fn load_configuration_nodes(
         "SELECT n.id AS database_id, n.node_id, n.identity_public_key,
                 host(n.virtual_ip) AS virtual_ip,
                 n.credential_serial, n.credential_not_after, n.role_bitmap, n.tags,
+                n.update_channel,
                 c.payload AS candidate_payload
          FROM nodes n
          LEFT JOIN node_candidate_advertisements c
@@ -2297,9 +2379,27 @@ async fn load_configuration_nodes(
                 role_bitmap: u32::try_from(row.role_bitmap).map_err(|_| ApiError::internal())?,
                 groups: groups_by_node.remove(&row.database_id).unwrap_or_default(),
                 tags: row.tags,
+                update_channel: Some(parse_update_channel(&row.update_channel)?),
             })
         })
         .collect()
+}
+
+const fn update_channel_name(channel: UpdateChannel) -> &'static str {
+    match channel {
+        UpdateChannel::Stable => "stable",
+        UpdateChannel::Testing => "testing",
+        UpdateChannel::Development => "development",
+    }
+}
+
+fn parse_update_channel(value: &str) -> Result<UpdateChannel, ApiError> {
+    match value {
+        "stable" => Ok(UpdateChannel::Stable),
+        "testing" => Ok(UpdateChannel::Testing),
+        "development" => Ok(UpdateChannel::Development),
+        _ => Err(ApiError::internal()),
+    }
 }
 
 async fn load_acl_policies(

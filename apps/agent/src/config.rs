@@ -5,6 +5,7 @@ use std::{
 
 use reqwest::Url;
 use serde::Deserialize;
+use xs_core::UpdateChannel;
 
 use crate::error::{AgentError, Result};
 
@@ -24,6 +25,10 @@ pub struct AgentConfig {
     pub mtu: u16,
     #[serde(default = "default_sync_interval")]
     pub control_sync_interval_seconds: u64,
+    #[serde(default = "default_update_channel")]
+    pub update_channel: UpdateChannel,
+    #[serde(default = "default_update_signing_public_key_path")]
+    pub update_signing_public_key_path: PathBuf,
 }
 
 const fn default_mtu() -> u16 {
@@ -36,6 +41,20 @@ fn default_interface_name() -> String {
 
 const fn default_sync_interval() -> u64 {
     15
+}
+
+const fn default_update_channel() -> UpdateChannel {
+    UpdateChannel::Stable
+}
+
+#[cfg(unix)]
+fn default_update_signing_public_key_path() -> PathBuf {
+    PathBuf::from("/etc/xs-nexus/release-public-key.pem")
+}
+
+#[cfg(windows)]
+fn default_update_signing_public_key_path() -> PathBuf {
+    PathBuf::from(r"C:\ProgramData\XS Nexus\release-public-key.pem")
 }
 
 impl AgentConfig {
@@ -87,6 +106,7 @@ impl AgentConfig {
             || !valid_interface_name(&self.interface_name)
             || !(1280..=1500).contains(&self.mtu)
             || !(5..=300).contains(&self.control_sync_interval_seconds)
+            || !self.update_signing_public_key_path.is_absolute()
         {
             return Err(AgentError::Configuration);
         }
@@ -203,6 +223,8 @@ mod tests {
             interface_name: "xsn0".to_owned(),
             mtu: 1280,
             control_sync_interval_seconds: 15,
+            update_channel: UpdateChannel::Stable,
+            update_signing_public_key_path: default_update_signing_public_key_path(),
         }
     }
 
@@ -224,5 +246,19 @@ mod tests {
         config.interface_name = "xsn0".to_owned();
         config.mtu = 1200;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_defaults_to_stable_updates_and_a_pinned_absolute_key() {
+        let encoded = serde_json::json!({
+            "controller_url": "https://controller.example/",
+            "node_name": "linux-node-1",
+            "device_type": "linux",
+            "state_directory": "/var/lib/xs-nexus",
+            "runtime_directory": "/run/xs-nexus"
+        });
+        let config: AgentConfig = serde_json::from_value(encoded).expect("default config");
+        assert_eq!(config.update_channel, UpdateChannel::Stable);
+        assert!(config.update_signing_public_key_path.is_absolute());
     }
 }

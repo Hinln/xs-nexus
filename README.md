@@ -22,6 +22,7 @@
 - Controller API：`docs/CONTROLLER_API.md`
 - 威胁模型与安全假设：`docs/THREAT_MODEL.md`、`docs/SECURITY_ASSUMPTIONS.md`
 - Linux 安装、升级、回滚和卸载：`docs/LINUX_INSTALLATION.md`
+- 签名更新、灰度策略和权限边界：`docs/UPDATE_SYSTEM.md`
 - 1Panel 部署：`docs/DOCKER_1PANEL_DEPLOYMENT.md`
 - 恢复手册：`RECOVERY_RUNBOOK.md`
 - 性能与稳定性：`docs/PERFORMANCE_REPORT.md`
@@ -67,6 +68,7 @@ make test-runtime-stability
 - Linux 全链路与三轮聚合回归：`/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`
 - Windows 路由和 Agent 隔离准备：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`
 - 运行镜像 SBOM、113/113 包许可证闭包、provenance 和漏洞报告：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`
-- 24 小时稳定性长测：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，仍在运行，不得提前作为通过证据。
+- 24 小时稳定性长测：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，4261 行资源样本覆盖三服务各 1420 次采样；受控重启 PID 转换、零自动重启和资源/日志上限已审计。
+- 修正重启证据语义后的真实回归：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`，三服务各 11 次采样、恰好一次 PID 转换且 `RestartCount` 全程为零。
 
 当前不可绕过的门禁包括 Windows 11 VM/WDK/Driver Verifier、正式驱动签名、真实 NAS、既有数据库公网端口整改、DNS/生产防火墙、正式离线签名和第三方协议/密码学审计。不得将这些项目描述为已完成。

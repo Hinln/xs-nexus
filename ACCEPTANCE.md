@@ -132,7 +132,7 @@
 - [x] MUST：视觉验收通过。
 - [x] MUST：无未解释浏览器错误。
 
-M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更新发布、备份恢复、路径、流量、延迟和 Relay 指标均以不可用状态及原因展示，不以固定值满足验收。证据：`/srv/xs-nexus/artifacts/qa/m4.2-20260730T223401Z`。
+M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰度策略、节点分配通道和 Agent 签名更新状态现已接入真实 API。尚未实现的备份恢复 UI、路径、流量、延迟和 Controller 汇总 Relay 指标仍以不可用状态及原因展示，不以固定值满足验收。更新隔离验证覆盖真实 PostgreSQL、控制面、9 条 Playwright 主流程和 6 个视口。
 
 ---
 
@@ -192,10 +192,10 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更�
 - [x] MUST：P1 为 0。
 - [x] MUST：P2 有明确结论。
 - [x] MUST：连续三轮全量回归无新增失败。
-- [ ] MUST：24 小时稳定性测试或明确外部阻塞。
-- [ ] MUST：无未解释资源泄漏。
-- [ ] MUST：无未解释日志持续增长。
-- [ ] MUST：故障恢复测试通过。
+- [x] MUST：24 小时稳定性测试或明确外部阻塞。
+- [x] MUST：无未解释资源泄漏。
+- [x] MUST：无未解释日志持续增长。
+- [x] MUST：故障恢复测试通过。
 
 ---
 
@@ -215,7 +215,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；尚未实现的更�
 - [x] MUST：最终真实报告。
 - [x] MUST：明确当前是否适合生产。
 
-证据：`docs/ARCHITECTURE.md`、`docs/XSP1_PROTOCOL.md`、`docs/CONTROLLER_API.md`、`docs/LINUX_INSTALLATION.md`、`RECOVERY_RUNBOOK.md`、`docs/SECURITY_ASSUMPTIONS.md`、`docs/THREAT_MODEL.md`、`QA_MATRIX.md`、`THIRD_PARTY.md` 与 `FINAL_REPORT.md`。性能报告 `docs/PERFORMANCE_REPORT.md` 已建立但仍为 `IN_PROGRESS`，须等待 24 小时稳定性证据后再勾选。
+证据：`docs/ARCHITECTURE.md`、`docs/XSP1_PROTOCOL.md`、`docs/CONTROLLER_API.md`、`docs/LINUX_INSTALLATION.md`、`docs/UPDATE_SYSTEM.md`、`RECOVERY_RUNBOOK.md`、`docs/SECURITY_ASSUMPTIONS.md`、`docs/THREAT_MODEL.md`、`QA_MATRIX.md`、`THIRD_PARTY.md` 与 `FINAL_REPORT.md`。性能报告 `docs/PERFORMANCE_REPORT.md` 已纳入 24 小时长样本与修正后的真实重启回归。
 
 ---
 

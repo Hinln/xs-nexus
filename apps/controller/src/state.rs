@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use sqlx::PgPool;
 use tokio::sync::{RwLock, broadcast};
 use xs_core::ConfigurationRelay;
@@ -17,17 +17,20 @@ pub struct AppState {
     pub console_session_ttl_seconds: u64,
     pub credential_signing_key: Arc<SigningKey>,
     pub config_signing_key: Arc<SigningKey>,
+    pub update_signing_public_key: Option<Arc<VerifyingKey>>,
     pub credential_ttl_seconds: u64,
     pub discovery_public_endpoints: Arc<Vec<SocketAddr>>,
     pub relays: Arc<Vec<ConfigurationRelay>>,
     online_nodes: Arc<RwLock<HashMap<[u8; 16], usize>>>,
     configuration_events: broadcast::Sender<uuid::Uuid>,
+    update_events: broadcast::Sender<uuid::Uuid>,
 }
 
 impl AppState {
     #[must_use]
     pub fn new(pool: PgPool, config: &ControllerConfig) -> Self {
         let (configuration_events, _) = broadcast::channel(256);
+        let (update_events, _) = broadcast::channel(256);
         Self {
             pool,
             admin_token_hash: config.admin_token_hash,
@@ -35,6 +38,7 @@ impl AppState {
             console_session_ttl_seconds: config.console_session_ttl_seconds,
             credential_signing_key: Arc::new(config.credential_signing_key.clone()),
             config_signing_key: Arc::new(config.config_signing_key.clone()),
+            update_signing_public_key: config.update_signing_public_key.map(Arc::new),
             credential_ttl_seconds: config.credential_ttl_seconds,
             discovery_public_endpoints: Arc::new(
                 config.discovery_public_endpoint.into_iter().collect(),
@@ -42,6 +46,7 @@ impl AppState {
             relays: Arc::new(config.relays.clone()),
             online_nodes: Arc::new(RwLock::new(HashMap::new())),
             configuration_events,
+            update_events,
         }
     }
 
@@ -74,5 +79,13 @@ impl AppState {
 
     pub(crate) fn notify_configuration_changed(&self, network_id: uuid::Uuid) {
         let _ = self.configuration_events.send(network_id);
+    }
+
+    pub(crate) fn subscribe_update_events(&self) -> broadcast::Receiver<uuid::Uuid> {
+        self.update_events.subscribe()
+    }
+
+    pub(crate) fn notify_update_changed(&self, network_id: uuid::Uuid) {
+        let _ = self.update_events.send(network_id);
     }
 }

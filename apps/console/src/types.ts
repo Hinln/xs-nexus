@@ -1,4 +1,5 @@
 export type ConsoleRole = "administrator" | "operator" | "auditor";
+export type UpdateChannel = "stable" | "testing" | "development";
 
 export interface ConsoleUser {
   id: string;
@@ -85,7 +86,11 @@ export interface NodeSummary {
   published_subnets: string[];
   credential_expires_at: string;
   credential_state: "active" | "expired" | "revoked";
+  update_channel: Availability<UpdateChannel>;
   update_state: Availability<string>;
+  update_release_id: string | null;
+  update_error_code: string | null;
+  update_reported_at: string | null;
 }
 
 export interface EnrollmentTokenSummary {
@@ -232,4 +237,30 @@ export interface AclExplanation {
     matched_rule_id: string | null;
     reason: string;
   };
+}
+
+export interface UpdateRelease {
+  id: string;
+  version: string;
+  platform: "linux";
+  architecture: "x86_64" | "aarch64";
+  target: string;
+  archive_name: string;
+  archive_size: number;
+  archive_sha256: string;
+  archive_url: string;
+  created_at: string;
+}
+
+export interface UpdatePolicy {
+  network_id: string;
+  channel: UpdateChannel;
+  platform: "linux";
+  architecture: "x86_64" | "aarch64";
+  release: UpdateRelease;
+  minimum_version: string | null;
+  rollout_basis_points: number;
+  paused: boolean;
+  generation: number;
+  updated_at: string;
 }

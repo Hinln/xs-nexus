@@ -131,6 +131,9 @@ install -d -m 0755 \
 install -m 0755 "$binary_directory/xs-agent" "$package_root/bin/xs-agent"
 install -m 0755 "$binary_directory/xs" "$package_root/bin/xs"
 install -m 0644 "$ROOT_DIR/deploy/systemd/xs-agent.service" "$package_root/lib/systemd/system/xs-agent.service"
+install -m 0644 "$ROOT_DIR/deploy/systemd/xs-agent-update.service" "$package_root/lib/systemd/system/xs-agent-update.service"
+install -m 0644 "$ROOT_DIR/deploy/systemd/xs-agent-update.path" "$package_root/lib/systemd/system/xs-agent-update.path"
+install -m 0755 "$ROOT_DIR/installers/linux/xs-nexus-installer.sh" "$package_root/share/xs-nexus/xs-nexus-installer.sh"
 install -m 0644 "$ROOT_DIR/deploy/systemd/agent.example.json" "$package_root/share/xs-nexus/agent.example.json"
 install -m 0644 "$ROOT_DIR/docs/LINUX_INSTALLATION.md" "$package_root/share/doc/xs-nexus/LINUX_INSTALLATION.md"
 (

@@ -234,7 +234,14 @@ function PageRouter({
   );
   if (page === "audit") return <AuditPage snapshot={snapshot} />;
   if (page === "alerts") return <AlertsPage snapshot={snapshot} />;
-  if (page === "updates") return <UpdatesPage snapshot={snapshot} />;
+  if (page === "updates") return (
+    <UpdatesPage
+      snapshot={snapshot}
+      user={user}
+      csrfToken={csrfToken}
+      onSnapshotChanged={onSnapshotChanged}
+    />
+  );
   if (page === "settings") return <SettingsPage snapshot={snapshot} />;
   if (page === "backup") return <BackupPage snapshot={snapshot} />;
   return (

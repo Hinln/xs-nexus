@@ -33,6 +33,7 @@ xs-windows-service = { path = "../../crates/windows-service" }
 xs-windows-transport = { path = "../../crates/windows-transport" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
 netlink-sys.workspace = true
 rtnetlink.workspace = true
 tokio-tun.workspace = true

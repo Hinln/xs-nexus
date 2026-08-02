@@ -604,7 +604,7 @@
 
 ## M7.3 性能和稳定性
 
-- 状态：`IN_PROGRESS`
+- 状态：`DONE_CURRENT_LINUX_BASELINE`
 - 前置：M7.1
 
 至少测试：
@@ -621,7 +621,7 @@
 - 日志增长；
 - 数据库重连。
 
-当前进展：已完成真实 PostgreSQL backend 终止后的连接池恢复测试、Controller 100/500/1000 节点 API 注册与查询基线、以及可配置时长的 Docker 运行时资源/日志/故障恢复采样器。24 小时稳定性、加密/Relay 吞吐、Direct/Relay RTT、WebSocket 广播和拥塞长测仍是未完成项。
+实际结果：已完成真实 PostgreSQL backend 终止后的连接池恢复、Controller 100/500/1000 节点 API 注册/查询、XSP/1 与 Relay 吞吐、Direct/Relay RTT、release Agent 空闲资源、WebSocket 广播和可配置 Docker 资源/日志/故障恢复采样。24 小时证据 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z` 含三服务各 1420 个样本；`XS-2026-0004` 修正重启计数语义后，真实完整回归 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z` 通过。当前结果只关闭 Linux 单机基线，不代表 Windows、NAS、公网跨地域或水平扩展容量。
 
 ---
 

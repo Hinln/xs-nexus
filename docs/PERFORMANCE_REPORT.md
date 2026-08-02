@@ -1,10 +1,10 @@
 # XS Nexus 性能与稳定性报告
 
-状态：`IN_PROGRESS`  
-报告日期：2026-07-31  
+状态：`COMPLETE_FOR_CURRENT_LINUX_BASELINE`  
+报告日期：2026-08-02  
 适用范围：当前 Linux 测试服务器、loopback/namespace 网络与真实外部 PostgreSQL。
 
-本报告记录可复现的工程基线，不是公网容量承诺。Windows 实机、运营商网络、NAS 和 24 小时稳定性完成前，不得据此描述为生产就绪。
+本报告记录可复现的工程基线，不是公网容量承诺。24 小时 Linux 容器稳定性已经完成；Windows 实机、运营商网络和 NAS 门禁仍未完成，因此不得据此描述为生产就绪。
 
 ## 1. 测试原则
 
@@ -31,6 +31,7 @@
 | Relay RTT，30 样本 | 平均 1.16 ms；p50 1.13 ms；p95 1.45 ms；最大 1.45 ms | 同上 |
 | Relay RTT 增量 | 平均 +0.25 ms；p95 +0.32 ms | 同上 |
 | Linux Agent 空闲资源（每实例） | 平均 0.55% 单核 CPU；7.95 MiB RSS；9 线程；15 FD | 同上 |
+| Controller/Relay/Console 24 小时稳定性 | 每服务 1420 次采样；恰好一次受控 PID 转换；无自动重启 | `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z` 与修正回归 `runtime-stability-20260802T061521Z` |
 
 ## 3. 运行时短时校准
 
@@ -48,7 +49,7 @@ Controller、Relay、Console 均完成受控重启和健康恢复，并采集完
 
 ## 4. 24 小时稳定性
 
-状态：`RUNNING`。
+状态：`PASSED_WITH_CORRECTED_RESTART_GATE`。
 
 启动参数：
 
@@ -58,15 +59,15 @@ XS_STABILITY_SAMPLE_INTERVAL_SECONDS=60 \
 make test-docker-deployment
 ```
 
-完成后必须审计：
+长测从 2026-07-31 21:22:42 UTC 运行至 2026-08-01 21:21:41 UTC。`resources.csv` 包含 4261 行（表头加三服务各 1420 个样本）。结果：
 
-- 三服务资源曲线、PID 变化、FD 和线程上限；
-- 日志增长及轮转上限；
-- Controller、Relay、Console 故障恢复；
-- Docker 测试容器、网络、`1panel-network`、默认路由和 nftables 清理基线；
-- 是否存在持续单调增长或无法解释的尖峰。
+- Controller RSS 6.35–9.41 MiB、线程 10–11、FD 15–17、日志 1676→2514 字节；
+- Relay RSS 2.61–5.12 MiB、线程固定 10、FD 固定 14、日志 346→1040 字节；
+- Console RSS 24.48–31.92 MiB、线程固定 10、FD 161–163、日志 3416→14423 字节；
+- 每个服务恰好观察到重启前后两个 PID，`RestartCount` 全部样本均为 0；未发现无界 FD/线程增长或额外自动重启；
+- 测试结束后项目测试容器和 schema 清理完成，既有 `1panel-network`、默认路由、nftables 和 1Panel 服务保持不变。
 
-在完整证据生成和审计前，`ACCEPTANCE.md` 中 24 小时、资源泄漏、日志增长与最终性能报告保持未勾选。
+旧脚本最后错误要求手动 `docker restart` 增加 Docker 的自动重启计数，因此在完整采样和三次健康恢复之后以错误断言退出。`XS-2026-0004` 修复门禁为：重启输出必须精确等于目标完整容器 ID、每服务恰好两个 PID、`RestartCount` 必须保持基线。修正后的真实 60 秒部署回归 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z` 通过，三服务各 11 个样本并验证同一组重启与清理不变量。长样本与修正语义合并构成当前 Linux 24 小时验收证据；没有把旧脚本的非零退出隐藏为成功。
 
 ## 5. 尚未覆盖
 

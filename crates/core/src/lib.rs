@@ -12,6 +12,7 @@ use uuid::Uuid;
 mod acl;
 mod healthcheck;
 mod routes;
+mod updates;
 
 pub use acl::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
@@ -20,6 +21,11 @@ pub use acl::{
 pub use healthcheck::{HttpHealthcheckError, check_local_http_health};
 pub use routes::validate_subnet_route_suggestion;
 pub use routes::{ResolvedSubnetRoute, SubnetRoutePolicy, SubnetRouteValidationError};
+pub use updates::{
+    AgentRuntimeReport, AgentUpdateState, LinuxReleaseManifest, MAX_UPDATE_ARCHIVE_BYTES,
+    ReleaseManifestError, ReleaseVersion, ReleaseVersionError, UpdateChannel, UpdateDecision,
+    UpdateDirective, UpdatePolicyError, UpdateRolloutPolicy, agent_runtime_report_signing_input,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Component {
@@ -140,6 +146,8 @@ pub struct ConfigurationNode {
     #[serde(default)]
     pub groups: Vec<String>,
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_channel: Option<UpdateChannel>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -324,6 +332,10 @@ pub enum ControlClientMessage {
         advertisement: SubnetRouteAdvertisement,
         signature_base64: String,
     },
+    ReportRuntime {
+        report: AgentRuntimeReport,
+        signature_base64: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -341,6 +353,9 @@ pub enum ControlServerMessage {
     },
     UpToDate {
         version: u64,
+    },
+    UpdateDirective {
+        directive: Option<UpdateDirective>,
     },
     Error {
         code: String,

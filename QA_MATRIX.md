@@ -101,8 +101,8 @@
 ### M4.1/M4.2 自动化覆盖
 
 - `apps/controller/tests/controller_db.rs` 使用真实 PostgreSQL 覆盖 Argon2id 用户、统一无效登录、登录限速、安全 Cookie、CSRF 轮换、会话撤销、用户创建、审计员越权拒绝、快照脱敏和实时控制连接上下线；
-- 管理快照只返回数据库与当前进程实际状态，未接入的路径、Relay 健康、流量、延迟、更新和备份能力均返回带原因的 `unavailable`，测试明确禁止秘密/hash 字段和伪造指标；
-- `apps/console/tests/console.spec.ts` 覆盖登录、16 个页面、空/403/503、审计员只读、页面无横向溢出、跳转链接、节点详情焦点恢复与 404；
+- 管理快照只返回数据库与当前进程实际状态；更新发布、节点分配通道和 Agent 签名更新上报现为真实数据，未接入的路径、Relay 聚合健康、流量、延迟和备份 UI 仍返回带原因的 `unavailable`，测试明确禁止秘密/hash 字段和伪造指标；
+- `apps/console/tests/console.spec.ts` 覆盖登录、16 个页面、更新发布/灰度/节点通道请求体、空/403/503、审计员只读、页面无横向溢出、跳转链接、节点详情焦点恢复与 404；
 - `apps/console/tests/visual.spec.ts` 使用固定数据和 Chromium，在 1440×900、1920×1080、1280×720、1024×768、768×1024、390×844 下生成登录、全部页面、节点详情和 404 截图；
 - 桌面状态矩阵额外覆盖所有页面空态、大量节点、长 IPv6、离线、部分服务不可用、加载、无权限和服务错误，共生成 135 张截图；
 - 浏览器测试监听 Console、Page Error 和 4xx/5xx；登录 401、权限 403、预期 503 被精确断言，其余错误必须为零；
@@ -375,7 +375,16 @@
 - `make test-controller-scale` 使用真实 PostgreSQL、Controller Router 和 `/v1/enroll` API，32 路并发完成 100、500、1000 节点注册；同时读取真实 Console 快照、节点计数和虚拟地址唯一性。证据：`/srv/xs-nexus/artifacts/qa/controller-scale-20260731T210210Z`。
 - 注册吞吐基线：100 节点批次 39.18/s，500 节点增量 18.20/s，1000 节点增量 8.66/s；Console 快照分别约 50.2、130.9、192.6 ms；数据库计数查询分别约 2.72、1.70、2.30 ms。该结果是当前测试主机和独立 schema 的基线，不构成公网容量承诺。
 - `XS_STABILITY_DURATION_SECONDS=30 XS_STABILITY_SAMPLE_INTERVAL_SECONDS=5 make test-docker-deployment` 通过，证据：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T205004Z`。采样覆盖完整容器进程树，Controller/Relay/Console 分别验证重启恢复、RSS、FD、线程、日志大小和进程 PID 变化。
-- 加密吞吐、真实 Relay 吞吐、Direct/Relay RTT、Agent 空闲资源和 WebSocket 广播均已完成；24 小时稳定性与长时间日志/资源曲线仍在运行，不得以短时证据勾选 M7.3 全部 MUST。
+- 加密吞吐、真实 Relay 吞吐、Direct/Relay RTT、Agent 空闲资源、WebSocket 广播和 24 小时稳定性均已完成。长测三服务各 1420 样本，修正后的真实重启门禁回归为 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`；旧脚本的错误退出和修复见 `XS-2026-0004`，未被隐藏。
+
+### 签名更新与灰度发布自动化结果（2026-08-02）
+
+- Core 26 个单测覆盖严格版本/清单、通道、确定性分桶、暂停、最低版本和运行时报告签名输入；
+- Agent 48+3 个单元/命令测试覆盖 pinned key 权限、指令漂移、HTTPS/大小/哈希、私有 staging、root helper 二次验证、篡改拒绝和 installer 调用边界；
+- Controller 真实 PostgreSQL 集成覆盖无效签名、URL 漂移、发布不可变、策略代次冲突、暂停/最低版本、节点通道配置版本冲突、签名配置字段、运行时报告和审计脱敏；
+- `make test-agent-control` 验证认证、配置同步和新控制消息兼容；`make test-linux-installer`、`make test-agent-systemd` 验证新 path/service 的安装、回滚、卸载与 systemd 沙箱；
+- Console 生产构建、4 个单测、9 条非视觉 E2E 和 2 条视觉矩阵通过，固定视口为 1440×900、1920×1080、1280×720、1024×768、768×1024、390×844；
+- `cargo clippy -p xs-core -p xs-controller -p xs-agent --all-targets -- -D warnings` 通过。
 - `make test-protocol-throughput` 在 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 seal/open，结果 161,314 往返/s、184.61 MiB/s；证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`。该结果覆盖 AEAD 与协议校验，但不包含 TUN、UDP socket、Relay 或公网路径开销。
 - `make test-relay-throughput` 使用真实 UDP Relay、认证注册和两节点 Lease 转发 10,000 个帧，64 帧窗口下为 87,822 包/s、18.09 MiB/s，内部转发延迟平均 4 µs、最大 161 µs，指标断言零协议丢弃；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z`。首次无限突发因测试接收 socket 缓冲区丢包失败，未作为产品结论；有界窗口保留真实 Relay 全路径。
 - Controller 配置事务提交后通过有界 Tokio broadcast 通道按 network ID 通知控制连接；集成测试使用同一凭据建立两条真实 WebSocket，在候选广告生成版本 5 后断言第二条连接自动收到相同签名配置，同时保持唯一节点 presence 语义和连接引用计数。`make test-controller-db` 通过。

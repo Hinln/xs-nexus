@@ -63,6 +63,8 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
         interface_name: "xsn0".to_owned(),
         mtu: 1280,
         control_sync_interval_seconds: 5,
+        update_channel: xs_core::UpdateChannel::Stable,
+        update_signing_public_key_path: temporary.path().join("release-public-key.pem"),
     };
     config.validate().expect("agent config validates");
 
@@ -113,6 +115,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
         control_shutdown_rx,
     ));
     wait_until_connected(&health).await;
+    assert_runtime_report_persisted(&controller_state.pool, &shared_state).await;
 
     enroll_peer(&client, &config.controller_url, network_id).await;
     wait_for_new_configuration(&shared_state, initial_version).await;
@@ -261,6 +264,7 @@ fn controller_config() -> ControllerConfig {
         console_session_ttl_seconds: 28_800,
         credential_signing_key: SigningKey::from_bytes(&[21_u8; 32]),
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
+        update_signing_public_key: None,
         credential_ttl_seconds: 86_400,
         relays: Vec::new(),
     }
@@ -268,7 +272,8 @@ fn controller_config() -> ControllerConfig {
 
 async fn reset_database(pool: &sqlx::PgPool) {
     sqlx::query(
-        "TRUNCATE audit_events, configuration_versions, acl_rules,
+        "TRUNCATE update_rollout_policies, update_releases, audit_events,
+                  configuration_versions, acl_rules,
                   node_group_memberships, node_groups, ip_leases, nodes,
                   enrollment_tokens, networks
          RESTART IDENTITY CASCADE",
@@ -379,6 +384,40 @@ async fn wait_until_connected(health: &AgentHealth) {
     })
     .await
     .expect("Agent connects to Controller");
+}
+
+async fn assert_runtime_report_persisted(pool: &sqlx::PgPool, state: &RwLock<NodeState>) {
+    let node_id = URL_SAFE_NO_PAD
+        .decode(&state.read().await.node_id_base64)
+        .expect("decode node id");
+    let report = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let report = sqlx::query_as::<_, (String, String, String, String, String)>(
+                "SELECT agent_version, platform, architecture, update_channel, update_state
+                 FROM node_update_reports WHERE node_id = $1",
+            )
+            .bind(&node_id)
+            .fetch_optional(pool)
+            .await
+            .expect("query Agent runtime report");
+            if let Some(report) = report {
+                return report;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("Agent runtime report reaches Controller");
+    assert_eq!(
+        report,
+        (
+            "0.1.0".to_owned(),
+            "linux".to_owned(),
+            "x86_64".to_owned(),
+            "stable".to_owned(),
+            "idle".to_owned(),
+        )
+    );
 }
 
 async fn wait_for_new_configuration(state: &RwLock<NodeState>, initial_version: u64) {

@@ -6,6 +6,8 @@ import {
   mockAuthenticatedApi,
   sessionFixture,
   snapshotFixture,
+  updatePoliciesFixture,
+  updateReleasesFixture,
 } from "./fixtures";
 
 test("真实登录后进入首页", async ({ page }) => {
@@ -91,6 +93,121 @@ test("审计员界面不提供写操作", async ({ page }) => {
   await expect(page.getByRole("button", { name: "吊销凭证" })).toHaveCount(0);
   await page.getByRole("button", { name: "网络", exact: true }).click();
   await expect(page.getByRole("button", { name: "创建网络" })).toHaveCount(0);
+  await page.getByRole("button", { name: "更新管理", exact: true }).click();
+  await expect(page.getByRole("button", { name: "导入签名发布" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "配置灰度策略" })).toHaveCount(0);
+  await expect(page.getByLabel(/的升级通道/)).toHaveCount(0);
+});
+
+test("更新页导入公开签名材料并以代次保护灰度策略", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  let importedBody: Record<string, unknown> | null = null;
+  let policyBody: Record<string, unknown> | null = null;
+  await page.unroute("**/v1/admin/update-releases");
+  await page.route("**/v1/admin/update-releases", (route) => {
+    if (route.request().method() === "POST") {
+      importedBody = route.request().postDataJSON() as Record<string, unknown>;
+      return fulfillJson(route, 201, { ...updateReleasesFixture[0], id: "70000000-0000-4000-8000-000000000002", version: "0.3.0" });
+    }
+    return fulfillJson(route, 200, updateReleasesFixture);
+  });
+  await page.route("**/v1/admin/networks/*/update-policies/*/*/*", (route) => {
+    policyBody = route.request().postDataJSON() as Record<string, unknown>;
+    return fulfillJson(route, 200, {
+      ...updatePoliciesFixture[0],
+      generation: 4,
+      rollout_basis_points: 5000,
+      paused: false,
+    });
+  });
+
+  await page.goto("/#/updates");
+  await expect(page.getByRole("heading", { name: "已验证发布" })).toBeVisible();
+  await page.getByRole("button", { name: "导入签名发布" }).click();
+  await page.getByLabel("发布清单").setInputFiles({
+    name: "xs-nexus-0.3.0.manifest",
+    mimeType: "text/plain",
+    buffer: Buffer.from("schema_version=1\nproduct=xs-nexus\nversion=0.3.0\n"),
+  });
+  await page.getByLabel("Ed25519 签名").setInputFiles({
+    name: "xs-nexus-0.3.0.manifest.sig",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.alloc(64, 7),
+  });
+  await page.getByLabel("HTTPS 归档地址").fill("https://updates.example.test/xs-nexus-0.3.0-x86_64-unknown-linux-gnu.tar.gz");
+  await page.getByRole("button", { name: "验证并导入" }).click();
+  await expect(page.getByText("已导入不可变发布 0.3.0（x86_64）")).toBeVisible();
+  expect(importedBody).not.toBeNull();
+  expect(String(importedBody?.manifest_base64)).not.toContain("=");
+  expect(String(importedBody?.signature_base64)).toHaveLength(86);
+
+  await page.getByRole("button", { name: "配置灰度策略" }).click();
+  await page.getByLabel("灰度比例（%）").fill("50");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("50% 节点");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "确认影响并保存" }).click();
+  await expect(page.getByText("策略已保存为第 4 代")).toBeVisible();
+  expect(policyBody).toMatchObject({
+    expected_generation: 3,
+    release_id: updateReleasesFixture[0].id,
+    minimum_version: "0.1.0",
+    rollout_basis_points: 5000,
+    paused: false,
+  });
+});
+
+test("更新页通过签名配置切换节点通道并保护配置版本", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  let channelBody: Record<string, unknown> | null = null;
+  await page.route("**/v1/admin/networks/*/nodes/*/update-channel", (route) => {
+    channelBody = route.request().postDataJSON() as Record<string, unknown>;
+    return fulfillJson(route, 200, {
+      network_id: snapshotFixture.networks[0].id,
+      node_id_base64: snapshotFixture.nodes[0].node_id_base64,
+      update_channel: "testing",
+      configuration_version: 13,
+    });
+  });
+
+  await page.goto("/#/updates");
+  const channelSelect = page.getByLabel(/成都总部核心网关.*的升级通道/);
+  await channelSelect.selectOption("testing");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("测试通道");
+    await dialog.accept();
+  });
+  await channelSelect.locator("xpath=..").getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText(/配置版本为 13/)).toBeVisible();
+  expect(channelBody).toEqual({
+    expected_configuration_version: 12,
+    update_channel: "testing",
+  });
+});
+
+test("更新页覆盖加载、空数据、无权限与服务错误", async ({ page }) => {
+  await mockAuthenticatedApi(page, { snapshot: emptySnapshotFixture() });
+  await page.unroute("**/v1/admin/update-releases");
+  await page.route("**/v1/admin/update-releases", async (route) => {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 300));
+    return fulfillJson(route, 200, []);
+  });
+  await page.goto("/#/updates");
+  await expect(page.getByRole("heading", { name: "正在加载" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "尚无签名发布" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "尚无更新策略" })).toBeVisible();
+
+  await page.unroute("**/v1/admin/update-releases");
+  await page.route("**/v1/admin/update-releases", (route) => fulfillJson(route, 403, { error: { code: "forbidden" } }));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "没有访问权限" })).toBeVisible();
+
+  await page.unroute("**/v1/admin/update-releases");
+  await page.route("**/v1/admin/update-releases", (route) => fulfillJson(route, 503, { error: { code: "service_unavailable" } }));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "数据读取失败" })).toBeVisible();
+  await expect(page.getByText("Controller 暂时无法完成请求")).toBeVisible();
 });
 
 test("键盘可到达跳转链接和主导航", async ({ page }) => {

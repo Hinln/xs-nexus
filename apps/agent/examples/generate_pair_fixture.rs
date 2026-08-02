@@ -331,6 +331,7 @@ fn signed_configuration(
                 role_bitmap: 1,
                 groups,
                 tags: vec!["linux".to_owned()],
+                update_channel: None,
             }
         })
         .collect();

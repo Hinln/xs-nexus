@@ -6,5 +6,7 @@
   "runtime_directory": "/run/xs-nexus",
   "interface_name": "xsn0",
   "mtu": 1280,
-  "control_sync_interval_seconds": 15
+  "control_sync_interval_seconds": 15,
+  "update_channel": "stable",
+  "update_signing_public_key_path": "/etc/xs-nexus/release-public-key.pem"
 }

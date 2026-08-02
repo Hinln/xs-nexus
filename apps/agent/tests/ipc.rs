@@ -167,6 +167,7 @@ fn fixture_state() -> NodeState {
         role_bitmap: 1,
         groups: Vec::new(),
         tags: vec!["linux".to_owned()],
+        update_channel: None,
     };
     let peer_node = ConfigurationNode {
         node_id_base64: "peer-node".to_owned(),
@@ -179,6 +180,7 @@ fn fixture_state() -> NodeState {
         role_bitmap: 2,
         groups: Vec::new(),
         tags: vec!["server".to_owned()],
+        update_channel: None,
     };
     NodeState {
         schema_version: 1,
