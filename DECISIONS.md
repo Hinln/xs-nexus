@@ -246,14 +246,14 @@
 
 ---
 
-## ADR-022：本地诊断使用严格只读 Unix IPC
+## ADR-022：本地诊断初版使用严格只读 Unix IPC
 
-- 状态：接受
+- 状态：被 ADR-073 扩展
 - 日期：2026-07-29
 - 背景：运维 CLI 需要读取 Agent 状态，但不应获得节点私钥、凭证、签名材料或修改运行时的能力。
 - 决策：Agent 在权限为 `0700` 的运行目录创建 `0600` Unix socket；协议使用有界长度前缀 JSON、拒绝未知字段，并限制单请求大小、单响应大小和并发连接。M1.2 仅提供状态、Peers 和脱敏诊断三类只读请求。
 - 原因：把本地可观测性与控制权分离，并为 CLI 提供稳定、可测试的最小接口。
-- 代价：后续写操作必须设计独立授权和审计机制，不能直接扩展现有只读请求。
+- 代价：后续有运行时效果的操作必须设计独立授权、有界执行和明确响应，不能无约束扩展初版只读请求；该要求由 ADR-073 的认证探测和控制面重连落实。
 - 安全影响：响应不包含私钥、凭证、控制面挑战、公钥或原始配置；异常客户端不能无限占用内存或连接槽位。
 
 ---
@@ -664,9 +664,9 @@
 - 状态：接受
 - 日期：2026-07-31
 - 背景：Agent 本地状态协议和 CLI 只实现 Unix socket，完整 Agent 即使越过 TLS 工具链也会因 `std::os::unix` 与 Tokio Unix 类型无法形成 Windows 源码边界。直接使用 Tokio 默认命名管道安全描述符不能证明仅服务身份和管理员可访问，把原始 `SECURITY_ATTRIBUTES` 放进 Agent 又会破坏 workspace 的全局 unsafe 禁令。
-- 决策：共享请求解析、严格 JSON、只读响应、大小和超时边界保持平台无关；Unix transport 原样迁移到平台模块。Windows 端固定 `\\.\pipe\xs-nexus-agent`，首实例使用抢占门禁，始终拒绝远程客户端，handle 不继承，受保护 DACL 只授予 LocalSystem 和 built-in Administrators。最多 16 个活动处理器并保留第 17 个 OS 实例作为 listener；许可耗尽时停止接收。SDDL 转换、Tokio 原始安全属性创建和释放集中在独立 `xs-windows-local-ipc` crate 的三个可计数 unsafe 块。
+- 决策：共享请求解析、严格 JSON、长度帧、响应、大小和超时边界保持平台无关；Unix transport 原样迁移到平台模块。Windows 端固定 `\\.\pipe\xs-nexus-agent`，首实例使用抢占门禁，始终拒绝远程客户端，handle 不继承，受保护 DACL 只授予 LocalSystem 和 built-in Administrators。最多 16 个活动处理器并保留第 17 个 OS 实例作为 listener；许可耗尽时停止接收。SDDL 转换、Tokio 原始安全属性创建和释放集中在独立 `xs-windows-local-ipc` crate 的三个可计数 unsafe 块。
 - 原因：固定名称和首实例门禁消除配置注入与启动前管道劫持；显式 DACL 不依赖进程默认 token，远程拒绝和有界实例防止跨主机与资源耗尽；平台无关 handler 让既有 Linux 集成测试继续覆盖真实协议行为。
-- 代价：当前只实现 Agent 服务器边界，Windows CLI、安全存储、Service/SCM、完整链接和运行测试仍未完成；最小 MSVC target check 不能证明 Windows 有效 DACL、连接拒绝、服务停止或并发行为。
+- 代价：Agent 服务器和 `xs-cli` Named Pipe client 已完成源码/交叉编译，但安全存储、Service/SCM、完整链接和运行测试仍未在 Windows 执行；最小 MSVC target check 不能证明 Windows 有效 DACL、连接拒绝、服务停止或并发行为。
 - 安全影响：Agent 继续禁止 unsafe，新增原始指针审计面只有三个块；普通用户与远程客户端默认拒绝，未知 endpoint 拒绝启动。M6.1、M6.2 与 `ACCEPTANCE.md` K 项不因源码准备而完成。
 
 ---
@@ -841,3 +841,15 @@
 - 原因：发行包版本号更新不等于其静态链接模块已修复；对 fixable finding 做“当前不可达”处置会把可消除风险误写成接受风险。固定源码、工具链镜像和模块版本使修复边界可审计，同时避免把编译器、Git 或 Go 模块缓存带入运行镜像。
 - 代价：镜像构建需要访问固定 Git 提交和 Go checksum/module 基础设施；上游发布新版本时必须显式更新提交、版本和依赖断言并重跑完整备份生命周期与镜像扫描。
 - 安全影响：旧 age 1.2.1 的 18 Critical/32 High 可修复项及 age 1.3.1-r6 剩余的 `GHSA-w879-237q-wc7r` 均未获豁免。最终证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` 的 `total_fixable_findings` 为空。
+
+---
+
+## ADR-073：本地管理协议使用显式长度帧并只允许两类受限运行时动作
+
+- 日期：2026-08-02
+- 状态：接受
+- 背景：初版 Unix 客户端通过关闭写半边让 Agent 的 `read_to_end` 取得请求边界；Windows duplex Named Pipe 没有等价、可靠的半关闭语义，服务器等待 EOF、客户端等待响应会死锁。任务书还要求认证 ping 和控制面 reconnect，纯只读三命令边界已经不足。
+- 决策：每条连接只处理一个请求和一个响应，两者均以 4 字节无符号大端 JSON 字节长度开头；请求上限 4 KiB、响应上限 512 KiB，零长度、超限、截断、未知字段和响应类型漂移失败关闭。Windows `xs-cli` 使用固定 Named Pipe client，Unix 继续使用 `0600` socket。读取命令无运行时副作用；`ping` 只通过有界 channel 请求已认证 XSP/1 PathChallenge/PathResponse，`reconnect` 只请求立即重建 Controller WebSocket，并有一秒手工冷却、oneshot 结果与非零失败退出。
+- 原因：显式帧在 Unix stream 和 Windows byte-mode Named Pipe 上具有相同终止语义，不依赖 EOF；受限动作复用已有身份、AEAD、cooldown 和控制循环，避免 ICMP/raw socket、任意路由修改或无界重试。
+- 代价：本地协议是同步版本切换，旧 CLI 与新 Agent 不互通；安装包必须同时升级二者。Windows 源码/交叉检查不能替代 Named Pipe、DACL、SCM 和全命令实机测试。
+- 安全影响：客户端和共享 handler 均无 unsafe；服务端固定 DACL/远程拒绝不变。响应不含私钥、凭证、Token 或原始签名配置；ping/reconnect 失败不会降级为明文、修改系统路由或无限重试。

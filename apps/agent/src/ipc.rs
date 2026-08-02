@@ -26,6 +26,7 @@ mod windows;
 const LOCAL_PROTOCOL_VERSION: u8 = 1;
 const MAX_REQUEST_BYTES: usize = 4096;
 const MAX_RESPONSE_BYTES: usize = 512 * 1024;
+const FRAME_PREFIX_BYTES: usize = 4;
 const MAX_PEERS_PER_RESPONSE: usize = 512;
 pub(super) const MAX_CONNECTIONS: usize = 16;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -133,10 +134,14 @@ where
     if encoded.len() > MAX_RESPONSE_BYTES {
         return Err(AgentError::Ipc);
     }
-    timeout(IO_TIMEOUT, stream.write_all(&encoded))
-        .await
-        .map_err(|_| AgentError::Ipc)?
-        .map_err(|_| AgentError::Ipc)?;
+    let length = u32::try_from(encoded.len()).map_err(|_| AgentError::Ipc)?;
+    timeout(IO_TIMEOUT, async {
+        stream.write_all(&length.to_be_bytes()).await?;
+        stream.write_all(&encoded).await
+    })
+    .await
+    .map_err(|_| AgentError::Ipc)?
+    .map_err(|_| AgentError::Ipc)?;
     stream.shutdown().await.map_err(|_| AgentError::Ipc)
 }
 
@@ -144,15 +149,20 @@ async fn read_request<S>(stream: &mut S) -> Result<LocalAgentRequest>
 where
     S: AsyncRead + Unpin,
 {
-    let mut bytes = Vec::new();
+    let mut prefix = [0_u8; FRAME_PREFIX_BYTES];
     stream
-        .take(u64::try_from(MAX_REQUEST_BYTES + 1).map_err(|_| AgentError::Ipc)?)
-        .read_to_end(&mut bytes)
+        .read_exact(&mut prefix)
         .await
         .map_err(|_| AgentError::Ipc)?;
-    if bytes.is_empty() || bytes.len() > MAX_REQUEST_BYTES {
+    let length = usize::try_from(u32::from_be_bytes(prefix)).map_err(|_| AgentError::Ipc)?;
+    if length == 0 || length > MAX_REQUEST_BYTES {
         return Err(AgentError::Ipc);
     }
+    let mut bytes = vec![0_u8; length];
+    stream
+        .read_exact(&mut bytes)
+        .await
+        .map_err(|_| AgentError::Ipc)?;
     serde_json::from_slice(&bytes).map_err(|_| AgentError::Ipc)
 }
 

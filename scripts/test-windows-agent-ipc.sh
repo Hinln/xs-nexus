@@ -9,6 +9,7 @@ export CARGO_NET_OFFLINE=true
 ./scripts/validate-windows-agent-ipc.py
 cargo test --locked -p xs-windows-local-ipc
 cargo test --locked -p xs-agent --test ipc
+cargo test --locked -p xs-cli --all-targets -- --test-threads=1
 
 cross_cargo=cargo
 if [[ -x "$HOME/.cargo/bin/rustup" ]] &&
@@ -17,5 +18,7 @@ if [[ -x "$HOME/.cargo/bin/rustup" ]] &&
 fi
 "$cross_cargo" check --locked --target x86_64-pc-windows-msvc -p xs-windows-local-ipc
 "$cross_cargo" clippy --locked --target x86_64-pc-windows-msvc -p xs-windows-local-ipc -- -D warnings
+"$cross_cargo" check --locked --target x86_64-pc-windows-msvc -p xs-cli
+"$cross_cargo" clippy --locked --target x86_64-pc-windows-msvc -p xs-cli -- -D warnings
 
-printf 'Windows Agent private local IPC checks passed\n'
+printf 'Windows Agent and CLI private local IPC checks passed\n'

@@ -148,6 +148,7 @@ test-protocol-vectors:
 
 test-spec:
 >python3 scripts/validate-m02.py
+>python3 scripts/validate-plan-status.py
 
 test-network:
 >./scripts/test-network-capabilities.sh

@@ -1,9 +1,9 @@
 # 第三方依赖与许可证
 
-状态：源码运行时、构建与测试依赖完整清单  
-日期：2026-07-31
+状态：源码与四个运行镜像依赖/许可证闭包已验证  
+日期：2026-08-02
 
-`Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。`supply-chain/npm-licenses.json` 固定 npm 官方注册表中与 lock integrity 一致的精确版本许可证；Cargo 许可证由 `cargo metadata --locked` 读取并与 `Cargo.lock` SHA-256 checksum 逐项绑定。`make source-sbom SBOM_OUTPUT=<绝对新目录> SOURCE_DATE_EPOCH=<时间>` 离线生成完整源码传递依赖清单；任何新增、删除、版本、checksum、integrity 或许可证变化都必须同步通过门禁。容器操作系统包、许可证文本集合和最终构建来源证明仍属于 Release Checklist。
+`Cargo.lock` 和 `package-lock.json` 是当前版本锁定的机器可读来源。`supply-chain/npm-licenses.json` 固定 npm 官方注册表中与 lock integrity 一致的精确版本许可证；Cargo 许可证由 `cargo metadata --locked` 读取并与 `Cargo.lock` SHA-256 checksum 逐项绑定。`make source-sbom SBOM_OUTPUT=<绝对新目录> SOURCE_DATE_EPOCH=<时间>` 离线生成完整源码传递依赖清单；任何新增、删除、版本、checksum、integrity 或许可证变化都必须同步通过门禁。四个容器的 exact image ID、113 个已安装 OS 包、逐包许可证材料、Dockerfile/revision 和 provenance 已在 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` 闭环；RC 仍需从最终固定提交重新生成和复核，而不是把本次开发证据当成生产签名。
 
 ## 1. 当前运行时直接依赖
 
@@ -68,12 +68,12 @@
 
 | 镜像/组件 | 固定系列 | 用途 | 许可说明 |
 |---|---|---|---|
-| Debian `bookworm-slim` | bookworm | Controller/Relay 运行时 | Debian 软件包各自许可证；RC 前由 SBOM 固定摘要和包清单 |
-| NGINX unprivileged | `1.29-alpine` | Console 非 root 静态服务和反向代理 | NGINX BSD-2-Clause；Alpine 包各自许可证 |
-| PostgreSQL Alpine | `18-alpine3.22` | 一次性 `pg_dump`/`pg_restore`/`psql` 运维镜像 | PostgreSQL License；Alpine 包各自许可证 |
+| Distroless `cc-debian12:nonroot` | 固定 SHA-256 digest | Controller/Relay 非 root 运行时 | Debian/distroless 包逐包许可证闭包；无 shell/package manager |
+| NGINX unprivileged | `1.29-alpine` | Console 非 root 静态服务和反向代理 | NGINX BSD-2-Clause 与 Alpine 包逐包许可证闭包 |
+| PostgreSQL Alpine | `18-alpine3.22` | `pg_dump`/`pg_restore`/`psql` 与 age 加密备份运维镜像 | PostgreSQL License、Alpine 包及固定 age 源码许可证闭包 |
 | Alpine | `3.22` | 外部网络只读配置探针和错误镜像测试 | Alpine 包各自许可证 |
 
-Controller/Relay 的 Rust `1.93.0-bookworm` 和 Console 的 Node `24-bookworm-slim` 只作为构建阶段，不进入最终运行镜像。当前标签已在 M5.2 实际解析和构建；RC 前仍须固定 manifest digest、生成镜像 SBOM、许可证文本和漏洞报告。
+Controller/Relay 的 Rust `1.93.0-bookworm`、Console 的 Node `24-bookworm-slim` 和 db-tools 的 digest-pinned Go builder 只作为构建阶段，不进入最终运行镜像。db-tools 从 age `v1.3.1` 精确提交构建并强制 `golang.org/x/crypto v0.52.0`，只复制静态 CLI 和上游许可证。当前镜像 SBOM、113/113 许可证闭包、provenance、Grype 报告和有界 disposition 已验证；结果为 Critical 2、High 4、Medium 16、Negligible 24、当前可修复项 0。剩余 glibc 风险由 `KI-021` 跟踪，不能因无当前修复版本而隐藏或自动接受。
 
 ## 3. 工具与 CI
 
@@ -81,7 +81,7 @@ Controller/Relay 的 Rust `1.93.0-bookworm` 和 Console 的 Node `24-bookworm-sl
 |---|---|---|
 | Rust/Cargo/rustfmt/Clippy | 构建、格式和 lint | 服务器工具链，不进入应用产物 |
 | Node.js/npm | Console 构建和依赖审计 | 构建工具，不进入浏览器 bundle |
-| PostgreSQL 17 Alpine | CI 迁移与事务集成测试 | 临时 CI service，不进入应用产物 |
+| PostgreSQL 18 Alpine | CI/本地迁移与事务集成测试 | 临时 service，不进入应用产物 |
 | GCC/Clang/CMake/Make | 本地和未来驱动构建 | 构建工具 |
 | `gcc-aarch64-linux-gnu` / `libc6-dev-arm64-cross` | Linux aarch64 交叉编译和链接 | 构建工具，不进入应用产物 |
 | Rust `rust-src` / Cargo `build-std` | 为 aarch64 目标构建匹配标准库 | 构建工具，不进入应用产物 |
@@ -102,7 +102,7 @@ Rust 与 npm 传递依赖分别锁定在 `Cargo.lock` 和 `package-lock.json`。
 
 M1.3 通过 `ed25519-dalek`、`x25519-dalek`、`hkdf`、`chacha20poly1305`、`sha2`、`getrandom`、`subtle` 和 `zeroize` 调用成熟原语与安全辅助能力，不自行实现 Ed25519、X25519、HKDF、ChaCha20-Poly1305、SHA-256、CSPRNG 或常量时间比较。
 
-新增密码学 crate 已锁定版本和 Cargo 校验和，许可证通过 `cargo metadata --locked` 核对；它们只提供标准原语，不包含现成组网协议、NAT 穿透、Relay 或虚拟网卡实现。RFC 原语向量、项目独立 session/data 向量及 Fuzz seed corpus 已纳入自动化回归。完整 SBOM、许可证文本集合、维护状态复核和第三方协议审计仍属于发布前强制工作。
+新增密码学 crate 已锁定版本和 Cargo 校验和，许可证通过 `cargo metadata --locked` 核对；它们只提供标准原语，不包含现成组网协议、NAT 穿透、Relay 或虚拟网卡实现。RFC 原语向量、项目独立 session/data 向量及 Fuzz seed corpus 已纳入自动化回归。源码与当前运行镜像 SBOM/许可证文本已完成；维护状态复核、最终 RC 重建和第三方协议/密码学审计仍是发布前强制工作。
 
 ## 6. 禁止依赖
 

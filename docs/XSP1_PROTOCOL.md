@@ -1,7 +1,7 @@
 # XSP/1（XS Secure Path Protocol v1）
 
-状态：M2.1 协议、地址发现、候选交换和认证路径迁移已实现  
-日期：2026-07-29  
+状态：M2.3 协议、地址发现、候选交换、认证路径迁移和 Relay 已实现  
+日期：2026-08-02  
 安全状态：未经独立第三方审计，不得描述为生产级安全。
 
 ## 1. 目标与非目标
@@ -583,6 +583,6 @@ M1.3 和 M2.1 已锁定以下自动化证据：
 - Controller/Agent 集成测试覆盖活动凭证检查、响应小于请求、签名候选发布、幂等重试、generation 冲突和动态配置应用；
 - 隔离 namespace 测试覆盖首选候选不可达后的握手回退，以及已建立会话对更高优先级路径的 AEAD Challenge/Response 晋升和双向业务连续性。
 
-这些证据覆盖协议库、真实 Controller/PostgreSQL 和隔离 Linux namespace 中的 Agent UDP/TUN/NAT 模型链路。XSR/1 线格式和负向 corpus 已锁定，但 Relay 服务限额、故障切换、Direct 回切、隔离 Relay 矩阵、持续 Fuzz 和独立第三方审计仍需 M2.3 后续验证。
+这些证据覆盖协议库、真实 Controller/PostgreSQL 和隔离 Linux namespace 中的 Agent UDP/TUN/NAT/双 Relay 模型链路。Relay 服务的来源绑定、重放、限速、队列、密文转发、主备故障切换和认证 Direct 回切已由 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z` 验证；持续 Fuzz、真实公网/跨地域容量和独立第三方协议/密码学审计仍未完成。
 
 任何协议字段或标签变化都必须更新本规范、密码学设计、威胁模型、测试向量和 Fuzz corpus。

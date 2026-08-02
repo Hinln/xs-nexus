@@ -22,7 +22,7 @@
   - Relay；
   - Console；
   - 驱动代码和交叉构建准备。
-- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 `no_std + alloc` Win32 transport、无后台重试的单步 Agent 会话适配、安全命名管道、私有存储和固定名称 Service/SCM 边界、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；三个最小 Windows crate 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、真实 PostgreSQL Agent 控制面、Agent Clippy、源码不变量和本地 PowerShell 语法验证已通过。空 TX/满 RX 的 Win32 权威拒绝映射尚需 VM 证明，因此适配层不接入 runtime；完整 Agent 在缺少 Windows SDK C 头时无法构建，SCM、ACL、原子替换和 service token 尚未实机验证，测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows API 和设备操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
+- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 Win32 transport、无后台重试的单步 Agent 会话、安全命名管道 server 与 `xs-cli` client、显式长度帧、私有存储、固定名称 Service/SCM、IP Helper/DAD、可信同句柄 LUID、精确路由事务/manifest/恢复、Windows-only Agent 准备编排、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；相关最小 Windows crate 和 CLI 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、真实 PostgreSQL Agent 控制面、源码不变量和 PowerShell 语法验证已通过。空 TX/满 RX 的 Win32 权威拒绝映射尚需 VM 证明，因此适配层和路由准备不接入 runtime；完整 Agent 在缺少 Windows SDK C 头时无法构建，Named Pipe、SCM、ACL、原子替换、IP Helper/DAD 和 service token 尚未实机验证，测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows API 和设备操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
 - 解除步骤：用户提供可测试 VM，Codex执行安装和验证。
 
 ---

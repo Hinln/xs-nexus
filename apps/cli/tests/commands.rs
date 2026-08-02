@@ -258,12 +258,19 @@ fn serve_once(
     let listener = UnixListener::bind(path).expect("bind fake Agent socket");
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept xs client");
-        let mut request = Vec::new();
-        stream.read_to_end(&mut request).expect("read xs request");
+        let mut prefix = [0_u8; 4];
+        stream.read_exact(&mut prefix).expect("read request length");
+        let request_length = usize::try_from(u32::from_be_bytes(prefix)).expect("request length");
+        let mut request = vec![0_u8; request_length];
+        stream.read_exact(&mut request).expect("read xs request");
         let actual_request: serde_json::Value =
             serde_json::from_slice(&request).expect("valid request JSON");
         assert_eq!(actual_request, expected_request);
         let encoded = serde_json::to_vec(&response).expect("serialize fake response");
+        let response_length = u32::try_from(encoded.len()).expect("response length");
+        stream
+            .write_all(&response_length.to_be_bytes())
+            .expect("write response length");
         stream.write_all(&encoded).expect("write fake response");
     })
 }

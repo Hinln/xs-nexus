@@ -4,10 +4,10 @@
 
 ## Current status
 
-- M6.1 is in progress.
+- M6.1 has completed all source/cross-target work available on the Linux host and is blocked on the external WDK/Windows VM gate.
 - The versioned Agent/driver ABI, canonical packet-batch validator, single-owner session state machine, and bounded packet queue are implemented and host-tested.
 - The first installable target is Windows 11 24H2 UMDF 2.33 + NetAdapterCx 2.5; the Windows 10 support gap is tracked as `KI-016`.
-- The WDK/NetAdapterCx driver, INF, test-signed package, installer, and VM evidence are not complete.
+- The WDK/NetAdapterCx source, INF, strict test-package builder, clean-install test scripts and VM evidence orchestrator are present; no package has been built or signed with WDK, and no installer or driver path has run in a VM.
 - The checked-in UMDF source has bounded ring-copy callbacks and synchronous direct-I/O Agent requests; it remains unverified until WDK build and VM validation.
 - Runtime compatibility is exact ABI v1. Test package replacement is clean-install only; see `docs/WINDOWS_XSNET_COMPATIBILITY.md`.
 - `BLK-001` blocks WDK build and VM validation; `BLK-004` blocks production signing.

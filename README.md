@@ -9,7 +9,7 @@
 - `xs-controller`：Enrollment、节点凭据、IPAM、签名配置、策略和控制连接。
 - `xs-relay`：认证租约、有界队列、速率限制、XSR/1 密文转发和脱敏指标。
 - `xs-agent`：Linux TUN/Netlink、XSP/1、NAT 候选、Direct/Relay、ACL 和子网路由。
-- `xs-cli`：节点注册、状态和生命周期操作。
+- `xs-cli`：Unix socket / Windows Named Pipe 本地状态、路径、路由、诊断和受限控制操作。
 - `xs-console`：基于真实 Controller API 的管理控制台。
 - `windows-xsnet`：自研 UMDF/NetAdapterCx 虚拟 NIC 源码、ABI、测试安装和 VM 采证流程；未通过实机验收。
 
@@ -53,6 +53,22 @@ make test-runtime-stability
 
 测试会使用真实 PostgreSQL、Docker、Linux network namespace、TUN 和浏览器渲染等适用环境。Windows 源码门禁或 MSVC target check 不等同于 WDK 构建和 Windows 实机结果。
 
+本地 CLI：
+
+```text
+xs status
+xs peers
+xs ping <virtual-ip>
+xs path <virtual-ip>
+xs routes
+xs netcheck
+xs diagnostics
+xs reconnect
+xs version
+```
+
+`ping` 使用已认证 XSP/1 路径探测，不发送明文 ICMP 探测；`reconnect` 只请求重建 Controller 控制连接。读取结果和 JSON 输出不包含私钥、凭证或 Token。
+
 ## 构建与部署边界
 
 - Controller、Relay、Console 和数据库运维工具使用 Docker；普通服务默认非 root。
@@ -66,6 +82,7 @@ make test-runtime-stability
 ## 当前证据与限制
 
 - Linux 全链路与三轮聚合回归：`/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`
+- 九个 CLI、长度帧 IPC 和真实双 Agent 路径/重连：`/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z` 及 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`
 - Windows 路由和 Agent 隔离准备：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`
 - 运行镜像 SBOM、113/113 包许可证闭包、provenance 和漏洞报告：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`
 - 24 小时稳定性长测：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，4261 行资源样本覆盖三服务各 1420 次采样；受控重启 PID 转换、零自动重启和资源/日志上限已审计。

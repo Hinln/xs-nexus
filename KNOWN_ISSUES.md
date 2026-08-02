@@ -137,7 +137,7 @@
 - 临时缓解：仅把隔离主机上的功能、吞吐、RTT 与可观测性证据作为本地基线，不把它描述为跨地域公网容量结论。
 - 根因：真实跨地域节点、容量压测窗口和生产网络观测属于后续性能阶段及人工门禁。
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z` 已覆盖双 Relay、速率限制恢复和宿主机基线不变；Relay 现把无节点身份、端点或载荷的累计指标用自身目录身份密钥签名推送给 Controller，Controller 保存有界 25 小时窗口并在 Console 展示当前健康、流量、丢弃、错误和转发延迟。
-- 计划：在 M8.1/M8.2 增加 Relay 吞吐、RTT 增量、丢包、拥塞和长时间稳定性测试，并接入延迟/丢包指标。
+- 计划：本地 Relay 吞吐、内部延迟、分类丢弃、Agent Direct/Relay RTT 与 24 小时稳定性基线已经完成；待受控跨地域节点可用后补充公网 RTT、网络中途丢包、拥塞公平性、长期容量和多实例扩展，不重复实现已经接入的指标。
 - 解除条件：受控跨地域环境完成容量与故障压测，指标、阈值和证据路径纳入 Release Checklist。
 
 ---
@@ -246,7 +246,7 @@
 - 影响：隔离 Win32 transport、本地命名管道、私有存储和 Service crate 已实现并通过各自最小 Windows target 编译，但完整 Agent 因缺少 Windows SDK 工具链尚未链接，且没有在 Windows 调用命名管道、存储 ACL/原子替换、SCM、设备枚举、独占 handle 或 `DeviceIoControl`；驱动的空 TX/满 RX 目前以失败状态完成，而通用 Win32 错误尚不能证明 request 未提交，因此仍不能安全启用持续收发。
 - 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果；平台 crate 不把任何 Win32 失败映射为 Rejected，所有未知结果、异常字节数、direct 输入变异和畸形成功响应强制重连。`XsnetDeviceSession` 每个方法只执行一个请求，不轮询、不后台重试、不在 Drop 中 I/O，且不接入 runtime。Agent 保持全局禁止 unsafe。
 - 已完成缓解：18 个 Agent xsnet 测试和 3 个 transport crate 测试覆盖 ABI/IOCTL、状态、单步会话、配置先于设备打开校验、协商 buffer 上限、拒绝/毒化、失败启动释放、无效 RX/Drop 零 I/O、显式 shutdown 重试、LinkDown/Detach、buffer mapping、长度、接口列表、identity schema/LUID 与非 Windows 拒绝；源码门禁在 VM 验证前禁止 runtime 接入、后台线程、sleep 和 session Drop I/O，六个 transport unsafe 块保持隔离。Windows 本地 IPC 固定名称、first-instance、远程拒绝、LocalSystem/Administrators DACL、不可继承 handle 和 16+1 容量边界；私有存储固定 exact protected DACL、reparse/父目录检查和 write-through 替换；Service 固定名称、四阶段状态、STOP/SHUTDOWN 一次性通知、状态竞争锁和四个隔离 unsafe 块，且不包含安装 API。Linux 回归、三个最小 Windows crate check 和交叉 Clippy已通过；identity 扩展后的最新完整证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`。
-- 计划：继续实现 Windows 路由管理边界；在具备 Windows Rust 标准库、SDK 和 WDK 的受控环境编译链接完整 Agent/驱动，随后进入 `BLK-001` VM SCM 启停、命名管道与存储 DACL/拒绝矩阵、原子替换/崩溃恢复、设备枚举、六 IOCTL、空 TX/满 RX 精确状态、取消与生命周期验收；只有获得权威 no-commit 证据或新增明确唤醒协议后才接入 runtime。
+- 计划：Windows IP Helper、DAD、精确路由事务、受保护 manifest、恢复编排和可信同句柄 LUID 的源码/交叉门禁已经完成；下一步只在具备 Windows Rust 标准库、SDK、WDK 和 VM 的受控环境编译链接完整 Agent/驱动，并执行 SCM、命名管道/存储 DACL、原子替换/崩溃恢复、设备枚举、七个 IOCTL、空 TX/满 RX 精确状态、取消与生命周期验收。只有获得权威 no-commit 证据或新增明确唤醒协议后才接入 runtime。
 - 解除条件：完整 Windows Agent 与驱动通过编译、unsafe 复核、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。
 
 ---
@@ -266,14 +266,14 @@
 
 ---
 
-## KI-020 Windows 路由管理尚未接入 IP Helper 和 DAD
+## KI-020 Windows 路由管理尚未完成实机编译与运行验收
 
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-07-31
-- 影响：当前只有平台无关的精确所有权与 additions-first 事务模型，不能读取、创建或删除 Windows 地址/路由，也不能证明虚拟地址完成 DAD；Agent runtime 不得据此宣称 Windows 网络已可用。
+- 影响：IP Helper FFI、地址/DAD、精确路由、事务补偿、manifest 和恢复源码已实现并通过 MSVC target check/Clippy，但尚未由完整 Agent 在 Windows SDK/WDK 环境链接，也没有真实读取、创建或删除 Windows 地址/路由及 DAD、PnP、睡眠证据；Agent runtime 不得据此宣称 Windows 网络已可用。
 - 临时缓解：新 crate 不接入 runtime；unsafe 只存在于 Windows 平台模块。默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key。
-- 计划：当前 IP Helper FFI、表释放、精确路由、非持久地址、DAD 有界等待、联合失败补偿、严格 manifest、受保护原子持久化、精确恢复执行及 Agent Windows-only 生命周期准备已完成源码门禁；LUID 现由同一独占 xsnet handle 的版本化 identity query 从 `NetAdapterGetNetLuid` 获取并严格校验，不使用名称或全局枚举。下一步在获得 WDK/VM 后真实编译链接和执行，不提前接入 runtime。
+- 计划：获得 WDK/VM 后真实编译链接和执行既有实现，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复和同句柄 LUID；在证据通过前不接入 runtime。
 - 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 

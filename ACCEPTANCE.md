@@ -27,7 +27,7 @@
 - [x] MUST：卸载后无项目路由残留。
 - [x] MUST：systemd 自动启动和重启策略正确。
 
-证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；arm64 为真实交叉构建与 ELF 架构验证，目标设备运行仍由 NAS/arm64 实机门禁验证。
+证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；arm64 为真实交叉构建与 ELF 架构验证，目标设备运行仍由 NAS/arm64 实机门禁验证。任务书九个 CLI 命令的协议、Unix 运行和 Windows Named Pipe 交叉编译补充证据为 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z` 及 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。
 
 ---
 
@@ -172,17 +172,17 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 
 ## K. Windows 驱动
 
-- [ ] MUST：不使用 Wintun/TAP。
-- [ ] MUST：驱动只做虚拟 NIC 和安全 IPC。
-- [ ] MUST：所有输入边界校验。
+- [x] MUST：不使用 Wintun/TAP。
+- [x] MUST：驱动只做虚拟 NIC 和安全 IPC。
+- [x] MUST：所有输入边界校验。
 - [ ] MUST：测试签名构建。
 - [ ] MUST：Windows 11 测试 VM 安装/卸载。
 - [ ] MUST：Driver Verifier 实际记录。
 - [ ] MUST：无蓝屏。
 - [ ] MUST：Agent 崩溃不破坏普通网络。
-- [ ] MUST：未完成项目不可标记完成。
+- [x] MUST：未完成项目不可标记完成。
 
-当前仅有平台无关 ABI/会话/有界 IPv4 队列、任意输入压力和 720 种 teardown 交错模型测试，以及 UMDF 源码不变量、测试安装器、测试包构建、六阶段 VM 编排和 exact ABI/DriverVer 一致性静态检查。安全 Rust `XsnetDeviceSession` 已验证无重试启动、协商上限、单步 TX/RX、失败启动释放、无效输入/Drop 零 I/O、失败毒化、显式 shutdown 重试和有序 Detach，但未接入运行时；源码门禁在 VM 前禁止 runtime 引用和后台行为。Windows 本地管理服务器、私有存储和 Service/SCM 已具备固定命名管道、受限 protected DACL、reparse 拒绝、write-through 原子替换、固定服务名、四阶段状态和一次性停止通知的隔离源码边界，并通过各自最小 MSVC target check；但未在 Windows 运行、未检查有效 ACL、替换语义、崩溃恢复或真实 SCM 启停，也没有 Windows CLI/正式安装器，因此不改变任何 K 项。空 TX/满 RX 的 Win32 失败映射必须先经 VM 证明，不能用通用错误码猜测权威拒绝。Agent、驱动和安装状态固定 ABI v1；INF、构建清单、显式期望版本和 staged driver-store 必须一致。该规则只支持 clean install/uninstall，不代表驱动和 Agent 升级兼容项通过。源码已加入同步 direct-I/O、SetLink 双队列门禁和系统缓冲区 TX/RX ring 复制；VM 编排固定快照声明、显式双重重启、Driver Verifier oneboot、系统基线、零残留与证据哈希。上述 PowerShell 均未执行设备、WDK、SCM 或 Verifier 操作，采证脚本也明确不声称场景验收。生命周期 harness 不等于 Agent crash、PnP/power 或 WDF 调度实测；`xsnet.vcxproj`、INF、DriverEntry、file object、IOCTL、PnP/power 与 ring API 尚未经过 WDK、InfVerif、签名或 VM；所有 K 项保持未勾选。最新自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`。Windows 10 官方支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
+源码独立实现、驱动职责和全部线格式/队列/事务输入边界已有可执行模型、任意输入压力、720 种 teardown 交错、源码门禁与 MSVC target check，足以勾选前三项；仓库依赖扫描同时拒绝 Wintun/TAP 等禁止实现。安全 Rust `XsnetDeviceSession`、固定 Named Pipe server/client、私有存储、Service/SCM、IP Helper/DAD/路由事务和恢复准备均已完成源码/交叉验证，但未接入 Windows runtime。空 TX/满 RX 的 Win32 失败映射必须先经 VM 证明；Agent、驱动和安装状态固定 ABI v1，测试生命周期只支持 clean install/uninstall。Windows SDK/WDK/InfVerif/签名、VM 安装、真实 ACL/SCM/IP Helper/PnP/power、Driver Verifier、Agent crash 和无蓝屏仍无实机证据，对应条目保持未勾选。项目因此继续明确标记“部分完成”，最后一项已有文档和状态门禁证据。最新完整源码/交叉证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`；Windows 10 支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
 
 ---
 

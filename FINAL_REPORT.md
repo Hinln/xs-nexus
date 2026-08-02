@@ -1,7 +1,7 @@
 # XS Nexus 最终交付报告
 
 报告日期：2026-08-02  
-当前检查点：签名更新与 24 小时稳定性验证工作树（以本报告后续提交为准）
+当前检查点：CLI、Windows Named Pipe client 与最终文档总审计工作树（以本报告后续提交为准）
 
 ## 1. 结论
 
@@ -23,10 +23,11 @@
 ## 3. 已完成功能
 
 - Controller、PostgreSQL schema/IPAM、Enrollment、凭据和签名配置：M1.1/M1.2 证据。
+- 本地运维 CLI：任务书九个命令全部实现；Unix 真实双 Agent 验证路径、路由、健康和控制面重连，Windows Named Pipe client 通过 MSVC target check/Clippy。协议使用显式长度帧，不依赖 Unix EOF；`ping` 为认证 XSP/1 探测，`reconnect` 只影响 Controller WebSocket。
 - XSP/1 身份认证、X25519、AEAD、抗重放、Key Epoch、双向 TUN/UDP：M1.3 证据 `/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`。
 - NAT 候选、打洞、Relay fallback/failover、ACL、子网路由和 Console：M2–M4 证据及三轮回归 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`。
 - Linux 安装、升级、回滚、卸载、备份恢复和部署隔离：M5.1/M5.2 证据；备份又完成 age 流式加密、不同文件系统自动复制、深度认证、取回、保留和销毁墓碑。
-- Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`。
+- Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道 server/CLI client、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z` 及最终本地审计 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。
 - Windows 路由准备：精确 LUID、IP Helper、DAD、manifest、additions-first、补偿和恢复；`make test-windows-agent-routing` 通过 16 个单测、源码门禁、MSVC target check 和 Clippy。runtime 仍隔离。
 - 性能基线：XSP/1 161,314 seal+open/s；Relay 87,822 包/s；Controller 100/500/1000 节点规模；release Agent Direct/Relay RTT 0.91/1.16 ms；Agent 空闲 CPU 0.55% 单核、RSS 7.95 MiB。证据见 `docs/PERFORMANCE_REPORT.md`。
 - 签名更新：离线签名不可变发布、三通道确定性灰度、节点签名状态、Controller 签名通道、Agent/root helper 双重验证和原子回滚；见 `docs/UPDATE_SYSTEM.md`。
@@ -69,6 +70,7 @@
 
 - 单元/集成/协议负向/NAT/Relay/ACL/子网路由/Playwright/视觉/安装升级回滚卸载：已有 M0–M7 证据和三轮回归。
 - Windows 路由专项：`make test-windows-agent-routing` 通过；不代表 Windows 实机。
+- CLI/IPC 专项：`make test-windows-agent-ipc`、CLI/Core/Agent 测试和真实 `test-agent-candidate-path` 通过；Windows 结果仍只是交叉编译，不代表命名管道实机。
 - 性能：`/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`、`relay-throughput-20260731T211903Z`、`agent-rtt-20260731T221036Z`、Controller scale 和报告中列出的证据。
 - 稳定性：24 小时长样本与修正后的完整部署/重启回归已审计，详见 `docs/PERFORMANCE_REPORT.md`。
 - 未运行/无法运行：WDK/Windows VM/Driver Verifier、真实 NAS、公网跨地域 Relay、正式签名和生产防火墙验证。

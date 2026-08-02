@@ -225,9 +225,9 @@
 - Windows 路由事务模型覆盖默认/保留/零 LUID、外部精确与部分重叠、manifest 所有权漂移、4096 条表上限、additions-first、逆序补偿、删除恢复、补偿失败显式上报、Tentative→Preferred、Duplicate 拒绝和路由失败后地址清理失败；Linux 模型 11 项、MSVC target check 与双平台 Clippy 通过。未覆盖 Windows IP Helper 运行、真实 DAD、PnP/睡眠、manifest 崩溃恢复或实际路由残留。
 - xsnet identity query 保持 ABI v1 六类消息不变，独立 schema v1 覆盖精确 8/16 字节、错误版本、非零 reserved、零 LUID 和短响应拒绝；源码门禁要求同一独占 handle、`NetAdapterGetNetLuid`、唯一 present interface 和六个集中 unsafe 块。Portable C 与 Rust transport 模型通过；未覆盖 WDK 编译、真实 device handle、NetAdapterCx 返回值或 PnP 后 LUID 行为。
 - 2026-07-31 完整 M6.1 聚合验证通过：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`。包含 workspace Clippy/单测、真实 Agent 控制面回归、C Release 与 ASan/UBSan、MSVC target check/Clippy、Windows 源码门禁、SBOM/秘密扫描、npm audit 和宿主网络状态前后比较。
-- 镜像 SBOM 模型测试覆盖 image/Dockerfile 映射、Debian/apk 包解析、Alpine virtual metapackage、缺失包字段、路径穿越、许可证材料落盘、CycloneDX 与 provenance subject。正式验证入口会构建四个当前提交镜像、双生成比较、拒绝 revision mismatch，并比较宿主网络状态；漏洞数据库报告和缺失许可证全文仍不在当前覆盖内。
+- 镜像 SBOM 模型测试覆盖 image/Dockerfile 映射、Debian/apk/distroless 包解析、Alpine virtual metapackage、缺失包字段、路径穿越、逐包许可证闭包、CycloneDX 与 provenance subject。正式验证入口构建四个当前提交镜像、双生成比较、拒绝 revision mismatch，并比较宿主网络状态；当前 accepted 证据和漏洞结果见本节后续 `Runtime image license closure`，本条不再表示待完成。
 - 运行证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T180211Z` 已实际构建四镜像并识别 344 个包，生成两套逐字节一致的 manifest/CycloneDX/provenance/license materials；revision mismatch 负向测试通过，宿主 Docker 容器和网络、`1panel-network`、默认路由、nftables 与失败服务均保持不变。
-- 漏洞扫描入口要求固定 scanner 版本/哈希、manifest 路径边界、tag→image ID 再验证、隔离数据库、每镜像 JSON 与 summary hash，并比较宿主网络状态；当前仅完成 ShellCheck、秘密和源码检查，正式数据库扫描结果待下一检查点执行。
+- 漏洞扫描入口要求固定 scanner 版本/哈希、manifest 路径边界、tag→image ID 再验证、隔离数据库、每镜像 JSON 与 summary hash，并比较宿主网络状态；正式扫描、负向门禁和 disposition 已在 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` 通过，可修复项为 0，剩余 glibc 风险由 `KI-021` 跟踪。
 - 严格 manifest 增加 JSON round-trip、未知字段/尾随数据/超限拒绝、不安全地址、非规范 route order、缺失资源幂等恢复、exact route/address 清理选择与外部重叠拒绝；累计 15 项模型测试。仍未覆盖 NTFS 私有持久化、进程中止窗口和 Windows 实际恢复。
 - 受保护 manifest 平台边界增加私有读取、原子写入和验证删除源码路径；恢复执行测试证明逆序尝试全部 exact route、随后地址删除，并同时保留所有失败。累计 16 项模型测试，`windows-private-storage` 与 `windows-route-manager` 均通过 MSVC target check/Clippy；仍未覆盖真实 NTFS、杀进程窗口和 IP Helper 残留。
 - `make test-windows-agent-routing` 增加 Agent Cargo/module/config/准备顺序、Preparing/Active、恢复/清理、runtime 未接入和禁止 unsafe/后台线程/子进程源码门禁，并复用 16 项模型与两个 Windows crate 交叉检查；该门禁不替代完整 Agent Windows 链接或 VM 执行。
@@ -265,7 +265,7 @@
 - 测试包与 VM 工作流最终自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`，包含 ABI Release/ASan/UBSan、源码、安装器、VM 门禁、秘密扫描以及默认路由、规范化 nftables、完整 `1panel-network`、namespace/TUN 前后比较；
 - `scripts/validate-windows-xsnet-compatibility.py` 强制 C header、Rust Agent 和安装状态共同固定 exact ABI v1，Hello header/min/max 都为 v1，INF 只有一个四段 `DriverVer`，构建清单记录 driver version/ABI `1..1`/IPv4，安装器在 staging 前后核对版本并拒绝任何既有 xsnet；
 - 测试安装器不支持 in-place upgrade；替换包只能在快照 VM 停止 Agent、关闭 handle、精确卸载后 clean install。兼容/回滚边界证据为 `/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`，真实版本升级、回滚和跨 ABI 拒绝仍未执行；
-- 当前结果只证明平台无关模型、Agent 单步会话语义、本地 IPC Windows crate 编译和源码文本不变量；命名管道、direct-I/O 与 ring 代码均未在 Windows 执行。命名管道有效 DACL/拒绝矩阵、Windows CLI、空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent Windows 链接、运行时接入、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
+- 当前结果只证明平台无关模型、Agent 单步会话语义、本地 IPC Windows crate/`xs-cli` Named Pipe client 编译和源码文本不变量；命名管道、direct-I/O 与 ring 代码均未在 Windows 执行。命名管道有效 DACL/拒绝矩阵与九命令运行、空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent Windows 链接、运行时接入、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
 
 ---
 

@@ -1,8 +1,11 @@
 use std::{net::Ipv4Addr, path::PathBuf, process::ExitCode, time::Duration};
 
+#[cfg(unix)]
+use tokio::net::UnixStream;
+#[cfg(windows)]
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tokio::{
-    io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::UnixStream,
+    io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
     time::timeout,
 };
 use xs_core::{
@@ -11,8 +14,13 @@ use xs_core::{
     LocalRouteStatus, PathSelectionReason, SubnetRouteMode,
 };
 
+#[cfg(unix)]
 const DEFAULT_SOCKET_PATH: &str = "/run/xs-nexus/agent.sock";
+#[cfg(windows)]
+const DEFAULT_SOCKET_PATH: &str = r"\\.\pipe\xs-nexus-agent";
+const MAX_REQUEST_BYTES: usize = 4 * 1024;
 const MAX_RESPONSE_BYTES: usize = 512 * 1024;
+const FRAME_PREFIX_BYTES: usize = 4;
 const IO_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy)]
@@ -126,31 +134,58 @@ async fn send_request(
     path: &PathBuf,
     request: LocalAgentRequest,
 ) -> Result<LocalAgentResponse, ()> {
-    let mut stream = timeout(IO_TIMEOUT, UnixStream::connect(path))
+    let stream = timeout(IO_TIMEOUT, connect_local(path))
         .await
         .map_err(|_| ())?
         .map_err(|_| ())?;
+    timeout(IO_TIMEOUT, exchange(stream, request))
+        .await
+        .map_err(|_| ())?
+}
+
+async fn exchange<S>(mut stream: S, request: LocalAgentRequest) -> Result<LocalAgentResponse, ()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let encoded = serde_json::to_vec(&request).map_err(|_| ())?;
-    timeout(IO_TIMEOUT, stream.write_all(&encoded))
-        .await
-        .map_err(|_| ())?
-        .map_err(|_| ())?;
-    stream.shutdown().await.map_err(|_| ())?;
-    let mut response = Vec::new();
-    timeout(
-        IO_TIMEOUT,
-        stream
-            .take(u64::try_from(MAX_RESPONSE_BYTES + 1).map_err(|_| ())?)
-            .read_to_end(&mut response),
-    )
-    .await
-    .map_err(|_| ())?
-    .map_err(|_| ())?;
-    if response.is_empty() || response.len() > MAX_RESPONSE_BYTES {
+    if encoded.is_empty() || encoded.len() > MAX_REQUEST_BYTES {
         return Err(());
     }
-    serde_json::from_slice(&response).map_err(|_| ())
+    let request_length = u32::try_from(encoded.len()).map_err(|_| ())?;
+    stream
+        .write_all(&request_length.to_be_bytes())
+        .await
+        .map_err(|_| ())?;
+    stream.write_all(&encoded).await.map_err(|_| ())?;
+    stream.flush().await.map_err(|_| ())?;
+
+    let mut prefix = [0_u8; FRAME_PREFIX_BYTES];
+    stream.read_exact(&mut prefix).await.map_err(|_| ())?;
+    let response_length = usize::try_from(u32::from_be_bytes(prefix)).map_err(|_| ())?;
+    if response_length == 0 || response_length > MAX_RESPONSE_BYTES {
+        return Err(());
+    }
+    let mut response = vec![0_u8; response_length];
+    stream.read_exact(&mut response).await.map_err(|_| ())?;
+    let result = serde_json::from_slice(&response).map_err(|_| ())?;
+    stream.shutdown().await.map_err(|_| ())?;
+    Ok(result)
 }
+
+#[cfg(unix)]
+fn connect_local(
+    path: &PathBuf,
+) -> impl std::future::Future<Output = std::io::Result<UnixStream>> + '_ {
+    UnixStream::connect(path)
+}
+
+#[cfg(windows)]
+fn connect_local(path: &PathBuf) -> std::future::Ready<std::io::Result<NamedPipeClient>> {
+    std::future::ready(ClientOptions::new().read(true).write(true).open(path))
+}
+
+#[cfg(not(any(unix, windows)))]
+compile_error!("xs local IPC requires Unix or Windows");
 
 fn validate_response(command: Command, response: &LocalAgentResponse) -> Result<(), ()> {
     let valid = match command {

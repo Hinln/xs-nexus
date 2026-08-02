@@ -1,11 +1,18 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-02 07:00 UTC
-当前 Git 提交：升级框架验证工作树（以本文件后续提交为准）
-当前总状态：`ACTIVE_AUTONOMOUS_DEVELOPMENT`
-当前里程碑：`M7.3 稳定性完成；签名更新与灰度发布闭环`
+最后更新时间：2026-08-02 10:15 UTC
+当前 Git 提交：CLI 与文档总审计工作树（以本文件后续提交为准）
+当前总状态：`BLOCKED_EXTERNAL`
+当前里程碑：`所有当前环境可完成工作已闭环；等待外部门禁`
 
 ---
+
+## 当前结论
+
+- Linux、Controller、Relay、Console、XSP/1、NAT/Relay、ACL/子网、安装更新、1Panel 隔离部署、认证遥测、加密备份/复制、镜像供应链、三轮回归、性能与 24 小时稳定性均有正式证据；
+- 任务书要求的 `xs status`、`xs peers`、`xs ping <virtual-ip>`、`xs path <virtual-ip>`、`xs routes`、`xs netcheck`、`xs diagnostics`、`xs reconnect`、`xs version` 已全部实现并在真实双 Agent namespace 中验证，证据 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`；
+- Windows 当前环境可完成的 ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；完整 Windows runtime 仍禁用，真实链接、WDK、VM、签名、PnP/power 和 Verifier 由 `BLK-001`/`BLK-004` 阻塞；
+- 仅剩 `BLOCKERS.md` 和开放 `KNOWN_ISSUES.md` 所列外部门禁；项目仍是部分完成，不是 Release Candidate，也不适合公网生产。
 
 ## 已完成
 
@@ -24,9 +31,9 @@
 - Agent 与真实 Controller/PostgreSQL enrollment、challenge 认证和配置同步集成测试；
 - 非持久 Linux TUN FD 与 Netlink MTU、`/32` 地址、接口启用和地址池路由；
 - 默认路由保护、同名接口拒绝、shutdown、Drop 和 stale manifest 恢复；
-- 严格只读 Unix IPC、`xs status`、`xs peers`、`xs diagnostics` 和 JSON 输出；
+- 有界 Unix IPC、九个任务书 CLI 命令和 JSON 输出；读取命令不返回秘密，`xs reconnect` 只发送有冷却、可确认的控制面重连请求；
 - 最小权限 systemd 单元和 `PrivateNetwork=yes` transient service 生命周期验证；
-- M1.2 全量证据 `/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`；
+- M1.2 初始证据 `/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`，CLI 完整补充证据 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`；
 - XSP/1 四消息 typestate 握手、Ed25519 身份验证、X25519、HKDF-SHA-256、ChaCha20-Poly1305、双向 Finish 和方向密钥；
 - 96 字节认证数据头、IPv4 源/目标绑定、1024 位重放窗口、严格 Key Epoch、旧 Epoch 退休、协议向量和 Fuzz seed corpus；
 - Agent 签名 Peer 目录、UDP 会话、握手重试与冲突决议、有界队列、TUN/UDP 双向循环和严格 endpoint 绑定；
@@ -96,7 +103,7 @@
 - 安全 `XsnetTransport` 契约已接入隔离 `no_std + alloc` Win32 crate；精确 GUID 单接口、独占同步 handle、六个 ABI IOCTL、独立 identity IOCTL、三类数据 buffer 映射、初始化所有权和六个 unsafe 块通过实际 MSVC target check、交叉 Clippy 和源码门禁；初始 transport 证据为 `/srv/xs-nexus/artifacts/qa/m6.1-win32-transport-20260731T030644Z`，identity 扩展需以本轮 M6.1 证据为准。
 - 新增无后台轮询/重试的安全 Rust `XsnetDeviceSession`：任何设备打开/I/O 前验证 MTU/深度并推导 TX 容量，严格执行 Hello/Attach/SetLink，每次仅执行一个 TX/RX 请求，权威拒绝不自动重试，不确定或畸形完成毒化 handle，shutdown 按 LinkDown/Detach 排序且 Drop 不执行 I/O；18 个 Agent xsnet 测试和 2 个 transport crate 测试通过，新增覆盖失败启动释放、无效 RX 零 I/O、Drop 零 I/O 和 shutdown 显式重试。空 TX/满 RX 的 Win32 权威状态尚未在 VM 证明，因此未接入 runtime。
 - Windows 源码门禁现强制配置校验先于首个 IOCTL/设备打开，并在 WDK/VM 证据前拒绝 runtime 引用、后台线程、sleep 和 session Drop I/O；`scripts/validate-m61-agent-session.sh` 汇总 workspace Clippy/单测、真实 PostgreSQL Agent 控制面、C Release/ASan/UBSan、Windows 源码/安装器/VM/兼容/transport/本地 IPC/私有存储/Service、独立实现、SBOM、秘密、ShellCheck、npm audit 和宿主基线。
-- Windows 本地管理 IPC 已从 Unix-only 实现拆为共享严格只读协议、Unix transport 和 Windows transport；Windows 端固定 `\\.\pipe\xs-nexus-agent`，使用 first-instance、防远程客户端、不可继承 handle、仅 LocalSystem/Administrators DACL、16 个活动处理器和额外 1 个监听实例。三个 unsafe 块仅存在于 `crates/windows-local-ipc`，Agent 继续全局禁止 unsafe；Linux IPC 集成回归、Windows crate 单测、MSVC target check 与交叉 Clippy 已通过，完整边界见 `docs/WINDOWS_AGENT_LOCAL_IPC.md`。
+- Windows 本地管理 IPC 已从 Unix-only 实现拆为共享长度帧协议、Unix transport 和 Windows transport；Windows 端固定 `\\.\pipe\xs-nexus-agent`，使用 first-instance、防远程客户端、不可继承 handle、仅 LocalSystem/Administrators DACL、16 个活动处理器和额外 1 个监听实例。`xs-cli` 已增加安全 Named Pipe client，九个命令与服务器均通过 MSVC target check/交叉 Clippy；读取命令无秘密，`ping` 和 `reconnect` 只有受限运行时效果。三个 unsafe 块仅存在于 `crates/windows-local-ipc`，Agent/CLI 继续无 unsafe；完整边界见 `docs/WINDOWS_AGENT_LOCAL_IPC.md`。
 - Agent 私有存储已从 Unix-only mode 实现拆为共享 identity/JSON/token 逻辑、Unix transport 和 Windows transport；Windows 端要求绝对路径、整条现有路径无 reparse、直接父目录和文件 exact protected DACL，读操作绑定长度与完整字节，写操作使用同目录 `create_new` 临时文件、精确 ACL、`sync_all` 和 write-through Replace/Move。全部 Windows FFI 隔离在 `crates/windows-private-storage`，最小 MSVC check、交叉 Clippy、workspace Clippy 和 42 个 Agent 单测通过，完整边界见 `docs/WINDOWS_AGENT_STORAGE.md`。
 - Windows Service/SCM 边界已隔离到 `crates/windows-service`：Agent 只接受 Windows 平台模式下固定 `XsNexusAgent` 的 `service --config` 入口；SCM 状态严格按 START_PENDING/RUNNING/STOP_PENDING/STOPPED 推进，STOP/SHUTDOWN 通过一次性 Notify 和 watch channel 接入现有 shutdown 契约，状态锁阻止并发 STOP 被后续 RUNNING 覆盖。四个 unsafe 块仅承载 dispatcher、handler 注册和状态上报；runtime 不含安装/删除/重配 API，完整边界见 `docs/WINDOWS_AGENT_SERVICE.md`，全量证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`。
 - 安装官方 rustup 目标后，首次全量验证让旧 transport check 与 rustup Clippy 混用不同 sysroot，失败证据保留在 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T035905Z`；transport 脚本现从同一工具目录固定 `cargo`、`rustc` 和 `cargo-clippy`，未切换或放宽测试，随后全量验证通过。
@@ -114,7 +121,7 @@
 - 确定性源码 SBOM：离线生成 CycloneDX 1.6、SPDX 2.3 和 SHA-256 manifest，双次输出逐字节一致；
 - 供应链 CI 门禁、M0.2 clean-room/原创性验证、秘密扫描和 npm 高危漏洞审计均通过；证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。
 
-## 当前工作点
+## 2026-07-31 历史工作点
 
 - Windows 路由管理准备已开始：隔离 `xs-windows-route-manager` 已包含事务核心和 IP Helper 平台层，固定 LUID/on-link/metric、4096 条系统表上限、外部重叠拒绝、manifest 精确所有权、additions-first、添加失败逆序补偿和删除失败精确恢复；原始错误与所有 rollback 失败均显式返回。原生层对 `GetIpForwardTable2` 分配使用 RAII 无条件 `FreeMibTable`，支持精确路由 Create/Delete、非持久地址 Create/Delete 和 DAD 状态查询，并要求 `SitePrefixLength` 与规范前缀一致后才承认项目所有权。联合事务仅在 DAD Preferred 后创建路由；Tentative 有界等待，Duplicate/Invalid/Deprecated/Unknown、查询失败和超时均失败关闭并精确清理地址。schema 1 严格 manifest 通过 `xs-windows-private-storage` 完成受保护读取、同目录 write-through 原子替换和 ACL/reparse 验证删除；恢复执行逆序尝试全部精确路由和地址并聚合失败。Agent 网络准备层已形成但仍由 runtime 门禁隔离。可信 LUID 由同一独占 xsnet handle 的 identity schema v1 查询取得，驱动直接调用 `NetAdapterGetNetLuid`；ABI v1 六类消息保持不变，错误长度/版本/reserved/零值全部拒绝。专项验证 `/tmp/xs-windows-routing-2.log` 通过 16 个路由模型单测、源码门禁、MSVC target check 和双平台 Clippy；尚无 WDK 编译、Windows 运行或 runtime 接入。
 - 本轮完整 M6.1 聚合验证已通过，证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`；验证同时确认 Docker/`1panel-network`、默认路由、nftables 和失败 systemd 服务前后无变化。该证据是 Linux/交叉编译与源码门禁，不是 Windows 实机结果。
@@ -126,12 +133,12 @@
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
-- M6.1 已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器、私有存储和 Service/SCM 边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；下一步是不依赖实机的 Windows 路由管理准备，以及完整 Agent Windows 编译链接与 VM 执行，当前缺少 Windows SDK/WDK/VM；
+- M6.1 当时已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器、私有存储和 Service/SCM 边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；该段所列 Windows 路由管理准备已在后续完成，当前剩余项以本文顶部结论和 `BLOCKERS.md` 为准；
 - 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
 - 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
 - Acceptance A 已有源码和文档证据；容器操作系统 SBOM、许可证全文和构建来源证明仍留在 Release Checklist，不提前宣称完整 RC 供应链。
 
-## 下一步
+## 2026-07-31 历史下一步（已由后续实现取代）
 
 1. 为 Windows 路由事务核心增加隔离 IP Helper FFI：有界复制 `GetIpForwardTable2` 并无条件 `FreeMibTable`，精确 Create/Delete、地址创建与 DAD 状态读取；获得 Windows SDK 环境后编译链接完整 Agent；
 2. 获得 Windows VM 后执行设备枚举、六 IOCTL、空 TX/满 RX 精确状态、取消、WDK、InfVerif、安装、Driver Verifier 和异常生命周期验收；
@@ -139,7 +146,7 @@
 4. 在 VM 中验证 exact ABI 拒绝、重复 clean install 和快照回滚，再设计生产升级事务；
 5. 保持 M6.2 驱动签名人工门禁，不提前进入依赖核心完成的 M7。
 
-## 下一条准确命令
+## 2026-07-31 历史恢复命令（不再代表当前下一步）
 
 ```bash
 git status --short --branch
@@ -203,7 +210,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 新增 `make test-relay-throughput`，在 release profile 通过真实 UDP Relay、两份认证 Lease、重放/速率/队列门禁和 64 帧有界窗口转发 10,000 个 216 字节 XSR/1 帧；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z` 为 87,822 包/s、18.09 MiB/s，Relay 内部转发延迟平均 4 µs、最大 161 µs，零协议丢弃。该 loopback 基线不等于公网 Relay 容量或 RTT。
 - Controller 新增按 network ID 隔离的 WebSocket 配置广播：所有配置写入仅在数据库事务成功提交后发布事件，同网络已认证连接读取最新签名配置；不同网络不会收到事件。真实 PostgreSQL 集成测试以同一节点两条控制连接验证发起连接直接响应、观察连接收到相同版本 5 广播、唯一节点在线计数和多连接关闭生命周期；`make test-controller-db`、Clippy 和秘密扫描通过。
 - 新增 `make test-agent-rtt`，复用真实双 Agent namespace、TUN、XSP/1、Relay fallback/failover 和 Direct 恢复测试，各路径采样 30 次业务 ICMP，并采集两个 Agent 的 10 秒空闲 CPU、RSS、线程和 FD。脚本强制 release profile，并核对实际 `/proc/<pid>/exe`。有效证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T221036Z`：Direct 平均/p95 0.91/1.13 ms，Relay 平均/p95 1.16/1.45 ms，平均增量 0.25 ms；Agent 平均空闲 CPU 0.55% 单核、RSS 7.95 MiB、9 线程、15 FD。早期 debug profile 的资源结果已排除，不作为产品基线。
-- 已建立 `docs/PERFORMANCE_REPORT.md`，统一绑定吞吐、规模、查询、RTT、短时资源和 24 小时长测方法；当前状态保持 `IN_PROGRESS`，不提前勾选性能报告 MUST。
+- 已建立 `docs/PERFORMANCE_REPORT.md`，统一绑定吞吐、规模、查询、RTT、短时资源和 24 小时长测方法；后续 24 小时长测和修正重启回归已完成，当前状态为 `COMPLETE_FOR_CURRENT_LINUX_BASELINE`。
 
 ## 恢复说明
 

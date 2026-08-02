@@ -1,6 +1,6 @@
 # EXECUTION_PLAN.md — 拾枢（XS Nexus）实际执行计划
 
-当前总状态：`IN_PROGRESS`
+当前总状态：`BLOCKED_EXTERNAL`
 
 本计划按依赖顺序推进。不得在 Linux 核心链路未稳定前接入真实 NAS，不得在 Windows 测试虚拟机通过前接入用户日常电脑。
 
@@ -155,7 +155,7 @@
 
 ## M1.2 Linux Agent 与 TUN
 
-- 状态：`COMPLETE`
+- 状态：`PASSED`
 - 前置：M1.1
 
 ### 范围
@@ -166,7 +166,7 @@
 - 本地安全存储；
 - 控制连接；
 - 虚拟 IP 和路由；
-- `xs status`、`xs peers`、`xs diagnostics`。
+- `xs status`、`xs peers`、`xs ping <virtual-ip>`、`xs path <virtual-ip>`、`xs routes`、`xs netcheck`、`xs diagnostics`、`xs reconnect`、`xs version`。
 
 ### 验收
 
@@ -179,15 +179,15 @@
 ### 完成证据
 
 - 非持久 Linux TUN FD、Netlink MTU/地址/路由和默认路由保护已在独立 network namespace 中验证；
-- Agent enrollment/control、严格只读 Unix IPC、`xs status`、`xs peers`、`xs diagnostics` 和 SIGTERM 清理已验证；
+- Agent enrollment/control、有界本地 IPC、九个任务书 CLI 命令和 SIGTERM 清理已验证；`xs ping` 使用认证 XSP/1 PathChallenge/PathResponse，`xs reconnect` 只触发有冷却和确认的控制面重连；
 - 最小权限 transient systemd 生命周期测试已验证，宿主机无 `xssvc0` 或项目路由泄漏；
-- 全量证据：`/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`。
+- 初始 M1.2 证据：`/srv/xs-nexus/artifacts/qa/m1.2-20260729T130606Z`；完整 CLI 补充证据：`/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`。
 
 ---
 
 ## M1.3 XSP/1 两节点加密链路
 
-- 状态：`COMPLETE`
+- 状态：`PASSED`
 - 前置：M1.2
 - 风险等级：高
 
@@ -225,7 +225,7 @@
 
 ## M2.1 地址发现与候选管理
 
-- 状态：`DONE`
+- 状态：`PASSED`
 - 前置：M1.3
 
 ### 范围
@@ -256,7 +256,7 @@
 
 ## M2.2 UDP 打洞
 
-- 状态：`DONE`
+- 状态：`PASSED`
 - 前置：M2.1
 
 ### 验收
@@ -288,7 +288,7 @@
 
 ## M2.3 自研 Relay
 
-- 状态：`COMPLETED`
+- 状态：`PASSED`
 - 前置：M2.2
 - 风险等级：高
 
@@ -311,6 +311,14 @@
 - Relay 故障后恢复；
 - 直连恢复后可回切；
 - 速率限制生效。
+
+### 完成记录
+
+- 独立 `XSR/1` 注册、短期 Lease、Data/Keepalive envelope、签名域、长度和重放边界已经固定向量与负向 corpus；
+- Relay 验证活动凭证、节点签名、来源端点、Lease、sequence、速率、带宽、队列和空闲时间，匿名或越权报文静默拒绝；
+- 双 Agent/双 Relay 隔离链路已验证密文逐字节转发、限速恢复、`relay_fallback`、`relay_failover` 和认证 Direct 回切；
+- Relay 本地与 Controller 签名遥测覆盖流量、分类丢弃、错误和内部转发延迟，不包含节点、端点、Lease 或 payload；
+- 完成证据：`/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`；真实跨地域容量仍由 `KI-010` 跟踪。
 
 ---
 
@@ -411,7 +419,7 @@
 
 ## M4.1 Web 控制台功能
 
-- 状态：`COMPLETED`
+- 状态：`PASSED`
 - 前置：M1.1，可与后端阶段并行
 
 ### 页面
@@ -457,7 +465,7 @@
 
 ## M4.2 Playwright 端到端与视觉验收
 
-- 状态：`COMPLETED`
+- 状态：`PASSED`
 - 前置：M4.1
 
 ### 验收
@@ -474,7 +482,7 @@
 ### 完成记录
 
 - Playwright 固定为 `1.62.1` 和 Chromium for Testing `151.0.7922.34`；
-- 6 项主流程覆盖登录、16 个管理页面、空/错误/无权限、审计员只读、跳转链接、节点详情焦点恢复和 404；
+- 当前 10 项主流程覆盖登录、管理页面、更新/通道、认证遥测、空/错误/无权限、审计员只读、跳转链接、节点详情焦点恢复和 404；
 - 6 个固定视口生成 135 张截图，另覆盖大量节点、长 IPv6、离线和部分服务不可用；
 - 每轮监测 Console、Page Error 和所有 4xx/5xx，只有登录 401、权限 403 和预期服务 503 被逐项解释；
 - 人工抽查登录、首页、节点、节点详情、拓扑、压力数据和错误页后修复了详情栏遮挡，再次完整回归通过；
@@ -484,7 +492,7 @@
 
 ## M5.1 Linux 安装、升级、回滚和卸载
 
-- 状态：`COMPLETED`
+- 状态：`PASSED`
 - 前置：M3.2
 
 ### 验收
@@ -513,7 +521,7 @@
 
 ## M5.2 Docker / 1Panel 部署
 
-- 状态：`COMPLETED`
+- 状态：`PASSED`
 - 前置：M4.1、M5.1
 
 ### 验收
@@ -534,15 +542,16 @@
 - Compose 只引用既有外部 `1panel-network`，不定义数据库服务、不发布 MySQL/PostgreSQL/Redis 端口，也不创建项目网络；
 - Controller 支持严格 `_FILE` Secret 和独立 `migrate` 命令，迁移在服务激活前执行；开发与 RC 使用独立项目名、schema、端口、Secret、备份和状态目录；
 - 部署脚本在迁移前备份既有 schema，激活失败自动恢复上一个镜像集合；RC 要求干净 Git 和与 HEAD 一致的镜像 revision；
-- PostgreSQL 18 运维镜像提供自定义格式逻辑备份、严格五字段完整性清单、校验、显式 schema 确认、恢复前安全备份和失败数据库回滚；
-- 实际生命周期测试覆盖镜像构建、迁移、三服务健康、容器安全属性、数据持久化、备份篡改拒绝、恢复、迁移失败不替换服务和错误镜像自动回滚；
-- 完成证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；既有 1Panel PostgreSQL/Redis 公网暴露仍为 `KI-006`/`BLK-005`，项目未修改该外部资源。
+- PostgreSQL 18 运维镜像把 custom archive 流式送入 age X25519 加密，不落持久明文；认证 manifest、公开 index 和复制回执绑定 schema、名称、密文字节数/hash、recipient Key ID 和时间；
+- 每份备份自动复制到带私有 marker 的不同文件系统挂载，支持公开校验、离线 identity 深度验证、取回、恢复前安全备份、失败回滚、独立保留和不可复用销毁墓碑；
+- 实际生命周期测试覆盖镜像构建、迁移、三服务健康、容器安全属性、数据持久化、密文篡改/错误 identity 拒绝、异地取回、恢复、保留、迁移失败不替换服务和错误镜像自动回滚；
+- 初始证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；当前完整生命周期与镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。既有 1Panel PostgreSQL/Redis 公网暴露仍为 `KI-006`/`BLK-005`，正式 identity/真实异地主机由 `BLK-007` 阻塞，项目未修改这些外部资源。
 
 ---
 
 ## M6.1 Windows 驱动设计和构建
 
-- 状态：`IN_PROGRESS`
+- 状态：`BLOCKED_EXTERNAL`
 - 前置：M1.3
 - 人工门禁：Windows WDK 环境
 - 风险等级：极高
@@ -557,7 +566,7 @@
 - 安装和卸载脚本；
 - 未实机测试时明确标记。
 
-当前已完成跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 `no_std + alloc` Win32 transport、无后台重试的 `XsnetDeviceSession` 单步适配层、严格测试安装器、显式 MSBuild/InfVerif/Inf2Cat/SignTool 测试包构建脚本、六阶段快照 VM 采证编排，以及 exact ABI v1/INF DriverVer/driver-store/安装状态 schema 2 一致性门禁。Windows 本地管理端已拆分平台 transport，共享只读协议保持原有边界；隔离 IPC crate 使用固定命名管道、首实例门禁、拒绝远程客户端和仅 LocalSystem/Administrators DACL。Windows 私有存储也已拆分平台 transport；隔离 crate 固定 protected 文件/目录 DACL、拒绝任意 reparse 路径链、读前验证父目录与文件 ACL，并用同目录私有临时文件和 write-through 原子替换。Windows Service 使用固定 `XsNexusAgent` 入口和隔离 SCM crate，状态机覆盖 START_PENDING/RUNNING/STOP_PENDING/STOPPED，STOP/SHUTDOWN 一次性接入现有 Agent shutdown，状态锁防止停止竞争被 RUNNING 覆盖；runtime 不创建、删除或重配服务。三个 crate 均实际通过 MSVC target check 与交叉 Clippy。xsnet transport 的 18 个 Agent 测试继续通过，源码门禁在 VM 前禁止 runtime 接入与后台行为。但空 TX/满 RX 的 Win32 失败尚无权威拒绝映射，完整 Agent 仍因缺少 Windows SDK 工具链停在 `ring/lib.exe`，命名管道、私有存储和 SCM 均未在 Windows 运行，且没有 WDK/VM。测试安装仍只支持 clean install/uninstall，不声称热升级或生产回滚。最新自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`；M6.1 保持 `IN_PROGRESS`，M6.2 保持 `BLOCKED_EXTERNAL`。
+当前环境可完成的跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。Windows IPC 的读取命令与受限 `reconnect` 使用同一有界协议；Windows runtime 仍保持禁用。最新完整源码/交叉证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`。剩余工作全部需要 Windows SDK/WDK/VM：完整 Agent/驱动链接、真实命名管道/ACL/SCM/IP Helper/DAD、空 TX/满 RX 状态、安装签名、PnP/power、Verifier 和崩溃恢复。因此 M6.1 正确状态为 `BLOCKED_EXTERNAL`，不宣称 Windows 可用。
 
 ---
 
@@ -584,19 +593,19 @@
 
 ## M7.1 Bug 集中修复
 
-- 状态：`NOT_STARTED`
+- 状态：`PASSED`
 - 前置：核心功能完成
 
-按 `BUG_LOOP.md` 执行，P0/P1 清零，连续三轮全量回归无新增失败。
+按 `BUG_LOOP.md` 执行，P0/P1 清零，连续三轮全量回归无新增失败。完成证据：`/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`。之后发现的稳定性、更新、遥测、备份依赖和 CLI 缺口均以独立回归与正式证据闭环，没有把外部门禁伪装成缺陷通过。
 
 ---
 
 ## M7.2 安全复核
 
-- 状态：`NOT_STARTED`
+- 状态：`PASSED`
 - 前置：M7.1
 
-按 `SECURITY_REVIEW.md` 执行。
+按 `SECURITY_REVIEW.md` 执行。内部威胁、身份、协议、ACL、Relay、遥测、更新、备份、供应链、秘密和主机恢复复核已有对应自动化和证据；剩余漏洞 disposition、生产密钥/防火墙及第三方审计均在已知问题或阻塞清单中明确保留。
 
 不得把内部复核替代第三方协议和驱动安全审计。
 
@@ -604,7 +613,7 @@
 
 ## M7.3 性能和稳定性
 
-- 状态：`DONE_CURRENT_LINUX_BASELINE`
+- 状态：`PASSED`
 - 前置：M7.1
 
 至少测试：
@@ -656,7 +665,7 @@
 
 ## M9.1 Release Candidate
 
-- 状态：`NOT_STARTED`
+- 状态：`BLOCKED_EXTERNAL`
 - 前置：所有可完成里程碑
 
 ### 验收
@@ -669,3 +678,5 @@
 - `FINAL_REPORT.md`；
 - Git 干净；
 - 明确未完成外部门禁和未审计风险。
+
+当前不能标记 RC：Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改、DNS/生产防火墙、正式离线发布/备份密钥仪式与真实异地恢复、凭据轮换、跨地域公网容量和第三方协议/密码学审计尚未完成。代码、隔离验证和文档准备不替代这些外部条件。

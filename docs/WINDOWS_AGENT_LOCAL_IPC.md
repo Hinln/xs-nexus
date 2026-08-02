@@ -2,7 +2,7 @@
 
 ## Status
 
-The Windows local management server boundary is implemented as source and cross-target compile preparation. It has not run on Windows and does not complete M6.1 or any item in `ACCEPTANCE.md` section K.
+The Windows local management server and `xs` named-pipe client boundaries are implemented as source and cross-target compile preparation. They have not run on Windows and do not complete M6.1 or any item in `ACCEPTANCE.md` section K.
 
 ## Endpoint
 
@@ -16,7 +16,11 @@ The DACL conversion and the raw `SECURITY_ATTRIBUTES` call are isolated in `crat
 
 ## Protocol and Bounds
 
-Windows and Unix use the same strict JSON request and response implementation. The protocol remains read-only and keeps the existing limits:
+Windows and Unix use the same strict, one-request-per-connection protocol. Each JSON request and response is prefixed by one unsigned 32-bit big-endian byte length, so a duplex Windows named pipe does not depend on a Unix-only half-close/EOF signal. Unknown JSON fields, zero or oversized lengths, truncated frames and response-type mismatches fail closed.
+
+State, peer, path, route, netcheck and diagnostics requests are read-only. `ping` asks the running Agent to perform a bounded authenticated XSP/1 path probe; `reconnect` asks it to rebuild only the Controller WebSocket and is protected by a one-second manual cooldown, bounded runtime channel and explicit accepted/error response. Neither command exposes keys, credentials, raw configuration or arbitrary OS/network mutation.
+
+The limits are:
 
 - request: 4 KiB;
 - response: 512 KiB;
@@ -32,8 +36,9 @@ Windows permits 17 pipe instances: at most 16 connected handlers plus one listen
 
 - source invariants for the fixed name, DACL, first-instance flag, remote-client rejection, exact unsafe count, buffer limits, and platform separation;
 - the existing Linux private-socket integration test to prove the refactor preserves behavior;
+- all nine CLI protocol tests, including failure exit status and response-type enforcement;
 - the local IPC crate unit test;
-- `x86_64-pc-windows-msvc` check and Clippy with warnings denied for the isolated Windows crate.
+- `x86_64-pc-windows-msvc` check and Clippy with warnings denied for both the isolated Windows server crate and `xs-cli` named-pipe client.
 
 The complete Agent Windows check still stops in the TLS dependency `ring` because this server does not have the Windows SDK compiler and librarian. That external failure does not prove the Agent binary links or the pipe works at runtime.
 
@@ -43,4 +48,4 @@ The complete Agent Windows check still stops in the TLS dependency `ring` becaus
 - Run as the intended Windows Service identity and inspect the effective named-pipe DACL.
 - Verify LocalSystem and Administrators can connect while standard and remote users cannot.
 - Exercise malformed, oversized, stalled, concurrent, disconnect, service-stop, sleep, and network-change cases.
-- Add and validate the Windows CLI/client path and production installer transaction.
+- Execute the named-pipe CLI against the Service-hosted Agent on Windows, including frame truncation, all commands, cooldown, disconnect and service-stop cases; complete the production installer transaction separately.

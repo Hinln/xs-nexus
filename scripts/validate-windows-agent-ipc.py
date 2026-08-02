@@ -84,6 +84,8 @@ ipc = require(
         "mod windows;",
         "pub async fn run_ipc_server",
         "async fn handle_connection",
+        "FRAME_PREFIX_BYTES",
+        "u32::from_be_bytes(prefix)",
     ],
 )
 for forbidden in ("std::os::unix", "UnixListener", "UnixStream", "NamedPipeServer"):
@@ -111,5 +113,22 @@ config = require(
     ['#[cfg(unix)]', '#[cfg(windows)]', "xs_windows_local_ipc::AGENT_PIPE_NAME"],
 )
 assert "agent.sock" in config
+
+cli = require(
+    ROOT / "apps/cli/src/main.rs",
+    [
+        '#[cfg(unix)]',
+        '#[cfg(windows)]',
+        "tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient}",
+        r'const DEFAULT_SOCKET_PATH: &str = r"\\.\pipe\xs-nexus-agent";',
+        "fn connect_local",
+        "ClientOptions::new().read(true).write(true).open(path)",
+        "std::future::ready",
+        "FRAME_PREFIX_BYTES",
+        "u32::from_be_bytes(prefix)",
+    ],
+)
+assert cli.count("fn connect_local") == 2
+assert "unsafe {" not in cli
 
 print("Windows Agent IPC source validation passed")

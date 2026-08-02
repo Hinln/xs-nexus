@@ -1,6 +1,6 @@
 # xsnet Windows 驱动设计
 
-状态：M6.1 进行中；ABI 与会话状态机已在 Linux/Clang 下验证  
+状态：M6.1 当前环境可完成源码/交叉门禁已完成；阻塞于 WDK/Windows VM  
 实机边界：尚无 WDK 构建、测试签名包、Windows VM、Driver Verifier 或蓝屏结论
 
 ## 1. 平台选择

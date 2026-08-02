@@ -249,3 +249,13 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 改用 Alpine edge 的 age 1.3.1-r6 清除了大部分发现，但精确扫描仍检出 `golang.org/x/crypto v0.45.0` 的 `GHSA-w879-237q-wc7r`，修复版本为 0.52.0；门禁再次按预期失败。
 - 最终改为从固定 age `v1.3.1` 提交构建，并强制验证 `x/crypto v0.52.0`；两个 CLI 均报告 `v1.3.1-xs1`。完整备份生命周期、SBOM/许可证闭包和漏洞 disposition 原样重跑通过，可修复项为 0。
 - 一次供应链验证在证据生成前因 `/tmp` 空间不足失败，证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T085349Z` 未冒充产品失败或通过；确认并删除仅属于本任务的 1.7 GiB 临时克隆构建目录后，后续扫描固定使用 `/var/tmp`，正式仓库、QA 证据和 1Panel 资源未删除。
+
+## CLI 完整性闭环缺陷
+
+- `XS-2026-0006`：任务书要求九个本地 CLI 命令，但早期 M1.2 执行计划把范围缩成 `status`、`peers`、`diagnostics`，后续回归沿用该缩减清单，遗漏 `ping`、`path`、`routes`、`netcheck`、`reconnect` 和 `version` 子命令。
+- 修复：Core 增加严格有界 IPC 请求/响应；`ping` 复用认证 XSP/1 PathChallenge/PathResponse 而非 ICMP、原始 socket 或明文；`path`、`routes`、`netcheck` 只返回运行时已知事实；`reconnect` 以 1 秒冷却、确认响应和有界 channel 立即重建 Controller WebSocket；`version` 与既有 `--version` 一致。失败 ping、非健康 netcheck 和被拒 reconnect 返回非零。
+- 回归：CLI/Core/Agent 单测、严格 Clippy、真实 PostgreSQL Agent 控制面及双 Agent namespace 全链路通过；候选路径测试实际运行九个命令并验证重连、认证路径晋升和宿主/1Panel 不变量。正式证据为 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`，实现提交为远端 `e272114`。
+
+- `XS-2026-0007`：总审计发现 `xs-cli` 无条件导入 Unix socket，Windows target 无法编译；同时共享服务器用 `read_to_end` 等待客户端写半边 EOF，而 Windows duplex Named Pipe 没有可依赖的 Unix 半关闭语义，即使补一个简单 client 也会形成双方等待。
+- 修复：请求与响应统一改为 4 字节大端长度加严格 JSON，一连接一请求；server/client 分别拒绝零、超限、截断和错误类型。`xs-cli` 在 Windows 使用固定 Named Pipe client 且无 unsafe，Unix 路径保持私有 socket。Windows IPC 聚合门禁现在同时 MSVC check/Clippy server crate 和 CLI，不再只验证服务器半边。
+- 回归：Agent IPC 增加零/超限帧负向测试；CLI 三组协议/退出码测试原样通过；Linux Agent/CLI Clippy、Windows server/client MSVC check 与交叉 Clippy均通过。Windows Named Pipe/DACL/SCM 实际运行仍由 `BLK-001` 阻塞，不把交叉编译描述成实机结果。

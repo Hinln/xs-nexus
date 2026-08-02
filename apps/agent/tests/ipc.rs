@@ -87,6 +87,16 @@ async fn local_ipc_is_private_bounded_and_redacted() {
             ref code
         } if code == "agent_ipc_failed"
     ));
+    for invalid_length in [0_u32, 4097_u32] {
+        let invalid = raw_frame(&socket_path, &invalid_length.to_be_bytes()).await;
+        assert!(matches!(
+            invalid,
+            LocalAgentResponse::Error {
+                schema_version: 1,
+                ref code
+            } if code == "agent_ipc_failed"
+        ));
+    }
 
     shutdown_sender.send(true).expect("request shutdown");
     tokio::time::timeout(Duration::from_secs(2), server)
@@ -230,14 +240,31 @@ async fn request(path: &Path, request: LocalAgentRequest) -> LocalAgentResponse 
 }
 
 async fn raw_request(path: &Path, request: &[u8]) -> LocalAgentResponse {
+    let mut frame = Vec::with_capacity(4 + request.len());
+    let length = u32::try_from(request.len()).expect("request length");
+    frame.extend_from_slice(&length.to_be_bytes());
+    frame.extend_from_slice(request);
+    raw_frame(path, &frame).await
+}
+
+async fn raw_frame(path: &Path, frame: &[u8]) -> LocalAgentResponse {
     let mut stream = UnixStream::connect(path)
         .await
         .expect("connect to Agent IPC");
-    stream.write_all(request).await.expect("write IPC request");
-    stream.shutdown().await.expect("finish IPC request");
-    let mut response = Vec::new();
     stream
-        .read_to_end(&mut response)
+        .write_all(frame)
+        .await
+        .expect("write IPC request frame");
+    stream.flush().await.expect("flush IPC request frame");
+    let mut prefix = [0_u8; 4];
+    stream
+        .read_exact(&mut prefix)
+        .await
+        .expect("read IPC response length");
+    let response_length = usize::try_from(u32::from_be_bytes(prefix)).expect("response length");
+    let mut response = vec![0_u8; response_length];
+    stream
+        .read_exact(&mut response)
         .await
         .expect("read IPC response");
     serde_json::from_slice(&response).expect("valid IPC response")
