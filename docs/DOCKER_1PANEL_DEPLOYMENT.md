@@ -8,7 +8,7 @@
 - `1panel-network` 只作为 `external: true` 网络引用；不得创建、删除、重建、改名或修改 IPAM。
 - 不创建 PostgreSQL、Redis 或 MySQL 容器，不发布 `3306`、`5432` 或 `6379`。
 - 只操作 `xs-nexus-dev` 或 `xs-nexus-rc` 项目命名容器，不执行全局 prune。
-- 默认端口只绑定 `127.0.0.1`；公网 DNS、TLS、反向代理和防火墙开放必须经过人工批准。
+- HTTP 管理面固定只绑定 `127.0.0.1` 并置于 TLS 反向代理之后；Discovery/Relay UDP 由独立 `XS_UDP_BIND_ADDRESS` 控制，默认同样绑定回环，只有经过批准的公网测试或生产环境才可显式设为 `0.0.0.0`。公网 DNS、TLS、反向代理和防火墙开放必须经过人工批准。
 - Agent、TUN、Netlink 和 nftables 不进入这些容器，仍由宿主 systemd 管理。
 
 ## 2. 组件和持久化
@@ -123,6 +123,23 @@ sudo "$STACK" --env-file "$ENV_FILE" build
 sudo "$STACK" --env-file "$ENV_FILE" deploy
 sudo "$STACK" --env-file "$ENV_FILE" status
 ```
+
+公网 HTTPS 部署不依赖 1Panel 站点配置。项目提供独立、digest-pinned 的 Caddy Edge；它以非 root UID、只读根文件系统、零 capability 和持久证书目录运行，端口 80/443 只反向代理同一 Compose 项目内的 Console。Console 再代理 `/v1/`、`/health/` 和 WebSocket 到 Controller，因此 Controller 与 Console 的宿主 HTTP 端口始终保持 `127.0.0.1`。把 `Caddyfile.example` 复制到仓库外，逐个域名使用独立站点块，避免一个错误 DNS 记录阻塞其他证书：
+
+```bash
+sudo install -o root -g root -m 0444 deploy/docker/Caddyfile.example \
+  /etc/xs-nexus/deployments/dev/Caddyfile
+sudo install -d -o 65532 -g 65532 -m 0700 \
+  /var/lib/xs-nexus-deploy/dev/edge
+
+PUBLIC_STACK=./deploy/docker/xs-nexus-public-deploy.sh
+sudo "$PUBLIC_STACK" --env-file "$ENV_FILE" build
+sudo "$PUBLIC_STACK" --env-file "$ENV_FILE" preflight
+sudo "$PUBLIC_STACK" --env-file "$ENV_FILE" deploy
+sudo "$PUBLIC_STACK" --env-file "$ENV_FILE" status
+```
+
+`XS_EDGE_IMAGE` 必须包含 SHA-256 digest；Edge 脚本拒绝 tag-only 镜像、宽权限配置/证书目录、root 用户、可写根文件系统、额外 capability、错误外部网络和无健康应用上游。Caddy 自动执行 ACME HTTP-01/HTTPS、HTTP 到 HTTPS 跳转、证书续期及 WebSocket 透传。公网部署前必须确保每个域名只有指向当前服务器的批准 A/AAAA 记录，并开放 TCP 80/443；错误或多余地址属于证书和流量一致性失败。
 
 `preflight` 会验证环境隔离、Secret 权限、备份 public recipient、副本设备/marker/保留期、外部网络精确定义、Compose 安全属性、无数据库服务和无数据库端口。`deploy` 的顺序固定为：
 

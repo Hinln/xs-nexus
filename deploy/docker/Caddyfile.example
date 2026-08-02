@@ -1,0 +1,26 @@
+{
+	admin off
+	http_port 8080
+	https_port 8443
+	storage file_system /data/caddy
+}
+
+(xs_nexus_proxy) {
+	encode zstd gzip
+	reverse_proxy xs-nexus-dev-console:8080
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+console.example.com {
+	import xs_nexus_proxy
+}
+
+controller.example.com {
+	import xs_nexus_proxy
+}

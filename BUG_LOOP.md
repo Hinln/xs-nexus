@@ -259,3 +259,9 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0007`：总审计发现 `xs-cli` 无条件导入 Unix socket，Windows target 无法编译；同时共享服务器用 `read_to_end` 等待客户端写半边 EOF，而 Windows duplex Named Pipe 没有可依赖的 Unix 半关闭语义，即使补一个简单 client 也会形成双方等待。
 - 修复：请求与响应统一改为 4 字节大端长度加严格 JSON，一连接一请求；server/client 分别拒绝零、超限、截断和错误类型。`xs-cli` 在 Windows 使用固定 Named Pipe client 且无 unsafe，Unix 路径保持私有 socket。Windows IPC 聚合门禁现在同时 MSVC check/Clippy server crate 和 CLI，不再只验证服务器半边。
 - 回归：Agent IPC 增加零/超限帧负向测试；CLI 三组协议/退出码测试原样通过；Linux Agent/CLI Clippy、Windows server/client MSVC check 与交叉 Clippy均通过。Windows Named Pipe/DACL/SCM 实际运行仍由 `BLK-001` 阻塞，不把交叉编译描述成实机结果。
+
+## 公网测试部署绑定闭环缺陷
+
+- `XS-2026-0008`：域名测试部署预检发现 HTTP、Discovery UDP 和 Relay UDP 共用 `XS_BIND_ADDRESS`。保持回环会阻止外部节点发现/中继，改为 `0.0.0.0` 又会把 Controller 与 Console 的明文 HTTP 端口一起暴露公网。
+- 修复：HTTP 继续由 `XS_BIND_ADDRESS` 控制且部署预检强制为 `127.0.0.1`；新增独立、显式的 `XS_UDP_BIND_ADDRESS`，只允许回环或全 IPv4 监听，默认回环。Compose 仅把 Discovery/Relay 两个 UDP 发布切换到新变量。
+- 回归：Compose 预检、完整 M5.2 部署生命周期、回环 HTTP 与公网 UDP 实际监听、HTTPS/WSS 反向代理及外部节点路径测试必须同时通过；不得把测试开放描述为生产防火墙验收。

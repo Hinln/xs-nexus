@@ -9,6 +9,8 @@ TEMPORARY=$(mktemp -d)
 ENVIRONMENT_FILE="$TEMPORARY/dev.compose.env"
 BAD_DATABASE_ENVIRONMENT="$TEMPORARY/bad-database.compose.env"
 BAD_IMAGE_ENVIRONMENT="$TEMPORARY/bad-image.compose.env"
+BAD_HTTP_BIND_ENVIRONMENT="$TEMPORARY/bad-http-bind.compose.env"
+BAD_UDP_BIND_ENVIRONMENT="$TEMPORARY/bad-udp-bind.compose.env"
 CONTROLLER_SECRETS="$TEMPORARY/controller"
 BAD_CONTROLLER_SECRETS="$TEMPORARY/bad-controller"
 RELAY_SECRETS="$TEMPORARY/relay"
@@ -110,6 +112,7 @@ XS_BACKUP_MIN_RETAINED=$MIN_RETAINED_BACKUPS
 XS_STATE_DIR=$STATE_DIRECTORY
 XS_DATABASE_SCHEMA=$database_schema
 XS_BIND_ADDRESS=127.0.0.1
+XS_UDP_BIND_ADDRESS=127.0.0.1
 XS_CONTROLLER_HTTP_PORT=$CONTROLLER_PORT
 XS_CONSOLE_HTTP_PORT=$CONSOLE_PORT
 XS_DISCOVERY_UDP_PORT=$DISCOVERY_PORT
@@ -238,6 +241,19 @@ find "$BAD_CONTROLLER_SECRETS" -type f -exec chmod 0400 {} +
 write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
 write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
 write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
+cp -- "$ENVIRONMENT_FILE" "$BAD_HTTP_BIND_ENVIRONMENT"
+sed -i 's/^XS_BIND_ADDRESS=.*/XS_BIND_ADDRESS=0.0.0.0/' "$BAD_HTTP_BIND_ENVIRONMENT"
+cp -- "$ENVIRONMENT_FILE" "$BAD_UDP_BIND_ENVIRONMENT"
+sed -i 's/^XS_UDP_BIND_ADDRESS=.*/XS_UDP_BIND_ADDRESS=203.0.113.1/' "$BAD_UDP_BIND_ENVIRONMENT"
+chmod 0600 "$BAD_HTTP_BIND_ENVIRONMENT" "$BAD_UDP_BIND_ENVIRONMENT"
+if "$STACK" --env-file "$BAD_HTTP_BIND_ENVIRONMENT" preflight >/dev/null 2>&1; then
+    printf 'public plaintext HTTP bind unexpectedly passed preflight\n' >&2
+    exit 1
+fi
+if "$STACK" --env-file "$BAD_UDP_BIND_ENVIRONMENT" preflight >/dev/null 2>&1; then
+    printf 'unapproved UDP bind unexpectedly passed preflight\n' >&2
+    exit 1
+fi
 
 reset_schema
 "$STACK" --env-file "$ENVIRONMENT_FILE" preflight

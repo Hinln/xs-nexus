@@ -23,7 +23,8 @@
 - 威胁模型与安全假设：`docs/THREAT_MODEL.md`、`docs/SECURITY_ASSUMPTIONS.md`
 - Linux 安装、升级、回滚和卸载：`docs/LINUX_INSTALLATION.md`
 - 签名更新、灰度策略和权限边界：`docs/UPDATE_SYSTEM.md`
-- 1Panel 部署：`docs/DOCKER_1PANEL_DEPLOYMENT.md`
+- 1Panel 隔离部署及项目自带 HTTPS Edge：`docs/DOCKER_1PANEL_DEPLOYMENT.md`
+- 一键公网栈：`deploy/docker/xs-nexus-public-deploy.sh`（不依赖 1Panel 站点配置）
 - 恢复手册：`RECOVERY_RUNBOOK.md`
 - 性能与稳定性：`docs/PERFORMANCE_REPORT.md`
 - 第三方依赖与许可证：`THIRD_PARTY.md`、`docs/IMAGE_SUPPLY_CHAIN.md`

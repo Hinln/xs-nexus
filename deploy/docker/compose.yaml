@@ -86,7 +86,7 @@ services:
         protocol: tcp
       - target: 42000
         published: ${XS_DISCOVERY_UDP_PORT:-42000}
-        host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
+        host_ip: ${XS_UDP_BIND_ADDRESS:-127.0.0.1}
         protocol: udp
     healthcheck:
       test: ["CMD", "/usr/local/bin/xs-controller", "healthcheck"]
@@ -140,7 +140,7 @@ services:
     ports:
       - target: 42001
         published: ${XS_RELAY_UDP_PORT:-42001}
-        host_ip: ${XS_BIND_ADDRESS:-127.0.0.1}
+        host_ip: ${XS_UDP_BIND_ADDRESS:-127.0.0.1}
         protocol: udp
     healthcheck:
       test: ["CMD", "/usr/local/bin/xs-relay", "healthcheck"]

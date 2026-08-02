@@ -83,7 +83,7 @@ validate_state_directory() {
 }
 
 preflight() {
-    local deployment project schema controller_secrets relay_secrets backup_directory replica_directory state_directory
+    local deployment project schema http_bind udp_bind controller_secrets relay_secrets backup_directory replica_directory state_directory
     local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
         XS_DEPLOYMENT
@@ -103,6 +103,8 @@ preflight() {
         XS_BACKUP_MIN_RETAINED
         XS_STATE_DIR
         XS_DATABASE_SCHEMA
+        XS_BIND_ADDRESS
+        XS_UDP_BIND_ADDRESS
         XS_DISCOVERY_PUBLIC_ENDPOINT
         XS_RELAY_ID_BASE64
     )
@@ -113,9 +115,13 @@ preflight() {
     deployment=$(environment_value XS_DEPLOYMENT)
     project=$(environment_value XS_COMPOSE_PROJECT_NAME)
     schema=$(environment_value XS_DATABASE_SCHEMA)
+    http_bind=$(environment_value XS_BIND_ADDRESS)
+    udp_bind=$(environment_value XS_UDP_BIND_ADDRESS)
     [[ $deployment == dev || $deployment == rc ]] || fail 'XS_DEPLOYMENT must be dev or rc'
     [[ $project == "xs-nexus-$deployment" ]] || fail 'XS_COMPOSE_PROJECT_NAME must isolate the selected deployment'
     [[ $schema =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'XS_DATABASE_SCHEMA is invalid'
+    [[ $http_bind == 127.0.0.1 ]] || fail 'HTTP services must bind to 127.0.0.1 behind the TLS reverse proxy'
+    [[ $udp_bind == 127.0.0.1 || $udp_bind == 0.0.0.0 ]] || fail 'UDP services must bind to 127.0.0.1 or 0.0.0.0'
     if [[ $deployment == dev ]]; then
         [[ $schema == *_dev ]] || fail 'development schema must end in _dev'
     else
