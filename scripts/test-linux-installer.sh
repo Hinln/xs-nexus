@@ -74,7 +74,9 @@ make_binaries() {
     mkdir -p "$directory"
     cat >"$directory/xs-agent.c" <<EOF
 #include <stdio.h>
+#include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int main(int argument_count, char **arguments) {
@@ -84,6 +86,26 @@ int main(int argument_count, char **arguments) {
     }
     if (argument_count >= 2 && strcmp(arguments[1], "cleanup") == 0) {
         return access("$test_root/fail-cleanup", F_OK) == 0 ? 1 : 0;
+    }
+    if (argument_count >= 2 && strcmp(arguments[1], "enroll") == 0) {
+        const char *token_path = NULL;
+        const char *expected_prefix = "$test_root/var/lib/xs-nexus/.enrollment-token.";
+        for (int index = 2; index + 1 < argument_count; index++) {
+            if (strcmp(arguments[index], "--token-file") == 0) {
+                token_path = arguments[index + 1];
+            }
+        }
+        if (token_path == NULL || strncmp(token_path, expected_prefix, strlen(expected_prefix)) != 0) {
+            return 3;
+        }
+        if (unlink(token_path) != 0) {
+            return 4;
+        }
+        int state = open("$test_root/var/lib/xs-nexus/node-state.json", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (state < 0 || write(state, "{}", 2) != 2 || close(state) != 0) {
+            return 5;
+        }
+        return 0;
     }
     return 2;
 }
@@ -157,6 +179,26 @@ assert_service_call() {
 for version in 0.9.0 1.0.0 1.1.0 1.2.0; do
     build_package "$version"
 done
+
+enrollment_config="$temporary/enrollment-agent.json"
+enrollment_token="$temporary/enrollment.token"
+printf '{"fixture":"first-enrollment"}\n' >"$enrollment_config"
+printf 'one-time-enrollment-token-for-installer-test' >"$enrollment_token"
+chmod 0600 "$enrollment_config" "$enrollment_token"
+"$INSTALLER" install \
+    --archive "$(package_path 1.0.0 .tar.gz)" \
+    --manifest "$(package_path 1.0.0 .manifest)" \
+    --signature "$(package_path 1.0.0 .manifest.sig)" \
+    --public-key "$public_key" \
+    --config "$enrollment_config" \
+    --enrollment-token-file "$enrollment_token" \
+    --root "$test_root" \
+    --service-manager "$fake_service_manager" >/dev/null
+[[ -f "$test_root/var/lib/xs-nexus/node-state.json" ]]
+[[ -z $(find "$test_root/var/lib/xs-nexus" -maxdepth 1 -name '.enrollment-token.*' -print -quit) ]]
+[[ -f "$enrollment_token" ]]
+assert_active
+"$INSTALLER" uninstall --purge --root "$test_root" --service-manager "$fake_service_manager" >/dev/null
 
 install -d -m 0750 "$test_root/etc/xs-nexus"
 install -d -m 0700 "$test_root/var/lib/xs-nexus"

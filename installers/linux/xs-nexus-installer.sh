@@ -386,7 +386,12 @@ install_release() {
     done
     acquire_lock
     temporary=$(mktemp -d)
-    trap 'rm -rf "$temporary"' EXIT INT TERM
+    token_copy=
+    cleanup_install_temporary() {
+        rm -rf -- "$temporary"
+        [[ -z $token_copy ]] || rm -f -- "$token_copy"
+    }
+    trap cleanup_install_temporary EXIT INT TERM
     verify_manifest_signature "$manifest" "$signature" "$public_key"
     parse_manifest "$manifest"
     verify_archive
@@ -494,19 +499,24 @@ install_release() {
         service_call daemon-reload || activation_failed=true
     fi
     if [[ "$activation_failed" == false && -n "$token_source" ]]; then
-        token_copy=$(root_path /run/xs-nexus-enrollment-token)
+        token_copy=$(mktemp "$state_directory/.enrollment-token.XXXXXX") || activation_failed=true
         if [[ "$install_root" == "/" ]]; then
-            install -m 0600 -o xs-nexus -g xs-nexus "$token_source" "$token_copy" || activation_failed=true
+            if [[ "$activation_failed" == false ]]; then
+                install -m 0600 -o xs-nexus -g xs-nexus "$token_source" "$token_copy" || activation_failed=true
+            fi
             if [[ "$activation_failed" == false ]]; then
                 runuser -u xs-nexus -- "$release_root/bin/xs-agent" enroll --config "$config_path" --token-file "$token_copy" >/dev/null || activation_failed=true
             fi
         else
-            install -m 0600 "$token_source" "$token_copy" || activation_failed=true
+            if [[ "$activation_failed" == false ]]; then
+                install -m 0600 "$token_source" "$token_copy" || activation_failed=true
+            fi
             if [[ "$activation_failed" == false ]]; then
                 "$release_root/bin/xs-agent" enroll --config "$config_path" --token-file "$token_copy" >/dev/null || activation_failed=true
             fi
         fi
         rm -f "$token_copy"
+        token_copy=
     fi
     if [[ "$activation_failed" == false ]]; then
         service_call enable "$UNIT_NAME" || activation_failed=true
