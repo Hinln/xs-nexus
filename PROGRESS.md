@@ -191,7 +191,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
 - 源码依赖 SBOM 与四个运行镜像的 OS 包 SBOM、逐包许可证全文闭包及最终构建来源证明均已可复现生成；当前精确证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。剩余 glibc Critical/High 有界处置不是漏洞修复，仍须按 2026-08-31 到期日或镜像/扫描/API 导入变化提前复核；
 - PostgreSQL、Redis 现有公网端口仍可达；
-- 服务器提示需要维护窗口重启；
+- 服务器维护窗口重启已完成并由重启后的 24 小时稳定性、Docker 生命周期与宿主网络不变量复核，`KI-007` 已解除；
 - 临时凭据后续必须轮换。
 
 ## 2026-07-31 M7.3 性能与稳定性基线
