@@ -106,6 +106,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     let health = Arc::new(AgentHealth::new());
     let (candidate_tx, candidate_rx) = watch::channel(None);
     let (subnet_route_tx, subnet_route_rx) = watch::channel(None);
+    let (_reconnect_tx, reconnect_rx) = watch::channel(0_u64);
     let (control_shutdown_tx, control_shutdown_rx) = watch::channel(false);
     let data_plane_status = Arc::new(RwLock::new(DataPlaneStatus::default()));
     let control = tokio::spawn(run_control_loop(
@@ -119,6 +120,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
         },
         candidate_rx,
         subnet_route_rx,
+        reconnect_rx,
         control_shutdown_rx,
     ));
     wait_until_connected(&health).await;

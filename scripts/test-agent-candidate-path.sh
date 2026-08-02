@@ -305,6 +305,40 @@ PY
     exit 1
 }
 
+verify_complete_cli() {
+    local socket=$1
+    local peer_ip=$2
+    local configuration_version=$3
+    local ping_ok=false
+    local ping_response
+    "$CLI" status --socket "$socket" --json |
+        python3 -c 'import json,sys; assert json.load(sys.stdin)["status"]["controller_connected"]'
+    "$CLI" peers --socket "$socket" --json |
+        python3 -c 'import json,sys; assert json.load(sys.stdin)["total"] == 1'
+    for _ in $(seq 1 20); do
+        if ping_response=$("$CLI" ping "$peer_ip" --socket "$socket" --json 2>/dev/null) &&
+            python3 -c 'import json,sys; r=json.loads(sys.argv[1])["result"]; assert r["reachable"] and r["latency_microseconds"] is not None' "$ping_response"
+        then
+            ping_ok=true
+            break
+        fi
+        sleep 0.1
+    done
+    [[ $ping_ok == true ]]
+    "$CLI" path "$peer_ip" --socket "$socket" --json |
+        python3 -c 'import json,sys; p=json.load(sys.stdin)["path"]; assert p["session_established"] and p["active_candidate_kind"] != "relay"'
+    "$CLI" routes --socket "$socket" --json |
+        python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["configuration_version"] >= int(sys.argv[1])' "$configuration_version"
+    "$CLI" netcheck --socket "$socket" --json |
+        python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; assert r["healthy"] and r["direct_peer_count"] == 1'
+    "$CLI" diagnostics --socket "$socket" --json |
+        python3 -c 'import json,sys; assert json.load(sys.stdin)["diagnostics"]["configuration_sha256"]'
+    [[ $("$CLI" version) == "xs 0.1.0" ]]
+    "$CLI" reconnect --socket "$socket" --json |
+        python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["accepted"] and r["error_code"] is None'
+    wait_controller_connected "$socket"
+}
+
 create_token() {
     curl --fail --silent \
         -X POST "$CONTROLLER_BASE/v1/admin/enrollment-tokens" \
@@ -548,6 +582,10 @@ ip netns exec "$NETNS_B" "$PROBE" icmp \
     --timeout 3
 "$CLI" peers --socket "$TEMPORARY/node-a/run/agent.sock" |
     grep -F 'reason=authenticated_path_probe' >/dev/null
+verify_complete_cli \
+    "$TEMPORARY/node-a/run/agent.sock" \
+    "$virtual_ip_b" \
+    "$ACL_CONFIGURATION_VERSION"
 
 kill -0 "$AGENT_A_PID"
 kill -0 "$AGENT_B_PID"

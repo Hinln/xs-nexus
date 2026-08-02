@@ -67,6 +67,7 @@ pub async fn run_control_loop(
     context: ControlContext,
     mut candidates: watch::Receiver<Option<CandidateAdvertisement>>,
     mut subnet_routes: watch::Receiver<Option<SubnetRouteAdvertisement>>,
+    mut reconnect: watch::Receiver<u64>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut backoff = Duration::from_secs(1);
@@ -75,11 +76,13 @@ pub async fn run_control_loop(
         if *shutdown.borrow() {
             return;
         }
+        let reconnect_generation = *reconnect.borrow();
         match control_session(
             &context,
             &mut telemetry_sequence,
             &mut candidates,
             &mut subnet_routes,
+            &mut reconnect,
             &mut shutdown,
         )
         .await
@@ -93,11 +96,23 @@ pub async fn run_control_loop(
             }
         }
 
+        if *reconnect.borrow() != reconnect_generation {
+            backoff = Duration::from_secs(1);
+            continue;
+        }
+
         tokio::select! {
             result = shutdown.changed() => {
                 if result.is_err() || *shutdown.borrow() {
                     return;
                 }
+            }
+            result = reconnect.changed() => {
+                if result.is_err() {
+                    return;
+                }
+                backoff = Duration::from_secs(1);
+                continue;
             }
             () = tokio::time::sleep(backoff) => {}
         }
@@ -111,6 +126,7 @@ async fn control_session(
     telemetry_sequence: &mut u64,
     candidates: &mut watch::Receiver<Option<CandidateAdvertisement>>,
     subnet_routes: &mut watch::Receiver<Option<SubnetRouteAdvertisement>>,
+    reconnect: &mut watch::Receiver<u64>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<()> {
     let config = &context.config;
@@ -171,6 +187,13 @@ async fn control_session(
                     let _ = socket.send(Message::Close(None)).await;
                     return Ok(());
                 }
+            }
+            result = reconnect.changed() => {
+                if result.is_err() {
+                    return Err(AgentError::Control);
+                }
+                let _ = socket.send(Message::Close(None)).await;
+                return Err(AgentError::Control);
             }
             _ = synchronization.tick() => {
                 let last_version = state.read().await.configuration.version;

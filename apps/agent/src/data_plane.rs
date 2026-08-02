@@ -54,6 +54,7 @@ const KEY_UPDATE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const KEY_UPDATE_MAX_ATTEMPTS: u8 = 6;
 const PATH_PROBE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const PATH_PROBE_MAX_ATTEMPTS: u8 = 4;
+const MANUAL_PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(1);
 #[cfg(not(feature = "privileged-network-tests"))]
 const PATH_PROBE_COOLDOWN: Duration = Duration::from_secs(30);
 #[cfg(feature = "privileged-network-tests")]
@@ -309,6 +310,15 @@ pub struct PeerPathStatus {
 }
 
 pub type SharedDataPlaneStatus = Arc<tokio::sync::RwLock<DataPlaneStatus>>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManualProbeError {
+    PeerNotFound,
+    SessionUnavailable,
+    Busy,
+    SendFailed,
+}
+
 type PeerDirectory = (
     SocketAddr,
     HashMap<Ipv4Addr, Peer>,
@@ -392,6 +402,53 @@ impl UdpDataPlane {
     #[must_use]
     pub fn status_handle(&self) -> SharedDataPlaneStatus {
         Arc::clone(&self.status)
+    }
+
+    /// Starts one authenticated path probe for an established peer.
+    ///
+    /// The response is processed by the normal receive loop and published through the shared
+    /// data-plane status. Calls are rate limited per peer and never create a plaintext probe.
+    ///
+    /// # Errors
+    ///
+    /// Returns a classified error when the peer is unknown, has no established session, is in its
+    /// probe cooldown, or the encrypted probe cannot be sent.
+    pub async fn start_manual_path_probe(
+        &mut self,
+        virtual_ip: Ipv4Addr,
+    ) -> std::result::Result<(), ManualProbeError> {
+        let now = Instant::now();
+        let (endpoint, destination_node_id, encoded) = {
+            let peer = self
+                .peers_by_virtual_ip
+                .get_mut(&virtual_ip)
+                .ok_or(ManualProbeError::PeerNotFound)?;
+            let endpoint = peer
+                .active_endpoint
+                .ok_or(ManualProbeError::SessionUnavailable)?;
+            if !matches!(peer.state, PeerState::Established(_)) {
+                return Err(ManualProbeError::SessionUnavailable);
+            }
+            if peer.pending_path_probe.is_some() || now < peer.path_probe_retry_after {
+                return Err(ManualProbeError::Busy);
+            }
+            let encoded =
+                create_path_probe(peer, endpoint, now).map_err(|_| ManualProbeError::SendFailed)?;
+            peer.path_probe_retry_after = now + MANUAL_PATH_PROBE_COOLDOWN;
+            (endpoint, peer.node_id, encoded)
+        };
+        let sent = self
+            .send_xsp(endpoint, destination_node_id, &encoded)
+            .await
+            .map_err(|_| ManualProbeError::SendFailed)?;
+        if !sent {
+            if let Some(peer) = self.peers_by_virtual_ip.get_mut(&virtual_ip) {
+                peer.pending_path_probe = None;
+            }
+            return Err(ManualProbeError::SendFailed);
+        }
+        self.synchronize_status().await;
+        Ok(())
     }
 
     #[must_use]
@@ -1326,8 +1383,12 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
     let Some(endpoint) = target else {
         return Ok(None);
     };
+    create_path_probe(peer, endpoint, now).map(|encoded| Some((endpoint, encoded)))
+}
+
+fn create_path_probe(peer: &mut Peer, endpoint: SocketAddr, now: Instant) -> Result<Vec<u8>> {
     let PeerState::Established(established) = &mut peer.state else {
-        return Ok(None);
+        return Err(AgentError::DataPlane);
     };
     let token = random_array::<8>()?;
     let mut path_id = u32::from_be_bytes(random_array()?);
@@ -1350,7 +1411,7 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
         retry: RetryState::path_probe(encoded.clone(), now),
     });
     peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
-    Ok(Some((endpoint, encoded)))
+    Ok(encoded)
 }
 
 fn best_probe_target(peer: &Peer) -> Option<SocketAddr> {

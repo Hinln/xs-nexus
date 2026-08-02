@@ -11,58 +11,16 @@ use std::{
 #[test]
 fn commands_use_the_strict_local_protocol() {
     let temporary = tempfile::tempdir().expect("temporary CLI sockets");
-    let cases = [
-        (
-            "status",
-            serde_json::json!({"command":"status"}),
-            status_response(),
-            "node_id=node-1",
-        ),
-        (
-            "peers",
-            serde_json::json!({"command":"peers"}),
-            serde_json::json!({
-                "type":"peers",
-                "schema_version":1,
-                "peers":[{
-                    "node_id_base64":"peer-1",
-                    "virtual_ip":"100.64.0.3",
-                    "credential_not_after":"2026-08-29T00:00:00Z",
-                    "role_bitmap":2,
-                    "tags":["server"]
-                }],
-                "total":1,
-                "truncated":false
-            }),
-            "configured_peers=1 returned=1 truncated=false",
-        ),
-        (
-            "diagnostics",
-            serde_json::json!({"command":"diagnostics"}),
-            serde_json::json!({
-                "type":"diagnostics",
-                "schema_version":1,
-                "diagnostics":{
-                    "status":status_value(),
-                    "configuration_generated_at":"2026-07-29T00:00:00Z",
-                    "address_pool":"100.64.0.0/24",
-                    "configuration_sha256":"abcd",
-                    "tun_packets_received":2,
-                    "tun_packets_dropped":1,
-                    "last_error_code":null
-                }
-            }),
-            "tun_packets_dropped=1",
-        ),
-    ];
-
-    for (index, (command, expected_request, response, expected_output)) in
-        cases.into_iter().enumerate()
-    {
+    let cases = overview_cases()
+        .into_iter()
+        .chain(path_cases())
+        .chain(route_cases())
+        .chain(maintenance_cases());
+    for (index, (command, expected_request, response, expected_output)) in cases.enumerate() {
         let socket_path = temporary.path().join(format!("agent-{index}.sock"));
         let server = serve_once(&socket_path, expected_request, response);
         let output = Command::new(env!("CARGO_BIN_EXE_xs"))
-            .arg(command)
+            .args(command)
             .arg("--socket")
             .arg(&socket_path)
             .output()
@@ -79,6 +37,176 @@ fn commands_use_the_strict_local_protocol() {
             String::from_utf8_lossy(&output.stdout)
         );
     }
+}
+
+type CommandCase = (
+    Vec<&'static str>,
+    serde_json::Value,
+    serde_json::Value,
+    &'static str,
+);
+
+fn overview_cases() -> Vec<CommandCase> {
+    vec![
+        (
+            vec!["status"],
+            serde_json::json!({"command":"status"}),
+            status_response(),
+            "node_id=node-1",
+        ),
+        (
+            vec!["peers"],
+            serde_json::json!({"command":"peers"}),
+            serde_json::json!({
+                "type":"peers", "schema_version":1,
+                "peers":[{
+                    "node_id_base64":"peer-1", "virtual_ip":"100.64.0.3",
+                    "credential_not_after":"2026-08-29T00:00:00Z", "role_bitmap":2,
+                    "tags":["server"], "candidates":[],
+                    "active_endpoint":"10.0.0.3:42000", "active_candidate_kind":"local",
+                    "path_reason":"authenticated_handshake", "session_established":true
+                }],
+                "total":1, "truncated":false
+            }),
+            "configured_peers=1 returned=1 truncated=false",
+        ),
+    ]
+}
+
+fn path_cases() -> Vec<CommandCase> {
+    vec![
+        (
+            vec!["ping", "100.64.0.3"],
+            serde_json::json!({"command":"ping","virtual_ip":"100.64.0.3"}),
+            serde_json::json!({
+                "type":"ping", "schema_version":1,
+                "result":{
+                    "virtual_ip":"100.64.0.3", "reachable":true,
+                    "latency_microseconds":1250, "active_candidate_kind":"local",
+                    "path_reason":"authenticated_path_probe", "error_code":null
+                }
+            }),
+            "reachable=true",
+        ),
+        (
+            vec!["path", "100.64.0.3"],
+            serde_json::json!({"command":"path","virtual_ip":"100.64.0.3"}),
+            serde_json::json!({
+                "type":"path", "schema_version":1,
+                "path":{
+                    "node_id_base64":"peer-1", "virtual_ip":"100.64.0.3",
+                    "session_established":true, "active_endpoint":"10.0.0.3:42000",
+                    "active_candidate_kind":"local", "path_reason":"authenticated_handshake",
+                    "last_latency_microseconds":1250, "tx_packets_total":2,
+                    "tx_bytes_total":128, "rx_packets_total":3, "rx_bytes_total":192
+                }
+            }),
+            "session_established=true",
+        ),
+    ]
+}
+
+fn route_cases() -> Vec<CommandCase> {
+    vec![
+        (
+            vec!["routes"],
+            serde_json::json!({"command":"routes"}),
+            serde_json::json!({
+                "type":"routes", "schema_version":1, "configuration_version":4,
+                "routes":[{
+                    "route_id":"lan-primary", "prefix":"192.168.20.0/24",
+                    "gateway_node_id_base64":"peer-1", "gateway_virtual_ip":"100.64.0.3",
+                    "mode":"routed", "interface_name":"eth0", "priority":100,
+                    "local_is_gateway":false, "gateway_reachable":true
+                }]
+            }),
+            "configured_routes=1",
+        ),
+        (
+            vec!["netcheck"],
+            serde_json::json!({"command":"netcheck"}),
+            serde_json::json!({
+                "type":"netcheck", "schema_version":1,
+                "result":{
+                    "healthy":true, "controller_connected":true, "network_active":true,
+                    "local_candidate_count":1, "configured_peer_count":1,
+                    "established_peer_count":1, "direct_peer_count":1,
+                    "relay_peer_count":0, "last_error_code":null
+                }
+            }),
+            "healthy=true",
+        ),
+    ]
+}
+
+fn maintenance_cases() -> Vec<CommandCase> {
+    vec![
+        (
+            vec!["diagnostics"],
+            serde_json::json!({"command":"diagnostics"}),
+            serde_json::json!({
+                "type":"diagnostics", "schema_version":1,
+                "diagnostics":{
+                    "status":status_value(), "configuration_generated_at":"2026-07-29T00:00:00Z",
+                    "address_pool":"100.64.0.0/24", "configuration_sha256":"abcd",
+                    "tun_packets_received":2, "tun_packets_dropped":1,
+                    "last_error_code":null, "local_candidates":[]
+                }
+            }),
+            "tun_packets_dropped=1",
+        ),
+        (
+            vec!["reconnect"],
+            serde_json::json!({"command":"reconnect"}),
+            serde_json::json!({
+                "type":"reconnect", "schema_version":1,
+                "accepted":true, "error_code":null
+            }),
+            "accepted=true",
+        ),
+    ]
+}
+
+#[test]
+fn version_aliases_and_failure_status_are_stable() {
+    for command in ["version", "--version"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_xs"))
+            .arg(command)
+            .output()
+            .expect("run xs version");
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("version output"),
+            format!("xs {}\n", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    let temporary = tempfile::tempdir().expect("temporary CLI socket");
+    let socket_path = temporary.path().join("agent-unreachable.sock");
+    let server = serve_once(
+        &socket_path,
+        serde_json::json!({"command":"ping","virtual_ip":"100.64.0.3"}),
+        serde_json::json!({
+            "type":"ping",
+            "schema_version":1,
+            "result":{
+                "virtual_ip":"100.64.0.3",
+                "reachable":false,
+                "latency_microseconds":null,
+                "active_candidate_kind":null,
+                "path_reason":null,
+                "error_code":"agent_path_probe_timeout"
+            }
+        }),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_xs"))
+        .args(["ping", "100.64.0.3", "--socket"])
+        .arg(&socket_path)
+        .output()
+        .expect("run failed xs ping");
+    server.join().expect("fake Agent server joins");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("reachable=false"));
 }
 
 #[test]

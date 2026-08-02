@@ -1,15 +1,19 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+    time::Instant,
+};
 
 use crate::{
     config::AgentConfig,
     control::{ControlContext, run_control_loop},
-    data_plane::UdpDataPlane,
+    data_plane::{ManualProbeError, UdpDataPlane},
     error::{AgentError, Result},
     health::AgentHealth,
-    ipc::{IpcContext, run_ipc_server},
+    ipc::{IpcContext, RuntimeCommand, RuntimeCommandError, run_ipc_server},
     network::{NetworkPlan, TunNetwork},
     state::NodeState,
     storage::{Identity, read_json, write_json},
@@ -17,6 +21,8 @@ use crate::{
 };
 
 const MAX_IPV4_PACKET_BYTES: usize = 65_535;
+const RUNTIME_COMMAND_CAPACITY: usize = 16;
+const MANUAL_RECONNECT_COOLDOWN: Duration = Duration::from_secs(1);
 
 struct AgentRuntime {
     config: AgentConfig,
@@ -30,6 +36,9 @@ struct AgentRuntime {
     shutdown: watch::Receiver<bool>,
     control_task: JoinHandle<()>,
     ipc_task: JoinHandle<Result<()>>,
+    runtime_commands: mpsc::Receiver<RuntimeCommand>,
+    control_reconnect_sender: watch::Sender<u64>,
+    last_manual_reconnect: Option<Instant>,
 }
 
 /// Runs the Linux Agent until shutdown is requested or a required local subsystem fails.
@@ -55,6 +64,8 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
     let health = Arc::new(AgentHealth::new());
     let (candidate_sender, candidate_receiver) = watch::channel(None);
     let (subnet_route_sender, subnet_route_receiver) = watch::channel(None);
+    let (runtime_command_sender, runtime_commands) = mpsc::channel(RUNTIME_COMMAND_CAPACITY);
+    let (control_reconnect_sender, control_reconnect_receiver) = watch::channel(0_u64);
     let subnet_route_discovery = {
         let state = state.read().await;
         SubnetRouteDiscovery::new(&state, plan.interface_name().to_owned())?
@@ -71,6 +82,7 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
         },
         candidate_receiver,
         subnet_route_receiver,
+        control_reconnect_receiver,
         shutdown.clone(),
     ));
     let ipc_task = tokio::spawn(run_ipc_server(
@@ -81,6 +93,7 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
             interface_name: plan.interface_name().to_owned(),
             interface_index: network.interface_index(),
             data_plane_status,
+            runtime_commands: runtime_command_sender,
         },
         shutdown.clone(),
     ));
@@ -97,6 +110,9 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
         shutdown,
         control_task,
         ipc_task,
+        runtime_commands,
+        control_reconnect_sender,
+        last_manual_reconnect: None,
     }
     .run()
     .await
@@ -165,6 +181,12 @@ impl AgentRuntime {
                         break Err(error);
                     }
                 }
+                command = self.runtime_commands.recv() => {
+                    let Some(command) = command else {
+                        break Err(AgentError::Runtime);
+                    };
+                    self.handle_runtime_command(command).await;
+                }
                 result = &mut self.control_task, if !control_completed => {
                     control_completed = true;
                     if *self.shutdown.borrow() && result.is_ok() {
@@ -191,6 +213,45 @@ impl AgentRuntime {
         }
         let network_result = self.network.shutdown().await;
         runtime_result.and(network_result)
+    }
+
+    async fn handle_runtime_command(&mut self, command: RuntimeCommand) {
+        match command {
+            RuntimeCommand::Probe {
+                virtual_ip,
+                response,
+            } => {
+                let result = self
+                    .data_plane
+                    .start_manual_path_probe(virtual_ip)
+                    .await
+                    .map_err(map_probe_error);
+                let _ = response.send(result);
+            }
+            RuntimeCommand::Reconnect { response } => {
+                let now = Instant::now();
+                let result = if self.last_manual_reconnect.is_some_and(|last| {
+                    now.saturating_duration_since(last) < MANUAL_RECONNECT_COOLDOWN
+                }) {
+                    Err(RuntimeCommandError::RateLimited)
+                } else {
+                    self.last_manual_reconnect = Some(now);
+                    self.control_reconnect_sender
+                        .send_modify(|generation| *generation = generation.wrapping_add(1));
+                    Ok(())
+                };
+                let _ = response.send(result);
+            }
+        }
+    }
+}
+
+const fn map_probe_error(error: ManualProbeError) -> RuntimeCommandError {
+    match error {
+        ManualProbeError::PeerNotFound => RuntimeCommandError::PeerNotFound,
+        ManualProbeError::SessionUnavailable => RuntimeCommandError::SessionUnavailable,
+        ManualProbeError::Busy => RuntimeCommandError::Busy,
+        ManualProbeError::SendFailed => RuntimeCommandError::Network,
     }
 }
 

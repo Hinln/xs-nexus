@@ -239,7 +239,12 @@ pub struct CandidateAdvertisement {
 pub enum LocalAgentRequest {
     Status {},
     Peers {},
+    Ping { virtual_ip: Ipv4Addr },
+    Path { virtual_ip: Ipv4Addr },
+    Routes {},
+    Netcheck {},
     Diagnostics {},
+    Reconnect {},
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -255,9 +260,31 @@ pub enum LocalAgentResponse {
         total: u64,
         truncated: bool,
     },
+    Ping {
+        schema_version: u8,
+        result: LocalPingResult,
+    },
+    Path {
+        schema_version: u8,
+        path: LocalPeerPath,
+    },
+    Routes {
+        schema_version: u8,
+        configuration_version: u64,
+        routes: Vec<LocalRouteStatus>,
+    },
+    Netcheck {
+        schema_version: u8,
+        result: LocalNetcheckResult,
+    },
     Diagnostics {
         schema_version: u8,
         diagnostics: LocalAgentDiagnostics,
+    },
+    Reconnect {
+        schema_version: u8,
+        accepted: bool,
+        error_code: Option<String>,
     },
     Error {
         schema_version: u8,
@@ -291,6 +318,61 @@ pub struct LocalPeerStatus {
     pub active_candidate_kind: Option<EndpointCandidateKind>,
     pub path_reason: Option<PathSelectionReason>,
     pub session_established: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalPingResult {
+    pub virtual_ip: Ipv4Addr,
+    pub reachable: bool,
+    pub latency_microseconds: Option<u64>,
+    pub active_candidate_kind: Option<EndpointCandidateKind>,
+    pub path_reason: Option<PathSelectionReason>,
+    pub error_code: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalPeerPath {
+    pub node_id_base64: String,
+    pub virtual_ip: Ipv4Addr,
+    pub session_established: bool,
+    pub active_endpoint: Option<SocketAddr>,
+    pub active_candidate_kind: Option<EndpointCandidateKind>,
+    pub path_reason: Option<PathSelectionReason>,
+    pub last_latency_microseconds: Option<u64>,
+    pub tx_packets_total: u64,
+    pub tx_bytes_total: u64,
+    pub rx_packets_total: u64,
+    pub rx_bytes_total: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalRouteStatus {
+    pub route_id: String,
+    pub prefix: String,
+    pub gateway_node_id_base64: String,
+    pub gateway_virtual_ip: Ipv4Addr,
+    pub mode: SubnetRouteMode,
+    pub interface_name: String,
+    pub priority: u32,
+    pub local_is_gateway: bool,
+    pub gateway_reachable: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalNetcheckResult {
+    pub healthy: bool,
+    pub controller_connected: bool,
+    pub network_active: bool,
+    pub local_candidate_count: u64,
+    pub configured_peer_count: u64,
+    pub established_peer_count: u64,
+    pub direct_peer_count: u64,
+    pub relay_peer_count: u64,
+    pub last_error_code: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
