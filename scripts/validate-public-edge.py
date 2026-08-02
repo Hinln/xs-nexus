@@ -50,10 +50,20 @@ def main() -> int:
     dockerfile = require(
         ROOT / "deploy/docker/edge.Dockerfile",
         (
-            "caddy:2.10.2-alpine@sha256:d8c17a862962def15cde69863a3a463f25a2664942eafd7bdbf050e9c3116b83",
+            "golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc",
+            "alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40",
+            "CADDY_REVISION=e2eee6a7fce366321294c9c2a79f3146891dcbdf",
+            "CADDY_CEL_PATCH_REVISION=b2693fb63a30e6d7be0972c3645e9a2c0a500e93",
+            'github.com/google/cel-go)" = "v0.29.2"',
+            "go.opentelemetry.io/otel@v1.44.0",
+            "golang.org/x/text@v0.39.0",
+            "google.golang.org/grpc@v1.82.1",
+            "CustomVersion=v2.11.4-xs1",
             "setcap -r /usr/bin/caddy",
+            "spdx-licenses-text",
             "USER 65532:65532",
             'org.opencontainers.image.revision="$VCS_REF"',
+            'org.opencontainers.image.source="XS Nexus clean-room repository"',
         ),
     )
     if "latest" in dockerfile:

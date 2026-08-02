@@ -264,10 +264,16 @@ def package_purl(package):
 def alpine_license_ids(expression):
     if expression == "2-clause BSD-like license":
         return []
+    normalized = re.sub(
+        r"\bPublic[ -]Domain\b",
+        "Public-Domain",
+        expression,
+        flags=re.IGNORECASE,
+    )
     return [
         token
-        for token in SPDX_TOKEN_RE.findall(expression)
-        if token not in SPDX_OPERATORS and token != "Public-Domain"
+        for token in SPDX_TOKEN_RE.findall(normalized)
+        if token not in SPDX_OPERATORS and token.casefold() != "public-domain"
     ]
 
 

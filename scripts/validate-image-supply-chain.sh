@@ -73,6 +73,9 @@ docker build --pull=false --build-arg "VCS_REF=$revision" \
 docker build --pull=false --build-arg "VCS_REF=$revision" \
     --tag "xs-nexus/db-tools:sbom-$short_revision" \
     --file deploy/docker/db-tools.Dockerfile .
+docker build --pull=false --build-arg "VCS_REF=$revision" \
+    --tag "xs-nexus/edge:sbom-$short_revision" \
+    --file deploy/docker/edge.Dockerfile .
 
 generator_arguments=(
     --source-date-epoch "$source_date_epoch"
@@ -85,6 +88,8 @@ generator_arguments=(
     --dockerfile console=deploy/docker/console.Dockerfile
     --image "db-tools=xs-nexus/db-tools:sbom-$short_revision"
     --dockerfile db-tools=deploy/docker/db-tools.Dockerfile
+    --image "edge=xs-nexus/edge:sbom-$short_revision"
+    --dockerfile edge=deploy/docker/edge.Dockerfile
 )
 ./scripts/generate-image-sbom.py --output-dir "$OUTPUT_DIR" "${generator_arguments[@]}"
 ./scripts/generate-image-sbom.py --output-dir "$SECOND_OUTPUT" "${generator_arguments[@]}"
@@ -104,7 +109,7 @@ provenance = json.loads((root / "xs-nexus-images.provenance.json").read_text(enc
 assert manifest["schema"] == 1
 assert manifest["revision"] == revision
 assert manifest["network_required"] is False
-assert set(manifest["images"]) == {"controller", "relay", "console", "db-tools"}
+assert set(manifest["images"]) == {"controller", "relay", "console", "db-tools", "edge"}
 assert all(value["package_count"] > 0 for value in manifest["images"].values())
 assert all(value["license_materials"] for value in manifest["images"].values())
 assert all(
@@ -117,7 +122,7 @@ assert len(cyclonedx["components"]) == sum(
     value["package_count"] for value in manifest["images"].values()
 )
 assert provenance["predicateType"] == "https://slsa.dev/provenance/v1"
-assert len(provenance["subject"]) == 4
+assert len(provenance["subject"]) == 5
 for image in manifest["images"].values():
     assert image["image_id"].startswith("sha256:")
     dockerfile = Path(image["dockerfile"]["path"])

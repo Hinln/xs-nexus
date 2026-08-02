@@ -21,7 +21,7 @@ case "$EVIDENCE_DIR" in
 esac
 MANIFEST="$EVIDENCE_DIR/output/manifest.json"
 OUTPUT_DIR="$EVIDENCE_DIR/vulnerabilities"
-TEMPORARY=$(mktemp -d)
+TEMPORARY=$(mktemp -d "$EVIDENCE_DIR/.vulnerability-scan.XXXXXX")
 STAGING="$EVIDENCE_DIR/.vulnerabilities.staging-$$"
 FIREWALL_BEFORE="$TEMPORARY/nftables-before.json"
 FIREWALL_AFTER="$TEMPORARY/nftables-after.json"

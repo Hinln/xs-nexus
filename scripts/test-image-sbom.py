@@ -79,6 +79,8 @@ def main():
     ] == "libc6"
     assert module.parse_apk_installed(alpine_status)[0]["license"] == "MIT"
     assert module.parse_apk_installed(alpine_virtual)[0]["virtual"] is True
+    assert module.alpine_license_ids("Public Domain") == []
+    assert module.alpine_license_ids("MIT OR Public domain") == ["MIT"]
     for parser, malformed in (
         (module.parse_debian_status, b"Package: broken\nStatus: install ok installed\n"),
         (module.parse_apk_installed, b"P:broken\nV:1\nA:x86_64\n\n"),
@@ -157,6 +159,23 @@ def main():
                 "materials": ["usr/share/licenses/spdx/MIT.txt"],
             }
         ]
+
+        public_domain = base / "public-domain.tar"
+        public_domain_status = b"P:mailcap\nV:2.1.54-r0\nA:x86_64\nL:Public Domain\n\n"
+        with tarfile.open(public_domain, "w") as archive:
+            add_file(archive, "lib/apk/db/installed", public_domain_status)
+        packages, materials, closure = module.analyze_rootfs(
+            "edge", public_domain, base / "public-domain-licenses"
+        )
+        assert len(packages) == 1
+        assert closure == [
+            {
+                "package": module.package_purl(packages[0]),
+                "status": "public-domain-declaration",
+                "materials": [],
+            }
+        ]
+        assert any(item["kind"] == "package-manager-declarations" for item in materials)
 
         missing_alpine = base / "missing-alpine.tar"
         with tarfile.open(missing_alpine, "w") as archive:
