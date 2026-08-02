@@ -359,7 +359,8 @@
 
 - `python3 scripts/test-image-sbom.py`: passed with negative coverage for missing SPDX text and unsafe material paths.
 - Real rootfs dry run: Controller 10/10, Relay 10/10, Console 32/32 and db-tools 61/61 package closure records.
-- Clean-commit `make validate-image-supply-chain`, digest-bound Grype scan and vulnerability disposition passed at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`: 113/113 installed OS packages have closure records; Critical 2, High 4, Medium 16, Negligible 24; no currently advertised fix.
+- Clean-commit `make validate-image-supply-chain`, digest-bound Grype scan and vulnerability disposition passed at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`: 113/113 installed OS packages have closure records; Critical 2, High 4, Medium 16, Negligible 24; no currently advertised fix and no fixable finding.
+- Backup dependency negative-to-positive regression: `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T090303Z` was correctly rejected for `GHSA-w879-237q-wc7r` in the packaged age binary; rebuilding fixed age `v1.3.1` source with `x/crypto v0.52.0`, rerunning the full Docker lifecycle, and rescanning at the current evidence path passed without a waiver.
 - `make verify-image-vulnerability-disposition EVIDENCE_DIR=/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`：通过；严格匹配剩余三个 glibc CVE，拒绝 fixable/集合漂移，并验证 Controller/Relay 精确镜像二进制不导入受影响 API。
 ## 10. Relay 可观测性回归（2026-07-31）
 

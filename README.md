@@ -67,7 +67,7 @@ make test-runtime-stability
 
 - Linux 全链路与三轮聚合回归：`/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`
 - Windows 路由和 Agent 隔离准备：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`
-- 运行镜像 SBOM、113/113 包许可证闭包、provenance 和漏洞报告：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`
+- 运行镜像 SBOM、113/113 包许可证闭包、provenance 和漏洞报告：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`
 - 24 小时稳定性长测：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z`，4261 行资源样本覆盖三服务各 1420 次采样；受控重启 PID 转换、零自动重启和资源/日志上限已审计。
 - 修正重启证据语义后的真实回归：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`，三服务各 11 次采样、恰好一次 PID 转换且 `RestartCount` 全程为零。
 - 数据库备份采用 age X25519 流式认证加密、不同文件系统自动复制、离线 identity 深度校验、取回、保留和销毁墓碑；正式异地主机与密钥仪式仍由 `BLK-007` 阻塞。

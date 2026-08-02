@@ -12,7 +12,7 @@
 - [x] MUST：不存在复制的私有协议和包格式。
 - [x] MUST：SBOM 可生成。
 
-证据：M0.2 clean-room 与协议原创性验证 `/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`；全运行源码禁用引用门禁、321 个 Cargo 与 110 个 npm 精确锁定依赖许可证、确定性源码 CycloneDX 1.6/SPDX 2.3 生成和负向测试证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。四个运行镜像的精确 image ID、113 个已安装 OS 包、逐包许可证全文闭包、Dockerfile、Git revision 和 in-toto/SLSA provenance 证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`；同目录的 Grype 0.116.1 扫描为 Critical 2、High 4、Medium 16、Negligible 24，无当前标注可修复项，有界处置已通过但不代表漏洞已修复。
+证据：M0.2 clean-room 与协议原创性验证 `/srv/xs-nexus/artifacts/qa/m0.2-20260729T101325Z/validate-m02.log`；全运行源码禁用引用门禁、321 个 Cargo 与 110 个 npm 精确锁定依赖许可证、确定性源码 CycloneDX 1.6/SPDX 2.3 生成和负向测试证据 `/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final`。四个运行镜像的精确 image ID、113 个已安装 OS 包、逐包许可证全文闭包、Dockerfile、Git revision 和 in-toto/SLSA provenance 证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`；同目录的 Grype 0.116.1 扫描为 Critical 2、High 4、Medium 16、Negligible 24，无当前标注可修复项，有界处置已通过但不代表漏洞已修复。
 
 ---
 

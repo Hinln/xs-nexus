@@ -259,7 +259,7 @@
 - 临时缓解（历史）：manifest 明确区分源码依赖与运行镜像，避免过度声明。
 - 已完成缓解：`/srv/xs-nexus/artifacts/qa/supply-chain-20260731-final` 验证 321 个 Cargo、110 个 npm、许可证策略、禁用依赖、确定性双格式输出和宿主基线不变。
 - 已完成：从 exact image rootfs 生成 dpkg/apk OS 包 CycloneDX、113/113 包逐包许可证全文闭包、Dockerfile hash 和 in-toto/SLSA provenance；四镜像干净构建、双生成一致性、revision mismatch 拒绝和宿主保护验证均通过。
-- 解除证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z` 绑定精确 revision、四个 image ID、113 个 OS 包、逐包许可证材料和 provenance；Grype 扫描与 disposition 另有同目录证据。
+- 解除证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` 绑定精确 revision、四个 image ID、113 个 OS 包、逐包许可证材料和 provenance；Grype 扫描与 disposition 另有同目录证据。
 - 解除日期：2026-08-01。
 - 解除条件（已满足）：所有最终镜像 digest、OS 包、许可证文本、漏洞处置和来源证明可从固定提交重建并由 Release Checklist 验证。
 
@@ -277,9 +277,9 @@
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 
 - 状态：OPEN
-- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z/vulnerabilities/summary.json`。
+- 证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z/vulnerabilities/summary.json`。
 - 当前结果：Critical 2、High 4；`total_fixable_findings` 为空。Controller/Relay 各 Critical 1、High 2，Console 与 db-tools 无 Critical/High。
-- 已完成缓解：Controller/Relay 删除 curl 并切换固定 digest distroless；Console/db-tools 升级 Alpine 包；Console 删除 curl 和未使用的 `nginx-module-image-filter`/TIFF 包链。相对最初扫描 Critical 从 44 降至 2、High 从 115 降至 4，当前有明确修复版本的发现为 0。
+- 已完成缓解：Controller/Relay 删除 curl 并切换固定 digest distroless；Console/db-tools 升级 Alpine 包；Console 删除 curl 和未使用的 `nginx-module-image-filter`/TIFF 包链。db-tools 的 age 由固定上游 `v1.3.1` 提交以固定 `x/crypto v0.52.0` 重建，替代仍内嵌有漏洞 Go 依赖的发行包。相对最初扫描 Critical 从 44 降至 2、High 从 115 降至 4，当前有明确修复版本的发现为 0。
 - 有界 disposition：剩余项仅为 glibc `CVE-2026-5435`、`CVE-2026-5450`、`CVE-2026-5928`。源码和精确镜像二进制均不引用对应 `ns_printrrf`/`ns_sprintrr`/`fp_nquery`、`scanf` family 或 `ungetwc` API；`make verify-image-vulnerability-disposition` 会拒绝新增 Critical/High、可修复版本、包/API 漂移。该结论只降低当前调用面的可达性，不等于修复或永久豁免。
 - 复核期限：2026-08-31，或基础镜像 digest、glibc 版本、扫描数据库/结果、二进制导入集合任一变化时立即重扫和重做 disposition；RC 前必须再次复核。
 - 解除条件：基础镜像提供修复并升级重扫为 0，或由项目所有者在期限内正式接受剩余风险；扫描报告不得隐藏或自动忽略。

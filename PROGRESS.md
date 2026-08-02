@@ -189,7 +189,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
 - Windows transport 最小 crate 已通过 MSVC target 编译，单步设备会话已通过 Linux fake transport 测试，但完整 Agent/驱动尚未经过 Windows SDK/WDK 编译链接和 VM 执行，空 TX/满 RX 权威状态和真实设备尚未验证；
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
-- 源码依赖 SBOM 与四个运行镜像的 OS 包 SBOM、逐包许可证全文闭包及最终构建来源证明均已可复现生成；当前精确证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`。剩余 glibc Critical/High 有界处置不是漏洞修复，仍须按 2026-08-31 到期日或镜像/扫描/API 导入变化提前复核；
+- 源码依赖 SBOM 与四个运行镜像的 OS 包 SBOM、逐包许可证全文闭包及最终构建来源证明均已可复现生成；当前精确证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。剩余 glibc Critical/High 有界处置不是漏洞修复，仍须按 2026-08-31 到期日或镜像/扫描/API 导入变化提前复核；
 - PostgreSQL、Redis 现有公网端口仍可达；
 - 服务器提示需要维护窗口重启；
 - 临时凭据后续必须轮换。
@@ -246,7 +246,7 @@ make clean
 - Console and db-tools retain the official Alpine SPDX text corpus while removing the build-only `spdx-licenses-text` package before final package inspection.
 - Real rootfs dry-run results: Controller 10/10, Relay 10/10, Console 32/32, db-tools 61/61 packages have closure records. Console and db-tools bind 783 and 758 license materials respectively; these dry runs are implementation evidence, not the final clean-commit QA artifact.
 - Unit coverage includes missing Alpine text, unsafe rootfs paths, safe Debian documentation links, malformed package metadata, duplicate image mappings and deterministic publication.
-- Clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z` passed deterministic image generation, package/license closure, provenance, host-state invariants, Grype scanning and the digest/API-bound vulnerability disposition verifier. Result: Critical 2, High 4, Medium 16, Negligible 24, with no currently advertised fix.
+- Clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` passed deterministic image generation, package/license closure, provenance, host-state invariants, Grype scanning and the digest/API-bound vulnerability disposition verifier. Result: Critical 2, High 4, Medium 16, Negligible 24, with no currently advertised fix and no fixable finding.
 
 该命令只删除项目 Rust 构建目录和控制台 `dist`，不操作 Docker、1Panel、网络或外部秘密。
 ## 2026-07-31 运行时镜像漏洞收敛检查点
@@ -305,3 +305,10 @@ make clean
 - 每次备份自动复制到不同文件系统且带 deployment/target marker 的挂载；支持幂等复制、仅从完整副本取回、本地/副本独立保留期、最小保留数、显式时间确认和不可复用销毁墓碑。RC 预检强制 7/30 天和至少 3 份。
 - 完整 Docker 生命周期覆盖篡改、错误 identity、取回、恢复前安全备份、恢复、两阶段保留/销毁和同名复用拒绝，并在退出后确认测试容器/schema 清理和 `1panel-network` 不变。`KI-015` 已解除。
 - 正式离线 identity 仪式、真实异地主机/对象存储和生产恢复演练不能由当前环境代办，转为 `BLK-007`，没有被标记为生产已完成。
+
+## 2026-08-02 备份加密依赖漏洞收敛
+
+- 初始备份镜像采用 Alpine 3.22 的 age 1.2.1；`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T085442Z` 暴露其内嵌 Go 依赖中的 18 个 Critical、32 个 High 可修复项。没有添加 ignore、VEX 或风险豁免。
+- 更新到 Alpine edge 的 age 1.3.1-r6 后，`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T090303Z` 仍因内嵌 `golang.org/x/crypto v0.45.0` 的 `GHSA-w879-237q-wc7r` 被 disposition 门禁拒绝。
+- 最终 db-tools 使用 digest 固定的 Go 构建阶段，从 age `v1.3.1` 精确提交 `b8564adb6d58329b8a3e267360ca2b0abc4efe1d` 构建 `age`/`age-keygen`，强制并验证 `x/crypto v0.52.0`，运行镜像只复制静态二进制和上游许可证。
+- 正式提交 `a120688b4fd25cb22f0d081e77e9923daceafaef` 的完整 Docker 备份生命周期、确定性镜像 SBOM/许可证闭包、Grype 扫描和 disposition 均通过；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`，结果恢复为 Critical 2、High 4、Medium 16、Negligible 24，可修复项为 0。

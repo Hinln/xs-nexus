@@ -18,7 +18,7 @@
 - 环境：Ubuntu x86_64 开发服务器，Rust workspace；Linux 与隔离 network namespace 测试。
 - 构建：Linux x86_64/aarch64 发布构建与 Windows 相关最小 crate 的 `x86_64-pc-windows-msvc` target check 已验证。
 - 签名：Linux 测试签名流程已验证；正式离线签名密钥和签名仪式未完成。
-- SBOM：源码 CycloneDX/SPDX 与四个容器镜像 OS 包逐包许可证闭包、Dockerfile/revision/image digest 和 in-toto/SLSA provenance 已生成；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z`。固定 Grype 0.116.1 报告为 Critical 2、High 4、Medium 16、Negligible 24，无当前可修复项；有界 disposition 已通过，但不等于漏洞修复。
+- SBOM：源码 CycloneDX/SPDX 与四个容器镜像 OS 包逐包许可证闭包、Dockerfile/revision/image digest 和 in-toto/SLSA provenance 已生成；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。固定 Grype 0.116.1 报告为 Critical 2、High 4、Medium 16、Negligible 24，无当前可修复项；有界 disposition 已通过，但不等于漏洞修复。db-tools 的 age 固定上游 `v1.3.1` 提交并以 `x/crypto v0.52.0` 构建，旧包的可修复项未获豁免。
 
 ## 3. 已完成功能
 

@@ -367,7 +367,7 @@ The IP Helper snapshot boundary now requires `MIB_IPFORWARD_ROW2.SitePrefixLengt
 
 Runtime image license evidence now fails closed per exact installed package rather than treating package-manager declarations as proof of full text. Alpine SPDX identifiers bind to official distribution text files retained from a build-only package; Debian packages bind to exact copyright files through bounded safe documentation links. Missing or mismatched text, unsafe links, duplicate package identities, material hash changes and package/closure drift are rejected. Public-domain and virtual metapackage cases remain explicit and do not invent a license grant.
 
-Clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T230203Z` binds revision `187b735f8347d9d34c0598e96183547c44dd60a1` to all four image IDs and 113/113 package closure entries. The attached Grype 0.116.1 scan reports Critical 2, High 4, Medium 16 and Negligible 24 with no currently advertised fix; the exact glibc Critical/High set passed the existing binary-import disposition gate. This remains a time-bounded risk acceptance, not remediation.
+Current clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` binds revision `a120688b4fd25cb22f0d081e77e9923daceafaef` to all four image IDs and 113/113 package closure entries. The attached Grype 0.116.1 scan reports Critical 2, High 4, Medium 16 and Negligible 24 with no currently advertised fix and no fixable finding; the exact glibc Critical/High set passed the existing binary-import disposition gate. This remains a time-bounded risk acceptance, not remediation.
 
 ## 14. Signed update privilege-boundary review (2026-08-02)
 
@@ -385,3 +385,10 @@ Clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T23
 - Active-path latency uses encrypted PathChallenge/PathResponse, not plaintext echo. Controller rejects unknown peers/Relays, impossible path state, malformed latency, aggregate inconsistency, stale/future reports, replay and per-peer/aggregate rollback.
 - Relay reports contain no Network/Node, endpoint, Lease ID or payload. The Controller trusts only the active catalog key, and the public HTTP route still requires a valid signature before storage.
 - PostgreSQL retains latest rows plus bounded 25-hour samples; Console freshness gates prevent stale reports from becoming authorization or health truth. Telemetry is operational evidence only and never changes ACL, path authorization or update eligibility.
+
+## 16. Backup encryption dependency review (2026-08-02)
+
+- Alpine 3.22's age 1.2.1 introduced 18 fixable Critical and 32 fixable High findings into db-tools; the evidence at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T085442Z` is retained as rejected evidence.
+- Alpine edge age 1.3.1-r6 reduced the set but still embedded `golang.org/x/crypto v0.45.0`; `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T090303Z` was correctly rejected for fixable `GHSA-w879-237q-wc7r`.
+- db-tools now builds the exact age `v1.3.1` source commit in a digest-pinned builder, forces and asserts `x/crypto v0.52.0`, and copies only static `age`/`age-keygen` binaries and the upstream license into the runtime image. No vulnerability waiver or ignore was added.
+- The formal full backup lifecycle and image supply-chain scan at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z` pass with zero fixable findings. The remaining 2 Critical/4 High findings are the pre-existing bounded glibc set, not age or db-tools findings.

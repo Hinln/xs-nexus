@@ -242,3 +242,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 
 - 双 Relay 全链路首次加入 Reporter 后在 Direct 恢复末端出现测试假失败：活动端点已是经过认证的本地候选，但周期 PathResponse 建立的 `authenticated_path_probe` 原因被随后合法 AEAD 流量更新为 `authenticated_peer_traffic`。测试现只接受这两个认证直连状态，不接受普通候选、未认证流量或 Relay 状态；原样重跑通过 fallback、密文不可见、主备切换和双向 Direct 恢复。
 - 首次 Agent 控制测试在 `/tmp` 的 tmpfs 内生成独立 Cargo target 并耗尽空间；确认精确生成目录后删除，只把隔离仓库的 `target` 链接到 `/root/.cache` 的共享构建缓存。没有删除项目证据、正式仓库、容器、网络或 1Panel 数据。
+
+## 备份加密依赖漏洞闭环缺陷
+
+- 备份功能加入 age 后，首次干净镜像扫描发现 Alpine 3.22 的 age 1.2.1 内嵌过期 Go 依赖，db-tools 单镜像出现 18 个 Critical、32 个 High 可修复项。门禁失败，未添加 ignore、VEX 或自动豁免。
+- 改用 Alpine edge 的 age 1.3.1-r6 清除了大部分发现，但精确扫描仍检出 `golang.org/x/crypto v0.45.0` 的 `GHSA-w879-237q-wc7r`，修复版本为 0.52.0；门禁再次按预期失败。
+- 最终改为从固定 age `v1.3.1` 提交构建，并强制验证 `x/crypto v0.52.0`；两个 CLI 均报告 `v1.3.1-xs1`。完整备份生命周期、SBOM/许可证闭包和漏洞 disposition 原样重跑通过，可修复项为 0。
+- 一次供应链验证在证据生成前因 `/tmp` 空间不足失败，证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T085349Z` 未冒充产品失败或通过；确认并删除仅属于本任务的 1.7 GiB 临时克隆构建目录后，后续扫描固定使用 `/var/tmp`，正式仓库、QA 证据和 1Panel 资源未删除。
