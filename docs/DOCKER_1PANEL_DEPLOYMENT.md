@@ -44,6 +44,7 @@ sudo install -m 0600 deploy/docker/rc.compose.env.example \
 - Controller、Console、Discovery、Relay 端口；
 - Controller/Relay Secret 目录；
 - 本地备份目录、独立副本挂载和部署状态目录；
+- 只读 Linux stable 发布目录（`XS_LINUX_RELEASE_DIR`）；
 - 镜像标签。RC 的 `XS_RELEASE_REVISION` 必须等于干净 Git HEAD，镜像 revision 标签必须一致。
 
 ## 4. Secret 和目录
@@ -56,6 +57,7 @@ sudo install -m 0600 deploy/docker/rc.compose.env.example \
 <controller-secret-dir>/console-bootstrap-password
 <controller-secret-dir>/credential-signing-key
 <controller-secret-dir>/configuration-signing-key
+<controller-secret-dir>/update-signing-public-key
 <controller-secret-dir>/relay-catalog.json
 <controller-secret-dir>/backup-recipient
 <relay-secret-dir>/controller-credential-public-key
@@ -69,6 +71,7 @@ sudo install -m 0600 deploy/docker/rc.compose.env.example \
 - 状态目录模式不允许 group/other 权限；
 - 所有路径必须是绝对路径、非符号链接；
 - `database-url`、管理 Token 和 Bootstrap 密码为单行；两个 Controller 私钥、Relay 私钥和 Controller 公钥均为精确 32 个原始字节；
+- `update-signing-public-key` 是离线发布签名密钥对应的精确 32 字节 Ed25519 公钥；发布私钥不得进入服务器；
 - `relay-catalog.json` 必须使用 Controller 认可的严格格式，不得包含 Relay 私钥。
 - `backup-recipient` 只包含一行 age X25519 public recipient；对应 identity 不得存放在数据库主机或 Controller Secret 目录。
 - `XS_BACKUP_REPLICA_DIR` 必须是与本地备份目录不同设备号的独立挂载，并含 UID `65532`、模式 `0600` 的 `.xs-nexus-replica` marker；仅创建另一个本机目录不会通过预检。
@@ -81,6 +84,8 @@ sudo install -d -o 65532 -g 65532 -m 0700 \
   /etc/xs-nexus/deployments/dev/relay \
   /var/backups/xs-nexus/dev
 sudo install -d -m 0700 /var/lib/xs-nexus-deploy/dev
+sudo install -d -o root -g root -m 0755 \
+  /var/lib/xs-nexus-releases/dev/linux/stable
 ```
 
 在独立的离线设备生成 identity；只把输出的 public recipient 通过认证渠道写入数据库主机：

@@ -853,3 +853,15 @@
 - 原因：显式帧在 Unix stream 和 Windows byte-mode Named Pipe 上具有相同终止语义，不依赖 EOF；受限动作复用已有身份、AEAD、cooldown 和控制循环，避免 ICMP/raw socket、任意路由修改或无界重试。
 - 代价：本地协议是同步版本切换，旧 CLI 与新 Agent 不互通；安装包必须同时升级二者。Windows 源码/交叉检查不能替代 Named Pipe、DACL、SCM 和全命令实机测试。
 - 安全影响：客户端和共享 handler 均无 unsafe；服务端固定 DACL/远程拒绝不变。响应不含私钥、凭证、Token 或原始签名配置；ping/reconnect 失败不会降级为明文、修改系统路由或无限重试。
+
+---
+
+## ADR-074：固定域名的一键引导只分发离线签名的精确 Linux 发布集合
+
+- 日期：2026-08-03
+- 状态：接受
+- 背景：设备接入需要缩减为 `wget -qO- https://vpn.qinwen.co/install | sudo bash`，同时不能把 Enrollment Token 放进 URL、Shell 历史、进程参数或服务日志，也不能让在线 Controller 获得发布签名私钥或提供任意文件下载。
+- 决策：Controller 仅在配置了只读 Linux 发布目录时提供 `/install`，并只允许下载一个固定公钥和 `0.1.0` 的 x86_64/aarch64 两组 archive、manifest、detached signature 共七个精确文件。引导脚本编译进 Controller，固定 `https://vpn.qinwen.co/` 与 stable 下载路径，隐藏地从 `/dev/tty` 读取一次性 Token。脚本先校验内置公钥指纹，再验证 Ed25519 清单签名、字段、长度、SHA-256、归档成员类型/allowlist 和包内逐文件哈希，最后调用既有原子安装事务。正式私钥只保存在仓库和服务器之外；服务器仅保存发布公钥、签名与只读产物。
+- 原因：单命令体验不应削弱 ADR-069 的离线授权边界。精确路由和文件 allowlist 消除通用静态文件服务器的路径遍历与意外泄露面；交互式 `/dev/tty` 输入在管道安装时仍不进入命令行。重复安装检测现有节点状态并保留身份、配置、签名状态和虚拟 IP。
+- 代价：域名、版本和发布文件名均为显式固定值；发布新版本或轮换公钥必须经过代码/产物更新、重新签名和完整回归。当前引导仅支持以 systemd 为 PID 1、glibc、x86_64/aarch64 的 Linux，不声称支持 musl、非 systemd、Windows 或 macOS。
+- 安全影响：Controller 启动时拒绝相对路径、符号链接、可被 group/other 写入的目录或文件、缺失/异常大小产物；归档按 64 KiB 分块流式返回并限制 256 MiB。未知文件返回 404，发布目录缺失返回不可用。Controller Docker 构建显式复制 `installers/`，确保嵌入脚本来自同一源码提交。

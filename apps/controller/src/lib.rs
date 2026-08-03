@@ -6,6 +6,7 @@ mod console;
 mod control;
 pub mod db;
 pub mod discovery;
+mod downloads;
 mod error;
 pub mod model;
 mod relay_telemetry;

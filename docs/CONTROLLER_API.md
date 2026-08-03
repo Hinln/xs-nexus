@@ -8,6 +8,8 @@
 
 - Controller 提供 enrollment、配置同步、健康检查和临时管理员入口；不承载节点业务数据。
 - HTTP JSON body 全局上限为 1 MiB；Relay 报告签名输入另限 64 KiB，Agent 控制消息和 Peer 数另有 512 KiB/1024 项边界；未知 JSON 字段拒绝。
+- `GET /install` 公开返回固定生产域名和发布公钥指纹的 Linux 一键引导脚本；仅在完整只读发布目录通过启动校验后可用。
+- `GET /downloads/linux/stable/{file}` 只允许当前版本的 x86_64/aarch64 归档、清单、64 字节签名和发布公钥精确文件名，不提供目录遍历或任意文件读取。
 - enrollment、管理员 API 和 WebSocket 必须部署在 TLS 反向代理之后；明文监听只允许受控 loopback 或容器内部链路。
 - `X-Request-Id` 被生成并传播；HTTP tracing 不记录 header 或 body。
 - 所有错误使用固定信封，不暴露 SQL、签名、Token 或内部状态。

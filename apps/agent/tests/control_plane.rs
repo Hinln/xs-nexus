@@ -274,6 +274,7 @@ fn controller_config() -> ControllerConfig {
         credential_signing_key: SigningKey::from_bytes(&[21_u8; 32]),
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
         update_signing_public_key: None,
+        linux_release_directory: None,
         credential_ttl_seconds: 86_400,
         relays: Vec::new(),
     }

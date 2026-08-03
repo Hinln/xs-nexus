@@ -68,12 +68,20 @@ services:
       NODE_CREDENTIAL_TTL_SECONDS: ${XS_NODE_CREDENTIAL_TTL_SECONDS:-2592000}
       CREDENTIAL_SIGNING_KEY_PATH: /run/secrets/xs-controller/credential-signing-key
       CONFIG_SIGNING_KEY_PATH: /run/secrets/xs-controller/configuration-signing-key
+      UPDATE_SIGNING_PUBLIC_KEY_PATH: /run/secrets/xs-controller/update-signing-public-key
+      LINUX_RELEASE_DIRECTORY: /run/xs-nexus-releases/linux/stable
       RELAY_CATALOG_PATH: /run/secrets/xs-controller/relay-catalog.json
       RUST_LOG: ${XS_RUST_LOG:-info}
     volumes:
       - type: bind
         source: ${XS_CONTROLLER_SECRETS_DIR:?set XS_CONTROLLER_SECRETS_DIR}
         target: /run/secrets/xs-controller
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${XS_LINUX_RELEASE_DIR:-/nonexistent/xs-nexus-releases}
+        target: /run/xs-nexus-releases/linux/stable
         read_only: true
         bind:
           create_host_path: false

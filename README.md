@@ -44,6 +44,14 @@ make test-visual
 make security-check
 ```
 
+生产 Linux 节点的一键接入命令：
+
+```bash
+wget -qO- https://vpn.qinwen.co/install | sudo bash
+```
+
+脚本自动识别 x86_64/aarch64 和主机名，固定使用 `https://vpn.qinwen.co/`，用户只需在隐藏提示中输入控制台生成的一次性 Enrollment Token。Windows 当前仍不能通过该命令接入。
+
 重要专项入口：
 
 ```bash

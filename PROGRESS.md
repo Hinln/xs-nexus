@@ -1,15 +1,16 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-02 10:15 UTC
-当前 Git 提交：生产部署总手册与 GitHub 交付工作树（以本文件后续提交为准）
+最后更新时间：2026-08-03 14:40 UTC
+当前 Git 提交：`codex/linux-one-click-installer` 待提交工作树（基线 `ee5f284`）
 当前总状态：`BLOCKED_EXTERNAL`
-当前里程碑：`所有当前环境可完成工作已闭环；等待外部门禁`
+当前里程碑：`Linux 固定域名一键接入已完成隔离验证；生产发布进行中`
 
 ---
 
 ## 当前结论
 
 - Linux、Controller、Relay、Console、XSP/1、NAT/Relay、ACL/子网、安装更新、1Panel 隔离部署、认证遥测、加密备份/复制、镜像供应链、三轮回归、性能与 24 小时稳定性均有正式证据；
+- Linux 一键引导已实现固定 `https://vpn.qinwen.co/`、隐藏交互 Token、双架构离线签名发布和 Controller 精确下载路由；隔离 Docker 构建、安装器安全测试、ShellCheck 与下载 smoke 均通过，生产部署尚在本轮后续步骤中；
 - 任务书要求的 `xs status`、`xs peers`、`xs ping <virtual-ip>`、`xs path <virtual-ip>`、`xs routes`、`xs netcheck`、`xs diagnostics`、`xs reconnect`、`xs version` 已全部实现并在真实双 Agent namespace 中验证，证据 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`；
 - Windows 当前环境可完成的 ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；完整 Windows runtime 仍禁用，真实链接、WDK、VM、签名、PnP/power 和 Verifier 由 `BLK-001`/`BLK-004` 阻塞；
 - 仅剩 `BLOCKERS.md` 和开放 `KNOWN_ISSUES.md` 所列外部门禁；项目仍是部分完成，不是 Release Candidate，也不适合公网生产。
@@ -326,3 +327,11 @@ make clean
 - 手册不写入真实密码、Token、数据库 URI、私钥、证书私钥或服务器登录信息，并明确当前部分完成、Windows 未实机、正式密钥/异地恢复/第三方审计未完成的边界；
 - `README.md` 已增加总手册入口；发布分支从本地最终开发检查点创建，GitHub `main` 是该分支历史祖先，不需要强制推送或改写远端历史；
 - 本地 Windows 环境没有 Python 解释器；发布前的 Python/秘密扫描门禁在 Linux 测试服务器的隔离工作树执行，不修改在线 `/srv/xs-nexus` 部署或运行容器。
+
+## 2026-08-03 Linux 固定域名一键接入
+
+- 新增 `GET /install`，返回编译进 Controller 的 Linux 引导脚本；仅当只读发布目录通过启动校验后可用。新增 `/downloads/linux/stable/{file}`，只允许正式发布公钥和 `0.1.0` x86_64/aarch64 的 archive、manifest、detached signature 七个精确文件，未知文件返回 404；
+- 一键脚本固定 Controller 与下载域名，自动识别架构和主机名，从 `/dev/tty` 隐藏读取 Enrollment Token；Token 只进入 `0600` 临时文件，不进入命令参数、历史、配置和日志。公钥指纹、Ed25519 签名、清单字段、大小、SHA-256、归档成员类型/allowlist 和包内哈希全部失败关闭；
+- Compose 增加仓库外发布目录的只读挂载与 `UPDATE_SIGNING_PUBLIC_KEY_PATH`，RC 预检验证目录和更新公钥 Secret；Controller Dockerfile 显式复制 `installers/`，解决真实镜像构建中嵌入脚本缺失的问题；
+- 隔离工作树 `/srv/xs-nexus-one-click-qa-20260803` 通过 `bash scripts/test-linux-one-click.sh`、容器化 ShellCheck 和真实 PostgreSQL/Controller 镜像 smoke。证据 `/srv/xs-nexus/artifacts/qa/linux-one-click-20260803T143706Z`；smoke 验证 `/install` 与源码逐字节一致、公钥下载一致、未知文件拒绝，并在退出后清理临时容器/schema；
+- 正式 Ed25519 私钥保留在仓库和服务器之外，未进入 Git、发布服务器、命令输出或测试证据。生产服务器只会安装公钥、签名和只读发布产物；整体项目仍受 Windows VM/WDK/签名、真实 NAS、第三方安全审计等既有外部门禁约束，不因 Linux 一键入口完成而标记 Release Candidate。

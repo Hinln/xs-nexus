@@ -82,6 +82,34 @@ validate_state_directory() {
     (( (8#$mode & 077) == 0 )) || fail "state directory permissions are too broad: $path"
 }
 
+validate_release_directory() {
+    local path=$1 mode file file_mode file_size
+    [[ $path == /* && ! -L $path && -d $path ]] || fail "Linux release directory is missing or invalid: $path"
+    mode=$(stat -c '%a' "$path")
+    (( (8#$mode & 022) == 0 && (8#$mode & 005) == 005 )) \
+        || fail "Linux release directory permissions are unsafe: $path"
+    for file in \
+        release-public-key.pem \
+        xs-nexus-0.1.0-x86_64-unknown-linux-gnu.manifest \
+        xs-nexus-0.1.0-x86_64-unknown-linux-gnu.manifest.sig \
+        xs-nexus-0.1.0-x86_64-unknown-linux-gnu.tar.gz \
+        xs-nexus-0.1.0-aarch64-unknown-linux-gnu.manifest \
+        xs-nexus-0.1.0-aarch64-unknown-linux-gnu.manifest.sig \
+        xs-nexus-0.1.0-aarch64-unknown-linux-gnu.tar.gz; do
+        [[ -f $path/$file && ! -L $path/$file ]] || fail "Linux release file is missing or invalid: $path/$file"
+        file_mode=$(stat -c '%a' "$path/$file")
+        file_size=$(stat -c '%s' "$path/$file")
+        (( (8#$file_mode & 022) == 0 && (8#$file_mode & 004) == 004 && file_size > 0 )) \
+            || fail "Linux release file permissions or size are invalid: $path/$file"
+    done
+    [[ $(stat -c '%s' "$path/release-public-key.pem") -le 8192 ]] \
+        || fail 'Linux release public key is oversized'
+    [[ $(stat -c '%s' "$path/xs-nexus-0.1.0-x86_64-unknown-linux-gnu.manifest.sig") -eq 64 ]] \
+        || fail 'x86_64 Linux release signature length is invalid'
+    [[ $(stat -c '%s' "$path/xs-nexus-0.1.0-aarch64-unknown-linux-gnu.manifest.sig") -eq 64 ]] \
+        || fail 'aarch64 Linux release signature length is invalid'
+}
+
 validate_port() {
     local value=$1 name=$2 numeric
     [[ $value =~ ^[1-9][0-9]{0,4}$ ]] || fail "$name must be a decimal port"
@@ -106,7 +134,7 @@ validate_available_port() {
 
 preflight() {
     local deployment project schema http_bind udp_bind controller_port console_port discovery_port relay_port
-    local controller_secrets relay_secrets backup_directory replica_directory state_directory
+    local controller_secrets linux_release_directory relay_secrets backup_directory replica_directory state_directory
     local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
         XS_DEPLOYMENT
@@ -118,6 +146,7 @@ preflight() {
         XS_CONSOLE_IMAGE
         XS_DB_TOOLS_IMAGE
         XS_CONTROLLER_SECRETS_DIR
+        XS_LINUX_RELEASE_DIR
         XS_RELAY_SECRETS_DIR
         XS_BACKUP_DIR
         XS_BACKUP_REPLICA_DIR
@@ -173,17 +202,19 @@ preflight() {
     fi
 
     controller_secrets=$(environment_value XS_CONTROLLER_SECRETS_DIR)
+    linux_release_directory=$(environment_value XS_LINUX_RELEASE_DIR)
     relay_secrets=$(environment_value XS_RELAY_SECRETS_DIR)
     backup_directory=$(environment_value XS_BACKUP_DIR)
     replica_directory=$(environment_value XS_BACKUP_REPLICA_DIR)
     state_directory=$(environment_value XS_STATE_DIR)
     validate_private_directory "$controller_secrets" 65532
+    validate_release_directory "$linux_release_directory"
     validate_private_directory "$relay_secrets" 65532
     validate_private_directory "$backup_directory" 65532
     validate_private_directory "$replica_directory" 65532
     [[ $(stat -c '%d' "$backup_directory") != "$(stat -c '%d' "$replica_directory")" ]] || fail 'backup replica must be a distinct mounted filesystem'
     validate_state_directory "$state_directory"
-    for file in database-url admin-api-token console-bootstrap-password credential-signing-key configuration-signing-key relay-catalog.json backup-recipient; do
+    for file in database-url admin-api-token console-bootstrap-password credential-signing-key configuration-signing-key update-signing-public-key relay-catalog.json backup-recipient; do
         validate_private_file "$controller_secrets/$file" 65532
     done
     for file in controller-credential-public-key identity-key; do

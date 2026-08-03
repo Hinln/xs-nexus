@@ -133,6 +133,8 @@ sudo install -d -o 65532 -g 65532 -m 0700 \
   /var/backups/xs-nexus/rc
 
 sudo install -d -m 0700 /var/lib/xs-nexus-deploy/rc
+sudo install -d -o root -g root -m 0755 \
+  /var/lib/xs-nexus-releases/rc/linux/stable
 sudo install -d -o 65532 -g 65532 -m 0700 \
   /var/lib/xs-nexus-deploy/rc/edge
 ```
@@ -149,6 +151,7 @@ XS_RELAY_IMAGE=xs-nexus/relay:<git-commit>
 XS_CONSOLE_IMAGE=xs-nexus/console:<git-commit>
 XS_DB_TOOLS_IMAGE=xs-nexus/db-tools:<git-commit>
 XS_EDGE_IMAGE=xs-nexus/edge:<git-commit>
+XS_LINUX_RELEASE_DIR=/var/lib/xs-nexus-releases/rc/linux/stable
 
 XS_DATABASE_SCHEMA=xs_nexus_rc
 XS_BIND_ADDRESS=127.0.0.1
@@ -178,6 +181,7 @@ XS_EDGE_HTTPS_PORT=443
 /etc/xs-nexus/deployments/rc/controller/console-bootstrap-password
 /etc/xs-nexus/deployments/rc/controller/credential-signing-key
 /etc/xs-nexus/deployments/rc/controller/configuration-signing-key
+/etc/xs-nexus/deployments/rc/controller/update-signing-public-key
 /etc/xs-nexus/deployments/rc/controller/relay-catalog.json
 /etc/xs-nexus/deployments/rc/controller/backup-recipient
 /etc/xs-nexus/deployments/rc/relay/controller-credential-public-key
@@ -491,6 +495,16 @@ Controller 只在用户表为空时创建 Bootstrap 管理员，并立即将密�
 9. 需要子网路由时先让 Agent 提交建议，再由管理员审批，不自动发布整个 LAN。
 
 ### 11.2 Linux Agent 安装
+
+生产环境首选一键接入。管理员先在 Console 创建一次性 Enrollment Token，Linux 用户只执行：
+
+```bash
+wget -qO- https://vpn.qinwen.co/install | sudo bash
+```
+
+脚本固定 Controller 与只读 stable 下载目录，自动识别 x86_64/aarch64 和主机名，只从 `/dev/tty` 隐藏读取 Token。它先验证内置发布公钥指纹，再验证 Ed25519 清单签名、版本/架构/文件名/长度/SHA-256、归档成员和包内逐文件哈希，最后才执行安装器。发布签名私钥必须继续离线保存，不得上传 Controller、生产服务器或 Git。
+
+以下手工方式用于恢复和发布维护：
 
 正式发布包包含目标 archive、manifest、detached signature 和独立认证渠道取得的 Ed25519 发布公钥：
 

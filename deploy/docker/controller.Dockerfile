@@ -6,6 +6,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY apps ./apps
 COPY crates ./crates
+COPY installers ./installers
 RUN cargo build --locked --release -p xs-controller
 
 FROM ${RUNTIME_IMAGE}

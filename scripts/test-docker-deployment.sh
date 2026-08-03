@@ -14,6 +14,7 @@ BAD_UDP_BIND_ENVIRONMENT="$TEMPORARY/bad-udp-bind.compose.env"
 BAD_PORT_ENVIRONMENT="$TEMPORARY/bad-port.compose.env"
 CONTROLLER_SECRETS="$TEMPORARY/controller"
 BAD_CONTROLLER_SECRETS="$TEMPORARY/bad-controller"
+RELEASE_DIRECTORY="$TEMPORARY/releases/linux/stable"
 RELAY_SECRETS="$TEMPORARY/relay"
 BACKUP_DIRECTORY="$TEMPORARY/backups"
 REPLICA_DIRECTORY=$(mktemp -d /dev/shm/xs-m52-replica.XXXXXX)
@@ -110,6 +111,7 @@ XS_RELAY_IMAGE=xs-nexus/relay:m52test
 XS_CONSOLE_IMAGE=xs-nexus/console:m52test
 XS_DB_TOOLS_IMAGE=xs-nexus/db-tools:m52test
 XS_CONTROLLER_SECRETS_DIR=$controller_secrets
+XS_LINUX_RELEASE_DIR=$RELEASE_DIRECTORY
 XS_RELAY_SECRETS_DIR=$RELAY_SECRETS
 XS_BACKUP_DIR=$BACKUP_DIRECTORY
 XS_BACKUP_REPLICA_DIR=$REPLICA_DIRECTORY
@@ -191,9 +193,10 @@ print(urlunsplit((parsed.scheme, f"{userinfo}127.0.0.1{port}", parsed.path, pars
 ' <<<"$DATABASE_URL_VALUE")
 unset DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
 
-mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY"
+mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY" "$RELEASE_DIRECTORY"
 chown 65532:65532 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY"
 chmod 0700 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" "$STATE_DIRECTORY"
+chmod 0755 "$RELEASE_DIRECTORY"
 
 ADMIN_TOKEN=$(openssl rand -hex 32)
 CONSOLE_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
@@ -202,7 +205,16 @@ printf '%s' "$ADMIN_TOKEN" >"$CONTROLLER_SECRETS/admin-api-token"
 printf '%s' "$CONSOLE_PASSWORD" >"$CONTROLLER_SECRETS/console-bootstrap-password"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/credential-signing-key"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/configuration-signing-key"
+head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/update-signing-public-key"
 printf '%s\n' 'age1wcd4cep4z26php4gteja7n2wgxyukpe4nc5xn8dr6zk85gg26chsy9qyj8' >"$CONTROLLER_SECRETS/backup-recipient"
+printf '%s\n' 'test-public-key' >"$RELEASE_DIRECTORY/release-public-key.pem"
+for architecture in x86_64 aarch64; do
+    target="$architecture-unknown-linux-gnu"
+    printf '%s\n' 'test-manifest' >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.manifest"
+    head -c 64 /dev/urandom >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.manifest.sig"
+    printf '%s\n' 'test-archive' >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.tar.gz"
+done
+chmod 0644 "$RELEASE_DIRECTORY"/*
 head -c 32 /dev/urandom >"$RELAY_SECRETS/identity-key"
 {
     printf 'format=xs-nexus-replica-v1\n'
@@ -302,6 +314,16 @@ rm -- "$BACKUP_KEY_DIRECTORY/keygen.log"
 wait_for_http "http://127.0.0.1:$CONTROLLER_PORT/health/ready"
 wait_for_http "http://127.0.0.1:$CONSOLE_PORT/console-health"
 curl --fail --silent --show-error "http://127.0.0.1:$CONSOLE_PORT/health/ready" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:$CONTROLLER_PORT/install" \
+    | cmp - "$ROOT_DIR/installers/linux/xs-nexus-one-click.sh"
+curl --fail --silent --show-error \
+    "http://127.0.0.1:$CONTROLLER_PORT/downloads/linux/stable/release-public-key.pem" \
+    | cmp - "$RELEASE_DIRECTORY/release-public-key.pem"
+if curl --fail --silent --show-error \
+    "http://127.0.0.1:$CONTROLLER_PORT/downloads/linux/stable/unexpected" >/dev/null 2>&1; then
+    printf 'unexpected Linux release filename was served\n' >&2
+    exit 1
+fi
 relay_container=$(compose ps -q relay)
 docker exec "$relay_container" /usr/local/bin/xs-relay healthcheck
 

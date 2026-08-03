@@ -12,6 +12,7 @@ use tower_http::{
 
 use crate::{
     auth::{self, Permission},
+    downloads,
     error::ApiError,
     model::{
         CreateEnrollmentTokenRequest, CreateNetworkRequest, CreateUpdateReleaseRequest,
@@ -26,6 +27,11 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
+        .route("/install", get(downloads::install_script))
+        .route(
+            "/downloads/linux/stable/{file_name}",
+            get(downloads::release_file),
+        )
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/session", get(auth::current_session))
         .route("/v1/auth/logout", post(auth::logout))

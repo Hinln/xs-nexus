@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     env, fs,
     net::{Ipv4Addr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -30,6 +30,7 @@ pub struct ControllerConfig {
     pub credential_signing_key: SigningKey,
     pub config_signing_key: SigningKey,
     pub update_signing_public_key: Option<VerifyingKey>,
+    pub linux_release_directory: Option<PathBuf>,
     pub credential_ttl_seconds: u64,
     pub relays: Vec<ConfigurationRelay>,
 }
@@ -71,6 +72,8 @@ pub enum ConfigError {
     KeyReuse,
     #[error("invalid UPDATE_SIGNING_PUBLIC_KEY_PATH")]
     UpdateSigningPublicKey,
+    #[error("invalid LINUX_RELEASE_DIRECTORY")]
+    LinuxReleaseDirectory,
     #[error("invalid RELAY_CATALOG_PATH")]
     RelayCatalog,
     #[error("{0} and {0}_FILE must not both be set")]
@@ -161,6 +164,7 @@ impl ControllerConfig {
             .ok()
             .map(|path| load_update_verifying_key(Path::new(&path)))
             .transpose()?;
+        let linux_release_directory = optional_linux_release_directory()?;
 
         let credential_ttl_seconds = env::var("NODE_CREDENTIAL_TTL_SECONDS")
             .unwrap_or_else(|_| "2592000".to_owned())
@@ -189,6 +193,7 @@ impl ControllerConfig {
             credential_signing_key,
             config_signing_key,
             update_signing_public_key,
+            linux_release_directory,
             credential_ttl_seconds,
             relays,
         })
@@ -284,6 +289,18 @@ fn optional_socket(name: &'static str) -> Result<Option<SocketAddr>, ConfigError
     env::var(name)
         .ok()
         .map(|value| value.parse().map_err(|_| ConfigError::Discovery))
+        .transpose()
+}
+
+fn optional_linux_release_directory() -> Result<Option<PathBuf>, ConfigError> {
+    env::var("LINUX_RELEASE_DIRECTORY")
+        .ok()
+        .map(PathBuf::from)
+        .map(|path| {
+            crate::downloads::validate_release_directory(&path)
+                .map(|()| path)
+                .map_err(|_| ConfigError::LinuxReleaseDirectory)
+        })
         .transpose()
 }
 

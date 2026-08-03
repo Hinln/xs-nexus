@@ -11,6 +11,39 @@ be copied to a Controller, Relay, Agent, package, or source checkout.
 - a release archive, its matching `.manifest` and `.manifest.sig`, and the trusted release public
   key obtained through a separate authenticated channel.
 
+The production bootstrap supports glibc-based x86_64 and aarch64 Linux hosts running systemd. It
+installs missing command-line prerequisites with apt, dnf, yum, zypper, or pacman, but it does not
+support Alpine/musl, containers without systemd, or Windows.
+
+## Production one-click enrollment
+
+Create a one-time Enrollment Token in the Console, then run this command on the Linux device:
+
+```bash
+wget -qO- https://vpn.qinwen.co/install | sudo bash
+```
+
+The Controller URL, stable release URL, interface name, MTU, update channel, state paths, and node
+name policy are fixed by the bootstrap. The node name is derived from the host name. The only
+interactive value is the Enrollment Token, which is read with terminal echo disabled directly from
+`/dev/tty`; it is not placed in the command line, shell history, process arguments, Controller
+download logs, or installer output.
+
+Before executing any downloaded installer, the bootstrap:
+
+1. selects the exact x86_64 or aarch64 release;
+2. verifies the downloaded Ed25519 public key against the fingerprint embedded in the bootstrap;
+3. verifies the detached manifest signature;
+4. enforces the exact version, platform, architecture, target, archive name, size, and SHA-256;
+5. checks the archive member allowlist, member types, and every payload hash;
+6. writes the token only to a mode `0600` temporary file and removes the entire private staging
+   directory on success, failure, signal, or enrollment rejection.
+
+Running the command again on an enrolled node preserves its configuration, identity, signed state,
+and virtual IP and applies only the verified release lifecycle. A pre-existing unrecognized config,
+state path, pinned release key, unsupported architecture, unavailable TUN device, or non-systemd
+host fails closed.
+
 The installer accepts only `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu` packages that
 match the current host. It verifies the detached manifest signature before parsing the manifest,
 then verifies archive name, size, SHA-256, member allowlist, member types, and every payload hash.
@@ -31,6 +64,8 @@ aarch64 build uses the distribution's matching `rust-src`, `gcc-aarch64-linux-gn
 `aarch64-linux-gnu-gcc`. This is a build-host procedure only and adds no runtime dependency.
 
 ## Install or upgrade
+
+The following manual workflow remains available to release maintainers and recovery operators.
 
 ```bash
 sudo ./installers/linux/xs-nexus-installer.sh install \

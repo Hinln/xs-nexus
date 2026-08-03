@@ -72,6 +72,7 @@ make test-agent-relay
 make test-agent-acl
 make test-agent-subnet-route
 make test-linux-installer
+make test-linux-one-click
 make test-docker-deployment
 
 openssl genpkey -algorithm ED25519 -out "$SIGNING_DIRECTORY/test-release-private-key.pem" >/dev/null 2>&1

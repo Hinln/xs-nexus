@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -18,6 +19,7 @@ pub struct AppState {
     pub credential_signing_key: Arc<SigningKey>,
     pub config_signing_key: Arc<SigningKey>,
     pub update_signing_public_key: Option<Arc<VerifyingKey>>,
+    pub linux_release_directory: Option<Arc<PathBuf>>,
     pub credential_ttl_seconds: u64,
     pub discovery_public_endpoints: Arc<Vec<SocketAddr>>,
     pub relays: Arc<Vec<ConfigurationRelay>>,
@@ -39,6 +41,7 @@ impl AppState {
             credential_signing_key: Arc::new(config.credential_signing_key.clone()),
             config_signing_key: Arc::new(config.config_signing_key.clone()),
             update_signing_public_key: config.update_signing_public_key.map(Arc::new),
+            linux_release_directory: config.linux_release_directory.clone().map(Arc::new),
             credential_ttl_seconds: config.credential_ttl_seconds,
             discovery_public_endpoints: Arc::new(
                 config.discovery_public_endpoint.into_iter().collect(),
