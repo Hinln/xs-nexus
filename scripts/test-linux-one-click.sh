@@ -153,6 +153,25 @@ done
 [[ -s $port_file ]] || { printf 'HTTPS fixture server did not start\n' >&2; exit 1; }
 port=$(<"$port_file")
 
+status_attempts="$temporary/status-attempts"
+status_command="$temporary/status-command"
+cat >"$status_command" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+attempts_file=${XS_BOOTSTRAP_TEST_STATUS_ATTEMPTS:?}
+attempt=0
+[[ ! -f $attempts_file ]] || attempt=$(<"$attempts_file")
+attempt=$((attempt + 1))
+printf '%s\n' "$attempt" >"$attempts_file"
+if ((attempt < 3)); then
+    printf 'xs error=cli_ipc_failed\n' >&2
+    exit 1
+fi
+printf 'fixture_status=ready\n'
+EOF
+chmod 0755 "$status_command"
+export XS_BOOTSTRAP_TEST_STATUS_ATTEMPTS="$status_attempts"
+
 test_bootstrap="$temporary/xs-nexus-one-click.sh"
 cp -- "$BOOTSTRAP" "$test_bootstrap"
 sed -i \
@@ -161,7 +180,7 @@ sed -i \
     -e "s|/etc/xs-nexus/agent.json|$config_path|" \
     -e "s|/var/lib/xs-nexus/node-state.json|$state_path|" \
     -e "s#systemctl --no-pager --full status xs-agent.service | sed -n '1,12p' || true#true#" \
-    -e "s|/usr/local/bin/xs status|true|" \
+    -e "s|/usr/local/bin/xs status|$status_command|" \
     "$test_bootstrap"
 chmod 0755 "$test_bootstrap"
 
@@ -182,6 +201,12 @@ if ! {
 fi
 
 [[ -f $state_path && -f $installed_config && -f $installer_log ]]
+[[ $(<"$status_attempts") == 3 ]]
+grep -F 'fixture_status=ready' "$capture" >/dev/null
+if grep -F 'xs error=cli_ipc_failed' "$capture" "$tty_stdout" >/dev/null; then
+    printf 'transient Agent readiness failure leaked into bootstrap output\n' >&2
+    exit 1
+fi
 grep -F '"controller_url": "https://vpn.qinwen.co/"' "$installed_config" >/dev/null
 grep -F '"update_signing_public_key_path": "/etc/xs-nexus/release-public-key.pem"' "$installed_config" >/dev/null
 grep -Fx -- '--enrollment-token-file' "$installer_log" >/dev/null

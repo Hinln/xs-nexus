@@ -268,6 +268,17 @@ fi
 
 "$installer" "${install_arguments[@]}"
 
-printf '\nXS Nexus installation completed.\n'
-systemctl --no-pager --full status xs-agent.service | sed -n '1,12p' || true
-/usr/local/bin/xs status
+status_output=
+for ((status_attempt = 1; status_attempt <= 20; status_attempt++)); do
+    if status_output=$(/usr/local/bin/xs status 2>&1); then
+        printf '\nXS Nexus installation completed.\n'
+        systemctl --no-pager --full status xs-agent.service | sed -n '1,12p' || true
+        printf '%s\n' "$status_output"
+        exit 0
+    fi
+    sleep 1
+done
+
+systemctl --no-pager --full status xs-agent.service | sed -n '1,20p' || true
+[[ -z $status_output ]] || printf '%s\n' "$status_output" >&2
+fail 'Agent did not become ready within 20 seconds; inspect journalctl -u xs-agent.service'
