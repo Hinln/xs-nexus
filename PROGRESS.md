@@ -1,16 +1,16 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-03 14:40 UTC
-当前 Git 提交：`codex/linux-one-click-installer` 待提交工作树（基线 `ee5f284`）
+最后更新时间：2026-08-03 15:10 UTC
+当前 Git 提交：Linux 一键接入实现 `4994e6ae76f5ccae345da39924d00aa0fc710c50`；生产部署记录以本文件后续提交为准
 当前总状态：`BLOCKED_EXTERNAL`
-当前里程碑：`Linux 固定域名一键接入已完成隔离验证；生产发布进行中`
+当前里程碑：`Linux 固定域名一键接入已完成生产部署与公网验证`
 
 ---
 
 ## 当前结论
 
 - Linux、Controller、Relay、Console、XSP/1、NAT/Relay、ACL/子网、安装更新、1Panel 隔离部署、认证遥测、加密备份/复制、镜像供应链、三轮回归、性能与 24 小时稳定性均有正式证据；
-- Linux 一键引导已实现固定 `https://vpn.qinwen.co/`、隐藏交互 Token、双架构离线签名发布和 Controller 精确下载路由；隔离 Docker 构建、安装器安全测试、ShellCheck 与下载 smoke 均通过，生产部署尚在本轮后续步骤中；
+- Linux 一键引导已实现固定 `https://vpn.qinwen.co/`、隐藏交互 Token、双架构离线签名发布和 Controller 精确下载路由；隔离 Docker 构建、安装器安全测试、ShellCheck、下载 smoke、生产部署和公网逐文件复验均通过；
 - 任务书要求的 `xs status`、`xs peers`、`xs ping <virtual-ip>`、`xs path <virtual-ip>`、`xs routes`、`xs netcheck`、`xs diagnostics`、`xs reconnect`、`xs version` 已全部实现并在真实双 Agent namespace 中验证，证据 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`；
 - Windows 当前环境可完成的 ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；完整 Windows runtime 仍禁用，真实链接、WDK、VM、签名、PnP/power 和 Verifier 由 `BLK-001`/`BLK-004` 阻塞；
 - 仅剩 `BLOCKERS.md` 和开放 `KNOWN_ISSUES.md` 所列外部门禁；项目仍是部分完成，不是 Release Candidate，也不适合公网生产。
@@ -335,3 +335,5 @@ make clean
 - Compose 增加仓库外发布目录的只读挂载与 `UPDATE_SIGNING_PUBLIC_KEY_PATH`，RC 预检验证目录和更新公钥 Secret；Controller Dockerfile 显式复制 `installers/`，解决真实镜像构建中嵌入脚本缺失的问题；
 - 隔离工作树 `/srv/xs-nexus-one-click-qa-20260803` 通过 `bash scripts/test-linux-one-click.sh`、容器化 ShellCheck 和真实 PostgreSQL/Controller 镜像 smoke。证据 `/srv/xs-nexus/artifacts/qa/linux-one-click-20260803T143706Z`；smoke 验证 `/install` 与源码逐字节一致、公钥下载一致、未知文件拒绝，并在退出后清理临时容器/schema；
 - 正式 Ed25519 私钥保留在仓库和服务器之外，未进入 Git、发布服务器、命令输出或测试证据。生产服务器只会安装公钥、签名和只读发布产物；整体项目仍受 Windows VM/WDK/签名、真实 NAS、第三方安全审计等既有外部门禁约束，不因 Linux 一键入口完成而标记 Release Candidate。
+- 生产服务器以提交 `4994e6ae76f5ccae345da39924d00aa0fc710c50` 构建 Controller、Relay、Console、db-tools 四个同 revision 镜像。部署脚本先生成并复制 age X25519 加密备份 `pre-migration-rc-20260803T150820-1235304`，再执行迁移与受保护激活；Controller、Relay、Console 全部健康，未触发回滚；
+- 公网 `https://vpn.qinwen.co/install` 与仓库脚本 SHA-256 同为 `799b7ebef2e2fb4abb6a7fa815c10ee8dfe8ca289e65e618a658f59ac6808d21`。七个发布文件通过公网逐字节比较和 Ed25519 复验；公钥 SHA-256 为 `b987e95acebaf2ff24d08bab17ae6a3cc60cc89f9805920416a3ac8cabba5253`，x86_64/aarch64 archive SHA-256 分别为 `53258f84378cfc64b11a8c0322bfd7a59c0f3e8774319d1eefd72ef289b19a58` 与 `446bef5d15c7d1d2a5f2c7ef4b8af34abd442764e540c7fd96698822aca921c9`。未知发布文件公网返回 404，Controller/Console 健康入口返回 200，UDP 42000/42001 保持监听。
