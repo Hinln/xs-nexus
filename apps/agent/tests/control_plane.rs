@@ -67,6 +67,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
         control_sync_interval_seconds: 5,
         update_channel: xs_core::UpdateChannel::Stable,
         update_signing_public_key_path: temporary.path().join("release-public-key.pem"),
+        windows_wintun: None,
     };
     config.validate().expect("agent config validates");
 
@@ -275,6 +276,7 @@ fn controller_config() -> ControllerConfig {
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
         update_signing_public_key: None,
         linux_release_directory: None,
+        windows_release_directory: None,
         credential_ttl_seconds: 86_400,
         relays: Vec::new(),
     }

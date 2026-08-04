@@ -323,7 +323,11 @@ mod tests {
     fn config_accepts_the_release_pinned_wintun_hash() {
         let mut config = fixture();
         config.windows_wintun = Some(WindowsWintunConfig {
-            library_path: PathBuf::from(r"C:\ProgramData\XS Nexus\bin\wintun.dll"),
+            library_path: if cfg!(windows) {
+                PathBuf::from(r"C:\ProgramData\XS Nexus\bin\wintun.dll")
+            } else {
+                PathBuf::from("/opt/xs-nexus/wintun.dll")
+            },
             sha256: "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce".to_owned(),
         });
         assert!(config.validate().is_ok());

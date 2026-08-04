@@ -322,11 +322,11 @@ mod tests {
     fn windows_release_allowlist_is_fixed_and_bounded() {
         assert_eq!(WINDOWS_RELEASE_FILES.len(), 3);
         assert!(WINDOWS_RELEASE_FILES.contains(&WINDOWS_INSTALL_SCRIPT));
-        assert!(
-            WINDOWS_RELEASE_FILES
-                .iter()
-                .any(|name| name.ends_with(".zip"))
-        );
+        assert!(WINDOWS_RELEASE_FILES.iter().any(|name| {
+            Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+        }));
         assert!(valid_windows_release_file_size(WINDOWS_INSTALL_SCRIPT, 1));
         assert!(!valid_windows_release_file_size("other.ps1", 1));
         assert!(!valid_windows_release_file_size("unexpected", 1));

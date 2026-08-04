@@ -16,21 +16,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(PathBuf::from)
         .ok_or("usage: session_smoke <absolute-wintun-dll-path>")?;
     let expected_sha256 = parse_sha256(WINTUN_SHA256)?;
-    let session = WintunSession::create(
-        &library_path,
-        &expected_sha256,
-        "xsn-wintun-smoke",
-        "XS Nexus VM smoke",
-        DEFAULT_RING_CAPACITY,
-    )?;
-    if session.interface_luid() == 0 || session.interface_index() == 0 {
-        return Err("Wintun returned an unusable interface identity".into());
+    {
+        let session = WintunSession::create(
+            &library_path,
+            &expected_sha256,
+            "xsn-wintun-smoke",
+            "XS Nexus VM smoke",
+            DEFAULT_RING_CAPACITY,
+        )?;
+        if session.interface_luid() == 0 || session.interface_index() == 0 {
+            return Err("Wintun returned an unusable interface identity".into());
+        }
+        println!(
+            "created Wintun smoke session: luid={} interface_index={}",
+            session.interface_luid(),
+            session.interface_index()
+        );
     }
-    println!(
-        "created Wintun smoke session: luid={} interface_index={}",
-        session.interface_luid(),
-        session.interface_index()
-    );
-    drop(session);
     Ok(())
 }

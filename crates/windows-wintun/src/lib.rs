@@ -144,10 +144,21 @@ impl WintunSession {
         0
     }
 
+    #[must_use]
+    pub const fn interface_index(&self) -> u32 {
+        0
+    }
+
+    /// # Errors
+    ///
+    /// Always returns [`WintunError::UnsupportedPlatform`].
     pub fn try_receive(&self, _buffer: &mut [u8]) -> Result<Option<usize>, WintunError> {
         Err(WintunError::UnsupportedPlatform)
     }
 
+    /// # Errors
+    ///
+    /// Always returns [`WintunError::UnsupportedPlatform`].
     pub fn send(&self, _packet: &[u8]) -> Result<(), WintunError> {
         Err(WintunError::UnsupportedPlatform)
     }

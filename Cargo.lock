@@ -3214,6 +3214,7 @@ dependencies = [
  "xs-windows-route-manager",
  "xs-windows-service",
  "xs-windows-transport",
+ "xs-windows-wintun",
  "zeroize",
 ]
 
@@ -3349,6 +3350,15 @@ dependencies = [
 name = "xs-windows-transport"
 version = "0.1.0"
 dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "xs-windows-wintun"
+version = "0.1.0"
+dependencies = [
+ "sha2 0.11.0",
+ "thiserror 2.0.19",
  "windows-sys 0.61.2",
 ]
 

@@ -13,9 +13,6 @@ use crate::{
     state::NodeState,
 };
 
-#[cfg(not(windows))]
-use crate::config::WindowsWintunConfig;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetworkPlan {
     interface_name: String,
@@ -151,6 +148,7 @@ mod platform {
 
     use super::{NetworkManifest, NetworkPlan};
     use crate::{
+        config::WindowsWintunConfig,
         error::{AgentError, Result},
         gateway::{
             ForwardingRecord, GatewayRoute, delete_nat_table, forwarding_path_exists,

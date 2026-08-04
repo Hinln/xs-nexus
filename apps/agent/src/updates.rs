@@ -892,6 +892,7 @@ mod tests {
                 control_sync_interval_seconds: 15,
                 update_channel: UpdateChannel::Stable,
                 update_signing_public_key_path: key_path,
+                windows_wintun: None,
             },
             UpdateDirective {
                 schema_version: 1,

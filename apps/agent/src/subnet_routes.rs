@@ -165,7 +165,7 @@ async fn collect_suggestions(
         .into_iter()
         .map(|(prefix, interface_name)| SubnetRouteSuggestion {
             prefix,
-            interface_name: interface_name.to_owned(),
+            interface_name: interface_name.clone(),
         })
         .collect())
 }
