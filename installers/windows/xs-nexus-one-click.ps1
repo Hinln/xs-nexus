@@ -88,7 +88,7 @@ function Wait-AgentReady([string] $CliPath) {
 
 $principal = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
 Assert-True $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) 'start PowerShell as Administrator'
-Assert-True [Environment]::Is64BitOperatingSystem 'only 64-bit Windows is supported'
+Assert-True ([Environment]::Is64BitOperatingSystem) 'only 64-bit Windows is supported'
 Assert-True ($ExpectedManifestSha256 -match '^[0-9a-f]{64}$') 'bootstrap manifest fingerprint is unavailable'
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
