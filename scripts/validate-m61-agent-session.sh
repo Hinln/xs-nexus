@@ -60,6 +60,7 @@ make test-agent-control
 make test-windows-xsnet-abi
 make test-windows-xsnet-source
 make test-windows-xsnet-installer
+make test-windows-bootstrap
 make test-windows-xsnet-vm-scripts
 make test-windows-xsnet-compatibility
 make test-windows-xsnet-transport

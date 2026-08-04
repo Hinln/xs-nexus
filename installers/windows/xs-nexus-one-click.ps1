@@ -9,11 +9,13 @@ $ProgressPreference = 'SilentlyContinue'
 
 $ControllerUrl = 'https://vpn.qinwen.co/'
 $ReleaseBaseUrl = 'https://vpn.qinwen.co/downloads/windows/stable'
+$UpdateSigningPublicKeyUrl = 'https://vpn.qinwen.co/downloads/linux/stable/release-public-key.pem'
 $ReleaseVersion = '0.1.0'
 $ReleaseTarget = 'x86_64-pc-windows-msvc'
 $ManifestName = "xs-nexus-$ReleaseVersion-$ReleaseTarget.manifest.json"
 $ArchiveName = "xs-nexus-$ReleaseVersion-$ReleaseTarget.zip"
 $ExpectedManifestSha256 = '__RELEASE_MANIFEST_SHA256__'
+$ExpectedUpdateSigningPublicKeySha256 = 'b987e95acebaf2ff24d08bab17ae6a3cc60cc89f9805920416a3ac8cabba5253'
 $InstallRoot = 'C:\ProgramData\XS Nexus'
 $ServiceName = 'XsNexusAgent'
 $WintunSignerSubjectPattern = '(^|,\s*)CN=WireGuard LLC(?:,|$)'
@@ -33,14 +35,25 @@ function Get-Sha256([string] $Path) {
 }
 
 function Invoke-HttpsDownload([string] $Uri, [string] $Destination) {
-    Assert-True $Uri.StartsWith('https://', [System.StringComparison]::Ordinal) 'refusing a non-HTTPS release URL'
-    Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Destination -ErrorAction Stop
-    Assert-True ((Test-Path -LiteralPath $Destination -PathType Leaf)) 'download did not create a regular file'
+    Assert-True ($Uri.StartsWith('https://', [System.StringComparison]::Ordinal)) 'refusing a non-HTTPS release URL'
+    Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Destination -MaximumRedirection 0 -ErrorAction Stop
+    $item = Get-Item -LiteralPath $Destination -Force -ErrorAction Stop
+    Assert-True (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'download did not create a regular file'
 }
 
 function Set-RestrictedAcl([string] $Path) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    Assert-True (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'refusing to change ACL on a reparse point'
+    if ($item.PSIsContainer) {
+        $grants = @('*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F')
+    } else {
+        $grants = @('*S-1-5-18:F', '*S-1-5-32-544:F')
+    }
     & icacls.exe $Path /inheritance:r | Out-Null
-    & icacls.exe $Path /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Fail "unable to remove inherited access from $Path"
+    }
+    & icacls.exe $Path /grant:r $grants | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Fail "unable to protect $Path"
     }
@@ -87,22 +100,29 @@ function Wait-AgentReady([string] $CliPath) {
 }
 
 $principal = [Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
-Assert-True $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) 'start PowerShell as Administrator'
+Assert-True ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 'start PowerShell as Administrator'
 Assert-True ([Environment]::Is64BitOperatingSystem) 'only 64-bit Windows is supported'
 Assert-True ($ExpectedManifestSha256 -match '^[0-9a-f]{64}$') 'bootstrap manifest fingerprint is unavailable'
+Assert-True ($ExpectedUpdateSigningPublicKeySha256 -match '^[0-9a-f]{64}$') 'update signing key fingerprint is invalid'
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("xs-nexus-bootstrap-" + [Guid]::NewGuid().ToString('N'))
 $tokenPath = Join-Path $temporaryRoot 'enrollment.token'
 $createdInstallRoot = $false
+$createdService = $false
 $bstr = [IntPtr]::Zero
 
 try {
     New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
+    Set-RestrictedAcl $temporaryRoot
     $manifestPath = Join-Path $temporaryRoot $ManifestName
     $archivePath = Join-Path $temporaryRoot $ArchiveName
+    $updateSigningPublicKeyPath = Join-Path $temporaryRoot 'release-public-key.pem'
     Invoke-HttpsDownload "$ReleaseBaseUrl/$ManifestName" $manifestPath
     Assert-True ((Get-Sha256 $manifestPath) -eq $ExpectedManifestSha256) 'release manifest hash verification failed'
+    Invoke-HttpsDownload $UpdateSigningPublicKeyUrl $updateSigningPublicKeyPath
+    Assert-True ((Get-Item -LiteralPath $updateSigningPublicKeyPath).Length -le 8192) 'update signing public key is oversized'
+    Assert-True ((Get-Sha256 $updateSigningPublicKeyPath) -eq $ExpectedUpdateSigningPublicKeySha256) 'update signing public key verification failed'
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ($manifest.schema_version -eq 1) 'release manifest schema is unsupported'
@@ -113,12 +133,14 @@ try {
     Assert-True ($manifest.target -eq $ReleaseTarget) 'release manifest target is invalid'
     Assert-True ($manifest.archive -eq $ArchiveName) 'release manifest archive is invalid'
     Assert-True ($manifest.archive_sha256 -match '^[0-9a-f]{64}$') 'release archive hash is invalid'
-    Assert-True ($manifest.archive_size -is [long] -and $manifest.archive_size -gt 0 -and $manifest.archive_size -le 536870912) 'release archive size is invalid'
+    Assert-True ($manifest.archive_size -is [int] -or $manifest.archive_size -is [long]) 'release archive size type is invalid'
+    $archiveSize = [long] $manifest.archive_size
+    Assert-True ($archiveSize -gt 0 -and $archiveSize -le 536870912) 'release archive size is invalid'
     Assert-True ($manifest.wintun.version -eq '0.14.1') 'Wintun version is invalid'
     Assert-True ($manifest.wintun.sha256 -match '^[0-9a-f]{64}$') 'Wintun hash is invalid'
 
     Invoke-HttpsDownload "$ReleaseBaseUrl/$ArchiveName" $archivePath
-    Assert-True ((Get-Item -LiteralPath $archivePath).Length -eq $manifest.archive_size) 'release archive size verification failed'
+    Assert-True ((Get-Item -LiteralPath $archivePath).Length -eq $archiveSize) 'release archive size verification failed'
     Assert-True ((Get-Sha256 $archivePath) -eq $manifest.archive_sha256) 'release archive hash verification failed'
 
     $releaseRoot = Join-Path $temporaryRoot 'release'
@@ -145,7 +167,10 @@ try {
         Assert-True (Test-Path -LiteralPath $payloadPath -PathType Leaf) 'release payload file is invalid'
         Assert-True ((Get-Sha256 $payloadPath) -eq $parts[0]) 'release payload hash verification failed'
     }
-    Assert-True (($actualPayload | Sort-Object) -join "`n" -eq ($expectedPayload | Sort-Object) -join "`n") 'release payload manifest is incomplete'
+    Assert-True (
+        (@($actualPayload | Sort-Object) -join "`n") -eq
+        (@($expectedPayload | Sort-Object) -join "`n")
+    ) 'release payload manifest is incomplete'
     Assert-True ((Get-Sha256 $wintunPath) -eq $manifest.wintun.sha256) 'Wintun library hash verification failed'
     $signature = Get-AuthenticodeSignature -LiteralPath $wintunPath
     Assert-True ($signature.Status -eq 'Valid') 'Wintun code signature is invalid'
@@ -168,6 +193,9 @@ try {
     $installedCli = Join-Path $binDirectory 'xs.exe'
     $installedWintun = Join-Path $binDirectory 'wintun.dll'
     $configPath = Join-Path $InstallRoot 'agent.json'
+    $pinnedUpdateSigningPublicKeyPath = Join-Path $InstallRoot 'release-public-key.pem'
+    Copy-Item -LiteralPath $updateSigningPublicKeyPath -Destination $pinnedUpdateSigningPublicKeyPath -Force
+    Set-RestrictedAcl $pinnedUpdateSigningPublicKeyPath
     $config = [ordered]@{
         controller_url = $ControllerUrl
         node_name = Get-NodeName
@@ -178,7 +206,7 @@ try {
         mtu = 1280
         control_sync_interval_seconds = 15
         update_channel = 'stable'
-        update_signing_public_key_path = (Join-Path $InstallRoot 'release-public-key.pem')
+        update_signing_public_key_path = $pinnedUpdateSigningPublicKeyPath
         windows_wintun = [ordered]@{
             library_path = $installedWintun
             sha256 = $manifest.wintun.sha256
@@ -197,7 +225,9 @@ try {
     Assert-True ($LASTEXITCODE -eq 0) 'agent enrollment was rejected'
     Remove-Item -LiteralPath $tokenPath -Force -ErrorAction SilentlyContinue
 
+    Assert-True (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) 'an existing XS Nexus service must be removed before installation'
     New-Service -Name $ServiceName -BinaryPathName ('"{0}" service --config "{1}"' -f $installedAgent, $configPath) -DisplayName 'XS Nexus Agent' -Description 'XS Nexus virtual network agent' -StartupType Automatic
+    $createdService = $true
     & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/5000/""/0 | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'unable to configure service recovery'
     Start-Service -Name $ServiceName
@@ -205,7 +235,7 @@ try {
     Write-Host 'XS Nexus installation completed.'
     & $installedCli status
 } catch {
-    if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    if ($createdService -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
         & sc.exe delete $ServiceName | Out-Null
     }
