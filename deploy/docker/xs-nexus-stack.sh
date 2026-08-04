@@ -110,6 +110,33 @@ validate_release_directory() {
         || fail 'aarch64 Linux release signature length is invalid'
 }
 
+validate_windows_release_directory() {
+    local path=$1 mode actual expected file file_mode file_size
+    [[ $path == /* && ! -L $path && -d $path ]] || fail "Windows release directory is missing or invalid: $path"
+    mode=$(stat -c '%a' "$path")
+    (( (8#$mode & 022) == 0 && (8#$mode & 005) == 005 )) \
+        || fail "Windows release directory permissions are unsafe: $path"
+    expected=$'install.ps1\nxs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json\nxs-nexus-0.1.0-x86_64-pc-windows-msvc.zip'
+    actual=$(find "$path" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+    [[ $actual == "$expected" ]] || fail 'Windows release directory must contain the exact stable file set'
+    for file in \
+        install.ps1 \
+        xs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json \
+        xs-nexus-0.1.0-x86_64-pc-windows-msvc.zip; do
+        [[ -f $path/$file && ! -L $path/$file ]] || fail "Windows release file is missing or invalid: $path/$file"
+        file_mode=$(stat -c '%a' "$path/$file")
+        file_size=$(stat -c '%s' "$path/$file")
+        (( (8#$file_mode & 022) == 0 && (8#$file_mode & 004) == 004 && file_size > 0 )) \
+            || fail "Windows release file permissions or size are invalid: $path/$file"
+    done
+    (( $(stat -c '%s' "$path/install.ps1") <= 262144 )) \
+        || fail 'Windows release bootstrap is oversized'
+    (( $(stat -c '%s' "$path/xs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json") <= 8192 )) \
+        || fail 'Windows release manifest is oversized'
+    (( $(stat -c '%s' "$path/xs-nexus-0.1.0-x86_64-pc-windows-msvc.zip") <= 536870912 )) \
+        || fail 'Windows release archive is oversized'
+}
+
 validate_port() {
     local value=$1 name=$2 numeric
     [[ $value =~ ^[1-9][0-9]{0,4}$ ]] || fail "$name must be a decimal port"
@@ -134,7 +161,7 @@ validate_available_port() {
 
 preflight() {
     local deployment project schema http_bind udp_bind controller_port console_port discovery_port relay_port
-    local controller_secrets linux_release_directory relay_secrets backup_directory replica_directory state_directory
+    local controller_secrets linux_release_directory windows_release_directory relay_secrets backup_directory replica_directory state_directory
     local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
         XS_DEPLOYMENT
@@ -147,6 +174,7 @@ preflight() {
         XS_DB_TOOLS_IMAGE
         XS_CONTROLLER_SECRETS_DIR
         XS_LINUX_RELEASE_DIR
+        XS_WINDOWS_RELEASE_DIR
         XS_RELAY_SECRETS_DIR
         XS_BACKUP_DIR
         XS_BACKUP_REPLICA_DIR
@@ -203,12 +231,14 @@ preflight() {
 
     controller_secrets=$(environment_value XS_CONTROLLER_SECRETS_DIR)
     linux_release_directory=$(environment_value XS_LINUX_RELEASE_DIR)
+    windows_release_directory=$(environment_value XS_WINDOWS_RELEASE_DIR)
     relay_secrets=$(environment_value XS_RELAY_SECRETS_DIR)
     backup_directory=$(environment_value XS_BACKUP_DIR)
     replica_directory=$(environment_value XS_BACKUP_REPLICA_DIR)
     state_directory=$(environment_value XS_STATE_DIR)
     validate_private_directory "$controller_secrets" 65532
     validate_release_directory "$linux_release_directory"
+    validate_windows_release_directory "$windows_release_directory"
     validate_private_directory "$relay_secrets" 65532
     validate_private_directory "$backup_directory" 65532
     validate_private_directory "$replica_directory" 65532

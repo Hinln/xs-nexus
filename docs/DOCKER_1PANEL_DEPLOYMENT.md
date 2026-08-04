@@ -85,7 +85,8 @@ sudo install -d -o 65532 -g 65532 -m 0700 \
   /var/backups/xs-nexus/dev
 sudo install -d -m 0700 /var/lib/xs-nexus-deploy/dev
 sudo install -d -o root -g root -m 0755 \
-  /var/lib/xs-nexus-releases/dev/linux/stable
+  /var/lib/xs-nexus-releases/dev/linux/stable \
+  /var/lib/xs-nexus-releases/dev/windows/stable
 ```
 
 在独立的离线设备生成 identity；只把输出的 public recipient 通过认证渠道写入数据库主机：

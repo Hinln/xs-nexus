@@ -134,7 +134,8 @@ sudo install -d -o 65532 -g 65532 -m 0700 \
 
 sudo install -d -m 0700 /var/lib/xs-nexus-deploy/rc
 sudo install -d -o root -g root -m 0755 \
-  /var/lib/xs-nexus-releases/rc/linux/stable
+  /var/lib/xs-nexus-releases/rc/linux/stable \
+  /var/lib/xs-nexus-releases/rc/windows/stable
 sudo install -d -o 65532 -g 65532 -m 0700 \
   /var/lib/xs-nexus-deploy/rc/edge
 ```
@@ -152,6 +153,7 @@ XS_CONSOLE_IMAGE=xs-nexus/console:<git-commit>
 XS_DB_TOOLS_IMAGE=xs-nexus/db-tools:<git-commit>
 XS_EDGE_IMAGE=xs-nexus/edge:<git-commit>
 XS_LINUX_RELEASE_DIR=/var/lib/xs-nexus-releases/rc/linux/stable
+XS_WINDOWS_RELEASE_DIR=/var/lib/xs-nexus-releases/rc/windows/stable
 
 XS_DATABASE_SCHEMA=xs_nexus_rc
 XS_BIND_ADDRESS=127.0.0.1

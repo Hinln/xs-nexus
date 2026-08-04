@@ -15,6 +15,7 @@ BAD_PORT_ENVIRONMENT="$TEMPORARY/bad-port.compose.env"
 CONTROLLER_SECRETS="$TEMPORARY/controller"
 BAD_CONTROLLER_SECRETS="$TEMPORARY/bad-controller"
 RELEASE_DIRECTORY="$TEMPORARY/releases/linux/stable"
+WINDOWS_RELEASE_DIRECTORY="$TEMPORARY/releases/windows/stable"
 RELAY_SECRETS="$TEMPORARY/relay"
 BACKUP_DIRECTORY="$TEMPORARY/backups"
 REPLICA_DIRECTORY=$(mktemp -d /dev/shm/xs-m52-replica.XXXXXX)
@@ -112,6 +113,7 @@ XS_CONSOLE_IMAGE=xs-nexus/console:m52test
 XS_DB_TOOLS_IMAGE=xs-nexus/db-tools:m52test
 XS_CONTROLLER_SECRETS_DIR=$controller_secrets
 XS_LINUX_RELEASE_DIR=$RELEASE_DIRECTORY
+XS_WINDOWS_RELEASE_DIR=$WINDOWS_RELEASE_DIRECTORY
 XS_RELAY_SECRETS_DIR=$RELAY_SECRETS
 XS_BACKUP_DIR=$BACKUP_DIRECTORY
 XS_BACKUP_REPLICA_DIR=$REPLICA_DIRECTORY
@@ -193,10 +195,11 @@ print(urlunsplit((parsed.scheme, f"{userinfo}127.0.0.1{port}", parsed.path, pars
 ' <<<"$DATABASE_URL_VALUE")
 unset DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
 
-mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY" "$RELEASE_DIRECTORY"
+mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY" "$RELEASE_DIRECTORY" "$WINDOWS_RELEASE_DIRECTORY"
 chown 65532:65532 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY"
 chmod 0700 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" "$STATE_DIRECTORY"
 chmod 0755 "$RELEASE_DIRECTORY"
+chmod 0755 "$WINDOWS_RELEASE_DIRECTORY"
 
 ADMIN_TOKEN=$(openssl rand -hex 32)
 CONSOLE_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
@@ -215,6 +218,10 @@ for architecture in x86_64 aarch64; do
     printf '%s\n' 'test-archive' >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.tar.gz"
 done
 chmod 0644 "$RELEASE_DIRECTORY"/*
+printf '%s\n' 'Write-Output xs-nexus-test' >"$WINDOWS_RELEASE_DIRECTORY/install.ps1"
+printf '%s\n' '{"schema_version":1}' >"$WINDOWS_RELEASE_DIRECTORY/xs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json"
+printf '%s\n' 'test-archive' >"$WINDOWS_RELEASE_DIRECTORY/xs-nexus-0.1.0-x86_64-pc-windows-msvc.zip"
+chmod 0644 "$WINDOWS_RELEASE_DIRECTORY"/*
 head -c 32 /dev/urandom >"$RELAY_SECRETS/identity-key"
 {
     printf 'format=xs-nexus-replica-v1\n'
@@ -322,6 +329,18 @@ curl --fail --silent --show-error \
 if curl --fail --silent --show-error \
     "http://127.0.0.1:$CONTROLLER_PORT/downloads/linux/stable/unexpected" >/dev/null 2>&1; then
     printf 'unexpected Linux release filename was served\n' >&2
+    exit 1
+fi
+curl --fail --silent --show-error -A 'WindowsPowerShell/5.1' "http://127.0.0.1:$CONTROLLER_PORT/install" \
+    | cmp - "$WINDOWS_RELEASE_DIRECTORY/install.ps1"
+curl --fail --silent --show-error "http://127.0.0.1:$CONTROLLER_PORT/install/windows" \
+    | cmp - "$WINDOWS_RELEASE_DIRECTORY/install.ps1"
+curl --fail --silent --show-error \
+    "http://127.0.0.1:$CONTROLLER_PORT/downloads/windows/stable/xs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json" \
+    | cmp - "$WINDOWS_RELEASE_DIRECTORY/xs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json"
+if curl --fail --silent --show-error \
+    "http://127.0.0.1:$CONTROLLER_PORT/downloads/windows/stable/unexpected" >/dev/null 2>&1; then
+    printf 'unexpected Windows release filename was served\n' >&2
     exit 1
 fi
 relay_container=$(compose ps -q relay)
