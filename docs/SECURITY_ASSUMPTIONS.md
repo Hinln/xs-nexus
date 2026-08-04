@@ -80,7 +80,7 @@
 ## 10. 明确未解决
 
 - XSP/1 第三方协议和密码学审计；
-- Windows 驱动实机、Driver Verifier、正式签名和兼容性；
+- Windows 测试签名驱动实机与 standard/UMDF/Application Verifier 已完成；完整 Agent、SCM/Named Pipe/存储、route/DAD/sleep、正式签名和 Windows 10 兼容性仍未解决；
 - 真实 NAS 与本地 Windows 验收；
 - DNS、生产防火墙和公网 Relay 容量防护；
 - 正式备份 identity 仪式、真实异地主机/对象存储和生产恢复演练；

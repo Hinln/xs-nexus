@@ -65,11 +65,12 @@ function Invoke-NativeTool {
     param(
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][string[]]$Arguments,
-        [Parameter(Mandatory)][string]$LogPath
+        [Parameter(Mandatory)][string]$LogPath,
+        [int[]]$AcceptedExitCodes = @(0)
     )
 
     & $Path @Arguments 2>&1 | Tee-Object -LiteralPath $LogPath
-    if ($LASTEXITCODE -ne 0) {
+    if ($AcceptedExitCodes -notcontains $LASTEXITCODE) {
         throw "native tool failed with exit code ${LASTEXITCODE}: $Path"
     }
 }
@@ -107,7 +108,8 @@ function Assert-CompletedStage {
         throw "stage marker cannot be a reparse point: $Name"
     }
     $record = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
-    if ($record.schema -ne 1 -or $record.stage -ine $Name.Substring(3)) {
+    $expectedStage = $Name.Substring(3) -replace '-', ''
+    if ($record.schema -ne 1 -or $record.stage -ine $expectedStage) {
         throw "stage marker content is invalid: $Name"
     }
     return $record
@@ -211,7 +213,8 @@ if ($Stage -eq 'Initialize') {
         throw 'run directory must not already exist'
     }
     Import-Module $module -Force
-    if ((Get-XsnetDevices).Count -ne 0 -or (Get-XsnetDriverPackages).Count -ne 0) {
+    if (@(Get-XsnetDevices).Count -ne 0 -or
+        @(Get-XsnetDriverPackages).Count -ne 0) {
         throw 'xsnet must not exist before VM validation initialization'
     }
     $script:RunRoot = (New-Item -ItemType Directory -Path $runPath).FullName
@@ -268,9 +271,11 @@ switch ($Stage) {
         $stageDirectory = New-StageDirectory -Name '20-enable-verifier'
         $verifier = Resolve-RealPath -Path "$env:SystemRoot\System32\verifier.exe"
         Invoke-NativeTool -Path $verifier -Arguments @('/standard', '/driver', 'xsnet.dll') `
-            -LogPath (Join-Path $stageDirectory 'verifier-standard.log')
+            -LogPath (Join-Path $stageDirectory 'verifier-standard.log') `
+            -AcceptedExitCodes @(0, 2)
         Invoke-NativeTool -Path $verifier -Arguments @('/bootmode', 'oneboot') `
-            -LogPath (Join-Path $stageDirectory 'verifier-bootmode.log')
+            -LogPath (Join-Path $stageDirectory 'verifier-bootmode.log') `
+            -AcceptedExitCodes @(0, 2)
         Invoke-NativeTool -Path $verifier -Arguments @('/querysettings') `
             -LogPath (Join-Path $stageDirectory 'verifier-querysettings.log')
         Complete-Stage -Directory $stageDirectory -Details @{
@@ -308,7 +313,8 @@ switch ($Stage) {
         $stageDirectory = New-StageDirectory -Name '40-disable-verifier'
         $verifier = Resolve-RealPath -Path "$env:SystemRoot\System32\verifier.exe"
         Invoke-NativeTool -Path $verifier -Arguments @('/reset') `
-            -LogPath (Join-Path $stageDirectory 'verifier-reset.log')
+            -LogPath (Join-Path $stageDirectory 'verifier-reset.log') `
+            -AcceptedExitCodes @(0, 2)
         Complete-Stage -Directory $stageDirectory -Details @{
             boot_time_utc = (Get-BootTimeUtc).ToString('O')
             reboot_required = $true
@@ -325,7 +331,8 @@ switch ($Stage) {
             -LogPath (Join-Path $stageDirectory 'verifier-querysettings.log')
         & $uninstaller -Confirm:$false *>&1 | Tee-Object `
             -LiteralPath (Join-Path $stageDirectory 'uninstall.log')
-        if ((Get-XsnetDevices).Count -ne 0 -or (Get-XsnetDriverPackages).Count -ne 0) {
+        if (@(Get-XsnetDevices).Count -ne 0 -or
+            @(Get-XsnetDriverPackages).Count -ne 0) {
             throw 'xsnet residual remains after uninstall'
         }
         Export-SystemEvidence -Directory $stageDirectory

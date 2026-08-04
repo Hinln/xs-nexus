@@ -23,6 +23,12 @@
     <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
     <UseDebugLibraries>true</UseDebugLibraries>
     <TargetVersion>Windows10</TargetVersion>
+    <UmdfVersion>2.33</UmdfVersion>
+    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
+    <UMDF_VERSION_MINOR>33</UMDF_VERSION_MINOR>
+    <NetAdapterDriver>true</NetAdapterDriver>
+    <NETADAPTER_VERSION_MAJOR>2</NETADAPTER_VERSION_MAJOR>
+    <NETADAPTER_VERSION_MINOR>5</NETADAPTER_VERSION_MINOR>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
@@ -31,17 +37,18 @@
     <UseDebugLibraries>false</UseDebugLibraries>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <TargetVersion>Windows10</TargetVersion>
+    <UmdfVersion>2.33</UmdfVersion>
+    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
+    <UMDF_VERSION_MINOR>33</UMDF_VERSION_MINOR>
+    <NetAdapterDriver>true</NetAdapterDriver>
+    <NETADAPTER_VERSION_MAJOR>2</NETADAPTER_VERSION_MAJOR>
+    <NETADAPTER_VERSION_MINOR>5</NETADAPTER_VERSION_MINOR>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
     <OutDir>$(SolutionDir)artifacts\$(Configuration)\$(Platform)\</OutDir>
     <IntDir>$(SolutionDir)target\xsnet\$(Configuration)\$(Platform)\</IntDir>
     <TargetName>xsnet</TargetName>
-    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
-    <UMDF_VERSION_MINOR>33</UMDF_VERSION_MINOR>
-    <LinkToNetAdapterCx>true</LinkToNetAdapterCx>
-    <NetAdapterCxMajorVersion>2</NetAdapterCxMajorVersion>
-    <NetAdapterCxMinorVersion>5</NetAdapterCxMinorVersion>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -53,9 +60,6 @@
       <ConformanceMode>true</ConformanceMode>
       <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>NetAdapterCxStub.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
       <SignMode>TestSign</SignMode>

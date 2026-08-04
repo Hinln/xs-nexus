@@ -32,6 +32,7 @@ def main() -> int:
         inf = read("drivers/windows-xsnet/xsnet.inf")
         session = read("drivers/windows-xsnet/src/session.c")
         installer = read("installers/windows/install-xsnet-test.ps1")
+        uninstaller = read("installers/windows/uninstall-xsnet-test.ps1")
         module = read("installers/windows/XsnetTestInstaller.psm1")
         package = read("scripts/windows/build-xsnet-test-package.ps1")
         vm = read("scripts/windows/invoke-xsnet-test-vm-stage.ps1")
@@ -87,6 +88,26 @@ def main() -> int:
                 "capabilities = @('ipv4')",
             ),
         )
+        for parser_source, parser_text in (
+            ("build-xsnet-test-package.ps1", package),
+            ("XsnetTestInstaller.psm1", module),
+        ):
+            if r"DriverVer\s*=\s*" not in parser_text:
+                raise AssertionError(
+                    f"{parser_source} must accept spacing emitted by StampInf"
+                )
+        for workflow_source, workflow_text in (
+            ("install-xsnet-test.ps1", installer),
+            ("uninstall-xsnet-test.ps1", uninstaller),
+        ):
+            for empty_count in (
+                "@(Get-XsnetDevices).Count",
+                "@(Get-XsnetDriverPackages).Count",
+            ):
+                if empty_count not in workflow_text:
+                    raise AssertionError(
+                        f"{workflow_source} must count empty command output as an array"
+                    )
         require(
             installer + module + vm,
             "Windows install workflow",

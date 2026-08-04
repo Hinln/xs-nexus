@@ -34,11 +34,12 @@ def validate_project() -> None:
         "WindowsTargetPlatformVersion": "10.0.26100.0",
         "DriverType": "UMDF",
         "PlatformToolset": "WindowsUserModeDriver10.0",
+        "UmdfVersion": "2.33",
         "UMDF_VERSION_MAJOR": "2",
         "UMDF_VERSION_MINOR": "33",
-        "LinkToNetAdapterCx": "true",
-        "NetAdapterCxMajorVersion": "2",
-        "NetAdapterCxMinorVersion": "5",
+        "NetAdapterDriver": "true",
+        "NETADAPTER_VERSION_MAJOR": "2",
+        "NETADAPTER_VERSION_MINOR": "5",
         "TreatWarningAsError": "true",
         "SDLCheck": "true",
         "SignMode": "TestSign",
@@ -46,6 +47,27 @@ def validate_project() -> None:
     for name, expected_value in expected.items():
         if values.get(name) != expected_value:
             fail(f"xsnet.vcxproj {name} must be {expected_value}")
+    configuration_groups = tree.findall(
+        ".//msb:PropertyGroup[@Label='Configuration']", namespace
+    )
+    for group in configuration_groups:
+        group_values = {
+            element.tag.split("}")[-1]: (element.text or "").strip()
+            for element in group
+        }
+        for name in (
+            "UmdfVersion",
+            "UMDF_VERSION_MAJOR",
+            "UMDF_VERSION_MINOR",
+            "NetAdapterDriver",
+            "NETADAPTER_VERSION_MAJOR",
+            "NETADAPTER_VERSION_MINOR",
+        ):
+            if group_values.get(name) != expected[name]:
+                fail(
+                    "xsnet.vcxproj must set "
+                    f"{name}={expected[name]} in every Configuration property group"
+                )
     configurations = tree.findall(".//msb:ProjectConfiguration", namespace)
     if {item.attrib["Include"] for item in configurations} != {
         "Debug|x64",
@@ -76,10 +98,24 @@ def validate_inf() -> None:
             "HKR,,Exclusive,0x00010001,1",
             "UmdfLibraryVersion=2.33",
             "UmdfHostProcessSharing=ProcessSharingDisabled",
-            "UmdfKernelModeClientPolicy=RejectKernelModeClients",
+            "UmdfKernelModeClientPolicy=AllowKernelModeClients",
             "UmdfFileObjectPolicy=RejectNullAndUnknownFileObjects",
+            "UmdfFsContextUsePolicy=CanUseFsContext2",
             "UmdfDirectHardwareAccess=RejectDirectHardwareAccess",
-            "Include=WUDFRD.inf",
+            "Include=WUDFRD.inf,netcxrd.inf",
+            "Needs=WUDFRD.NT,netcxrd_Filter.NT",
+            "Needs=WUDFRD.NT.HW,netcxrd_Filter.NT.HW",
+            "Needs=WUDFRD.NT.Services,netcxrd_Filter.NT.Services",
+            "Needs=netcxrd_Filter.NT.Filters",
+            "Characteristics=0x1",
+            "*IfType=6",
+            "*MediaType=0",
+            "*PhysicalMediaType=0",
+            "EnableDhcp=0",
+            "HKR,Ndi,Service,0,\"xsnet\"",
+            "HKR,Ndi\\Interfaces,UpperRange,0,\"ndis5\"",
+            "HKR,Ndi\\Interfaces,LowerRange,0,\"ethernet\"",
+            "UmdfExtensions=NetAdapterCx0202",
             "ServiceBinary=%13%\\xsnet.dll",
         ],
     )
@@ -109,6 +145,14 @@ def validate_ioctl() -> None:
 
 
 def validate_sources() -> None:
+    require_text(
+        DRIVER / "include" / "xsnet_driver.h",
+        [
+            "#include <net/virtualaddress.h>",
+            "typedef struct XsnetAdapterContext",
+            "WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(XsnetAdapterContext",
+        ],
+    )
     sources = "\n".join(
         path.read_text(encoding="utf-8")
         for path in sorted((DRIVER / "src").glob("*.c"))
@@ -135,7 +179,16 @@ def validate_sources() -> None:
         "NetRingCollectionGetPacketRing",
         "NetRingCollectionGetFragmentRing",
         "NetRingIncrementIndex",
-        "NetPacketLayer2TypeNull",
+        "cancel_transmit_rings",
+        "cancel_receive_rings",
+        "NetRingGetPacketAtIndex(packet_ring, packet_index)->Scratch = 1",
+        "NetRingGetPacketAtIndex(packet_ring, packet_index)->Ignore = 1",
+        "packet_ring->BeginIndex = packet_ring->EndIndex",
+        "fragment_ring->BeginIndex = fragment_ring->EndIndex",
+        "NetPacketLayer2TypeEthernet",
+        "NetAdapterSetReceiveFilterCapabilities",
+        "NetAdapterSetPermanentLinkLayerAddress",
+        "XSNET_ETHERNET_HEADER_SIZE",
         "WdfExecutionLevelPassive",
         "WdfRequestRetrieveOutputBuffer",
         "WdfRequestCompleteWithInformation",
@@ -144,12 +197,44 @@ def validate_sources() -> None:
         "XsnetPacketQueueMeasureBatch",
         "XsnetWriteMessageHeader",
         "NetAdapterGetNetLuid",
+        "XsnetGetAdapterContext",
         "XsnetValidateIdentityRequest",
         "XsnetWriteIdentityResponse",
     ]
     for value in required:
         if value not in sources:
             fail(f"Windows source missing lifecycle invariant: {value}")
+    tx_cancel = re.search(
+        r"static void cancel_transmit_rings\(.*?"
+        r"(?=static void cancel_receive_rings\()",
+        sources,
+        flags=re.DOTALL,
+    )
+    if tx_cancel is None:
+        fail("Windows source missing transmit cancellation implementation")
+    for value in (
+        "packet_ring->NextIndex",
+        "fragment_ring->NextIndex",
+        "fragment_ring->BeginIndex",
+    ):
+        if value in tx_cancel.group(0):
+            fail(
+                "transmit cancellation must not rewrite NetAdapterCx post or "
+                f"fragment ownership: {value}"
+            )
+    queue_advance = re.search(
+        r"void XsnetEvtPacketQueueAdvance\(.*?"
+        r"(?=void XsnetEvtPacketQueueSetNotificationEnabled\()",
+        sources,
+        flags=re.DOTALL,
+    )
+    if queue_advance is None:
+        fail("Windows source missing packet queue advance implementation")
+    if "XsnetAdapterSetConnected" in queue_advance.group(0):
+        fail(
+            "packet queue advance must not synchronously change link state and "
+            "re-enter NetAdapterCx stop/cancel"
+        )
     forbidden = [
         "Wintun",
         "TAP-Windows",
@@ -158,10 +243,16 @@ def validate_sources() -> None:
         "printf(",
         "fprintf(",
         "OutputDebugString",
+        "WdfObjectGetParentObject",
     ]
     for value in forbidden:
         if value in sources:
             fail(f"Windows source contains forbidden dependency or logging: {value}")
+    driver_source = (DRIVER / "src" / "driver.c").read_text(encoding="utf-8")
+    if driver_source.index('#include "xsnet_driver.h"') > driver_source.index(
+        "#include <initguid.h>"
+    ):
+        fail("driver headers must be parsed before initguid.h defines the xsnet GUID")
     ioctl_source = (DRIVER / "src" / "ioctl.c").read_text(encoding="utf-8")
     for value in (
         "complete_transmit_request",

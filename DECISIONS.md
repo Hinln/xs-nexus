@@ -541,7 +541,7 @@
 
 ## ADR-046：xsnet 使用 IF_TYPE_TUNNEL 与 Layer2TypeNull 交换规范原始 IPv4 包
 
-- 状态：接受
+- 状态：已由 ADR-076 替代（2026-08-04）
 - 日期：2026-07-31
 - 背景：Linux TUN 与现有 Agent 数据面交换 L3 IPv4；若 Windows 驱动伪装 Ethernet，则必须额外实现 MAC、ARP/邻居、二层广播和头部转换，扩大驱动职责并破坏跨平台包语义。
 - 决策：INF 保持 `IF_TYPE_TUNNEL`/IP media，Agent ABI 只接受规范原始 IPv4。队列校验版本 4、IHL、IPv4 总长度、协商 MTU 和批次布局；RX ring 使用 `NetPacketLayer2TypeNull`、零 L2 长度和准确 IPv4 header length，TX 不读取 `Ignore` 包的其他只读字段。
@@ -865,3 +865,27 @@
 - 原因：单命令体验不应削弱 ADR-069 的离线授权边界。精确路由和文件 allowlist 消除通用静态文件服务器的路径遍历与意外泄露面；交互式 `/dev/tty` 输入在管道安装时仍不进入命令行。重复安装检测现有节点状态并保留身份、配置、签名状态和虚拟 IP。
 - 代价：域名、版本和发布文件名均为显式固定值；发布新版本或轮换公钥必须经过代码/产物更新、重新签名和完整回归。当前引导仅支持以 systemd 为 PID 1、glibc、x86_64/aarch64 的 Linux，不声称支持 musl、非 systemd、Windows 或 macOS。
 - 安全影响：Controller 启动时拒绝相对路径、符号链接、可被 group/other 写入的目录或文件、缺失/异常大小产物；归档按 64 KiB 分块流式返回并限制 256 MiB。未知文件返回 404，发布目录缺失返回不可用。Controller Docker 构建显式复制 `installers/`，确保嵌入脚本来自同一源码提交。
+
+---
+
+## ADR-075：NetAdapterCx 发送取消只能推进完成边界
+
+- 日期：2026-08-04
+- 状态：接受
+- 背景：初版取消处理没有归还 ring，设备移除会无限等待；一次修正同时把 packet/fragment 的 Begin/Next 全部改到 End，普通 PnP restart 变快，但 UMDF/Application Verifier 记录 `WUDFVerifierFailure 414`，Windows WER 同时记录 `LKD_0x15E_VRF_Mini_Nbl_Leak_IMAGE_netcxrd.sys`。
+- 决策：同步软件 NIC 的 TX 正常路径仍可在完整复制后同步推进 Begin/Next。进入 `EvtPacketQueueCancel` 时，只遍历 packet completion range、标记 `Scratch` 并把 packet `BeginIndex` 推进到 `EndIndex`；禁止在取消回调中伪造 packet `NextIndex`、fragment `NextIndex` 或 fragment `BeginIndex`。RX 继续把全部 packet 标记为 Ignore，并按 NetAdapterCx 合约归还 packet/fragment Begin range。源码门禁独立提取 TX cancellation 实现并拒绝所有禁止的 ownership 写入。
+- 原因：TX packet post range 和 fragment ownership 由 NetAdapterCx 根据 NBL/packet 关系管理。取消路径自行改写这些边界虽能结束表面上的 PnP 等待，却破坏框架的 NBL 归还账本并在 verifier teardown 暴露泄漏。只推进完成边界与微软 NetAdapterCx cancellation contract 一致，也保持普通同步完成路径和取消路径的职责分离。
+- 证据：测试包 `15.39.27.376` 在 Windows 11 24H2 VM 中通过 standard Driver Verifier 和 UMDF/Application Verifier；三轮 verifier-enabled PnP restart 为 1,443/2,113/877 ms，每轮 SYSTEM Tx/Rx 通过，且新增 WDF dump、NDIS/LiveKernel dump、相关 WER 和错误事件均为 0。完整记录见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
+- 边界：该决定只闭合测试签名驱动的 ring cancellation。它不证明完整 Windows Agent、SCM/Named Pipe/存储、IP Helper/DAD/route、睡眠、生产升级、Windows 10 或正式签名。
+
+---
+
+## ADR-076：Windows 适配器使用 Ethernet 媒体，私有 Agent ABI 保持 raw IPv4
+
+- 日期：2026-08-04
+- 状态：接受，替代 ADR-046
+- 背景：ADR-046 的 `IF_TYPE_TUNNEL`/IP media 与 `Layer2TypeNull` 是 WDK/VM 前的源码假设。Windows 11 24H2 上实际可构建并绑定 NetAdapterCx UMDF 软件 NIC 的包使用 `netcxrd` filter、Ethernet IF/media 和 NetAdapterCx extension；不能把未运行的 L3 media 草案保留为权威设计。
+- 决策：Windows NIC 向 NDIS/TCP-IP 暴露 Ethernet，设置固定本地 locally-administered MAC、接收过滤能力和 Ethernet layout；驱动只在 NetAdapterCx ring 边界验证/剥离或合成固定 14 字节 Ethernet 头，私有 Agent ABI 继续只传规范 raw IPv4。非 IPv4 TX frame 被有界消费并丢弃，不进入 Agent。异常 ring 元数据停止当前推进，但 callback 内禁止同步调用 link-state 变更，避免重入 NetAdapterCx stop/cancel。
+- 原因：保持 Windows 11 官方支持的 NetAdapterCx Ethernet 路径，同时不把 ARP、邻居、广播策略或二层协议扩散进 Agent/XSP。专用 SYSTEM harness 已证明确定性 UDP IPv4 能进入 TX、raw IPv4 RX 能注入系统 ring，并在 PnP/Verifier 周期后重复成立。
+- 代价：驱动边界增加固定 14 字节复制和 EtherType 检查；当前只接受 IPv4，IPv6/其他 EtherType 被丢弃。固定 peer MAC 只服务首版 point-to-point 三层语义，不声明通用二层交换能力。
+- 安全影响：ABI 的 IPv4 长度、IHL、总长度、MTU、批次和容量验证不变；Windows 提交的其他 L2 流量不能穿过私有 ABI。源码门禁固定 Ethernet INF/capability/layout、头部转换以及 queue callback 内无同步断链。

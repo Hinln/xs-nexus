@@ -566,7 +566,7 @@
 - 安装和卸载脚本；
 - 未实机测试时明确标记。
 
-当前环境可完成的跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。Windows IPC 的读取命令与受限 `reconnect` 使用同一有界协议；Windows runtime 仍保持禁用。最新完整源码/交叉证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`。剩余工作全部需要 Windows SDK/WDK/VM：完整 Agent/驱动链接、真实命名管道/ACL/SCM/IP Helper/DAD、空 TX/满 RX 状态、安装签名、PnP/power、Verifier 和崩溃恢复。因此 M6.1 正确状态为 `BLOCKED_EXTERNAL`，不宣称 Windows 可用。
+跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。Windows IPC 的读取命令与受限 `reconnect` 使用同一有界协议；Windows runtime 仍保持禁用。`xsnet` 测试签名驱动已在 Windows 11 VM 完成 WDK Release 构建、安装、SYSTEM 数据面、PnP、standard/UMDF/Application Verifier 和卸载，证据见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。剩余工作需要在同类受控 VM 完整链接 Agent，并实测命名管道/ACL/SCM/存储/IP Helper/DAD、空 TX/满 RX 状态、Agent crash、sleep、生产安装升级和正式签名。因此 M6.1 仍未完成，不宣称 Windows 客户端可用。
 
 ---
 
@@ -679,4 +679,4 @@
 - Git 干净；
 - 明确未完成外部门禁和未审计风险。
 
-当前不能标记 RC：Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改、DNS/生产防火墙、正式离线发布/备份密钥仪式与真实异地恢复、凭据轮换、跨地域公网容量和第三方协议/密码学审计尚未完成。代码、隔离验证和文档准备不替代这些外部条件。
+当前不能标记 RC：完整 Windows Agent 实机与正式签名、真实 NAS 业务验收、数据库公网端口整改、DNS/生产防火墙、正式离线发布/备份密钥仪式与真实异地恢复、凭据轮换、跨地域公网容量和第三方协议/密码学审计尚未完成。`xsnet` 测试签名驱动门禁、代码、隔离验证和文档准备不替代这些外部条件。

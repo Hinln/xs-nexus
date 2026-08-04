@@ -50,12 +50,10 @@ cca33fa8c4ea0e2cf99955821f82c0692b7e84d5
 
 ## 三、当前正式开发状态
 
-- 当前分支：`main`。
-- 最新已验证检查点：`cca33fa feat(windows): add protected service host boundary`。
-- 当前里程碑：M6.1 `IN_PROGRESS`。
-- M6.2：`BLOCKED_EXTERNAL`。
-- 最新 M6.1 全量验证证据：`/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`。
-- 证据目录位于原开发服务器，不在 Git 仓库中；没有实际读取该目录时，不得声称复核了证据内容。
+- 当前分支和最新检查点必须以 `git status --short --branch`、`git log -5 --oneline` 和远端状态为准，不再在本文件固定易过期的提交号。
+- 当前里程碑：M6.1 `IN_PROGRESS`；M6.2：`BLOCKED_EXTERNAL`。
+- Linux 主路径已有仓库内门禁及原开发服务器 QA 证据；服务器证据目录不在 Git 仓库中，没有实际读取时不得声称复核了内容。
+- Windows `xsnet` 最新实机证据记录在 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，原始证据保存在仓库外，不得提交测试私钥、证书私钥、构建产物或 VM 工具链。
 
 M6.1 已形成检查点的工作包括：
 
@@ -71,29 +69,28 @@ M6.1 已形成检查点的工作包括：
 
 M6.1 仍未完成，原因包括：
 
-- 完整 Windows Agent 仍因缺少 Windows SDK 工具链停在 `ring/lib.exe`；
-- 没有 WDK、Windows 11 测试 VM、测试签名和 Driver Verifier 实机结果；
-- 命名管道、私有存储、SCM 和设备 I/O 尚未在 Windows 实际运行；
-- 空 TX、满 RX、取消和移除状态尚无权威 no-commit 映射；
-- Windows 路由管理、完整 Agent 数据面接入、正式安装升级和生产签名尚未完成。
+- `xsnet` 测试签名驱动已在 Windows 11 24H2 VM 完成 WDK Release 构建、clean install、SYSTEM Tx/Rx、PnP restart、standard/UMDF/Application Verifier 和 clean uninstall；专用 harness 证明设备枚举、独占 handle、exact ABI v1、LUID、数据面和重启后的重新打开。
+- 完整 Windows Agent 仍未在 Windows SDK/WDK 环境完成整包链接和运行；Rust Named Pipe、私有存储、SCM 及 route manager 也未获得实机证据。
+- 驱动取消和移除路径已经过 Verifier 门禁，但通用 Win32 失败到权威 no-commit 的映射、持续 Agent 收发和 Agent crash 生命周期仍未闭环。
+- Windows IP Helper/DAD/路由事务、manifest 恢复、睡眠恢复、正式安装升级、Windows 10 路径和生产签名尚未完成。
 
 ## 四、恢复工作的准确断点
 
-下一项不受 Windows VM 阻塞的正式工作是：**Windows 路由管理准备**。
+下一项正式工作是：**在已验证的 Windows 11 VM 路线上完成完整 Agent 的 MSVC 链接与受控实机联调**。
 
-暂停前只完成了需求审计，没有提交可用实现。不得假定存在可复用的 Windows 路由草案，也不得把其他工作目录中的未验证文件直接复制进仓库。
+Windows 路由管理的隔离 Rust 事务核心、IP Helper 平台层、DAD/路由补偿、受保护 manifest 和恢复编排已经形成源码与交叉编译门禁；它们仍不得在实机证据通过前接入生产 runtime，也不得把专用驱动 harness 的结果外推为完整 Agent 结果。
 
 开始实现前必须重新核对：
 
-1. `apps/agent/src/network.rs`、`lifecycle.rs` 和 `runtime.rs` 的 Linux 网络生命周期；
-2. `crates/core/src/routes.rs` 的子网路由安全规则；
-3. Microsoft IP Helper 的地址、路由、LUID、DAD、创建和精确删除语义；
-4. Windows 地址由 `CreateUnicastIpAddressEntry` 创建后是非持久的，并且完成 DAD 前不可宣称可用；
-5. `GetIpForwardTable2` 返回表必须有数量上限并由 `FreeMibTable` 释放；
-6. 项目路由必须使用明确 LUID、规范前缀、固定 on-link 下一跳和受控 metric；
-7. 默认路由不得被项目修改，任何非项目系统路由重叠必须失败关闭；
-8. 变更必须有 additions-first、失败补偿、回滚失败显式上报和可信 manifest 所有权边界；
-9. 在 DAD、PnP、睡眠恢复和精确错误映射获得 VM 证据前，不得接入真实 Agent runtime。
+1. `docs/WINDOWS_XSNET_VM_EVIDENCE.md` 的已验证范围和禁止外推边界；
+2. 完整 Agent 的 Windows SDK/MSVC 链接、unsafe 计数和服务入口；
+3. 固定 Named Pipe 的真实 DACL、远程拒绝、容量和 shutdown 行为；
+4. 私有存储的 NTFS protected DACL、reparse 拒绝、原子替换和崩溃恢复；
+5. SCM 的 LocalSystem 身份、STOP/SHUTDOWN、失败退出和重复启动边界；
+6. 同一驱动 handle 的 LUID、空 TX/满 RX 错误语义和不确定完成后的重连；
+7. IP Helper 地址、DAD、路由补偿、manifest 恢复、PnP 和睡眠生命周期；
+8. 生产安装升级、正式驱动签名和 Windows 10 独立实现/范围决定；
+9. 每个实机阶段均从干净快照开始、导出证据后卸载并回滚，未经验证不得接入生产 runtime。
 
 普通技术选择自行决定，并记录到 `DECISIONS.md`。测试失败时自行定位并修复，不得删除、跳过、忽略或弱化失败测试。
 
@@ -135,12 +132,12 @@ git rev-parse HEAD
 - 所有新增 unsafe 必须隔离、最小化、计数并由源码验证器固定；不得降低 workspace 的 unsafe 规则。
 - 不使用 Wintun、TAP 或第三方组网实现替代自研协议和 `xsnet`。
 - 不把交叉编译、源码扫描、模型测试或 mock 测试描述为 Windows 实机结果。
-- NAS、Windows VM、日常 Windows 电脑、正式 DNS、正式驱动签名和生产防火墙属于人工门禁；到达门禁时更新 `BLOCKERS.md`，继续完成所有不受阻塞影响的工作。
+- NAS 业务验收、完整 Windows Agent 实机、日常 Windows 电脑、正式 DNS、正式驱动签名和生产防火墙属于人工门禁；`xsnet` 测试签名驱动的 Windows 11 VM 环境门禁已解除，但不解除这些独立门禁。到达门禁时更新 `BLOCKERS.md`，继续完成所有不受阻塞影响的工作。
 - 每个独立子阶段都要更新 `PROGRESS.md`、`DECISIONS.md`、`QA_MATRIX.md`、`SECURITY_REVIEW.md`、`KNOWN_ISSUES.md`、`BUG_LOOP.md` 及受影响的验收文档。
 - 运行实际验证后创建 Git 检查点，并保证工作树干净。
 
 ## 八、开始执行
 
-完成上述核对后，从 Windows 路由管理准备继续实际开发。先审计、写测试和源码门禁，再实现最小隔离边界；未验证前不得接入 Agent runtime。
+完成上述核对后，从完整 Windows Agent 的受控链接和实机联调继续实际开发。先保留已通过的驱动证据和源码门禁，再按 SCM、Named Pipe/存储、Win32 session、route/DAD/sleep、安装升级的顺序逐项闭环；未验证前不得接入生产 runtime。
 
 不要只回复计划，不要等待逐阶段批准。持续完成所有不受人工门禁阻塞的工作；只有在用户明确要求暂停时才停止。

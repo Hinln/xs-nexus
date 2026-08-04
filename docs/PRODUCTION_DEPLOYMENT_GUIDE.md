@@ -2,9 +2,9 @@
 
 文档日期：2026-08-02  
 适用范围：Linux 服务端、Linux Agent、Docker Compose、1Panel 外部网络、项目自带 Caddy HTTPS Edge  
-不适用范围：尚未完成实机门禁的 Windows Agent/`xsnet` 驱动
+不适用范围：尚未完成完整 Agent、生产安装器与正式签名门禁的 Windows 客户端；测试签名 `xsnet` 驱动实机结果仅作开发证据
 
-> 重要结论：本手册描述的是当前代码能够执行的完整部署流程，不是“已经生产就绪”的声明。当前项目仍为部分完成，尚受 Windows VM/WDK/正式驱动签名、真实 NAS、正式离线发布与备份密钥仪式、真实异地恢复、数据库公网暴露整改、生产防火墙和第三方协议/密码学审计等门禁约束。权威状态以 `FINAL_REPORT.md`、`RELEASE_CHECKLIST.md`、`BLOCKERS.md` 和 `KNOWN_ISSUES.md` 为准。
+> 重要结论：本手册描述的是当前代码能够执行的完整部署流程，不是“已经生产就绪”的声明。Windows 11 测试签名 `xsnet` 驱动的 WDK/VM/Verifier 门禁已通过，但完整 Windows Agent、生产安装器/正式驱动签名、真实 NAS、正式离线发布与备份密钥仪式、真实异地恢复、数据库公网暴露整改、生产防火墙和第三方协议/密码学审计等门禁仍未完成。权威状态以 `FINAL_REPORT.md`、`RELEASE_CHECKLIST.md`、`BLOCKERS.md` 和 `KNOWN_ISSUES.md` 为准。
 
 ## 1. 部署目标和组件
 
@@ -62,7 +62,7 @@ Controller 不承载普通业务数据；Agent 优先建立 Direct UDP，失败�
 - 已完成备份 identity 的离线保管，并至少执行一次深度校验和恢复演练；
 - 临时管理员密码、API Token、数据库密码和测试密钥在正式上线前全部轮换；
 - 当前镜像漏洞 disposition 在有效期内；基础镜像、二进制导入或扫描结果变化时重新扫描；
-- Windows 客户端不得投入使用，直到 `BLK-001`、`BLK-004`、`KI-018`、`KI-020` 对应实机门禁通过。
+- Windows 客户端不得投入使用。`BLK-001` 的测试签名驱动门禁虽已通过，但仍须完成 `BLK-004`、`KI-016`、`KI-017`、`KI-018`、`KI-020` 对应完整 Agent、安装器、路由/睡眠、平台兼容和正式签名门禁。
 
 ## 3. 主机、网络和端口要求
 
@@ -741,7 +741,8 @@ subnet=172.18.0.0/16
 - [ ] 正式备份 identity、真实异地主机、深度验证和恢复演练完成；
 - [ ] SBOM、provenance、Grype 和残余风险处置在有效期；
 - [ ] 临时密码、Token、SSH 和数据库凭据完成轮换；
-- [ ] Windows VM/WDK/Driver Verifier、正式签名和安装回滚门禁通过；
+- [x] Windows 11 xsnet 测试签名驱动 VM/WDK/standard+UMDF+Application Verifier 门禁通过；
+- [ ] 完整 Windows Agent、生产安装器/回滚、路由/睡眠、正式签名和兼容性门禁通过；
 - [ ] 真实 NAS/arm64 节点验证通过；
 - [ ] 第三方协议、密码学和驱动安全审计完成；
 - [ ] `RELEASE_CHECKLIST.md` 和 `FINAL_REPORT.md` 重新审核并如实更新。

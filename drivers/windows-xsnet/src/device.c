@@ -4,8 +4,9 @@ static NTSTATUS create_control_queue(WDFDEVICE device) {
     WDF_IO_QUEUE_CONFIG queue_config;
     WDF_OBJECT_ATTRIBUTES queue_attributes;
     WDFQUEUE queue;
+    NTSTATUS status;
 
-    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(
+    WDF_IO_QUEUE_CONFIG_INIT(
         &queue_config,
         WdfIoQueueDispatchSequential);
     queue_config.EvtIoDeviceControl = XsnetEvtIoDeviceControl;
@@ -13,11 +14,18 @@ static NTSTATUS create_control_queue(WDFDEVICE device) {
     WDF_OBJECT_ATTRIBUTES_INIT(&queue_attributes);
     queue_attributes.ExecutionLevel = WdfExecutionLevelPassive;
     queue_attributes.SynchronizationScope = WdfSynchronizationScopeNone;
-    return WdfIoQueueCreate(
+    status = WdfIoQueueCreate(
         device,
         &queue_config,
         &queue_attributes,
         &queue);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    return WdfDeviceConfigureRequestDispatching(
+        device,
+        queue,
+        WdfRequestTypeDeviceControl);
 }
 
 static NTSTATUS initialize_device_context(WDFDEVICE device) {

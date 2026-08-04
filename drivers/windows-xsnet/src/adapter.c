@@ -1,11 +1,22 @@
 #include "xsnet_driver.h"
 
+static const UCHAR XSNET_LOCAL_LINK_ADDRESS[6] = {
+    0x02, 0x58, 0x53, 0x4e, 0x00, 0x01};
+
+static void XsnetEvtSetReceiveFilter(
+    NETADAPTER adapter,
+    NETRECEIVEFILTER receive_filter) {
+    UNREFERENCED_PARAMETER(adapter);
+    UNREFERENCED_PARAMETER(receive_filter);
+}
+
 NTSTATUS XsnetAdapterCreate(
     WDFDEVICE device,
     NETADAPTER *adapter) {
     NETADAPTER_INIT *adapter_init;
     NET_ADAPTER_DATAPATH_CALLBACKS datapath_callbacks;
     WDF_OBJECT_ATTRIBUTES adapter_attributes;
+    XsnetAdapterContext *adapter_context;
     NTSTATUS status;
 
     if (adapter == NULL) {
@@ -20,9 +31,15 @@ NTSTATUS XsnetAdapterCreate(
         XsnetEvtAdapterCreateTxQueue,
         XsnetEvtAdapterCreateRxQueue);
     NetAdapterInitSetDatapathCallbacks(adapter_init, &datapath_callbacks);
-    WDF_OBJECT_ATTRIBUTES_INIT(&adapter_attributes);
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        &adapter_attributes,
+        XsnetAdapterContext);
     status = NetAdapterCreate(adapter_init, &adapter_attributes, adapter);
     NetAdapterInitFree(adapter_init);
+    if (NT_SUCCESS(status)) {
+        adapter_context = XsnetGetAdapterContext(*adapter);
+        adapter_context->device = device;
+    }
     return status;
 }
 
@@ -31,6 +48,8 @@ NTSTATUS XsnetAdapterStart(WDFDEVICE device) {
     NET_ADAPTER_TX_CAPABILITIES transmit_capabilities;
     NET_ADAPTER_RX_CAPABILITIES receive_capabilities;
     NET_ADAPTER_LINK_LAYER_CAPABILITIES link_capabilities;
+    NET_ADAPTER_RECEIVE_FILTER_CAPABILITIES receive_filter_capabilities;
+    NET_ADAPTER_LINK_LAYER_ADDRESS link_layer_address;
     NET_ADAPTER_LINK_STATE link_state;
     NTSTATUS status;
 
@@ -46,14 +65,28 @@ NTSTATUS XsnetAdapterStart(WDFDEVICE device) {
     transmit_capabilities.FragmentRingNumberOfElementsHint = 64;
     NET_ADAPTER_RX_CAPABILITIES_INIT_SYSTEM_MANAGED(
         &receive_capabilities,
-        XSNET_ABI_MAX_PACKET_SIZE,
+        XSNET_MAX_FRAME_SIZE,
         1);
     receive_capabilities.FragmentRingNumberOfElementsHint = 64;
     NET_ADAPTER_LINK_LAYER_CAPABILITIES_INIT(
         &link_capabilities,
         XSNET_LINK_SPEED,
         XSNET_LINK_SPEED);
+    NET_ADAPTER_RECEIVE_FILTER_CAPABILITIES_INIT(
+        &receive_filter_capabilities,
+        XsnetEvtSetReceiveFilter);
+    receive_filter_capabilities.SupportedPacketFilters =
+        NetPacketFilterFlagDirected |
+        NetPacketFilterFlagMulticast |
+        NetPacketFilterFlagAllMulticast |
+        NetPacketFilterFlagBroadcast |
+        NetPacketFilterFlagPromiscuous;
+    receive_filter_capabilities.MaximumMulticastAddresses = 32;
     NET_ADAPTER_LINK_STATE_INIT_DISCONNECTED(&link_state);
+    NET_ADAPTER_LINK_LAYER_ADDRESS_INIT(
+        &link_layer_address,
+        (USHORT)sizeof(XSNET_LOCAL_LINK_ADDRESS),
+        XSNET_LOCAL_LINK_ADDRESS);
     NetAdapterSetDataPathCapabilities(
         device_context->adapter,
         &transmit_capabilities,
@@ -61,6 +94,15 @@ NTSTATUS XsnetAdapterStart(WDFDEVICE device) {
     NetAdapterSetLinkLayerCapabilities(
         device_context->adapter,
         &link_capabilities);
+    NetAdapterSetReceiveFilterCapabilities(
+        device_context->adapter,
+        &receive_filter_capabilities);
+    NetAdapterSetPermanentLinkLayerAddress(
+        device_context->adapter,
+        &link_layer_address);
+    NetAdapterSetCurrentLinkLayerAddress(
+        device_context->adapter,
+        &link_layer_address);
     NetAdapterSetLinkLayerMtuSize(
         device_context->adapter,
         XSNET_ABI_MAX_PACKET_SIZE);

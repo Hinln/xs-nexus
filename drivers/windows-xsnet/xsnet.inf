@@ -14,23 +14,30 @@ PnpLockdown=1
 %DeviceDescription%=Xsnet_Install,Root\XSNET
 
 [Xsnet_Install.NT]
-Include=WUDFRD.inf
-Needs=WUDFRD_LowerFilter.NT
+Include=WUDFRD.inf,netcxrd.inf
+Needs=WUDFRD.NT,netcxrd_Filter.NT
 CopyFiles=Xsnet_CopyFiles
-Characteristics=0x81
+AddReg=Xsnet_Ndi
+Characteristics=0x1
 BusType=15
-*IfType=131
-*MediaType=19
+*IfType=6
+*MediaType=0
 *PhysicalMediaType=0
+EnableDhcp=0
 *IfConnectorPresent=0
 *ConnectionType=1
 *DirectionType=0
 *AccessType=2
 *HardwareLoopback=0
 
+[Xsnet_Ndi]
+HKR,Ndi,Service,0,"xsnet"
+HKR,Ndi\Interfaces,UpperRange,0,"ndis5"
+HKR,Ndi\Interfaces,LowerRange,0,"ethernet"
+
 [Xsnet_Install.NT.HW]
-Include=WUDFRD.inf
-Needs=WUDFRD_LowerFilter.NT.HW
+Include=WUDFRD.inf,netcxrd.inf
+Needs=WUDFRD.NT.HW,netcxrd_Filter.NT.HW
 AddReg=Xsnet_DeviceSecurity
 
 [Xsnet_DeviceSecurity]
@@ -38,24 +45,26 @@ HKR,,Security,,"D:P(A;;GA;;;SY)"
 HKR,,Exclusive,0x00010001,1
 
 [Xsnet_Install.NT.Services]
-Include=WUDFRD.inf
-Needs=WUDFRD_LowerFilter.NT.Services
+Include=WUDFRD.inf,netcxrd.inf
+Needs=WUDFRD.NT.Services,netcxrd_Filter.NT.Services
 
 [Xsnet_Install.NT.Filters]
-Include=WUDFRD.inf
-Needs=WUDFRD_LowerFilter.NT.Filters
+Include=netcxrd.inf
+Needs=netcxrd_Filter.NT.Filters
 
 [Xsnet_Install.NT.Wdf]
 UmdfService=xsnet,Xsnet_UmdfService
 UmdfServiceOrder=xsnet
 UmdfHostProcessSharing=ProcessSharingDisabled
-UmdfKernelModeClientPolicy=RejectKernelModeClients
+UmdfKernelModeClientPolicy=AllowKernelModeClients
 UmdfFileObjectPolicy=RejectNullAndUnknownFileObjects
+UmdfFsContextUsePolicy=CanUseFsContext2
 UmdfDirectHardwareAccess=RejectDirectHardwareAccess
 
 [Xsnet_UmdfService]
 UmdfLibraryVersion=2.33
 ServiceBinary=%13%\xsnet.dll
+UmdfExtensions=NetAdapterCx0202
 
 [DestinationDirs]
 Xsnet_CopyFiles=13

@@ -10,7 +10,7 @@ Build a new test package only inside the disposable VM. The VM must already have
 pwsh -File .\scripts\windows\build-xsnet-test-package.ps1 `
   -ProjectRoot C:\src\xs-nexus `
   -OutputDirectory C:\xsnet-runs\package-001 `
-  -MsBuildPath <VS_PATH>\MSBuild.exe `
+  -MsBuildPath <VS_PATH>\MSBuild\Current\Bin\amd64\MSBuild.exe `
   -InfVerifPath <WDK_PATH>\infverif.exe `
   -Inf2CatPath <WDK_PATH>\Inf2Cat.exe `
   -SignToolPath <WDK_PATH>\signtool.exe `
@@ -18,6 +18,11 @@ pwsh -File .\scripts\windows\build-xsnet-test-package.ps1 `
   -ConfirmDisposableVm `
   -AllowTestSigning
 ```
+
+The WDK 26100 build must use 64-bit MSBuild because its package verifier is
+shipped for x64. The official WDK 26100.6584 `Inf2Cat.exe` uses Microsoft's
+internal build-tools certificate rather than a publicly trusted signer; the
+builder accepts only the exact pinned SHA-256 binary from that WDK release.
 
 ```powershell
 pwsh -File .\installers\windows\install-xsnet-test.ps1 `
@@ -38,4 +43,4 @@ The installer rejects an existing xsnet device/package, unexpected files, direct
 
 Successful installation stores only ABI v1, the four-part driver version, package hashes, signer thumbprint, exact device instance IDs, published INF name, and timestamp under `%ProgramData%\XS Nexus`. The state directory ACL grants full access only to LocalSystem and built-in Administrators. Uninstall removes only those recorded objects and keeps state if any xsnet residual remains. The test workflow is clean-install only; compatibility and rollback boundaries are defined in `docs/WINDOWS_XSNET_COMPATIBILITY.md`.
 
-No Windows execution result exists until `BLK-001` is resolved. Run MSBuild, InfVerif, catalog generation, test signing, installation, uninstall, repeated lifecycle, traffic, network switching, reboot, sleep, crash, malformed IOCTL, Driver Verifier, and residual checks in the VM and preserve the output.
+The first accepted Windows driver run is documented in `docs/WINDOWS_XSNET_VM_EVIDENCE.md`. It covers WDK build, InfVerif, catalog generation, test signing, clean install, SYSTEM Tx/Rx, PnP restart, standard Driver Verifier, UMDF/Application Verifier, repeated lifecycle, clean uninstall and residual checks. It does not convert these scripts into a production installer or close the remaining complete-Agent, route/DAD, sleep, production-signing or Windows 10 gates.

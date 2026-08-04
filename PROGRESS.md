@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-03 15:10 UTC
-当前 Git 提交：Linux 一键接入实现 `4994e6ae76f5ccae345da39924d00aa0fc710c50`；生产部署记录以本文件后续提交为准
+最后更新时间：2026-08-04
+当前 Git 提交：以包含本记录的提交为准；生产 Linux 部署仍对应本文件 Linux 一键接入章节记录的提交
 当前总状态：`BLOCKED_EXTERNAL`
-当前里程碑：`Linux 固定域名一键接入已完成生产部署与公网验证`
+当前里程碑：`Linux 固定域名一键接入已部署；Windows xsnet 测试签名驱动 VM 门禁已通过`
 
 ---
 
@@ -12,7 +12,7 @@
 - Linux、Controller、Relay、Console、XSP/1、NAT/Relay、ACL/子网、安装更新、1Panel 隔离部署、认证遥测、加密备份/复制、镜像供应链、三轮回归、性能与 24 小时稳定性均有正式证据；
 - Linux 一键引导已实现固定 `https://vpn.qinwen.co/`、隐藏交互 Token、双架构离线签名发布和 Controller 精确下载路由；隔离 Docker 构建、安装器安全测试、ShellCheck、下载 smoke、生产部署和公网逐文件复验均通过；
 - 任务书要求的 `xs status`、`xs peers`、`xs ping <virtual-ip>`、`xs path <virtual-ip>`、`xs routes`、`xs netcheck`、`xs diagnostics`、`xs reconnect`、`xs version` 已全部实现并在真实双 Agent namespace 中验证，证据 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`；
-- Windows 当前环境可完成的 ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；完整 Windows runtime 仍禁用，真实链接、WDK、VM、签名、PnP/power 和 Verifier 由 `BLK-001`/`BLK-004` 阻塞；
+- Windows ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；`xsnet` 测试签名驱动又通过 WDK/VM/SYSTEM Tx/Rx/PnP/standard+UMDF+Application Verifier 门禁。完整 Windows Agent/runtime、SCM/Named Pipe/存储/IP Helper/DAD/sleep、生产安装升级、Windows 10 和正式签名仍开放；
 - 仅剩 `BLOCKERS.md` 和开放 `KNOWN_ISSUES.md` 所列外部门禁；项目仍是部分完成，不是 Release Candidate，也不适合公网生产。
 
 ## 已完成
@@ -135,8 +135,8 @@
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
 - 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
 - M6.1 当时已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器、私有存储和 Service/SCM 边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；该段所列 Windows 路由管理准备已在后续完成，当前剩余项以本文顶部结论和 `BLOCKERS.md` 为准；
-- 开发服务器已确认仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；`BLK-001` 继续阻塞真实驱动构建、测试签名和实机验收；
-- 真实 Windows VM、正式驱动签名和日常 Windows 电脑保持人工门禁，不伪造实机结果。
+- 当时开发服务器仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；该环境限制后来由 NAS KVM 的 Windows 11 VM 解除，并完成测试签名驱动实机门禁；
+- 正式驱动签名、完整 Agent 实机和日常 Windows 电脑仍保持独立人工门禁，不从测试签名驱动结果外推。
 - Acceptance A 已有源码和文档证据；容器操作系统 SBOM、许可证全文和构建来源证明仍留在 Release Checklist，不提前宣称完整 RC 供应链。
 
 ## 2026-07-31 历史下一步（已由后续实现取代）
@@ -170,7 +170,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 
 无未解决测试失败。
 
-## M6.1 当前验证
+## 2026-07-31 M6.1 源码阶段验证（已由 2026-08-04 实机证据扩展）
 
 - 命令：`make test-windows-xsnet-abi`；
 - 结果：通过；
@@ -178,16 +178,16 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - 压力覆盖：固定种子每域 30,000 轮任意输入或状态操作，所有失败会话操作逐字段保持原状态，失败队列操作保持元数据和完整 64 槽字节，六类有效消息逐字节变异；
 - 生命周期覆盖：单一 wait lock 语义下穷举六类 teardown 的 720 种顺序，验证 cleanup、queue cancel、I/O stop、睡眠和移除的断链、单次请求结算与幂等恢复；不冒充 WDF/VM 实测；
 - Agent 客户端覆盖：18 个 Rust 测试验证 ABI/IOCTL 固定向量、单飞、成功提交、拒绝状态保持、未知结果强制重连、规范批次、畸形响应失败关闭、transport 分类、配置先于设备打开校验、失败启动释放、无效 RX/Drop 零 I/O、shutdown 显式重试、非 Windows 拒绝，以及单步会话启动、协商 TX 容量、TX/RX、无自动重试和有序幂等关闭；
-- 当前实现：有界 IPv4 队列、TX 空请求/RX framed 请求、同步 direct-I/O、协商深度、SetLink 门禁、NetAdapterCx TX/RX 系统缓冲区复制源码和 Agent 单步设备会话已完成；空 TX/满 RX 状态映射与 runtime 接入等待 WDK/VM 证据，Windows 部分尚未经过 WDK 编译或执行；
-- 测试安装准备：已加入只面向快照 VM 的 PowerShell 构建、安装、卸载和六阶段采证脚本，固定 signer thumbprint、Microsoft-signed WDK 工具、精确状态回滚、双重人工重启和残留拒绝；尚未在 Windows 执行；
-- 安装器验证：`make test-windows-xsnet-installer` 与 `make test-windows-xsnet-vm-scripts` 通过；先前模块/安装/卸载脚本和本轮两份新增脚本均由本地 Windows PowerShell parser 零语法错误解析；未运行 MSBuild、InfVerif、Inf2Cat、SignTool、设备安装、卸载或 Verifier 命令；
+- 当时实现：有界 IPv4 队列、TX 空请求/RX framed 请求、同步 direct-I/O、协商深度、SetLink 门禁、NetAdapterCx TX/RX 系统缓冲区复制源码和 Agent 单步设备会话已完成；空 TX/满 RX 状态映射与 runtime 接入等待实机证据。2026-08-04 已补驱动 WDK/VM/Verifier 证据，但没有补完整 Agent/runtime 证据；
+- 当时测试安装准备：已加入只面向快照 VM 的 PowerShell 构建、安装、卸载和六阶段采证脚本，固定 signer thumbprint、Microsoft-signed WDK 工具、精确状态回滚、双重人工重启和残留拒绝；这些脚本后来在受控 VM 中实际执行；
+- 当时安装器验证：`make test-windows-xsnet-installer` 与 `make test-windows-xsnet-vm-scripts` 通过，模块/安装/卸载/构建/编排脚本由 PowerShell parser 零语法错误解析；后续已实际运行 MSBuild、InfVerif、Inf2Cat、SignTool、设备安装、卸载和 Verifier，详见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`；
 - 兼容验证：`make test-windows-xsnet-compatibility` 通过，静态强制 Rust/C/安装状态 ABI 都为 v1、INF 只有一个四段 `DriverVer`、构建清单固定 ABI/capability、安装前后核对 driver version 且测试安装器拒绝既有 xsnet；未执行真实版本替换或回滚；
-- 不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏。
+- 当时不覆盖：WDK、NetAdapterCx、INF、签名、安装、Windows 收发、PnP/power、Driver Verifier 和蓝屏；其中测试签名驱动的 build/install/TxRx/PnP/Verifier/no-bugcheck/uninstall 已由 2026-08-04 证据补齐，完整 Agent、power/sleep、生产签名与升级仍未覆盖。
 
-## 外部阻塞
+## 当前外部阻塞
 
-- Windows 驱动真实测试需要 Windows 11 测试 VM、快照和 WDK；
-- NAS 接入需要用户在 NAS 本地执行安装；
+- Windows 测试签名驱动环境门禁已解除；完整 Windows Agent、SCM/Named Pipe/存储/IP Helper/DAD/路由/sleep 与生产安装升级仍需受控 Windows 实机；
+- NAS 普通节点、Direct/Relay、升级卸载、子网审批、ACL 和离线撤销仍需真实业务验收；
 - 正式驱动签名需要外部签名流程；
 - DNS 和生产防火墙变更需要人工批准；
 - 现有 PostgreSQL、Redis 公网暴露整改需要用户批准修改 1Panel 或云防火墙，见 `BLK-005`。
@@ -195,7 +195,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 ## 当前风险
 
 - 自研协议握手、AEAD 数据面、地址发现、认证路径迁移、隔离 NAT 矩阵和 Relay 已实现，但真实运营商网络、Relay 公网容量/延迟/丢包、长期 Fuzz 和独立第三方审计尚未完成；
-- Windows transport 最小 crate 已通过 MSVC target 编译，单步设备会话已通过 Linux fake transport 测试，但完整 Agent/驱动尚未经过 Windows SDK/WDK 编译链接和 VM 执行，空 TX/满 RX 权威状态和真实设备尚未验证；
+- Windows transport 最小 crate 已通过 MSVC target 编译，专用 SYSTEM harness 已在真实测试设备完成 exact ABI、Tx/Rx、LUID、reopen、PnP 和 Verifier；但完整 Rust Agent 尚未在 Windows SDK/WDK 环境链接运行，空 TX/满 RX 的 Win32 权威映射、SCM/Named Pipe/存储、route/DAD/sleep 和 Agent crash 仍未验证；
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
 - 源码依赖 SBOM 与四个运行镜像的 OS 包 SBOM、逐包许可证全文闭包及最终构建来源证明均已可复现生成；当前精确证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。剩余 glibc Critical/High 有界处置不是漏洞修复，仍须按 2026-08-31 到期日或镜像/扫描/API 导入变化提前复核；
 - PostgreSQL、Redis 现有公网端口仍可达；
@@ -274,7 +274,7 @@ make clean
 - 最新 M2.3 聚合验证绑定提交 `b80d780ab2788f9913b4b80997a220c099c40f0f`，证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`；真实双 Relay fallback/failover/Direct 恢复测试同时断言字节、丢弃和延迟指标。
 - 首轮 M2.3 在全部功能测试通过后因 Compose validator 缺少强制 revision 输入失败，证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185001Z`；验证器补齐完整测试专用变量后原样重跑通过。
 - Console 已删除未使用的 `nginx-module-image-filter` 与 TIFF 包链，完整 Docker 生命周期通过；提交 `ca7d2c2e026385b6e8f4432de7942b672be71d3a` 的供应链与漏洞证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`。结果降为 Critical 2、High 4、Medium 16、Negligible 24，Console/db-tools 无 Critical/High，当前可修复项为 0。
-- 剩余 glibc 三个 CVE 已建立可执行 disposition 门禁：精确匹配报告、拒绝可修复项/新增 High 或 Critical，并从镜像提取 Controller/Relay 二进制验证不导入受影响 API；复核期限为 2026-08-31，基础镜像、glibc、扫描结果或二进制导入变化会提前触发复核。Windows runtime 接入继续由 `BLK-001` 阻塞。
+- 剩余 glibc 三个 CVE 已建立可执行 disposition 门禁：精确匹配报告、拒绝可修复项/新增 High 或 Critical，并从镜像提取 Controller/Relay 二进制验证不导入受影响 API；复核期限为 2026-08-31，基础镜像、glibc、扫描结果或二进制导入变化会提前触发复核。当时 Windows runtime 接入由 `BLK-001` 阻塞；该驱动环境门禁后续已解除，但完整 Agent/runtime 仍保持禁用。
 - M7.1 首次三轮聚合在第 2 轮捕获候选路径测试的双向就绪竞态，失败证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T192431Z`；根因和修复记录于 `XS-2026-0003`。测试现独立等待两个方向完成认证路径探测，未延长超时；修复后的三轮聚合仍须从零重新计数。
 - 双向等待后的聚合首轮再次失败，证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194301Z`；旧 ERR 诊断被 cleanup 覆盖，现已修复为保留首错误命令及失败临时目录。定向 10 轮、fallback/path 组合 12 轮和完整 M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194855Z` 通过，但 `XS-2026-0003` 仍保持调查中，M7.1 三轮计数为零。
 - 提交 `52867cd` 后重新从零执行的三轮完整聚合全部通过，证据 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`；每轮覆盖 Linux 全链路、安装/部署/恢复、M6.1 Windows 源码门禁、E2E/视觉、image SBOM 和漏洞 disposition。当前记录 P0=0、P1=0，三个 P2 均有关闭结论，`XS-2026-0003` 已闭环；M7.1 自动化退出条件完成，但不改变 M6.1/M6.2 外部门禁。
@@ -334,6 +334,18 @@ make clean
 - 一键脚本固定 Controller 与下载域名，自动识别架构和主机名，从 `/dev/tty` 隐藏读取 Enrollment Token；Token 只进入 `0600` 临时文件，不进入命令参数、历史、配置和日志。公钥指纹、Ed25519 签名、清单字段、大小、SHA-256、归档成员类型/allowlist 和包内哈希全部失败关闭；
 - Compose 增加仓库外发布目录的只读挂载与 `UPDATE_SIGNING_PUBLIC_KEY_PATH`，RC 预检验证目录和更新公钥 Secret；Controller Dockerfile 显式复制 `installers/`，解决真实镜像构建中嵌入脚本缺失的问题；
 - 隔离工作树 `/srv/xs-nexus-one-click-qa-20260803` 通过 `bash scripts/test-linux-one-click.sh`、容器化 ShellCheck 和真实 PostgreSQL/Controller 镜像 smoke。证据 `/srv/xs-nexus/artifacts/qa/linux-one-click-20260803T143706Z`；smoke 验证 `/install` 与源码逐字节一致、公钥下载一致、未知文件拒绝，并在退出后清理临时容器/schema；
-- 正式 Ed25519 私钥保留在仓库和服务器之外，未进入 Git、发布服务器、命令输出或测试证据。生产服务器只会安装公钥、签名和只读发布产物；整体项目仍受 Windows VM/WDK/签名、真实 NAS、第三方安全审计等既有外部门禁约束，不因 Linux 一键入口完成而标记 Release Candidate。
+- 正式 Ed25519 私钥保留在仓库和服务器之外，未进入 Git、发布服务器、命令输出或测试证据。生产服务器只会安装公钥、签名和只读发布产物；整体项目仍受完整 Windows Agent/正式签名、真实 NAS 业务验收、第三方安全审计等既有外部门禁约束，不因 Linux 一键入口完成或 `xsnet` 驱动实验室门禁通过而标记 Release Candidate。
 - 生产服务器以提交 `4994e6ae76f5ccae345da39924d00aa0fc710c50` 构建 Controller、Relay、Console、db-tools 四个同 revision 镜像。部署脚本先生成并复制 age X25519 加密备份 `pre-migration-rc-20260803T150820-1235304`，再执行迁移与受保护激活；Controller、Relay、Console 全部健康，未触发回滚；
 - 公网 `https://vpn.qinwen.co/install` 与仓库脚本 SHA-256 同为 `799b7ebef2e2fb4abb6a7fa815c10ee8dfe8ca289e65e618a658f59ac6808d21`。七个发布文件通过公网逐字节比较和 Ed25519 复验；公钥 SHA-256 为 `b987e95acebaf2ff24d08bab17ae6a3cc60cc89f9805920416a3ac8cabba5253`，x86_64/aarch64 archive SHA-256 分别为 `53258f84378cfc64b11a8c0322bfd7a59c0f3e8774319d1eefd72ef289b19a58` 与 `446bef5d15c7d1d2a5f2c7ef4b8af34abd442764e540c7fd96698822aca921c9`。未知发布文件公网返回 404，Controller/Console 健康入口返回 200，UDP 42000/42001 保持监听。
+
+## 2026-08-04 Windows xsnet WDK/VM 驱动门禁
+
+- NAS KVM 中的 Windows 11 IoT Enterprise LTSC 2024 x64 build 26100.8875 已安装 VS 2022 Build Tools、Windows SDK/WDK 26100 和 PowerShell 7；测试使用可恢复快照，正式服务端未修改。
+- 最终测试包版本 `15.39.27.376`，exact ABI `1..1`；MSBuild Release x64 为 0 warning/0 error，InfVerif 有效，Inf2Cat 无 warning/error，DLL/CAT 签名有效。CAT/DLL/INF SHA-256 分别为 `62D5AC4A5FEE5C203CB577066AFEA4842D0C7E099739CF89EACEE15D4E9110A9`、`B63863E077348A6B0A413354538B31B6F5352142AFC4132EEEE8A9A08EC809EA`、`8F298BED8983E0CD0C584C619A825A5264AAF1CA269BDC3F6D1E79334EAA5A08`。
+- 专用 SYSTEM harness 真实执行唯一接口枚举、独占打开、Hello/Attach/LinkUp、确定性 UDP→TX、RX 注入、LinkDown、reopen 和同句柄 LUID；普通 PnP restart 285 ms，前后两轮数据面均通过。
+- standard Driver Verifier `0x001209bb` oneboot 启动后，活动列表包含 `xsnet.dll`，SYSTEM 数据面通过，无 bugcheck；随后已 reset 并重启。
+- 首轮取消修正被 UMDF/Application Verifier 捕获为 failure 414，并由 WER 记录 `LKD_0x15E_VRF_Mini_Nbl_Leak_IMAGE_netcxrd.sys`。失败转储已先导出；根因是取消路径伪造 packet/fragment post/ownership 边界。最终实现按 NetAdapterCx 合约只推进 TX packet completion Begin，并增加源码负向门禁。
+- 最终 UMDF `VerifierOn/VerifyDownLevel` 与 Application Verifier Heaps/Exceptions/Handles/Locks/Memory/TLS/Leak 同时启用；三轮 PnP restart 为 1,443/2,113/877 ms，三轮 SYSTEM Tx/Rx 均通过。新增 WDF dump 0、NDIS/LiveKernel dump 0、相关 WER 0、相关错误事件 0。
+- 所有 verifier 设置已删除，关闭后 restart 736 ms；六阶段工作流 clean uninstall 成功，最终 xsnet device/package/安装状态/DriverStore 残留均为 0。通过证据 `work/windows-final-export/passed-004` 共 67 文件、4,700,127 bytes，package manifest 和 `evidence-sha256.json` 独立复核均无 mismatch；完整说明见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
+- `BLK-001` 的 Windows 11 测试签名驱动环境门禁解除，但不表示 Windows 客户端可生产发布。完整 Agent、SCM/Named Pipe/存储、route/DAD/sleep、生产安装器/回滚、Windows 10 和正式签名仍由 `KI-016`、`KI-017`、`KI-018`、`KI-020` 与 `BLK-004` 跟踪。
+- 提交前最终回归：四个 Python 源码/兼容/安装/VM 门禁、五个 PowerShell 文件 parser 与 `git diff --check` 通过；隔离 Linux QA 中 Clang Release 和 GCC ASan/UBSan 各 6/6 便携 ABI 测试通过，`cargo fmt --all -- --check` 与 `cargo check -p xs-agent --example windows_xsnet_smoke` 通过；secret scanner regression、仓库秘密扫描及已知凭据字面量检查均通过。临时 QA 工作树不作为发布产物，提交/推送后精确清理。

@@ -1,5 +1,12 @@
 #include "xsnet_driver.h"
 
+#include <string.h>
+
+static const uint8_t XSNET_LOCAL_LINK_ADDRESS[6] = {
+    0x02, 0x58, 0x53, 0x4e, 0x00, 0x01};
+static const uint8_t XSNET_PEER_LINK_ADDRESS[6] = {
+    0x02, 0x58, 0x53, 0x4e, 0x00, 0x02};
+
 static void initialize_queue_config(NET_PACKET_QUEUE_CONFIG *queue_config) {
     NET_PACKET_QUEUE_CONFIG_INIT(
         queue_config,
@@ -64,15 +71,13 @@ NTSTATUS XsnetEvtAdapterCreateTxQueue(
     NET_PACKET_QUEUE_CONFIG queue_config;
     NET_EXTENSION_QUERY extension_query;
     WDF_OBJECT_ATTRIBUTES queue_attributes;
-    WDFDEVICE device = (WDFDEVICE)WdfObjectGetParentObject(adapter);
+    WDFDEVICE device = XsnetGetAdapterContext(adapter)->device;
     NETPACKETQUEUE packet_queue;
     XsnetQueueContext *queue_context;
     NTSTATUS status;
 
     initialize_queue_config(&queue_config);
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&queue_attributes, XsnetQueueContext);
-    queue_attributes.ExecutionLevel = WdfExecutionLevelPassive;
-    queue_attributes.SynchronizationScope = WdfSynchronizationScopeNone;
     status = NetTxQueueCreate(
         queue_init,
         &queue_attributes,
@@ -113,15 +118,13 @@ NTSTATUS XsnetEvtAdapterCreateRxQueue(
     NET_PACKET_QUEUE_CONFIG queue_config;
     NET_EXTENSION_QUERY extension_query;
     WDF_OBJECT_ATTRIBUTES queue_attributes;
-    WDFDEVICE device = (WDFDEVICE)WdfObjectGetParentObject(adapter);
+    WDFDEVICE device = XsnetGetAdapterContext(adapter)->device;
     NETPACKETQUEUE packet_queue;
     XsnetQueueContext *queue_context;
     NTSTATUS status;
 
     initialize_queue_config(&queue_config);
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&queue_attributes, XsnetQueueContext);
-    queue_attributes.ExecutionLevel = WdfExecutionLevelPassive;
-    queue_attributes.SynchronizationScope = WdfSynchronizationScopeNone;
     status = NetRxQueueCreate(
         queue_init,
         &queue_attributes,
@@ -183,6 +186,8 @@ static BOOLEAN copy_transmit_packets(
         NET_PACKET *packet = NetRingGetPacketAtIndex(packet_ring, packet_index);
         NET_FRAGMENT *fragment;
         NET_FRAGMENT_VIRTUAL_ADDRESS *virtual_address;
+        const uint8_t *frame;
+        uint32_t frame_length;
         XsnetQueueStatus queue_status;
 
         if (device_context->transmit_packets.count >=
@@ -210,17 +215,29 @@ static BOOLEAN copy_transmit_packets(
             valid = FALSE;
             break;
         }
-        queue_status = XsnetPacketQueuePush(
-            &device_context->transmit_packets,
-            (const uint8_t *)virtual_address->VirtualAddress + fragment->Offset,
-            (uint32_t)fragment->ValidLength);
+        frame = (const uint8_t *)virtual_address->VirtualAddress +
+                fragment->Offset;
+        frame_length = (uint32_t)fragment->ValidLength;
+        if (frame_length <= XSNET_ETHERNET_HEADER_SIZE ||
+            frame[12] != UINT8_C(0x08) || frame[13] != UINT8_C(0x00)) {
+            queue_status = XSNET_QUEUE_BAD_PACKET;
+        } else {
+            queue_status = XsnetPacketQueuePush(
+                &device_context->transmit_packets,
+                frame + XSNET_ETHERNET_HEADER_SIZE,
+                frame_length - XSNET_ETHERNET_HEADER_SIZE);
+        }
         if (queue_status == XSNET_QUEUE_FULL) {
             break;
         }
-        if (queue_status != XSNET_QUEUE_OK) {
-            valid = FALSE;
-            break;
-        }
+        /*
+         * The adapter advertises an IPv4-only ABI, but Windows can still
+         * submit IPv6 and other protocol traffic through an enabled binding.
+         * Such packets are outside the ABI rather than corrupt ring data, so
+         * consume and drop them instead of taking the link down from inside
+         * EvtPacketQueueAdvance.  A synchronous link-state transition here
+         * can re-enter the queue stop path and deadlock the callback thread.
+         */
         fragment_index = NetRingIncrementIndex(fragment_ring, fragment_index);
         packet_index = NetRingIncrementIndex(packet_ring, packet_index);
     }
@@ -256,28 +273,38 @@ static BOOLEAN copy_receive_packets(
                 fragment_index);
         NET_PACKET *packet;
         uint32_t packet_length;
+        uint8_t *frame;
 
         if (virtual_address == NULL || virtual_address->VirtualAddress == NULL ||
-            slot->length > fragment->Capacity ||
-            XsnetPacketQueuePop(
+            slot->length + XSNET_ETHERNET_HEADER_SIZE > fragment->Capacity) {
+            valid = FALSE;
+            break;
+        }
+        frame = (uint8_t *)virtual_address->VirtualAddress;
+        if (XsnetPacketQueuePop(
                 &device_context->receive_packets,
-                virtual_address->VirtualAddress,
-                (uint32_t)fragment->Capacity,
+                frame + XSNET_ETHERNET_HEADER_SIZE,
+                (uint32_t)fragment->Capacity - XSNET_ETHERNET_HEADER_SIZE,
                 &packet_length) != XSNET_QUEUE_OK) {
             valid = FALSE;
             break;
         }
+        memcpy(frame, XSNET_LOCAL_LINK_ADDRESS, 6);
+        memcpy(frame + 6, XSNET_PEER_LINK_ADDRESS, 6);
+        frame[12] = UINT8_C(0x08);
+        frame[13] = UINT8_C(0x00);
         fragment->Offset = 0;
-        fragment->ValidLength = packet_length;
+        fragment->ValidLength =
+            packet_length + XSNET_ETHERNET_HEADER_SIZE;
         packet = NetRingGetPacketAtIndex(packet_ring, packet_index);
         packet->FragmentIndex = fragment_index;
         packet->FragmentCount = 1;
-        packet->Layout.Layer2HeaderLength = 0;
+        packet->Layout.Layer2HeaderLength = XSNET_ETHERNET_HEADER_SIZE;
         packet->Layout.Layer3HeaderLength =
-            ((const uint8_t *)virtual_address->VirtualAddress)[0] & UINT8_C(0x0f);
+            frame[XSNET_ETHERNET_HEADER_SIZE] & UINT8_C(0x0f);
         packet->Layout.Layer3HeaderLength *= 4;
         packet->Layout.Layer4HeaderLength = 0;
-        packet->Layout.Layer2Type = NetPacketLayer2TypeNull;
+        packet->Layout.Layer2Type = NetPacketLayer2TypeEthernet;
         packet->Layout.Layer3Type =
             packet->Layout.Layer3HeaderLength == XSNET_ABI_MIN_PACKET_SIZE
                 ? NetPacketLayer3TypeIPv4NoOptions
@@ -314,9 +341,7 @@ void XsnetEvtPacketQueueAdvance(NETPACKETQUEUE packet_queue) {
         }
     }
     WdfWaitLockRelease(device_context->session_lock);
-    if (!valid) {
-        XsnetAdapterSetConnected(queue_context->device, FALSE);
-    }
+    UNREFERENCED_PARAMETER(valid);
 }
 
 void XsnetEvtPacketQueueSetNotificationEnabled(
@@ -359,7 +384,39 @@ static void reset_packet_queue(
         }
         WdfWaitLockRelease(device_context->session_lock);
     }
-    XsnetAdapterSetConnected(queue_context->device, FALSE);
+}
+
+static void cancel_transmit_rings(
+    const NET_RING_COLLECTION *rings) {
+    NET_RING *packet_ring = NetRingCollectionGetPacketRing(rings);
+    UINT32 packet_index = packet_ring->BeginIndex;
+
+    /*
+     * Complete every packet during the NetAdapterCx cancellation handshake.
+     * BeginIndex is the transmit completion boundary.  Do not rewrite the
+     * post boundary (NextIndex) or the fragment ring here: NetAdapterCx owns
+     * those relationships and verifier treats an artificial post advance as
+     * a leaked NBL during queue teardown.
+     */
+    while (packet_index != packet_ring->EndIndex) {
+        NetRingGetPacketAtIndex(packet_ring, packet_index)->Scratch = 1;
+        packet_index = NetRingIncrementIndex(packet_ring, packet_index);
+    }
+    packet_ring->BeginIndex = packet_ring->EndIndex;
+}
+
+static void cancel_receive_rings(
+    const NET_RING_COLLECTION *rings) {
+    NET_RING *packet_ring = NetRingCollectionGetPacketRing(rings);
+    NET_RING *fragment_ring = NetRingCollectionGetFragmentRing(rings);
+    UINT32 packet_index = packet_ring->BeginIndex;
+
+    while (packet_index != packet_ring->EndIndex) {
+        NetRingGetPacketAtIndex(packet_ring, packet_index)->Ignore = 1;
+        packet_index = NetRingIncrementIndex(packet_ring, packet_index);
+    }
+    packet_ring->BeginIndex = packet_ring->EndIndex;
+    fragment_ring->BeginIndex = fragment_ring->EndIndex;
 }
 
 void XsnetEvtPacketQueueStop(NETPACKETQUEUE packet_queue) {
@@ -367,5 +424,12 @@ void XsnetEvtPacketQueueStop(NETPACKETQUEUE packet_queue) {
 }
 
 void XsnetEvtPacketQueueCancel(NETPACKETQUEUE packet_queue) {
+    XsnetQueueContext *queue_context = XsnetGetQueueContext(packet_queue);
+
+    if (queue_context->direction == XSNET_QUEUE_TRANSMIT) {
+        cancel_transmit_rings(queue_context->rings);
+    } else {
+        cancel_receive_rings(queue_context->rings);
+    }
     reset_packet_queue(packet_queue, TRUE);
 }

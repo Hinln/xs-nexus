@@ -431,7 +431,6 @@ static void complete_control_request(
     size_t actual_input_length;
     XsnetValidationStatus validation_status;
     XsnetSessionStatus session_status;
-    XsnetSession previous_session;
     BOOLEAN link_state_changed = FALSE;
     BOOLEAN link_connected = FALSE;
     BOOLEAN update_adapter_mtu = FALSE;
@@ -459,7 +458,6 @@ static void complete_control_request(
         WdfRequestComplete(request, status);
         return;
     }
-    previous_session = device_context->session;
     if (!file_context->accepted) {
         session_status = XSNET_SESSION_BAD_OWNER;
     } else {
@@ -482,16 +480,9 @@ static void complete_control_request(
         adapter_mtu = device_context->session.mtu;
     } else if (session_status == XSNET_SESSION_OK &&
                message_type == XSNET_MESSAGE_SET_LINK) {
-        if (device_context->session.state == XSNET_SESSION_LINK_UP &&
-            (!transmit_queue_ready_locked(device_context) ||
-             !receive_queue_ready_locked(device_context))) {
-            device_context->session = previous_session;
-            status = STATUS_DEVICE_NOT_READY;
-        } else {
-            link_state_changed = TRUE;
-            link_connected =
-                device_context->session.state == XSNET_SESSION_LINK_UP;
-        }
+        link_state_changed = TRUE;
+        link_connected =
+            device_context->session.state == XSNET_SESSION_LINK_UP;
     } else if (session_status == XSNET_SESSION_OK &&
                message_type == XSNET_MESSAGE_DETACH) {
         XsnetPacketQueueReset(&device_context->transmit_packets);
@@ -509,21 +500,6 @@ static void complete_control_request(
     }
     if (link_state_changed) {
         XsnetAdapterSetConnected(device, link_connected);
-        if (link_connected) {
-            status = WdfWaitLockAcquire(device_context->session_lock, NULL);
-            if (NT_SUCCESS(status)) {
-                link_connected =
-                    device_context->session.state == XSNET_SESSION_LINK_UP &&
-                    transmit_queue_ready_locked(device_context) &&
-                    receive_queue_ready_locked(device_context);
-                WdfWaitLockRelease(device_context->session_lock);
-            } else {
-                link_connected = FALSE;
-            }
-            if (!link_connected) {
-                XsnetAdapterSetConnected(device, FALSE);
-            }
-        }
     }
     WdfRequestComplete(request, status);
 }

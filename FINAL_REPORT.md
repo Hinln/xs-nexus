@@ -1,7 +1,7 @@
 # XS Nexus 最终交付报告
 
-报告日期：2026-08-02  
-当前检查点：CLI、Windows Named Pipe client 与最终文档总审计工作树（以本报告后续提交为准）
+报告日期：2026-08-04  
+当前检查点：Linux 一键接入生产部署与 Windows xsnet WDK/VM 驱动门禁（以本报告后续提交为准）
 
 ## 1. 结论
 
@@ -10,13 +10,13 @@
 - [ ] 不适合生产
 - [ ] 仅研究/原型
 
-核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、认证加密备份/复制边界、24 小时稳定性、协议安全边界和 Windows 路由准备已完成可复现验证；项目仍受 Windows VM/WDK/正式签名、真实 NAS、数据库公网端口整改、正式备份 identity/真实异地主机和第三方审计等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
+核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、认证加密备份/复制边界、24 小时稳定性、协议安全边界和 Windows xsnet 测试签名驱动 WDK/VM/Verifier 已完成可复现验证；项目仍受完整 Windows Agent/runtime/正式签名、真实 NAS、数据库公网端口整改、正式备份 identity/真实异地主机和第三方审计等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
 
 ## 2. 版本和构建
 
 - Git：以本报告后续提交为准；签名更新先在隔离工作树和临时远程克隆完成验证。
 - 环境：Ubuntu x86_64 开发服务器，Rust workspace；Linux 与隔离 network namespace 测试。
-- 构建：Linux x86_64/aarch64 发布构建与 Windows 相关最小 crate 的 `x86_64-pc-windows-msvc` target check 已验证。
+- 构建：Linux x86_64/aarch64 发布构建、Windows 相关最小 crate 的 `x86_64-pc-windows-msvc` target check，以及 Windows 11 24H2/WDK 26100 的 xsnet Release x64 test package 已验证。
 - 签名：Linux 测试签名流程已验证；正式离线签名密钥和签名仪式未完成。
 - SBOM：源码 CycloneDX/SPDX 与四个容器镜像 OS 包逐包许可证闭包、Dockerfile/revision/image digest 和 in-toto/SLSA provenance 已生成；证据 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。固定 Grype 0.116.1 报告为 Critical 2、High 4、Medium 16、Negligible 24，无当前可修复项；有界 disposition 已通过，但不等于漏洞修复。db-tools 的 age 固定上游 `v1.3.1` 提交并以 `x/crypto v0.52.0` 构建，旧包的可修复项未获豁免。
 
@@ -27,7 +27,7 @@
 - XSP/1 身份认证、X25519、AEAD、抗重放、Key Epoch、双向 TUN/UDP：M1.3 证据 `/srv/xs-nexus/artifacts/qa/m1.3-20260729T153126Z`。
 - NAT 候选、打洞、Relay fallback/failover、ACL、子网路由和 Console：M2–M4 证据及三轮回归 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`。
 - Linux 安装、升级、回滚、卸载、备份恢复和部署隔离：M5.1/M5.2 证据；备份又完成 age 流式加密、不同文件系统自动复制、深度认证、取回、保留和销毁墓碑。
-- Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道 server/CLI client、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z` 及最终本地审计 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。
+- Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道 server/CLI client、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z` 及最终本地审计 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。测试签名驱动又在 Windows 11 24H2 VM 完成 WDK build、install、SYSTEM Tx/Rx、PnP restart、standard/UMDF/Application Verifier 和 clean uninstall；见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
 - Windows 路由准备：精确 LUID、IP Helper、DAD、manifest、additions-first、补偿和恢复；`make test-windows-agent-routing` 通过 16 个单测、源码门禁、MSVC target check 和 Clippy。runtime 仍隔离。
 - 性能基线：XSP/1 161,314 seal+open/s；Relay 87,822 包/s；Controller 100/500/1000 节点规模；release Agent Direct/Relay RTT 0.91/1.16 ms；Agent 空闲 CPU 0.55% 单核、RSS 7.95 MiB。证据见 `docs/PERFORMANCE_REPORT.md`。
 - 签名更新：离线签名不可变发布、三通道确定性灰度、节点签名状态、Controller 签名通道、Agent/root helper 双重验证和原子回滚；见 `docs/UPDATE_SYSTEM.md`。
@@ -37,11 +37,11 @@
 ## 4. 部分完成功能
 
 - 容器镜像供应链：113/113 个已安装 OS 包均有逐包许可证闭包；镜像 digest、OS SBOM、构建来源、Grype 报告和 disposition 已验证。当前报告包含 2 Critical、4 High、16 Medium、24 Negligible，均无可修复版本；glibc 处置有效期至 2026-08-31，变化时需提前复核。
-- Windows 路由：模型和平台 FFI 已完成静态/交叉验证，但没有 Windows SDK/WDK 编译、真实 IP Helper、DAD、PnP、睡眠恢复或设备实机证据。
+- Windows 路由：模型和平台 FFI 已完成静态/交叉验证；驱动设备、LUID 和 PnP 已有实机证据，但完整 Agent/route manager 尚未链接，没有真实 IP Helper、DAD、路由事务、manifest 恢复或睡眠证据。
 
 ## 5. 未完成功能与外部门禁
 
-- Windows 11 测试 VM、WDK、测试签名、Driver Verifier、安装/卸载/崩溃/蓝屏和完整 Agent 链接：`BLK-001`。
+- Windows 测试签名驱动环境门禁 `BLK-001` 已解除；完整 Agent、SCM/Named Pipe/存储、route/DAD/sleep 与生产安装器仍由 `KI-016`、`KI-017`、`KI-018`、`KI-020` 跟踪。
 - 正式 Windows 驱动签名：`BLK-004`。
 - 真实 NAS 安装、升级、Direct/Relay、子网审批和离线撤销：`BLK-002`。
 - 现有 PostgreSQL/Redis 公网端口整改和临时凭据轮换：`BLK-005`。
@@ -53,7 +53,7 @@
 
 - Controller：Axum/SQLx/PostgreSQL，控制面、Enrollment、签名配置和 WebSocket 广播。
 - Relay：认证 Lease、限速、有界队列、XSR/1 转发和脱敏指标。
-- Agent：Linux TUN/Netlink/XSP/1；Windows xsnet/session/route preparation 只作为隔离准备层，未接入 runtime。
+- Agent：Linux TUN/Netlink/XSP/1；Windows xsnet 驱动已通过专用 SYSTEM harness，但 Rust session/route preparation 仍作为隔离准备层，未接入 runtime。
 - XSP/1：Ed25519 身份、X25519 会话、HKDF、ChaCha20-Poly1305、重放窗口和 Key Epoch。
 - IPAM/ACL/路由：Controller 策略签名与 Agent 双端执行；Linux route manager 已实机隔离验证，Windows route manager 已静态/交叉验证。
 - Console：React/Vite，显示 Controller 已知事实和不可用原因。
@@ -69,21 +69,21 @@
 ## 8. 测试
 
 - 单元/集成/协议负向/NAT/Relay/ACL/子网路由/Playwright/视觉/安装升级回滚卸载：已有 M0–M7 证据和三轮回归。
-- Windows 路由专项：`make test-windows-agent-routing` 通过；不代表 Windows 实机。
+- Windows 路由专项：`make test-windows-agent-routing` 通过；xsnet 驱动另有 Windows 实机证据，但不代表 route manager 实机。
 - CLI/IPC 专项：`make test-windows-agent-ipc`、CLI/Core/Agent 测试和真实 `test-agent-candidate-path` 通过；Windows 结果仍只是交叉编译，不代表命名管道实机。
 - 性能：`/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`、`relay-throughput-20260731T211903Z`、`agent-rtt-20260731T221036Z`、Controller scale 和报告中列出的证据。
 - 稳定性：24 小时长样本与修正后的完整部署/重启回归已审计，详见 `docs/PERFORMANCE_REPORT.md`。
-- 未运行/无法运行：WDK/Windows VM/Driver Verifier、真实 NAS、公网跨地域 Relay、正式签名和生产防火墙验证。
+- 未运行/无法运行：完整 Windows Agent/SCM/route/DAD/sleep、真实 NAS、公网跨地域 Relay、正式签名和生产防火墙验证。WDK/Windows xsnet VM/Verifier 已运行。
 
 ## 9. 缺陷与风险
 
 - P0/P1：当前自动化回归无新增 P0/P1；这不替代第三方安全审计。
-- 高风险开放项：Windows 实机、正式签名、数据库公网暴露、真实 NAS、第三方协议/密码学审计。
+- 高风险开放项：完整 Windows Agent/runtime/正式签名、数据库公网暴露、真实 NAS、第三方协议/密码学审计。
 - 镜像漏洞 disposition 已有明确结论，但不等于漏洞修复或自动接受。
 
 ## 10. 安全结论
 
-身份、密钥、抗重放、ACL、Relay 明文隔离、更新哈希/签名和 secret 仓库外边界均有自动化证据；Windows 驱动安全和正式供应链仍未完成，第三方协议/密码学审计尚未执行。
+身份、密钥、抗重放、ACL、Relay 明文隔离、更新哈希/签名和 secret 仓库外边界均有自动化证据；Windows 测试签名驱动已有 standard/UMDF/Application Verifier 证据，但完整 Agent 与正式驱动供应链仍未完成，第三方协议/密码学审计尚未执行。
 
 ## 11. 性能
 
@@ -97,7 +97,7 @@
 
 - 个人隔离测试：适合。
 - 小规模可信设备：Linux 测试范围内可继续验证，但需接受未完成门禁。
-- 公网生产：不适合，需先完成数据库暴露整改、正式签名、Windows/NAS、真实备份异地主机/密钥仪式和第三方审计门禁。
+- 公网生产：不适合，需先完成数据库暴露整改、正式签名、完整 Windows Agent/NAS、真实备份异地主机/密钥仪式和第三方审计门禁。
 - 企业关键网络：不适合，另需第三方协议/密码学审计、真实故障演练和正式供应链复核。
 
 ## 13. 凭据轮换
@@ -107,13 +107,13 @@
 ## 14. 后续优先级
 
 1. 完成 `BLK-007` 的正式备份 identity 仪式、真实异地主机挂载和生产恢复演练。
-2. 获取 Windows VM/WDK/签名环境，执行 M6.1 实机门禁并决定是否接入 runtime。
+2. 在已验证的 Windows VM 路线上构建完整 Agent，执行 SCM/Named Pipe/存储、route/DAD/sleep、失败状态和生产安装器/签名门禁后再决定是否接入 runtime。
 3. 完成数据库公网端口整改、正式离线签名和最终 RC 供应链复核。
 
 ## 15. 复现入口
 
 - 启动与约束：`start.md`、`BOOTSTRAP_PROMPT.md`、`AGENTS.md`。
 - Linux 全量验证：`make validate-m61-agent-session` 及各 `validate-m*` 目标。
-- Windows 路由准备：`make test-windows-agent-routing`。
+- Windows 驱动 VM：`docs/WINDOWS_XSNET_VM_EVIDENCE.md`；Windows 路由准备：`make test-windows-agent-routing`。
 - 性能报告：`docs/PERFORMANCE_REPORT.md`。
 - 阻塞清单：`BLOCKERS.md`。

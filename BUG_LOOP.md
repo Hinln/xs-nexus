@@ -200,7 +200,7 @@ Bug 集中修复阶段只有满足以下条件才通过：
 
 ## M6.1 Win32 transport 已闭环缺陷
 
-- 首次完整 Agent MSVC check 成功构建 Windows core/std 后在 `ring` 找不到 `lib.exe`，指定 `clang-cl` 后进一步证明缺少 Windows SDK `assert.h`；未把该失败写成 transport 编译结果，也未安装或伪造 SDK。transport 被隔离为不依赖 TLS/C 头的最小 crate，完整 Agent 继续由 `BLK-001` 阻塞。
+- 首次完整 Agent MSVC check 成功构建 Windows core/std 后在 `ring` 找不到 `lib.exe`，指定 `clang-cl` 后进一步证明当时缺少 Windows SDK `assert.h`；未把该失败写成 transport 编译结果，也未安装或伪造 SDK。transport 被隔离为不依赖 TLS/C 头的最小 crate；后续 Windows 11 VM/WDK 驱动环境门禁已解除，但完整 Agent 仍未链接。
 - 最小 crate 初次 `-Z build-std=std` 因发行版 rust-src 的 Windows std 内部 `windows_targets` 不完整失败；将 crate 收紧为 `no_std + alloc`，只构建实际需要的 core/alloc/panic_abort，随后 MSVC target check 通过。
 - Linux Clippy 首次拒绝只在 Windows 使用的私有访问器 dead code；用 `cfg(windows)` 限定真实使用点、接口解析保留 `cfg(test)`，没有添加 allow。交叉 Clippy 随后拒绝两个隐式 borrow-to-pointer，改为 Rust 2024 `&raw mut` 后 warnings-as-errors 通过。
 - 一次同步命令把 Agent 源文件误放到 `apps/agent/windows_xsnet.rs`；删除前逐字节 SHA-256 核对它等于本地待同步文件，再写入正确 `src/` 路径。错误文件未进入 Git，Agent 新增非 Windows 拒绝测试随后从 31 增至 32 个并实际执行。
@@ -258,7 +258,7 @@ Bug 集中修复阶段只有满足以下条件才通过：
 
 - `XS-2026-0007`：总审计发现 `xs-cli` 无条件导入 Unix socket，Windows target 无法编译；同时共享服务器用 `read_to_end` 等待客户端写半边 EOF，而 Windows duplex Named Pipe 没有可依赖的 Unix 半关闭语义，即使补一个简单 client 也会形成双方等待。
 - 修复：请求与响应统一改为 4 字节大端长度加严格 JSON，一连接一请求；server/client 分别拒绝零、超限、截断和错误类型。`xs-cli` 在 Windows 使用固定 Named Pipe client 且无 unsafe，Unix 路径保持私有 socket。Windows IPC 聚合门禁现在同时 MSVC check/Clippy server crate 和 CLI，不再只验证服务器半边。
-- 回归：Agent IPC 增加零/超限帧负向测试；CLI 三组协议/退出码测试原样通过；Linux Agent/CLI Clippy、Windows server/client MSVC check 与交叉 Clippy均通过。Windows Named Pipe/DACL/SCM 实际运行仍由 `BLK-001` 阻塞，不把交叉编译描述成实机结果。
+- 回归：Agent IPC 增加零/超限帧负向测试；CLI 三组协议/退出码测试原样通过；Linux Agent/CLI Clippy、Windows server/client MSVC check 与交叉 Clippy均通过。当时没有 Windows 实机结果；后续 `xsnet` 驱动 VM 门禁不包含 Rust Named Pipe/DACL/SCM，它们仍保持未验证，不把交叉编译描述成实机结果。
 
 ## 公网测试部署绑定闭环缺陷
 
@@ -277,3 +277,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0011`：真实 Linux 首次安装已从 Controller 成功取得签名状态，但 Agent 删除一次性令牌时返回 `agent_state_invalid`，安装器随后按设计回滚。根因是安装器把令牌复制到 root 拥有的 `/run` 根目录；服务用户可读文件但无权从父目录删除。
 - 修复：安装器改为在 Agent 自有的私有状态目录中创建随机临时令牌文件，并在退出、信号、失败和成功路径统一清理；Agent 仍负责在成功持久化状态后先删除令牌。
 - 回归：Linux 安装器测试的假 Agent 现在要求令牌位于随机私有状态路径、必须能自行删除，并在首次注册后留下节点状态；旧的 `/run/xs-nexus-enrollment-token` 路径会直接导致测试失败。
+
+## Windows xsnet Verifier 闭环缺陷
+
+- `XS-2026-0012`：首个 Windows 测试签名包可以完成普通 SYSTEM Tx/Rx 与 PnP restart，但启用 UMDF/Application Verifier 后 PnP restart 超时。WDF 记录 `WUDFVerifierFailure` 414，WER 将故障归类为 `LKD_0x15E_VRF_Mini_Nbl_Leak_IMAGE_netcxrd.sys`。
+- 根因：TX queue cancel 回调错误改写 packet/fragment 的 producer ownership indices，使 NetAdapterCx 在取消完成路径无法正确结算 NBL。该问题不能由平台无关生命周期模型或普通 PnP restart 发现。
+- 修复：TX cancel 只标记待取消 packet 并把 packet completion `BeginIndex` 推进到 `EndIndex`；不再改写 packet `NextIndex` 或 fragment `BeginIndex`/`NextIndex`。源码门禁现在单独抽取 cancel 函数并拒绝这些越权写入。
+- 回归：修复包在 Windows 11 24H2 VM 通过普通 restart、standard Driver Verifier oneboot、UMDF/Application Verifier 三轮 restart + SYSTEM smoke，settling 后新增相关 WDF/LiveKernel dump、WER 和 error event 均为零，随后 clean uninstall 零设备、零 driver-store 包。可复核摘要见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。

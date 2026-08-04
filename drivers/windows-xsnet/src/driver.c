@@ -1,6 +1,6 @@
-#include <initguid.h>
-
 #include "xsnet_driver.h"
+
+#include <initguid.h>
 
 DEFINE_GUID(
     GUID_DEVINTERFACE_XSNET,

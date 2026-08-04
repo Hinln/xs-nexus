@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 $script:XsnetHardwareId = 'Root\XSNET'
+$script:XsnetInstanceId = 'ROOT\DEVGEN\XSNET'
 $script:XsnetStatePath = Join-Path $env:ProgramData 'XS Nexus\xsnet-test-install.json'
 $script:XsnetAbiVersion = 1
 
@@ -75,20 +76,24 @@ function Get-XsnetInfDriverVersion {
         throw 'xsnet INF must be a real file'
     }
     $matches = @(Get-Content -LiteralPath $item.FullName | Where-Object {
-        $_ -match '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+        $_ -match '^\s*DriverVer\s*=\s*[^,]+,\s*(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s*$'
     })
     if ($matches.Count -ne 1) {
         throw 'xsnet INF must contain exactly one four-part DriverVer'
     }
     return [regex]::Match(
         $matches[0],
-        '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+        '^\s*DriverVer\s*=\s*[^,]+,\s*(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s*$'
     ).Groups['Version'].Value
 }
 
 function Get-XsnetDevices {
     $devices = @()
-    foreach ($device in @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue)) {
+    # DevGen deterministically creates this root-enumerated instance. Querying
+    # every present PnP device and then fetching every hardware-ID property can
+    # take several minutes on storage-constrained validation VMs.
+    foreach ($device in @(Get-PnpDevice -InstanceId $script:XsnetInstanceId `
+            -ErrorAction SilentlyContinue)) {
         try {
             $property = Get-PnpDeviceProperty -InstanceId $device.InstanceId `
                 -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction Stop

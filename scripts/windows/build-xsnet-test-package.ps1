@@ -18,6 +18,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:ApprovedInf2CatSha256 = `
+    'B594728D38B271979367ABC8060A971B8E42422738009BE126710B1F5DD0FCBC'
 
 if (-not $ConfirmDisposableVm -or -not $AllowTestSigning) {
     throw 'test package generation requires -ConfirmDisposableVm and -AllowTestSigning'
@@ -47,6 +49,44 @@ function Resolve-MicrosoftTool {
     if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
         $signature.SignerCertificate.Subject -notmatch '(?i)Microsoft') {
         throw "tool is not validly Microsoft-signed: $Path"
+    }
+    return $resolved
+}
+
+function Assert-Amd64MsBuildPath {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if ($Path -notmatch '(?i)\\MSBuild\\Current\\Bin\\amd64\\MSBuild\.exe$') {
+        throw 'WDK 26100 packaging requires the amd64 MSBuild executable'
+    }
+}
+
+function Resolve-ApprovedInf2Cat {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $resolved = Resolve-RealPath -Path $Path
+    $signature = Get-AuthenticodeSignature -LiteralPath $resolved
+    if ($signature.Status -eq 'Valid' -and $null -ne $signature.SignerCertificate -and
+        $signature.SignerCertificate.Subject -match '(?i)Microsoft') {
+        return $resolved
+    }
+
+    $file = Get-Item -LiteralPath $resolved
+    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $resolved).Hash
+    $isPinnedWdkTool =
+        $resolved -match '(?i)\\Windows Kits\\10\\bin\\10\.0\.26100\.0\\x86\\Inf2Cat\.exe$' -and
+        $hash -ceq $script:ApprovedInf2CatSha256 -and
+        $file.VersionInfo.FileDescription -ceq 'Inf2Cat' -and
+        $file.VersionInfo.ProductVersion -ceq '1.0.0519.24+3dc05997' -and
+        $null -ne $signature.SignerCertificate -and
+        $signature.SignerCertificate.Subject -ceq `
+            'CN=Windows Internal Build Tools CodeSign, O=Microsoft Corporation, L=Redmond, S=Washington, C=US' -and
+        $signature.SignerCertificate.Thumbprint -ceq `
+            '0061B7902128989780FAB7D913EA8D60FF9BB766' -and
+        $null -ne $signature.TimeStamperCertificate -and
+        $signature.TimeStamperCertificate.Subject -match '(?i)Microsoft Time-Stamp Service'
+    if (-not $isPinnedWdkTool) {
+        throw "Inf2Cat is neither validly Microsoft-signed nor the pinned WDK 26100.6584 binary: $Path"
     }
     return $resolved
 }
@@ -85,8 +125,9 @@ if (Test-Path -LiteralPath $output) {
 }
 
 $msbuild = Resolve-MicrosoftTool -Path $MsBuildPath
+Assert-Amd64MsBuildPath -Path $msbuild
 $infverif = Resolve-MicrosoftTool -Path $InfVerifPath
-$inf2cat = Resolve-MicrosoftTool -Path $Inf2CatPath
+$inf2cat = Resolve-ApprovedInf2Cat -Path $Inf2CatPath
 $signtool = Resolve-MicrosoftTool -Path $SignToolPath
 $thumbprint = ($TestSignerThumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
 $storeLocation = if ($CertificateInLocalMachineStore) { 'LocalMachine' } else { 'CurrentUser' }
@@ -95,7 +136,10 @@ if (-not $certificate.HasPrivateKey -or $certificate.NotBefore.ToUniversalTime()
     $certificate.NotAfter.ToUniversalTime() -le [DateTime]::UtcNow) {
     throw 'test signer certificate is not currently valid with a private key'
 }
-if (-not ($certificate.EnhancedKeyUsageList.ObjectId.Value -contains '1.3.6.1.5.5.7.3.3')) {
+$certificateEkus = @(
+    $certificate.EnhancedKeyUsageList | ForEach-Object { [string]$_.ObjectId }
+)
+if (-not ($certificateEkus -contains '1.3.6.1.5.5.7.3.3')) {
     throw 'test signer certificate lacks the code-signing EKU'
 }
 
@@ -112,6 +156,7 @@ Invoke-NativeTool -Path $msbuild -Arguments @(
     '/p:Configuration=Release',
     '/p:Platform=x64',
     '/p:SignMode=Off',
+    '/p:EnableInf2Cat=false',
     "/p:OutDir=$($buildOutput.FullName)\",
     "/p:IntDir=$($intermediate.FullName)\"
 ) -LogPath (Join-Path $logs 'msbuild.log')
@@ -119,14 +164,14 @@ Invoke-NativeTool -Path $msbuild -Arguments @(
 $builtDll = Resolve-RealPath -Path (Join-Path $buildOutput 'xsnet.dll')
 $builtInf = Resolve-RealPath -Path (Join-Path $buildOutput 'xsnet.inf')
 $driverVersionLines = @(Get-Content -LiteralPath $builtInf | Where-Object {
-    $_ -match '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+    $_ -match '^\s*DriverVer\s*=\s*[^,]+,\s*(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s*$'
 })
 if ($driverVersionLines.Count -ne 1) {
     throw 'built INF must contain exactly one four-part DriverVer'
 }
 $driverVersion = [regex]::Match(
     $driverVersionLines[0],
-    '^DriverVer=[^,]+,(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$'
+    '^\s*DriverVer\s*=\s*[^,]+,\s*(?<Version>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s*$'
 ).Groups['Version'].Value
 Copy-Item -LiteralPath $builtDll -Destination (Join-Path $package 'xsnet.dll')
 Copy-Item -LiteralPath $builtInf -Destination (Join-Path $package 'xsnet.inf')

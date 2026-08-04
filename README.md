@@ -1,6 +1,6 @@
 # 拾枢（XS Nexus）
 
-拾枢是独立设计和实现的三层安全内网互通系统。Linux 控制面、Agent、Relay、Web Console、NAT 路径选择、ACL、子网路由、安装生命周期和隔离部署已经形成自动化证据；Windows 驱动与 Agent 仍处于源码和交叉编译准备阶段，尚未通过 Windows 11 VM、WDK、测试签名或 Driver Verifier 实机门禁。
+拾枢是独立设计和实现的三层安全内网互通系统。Linux 控制面、Agent、Relay、Web Console、NAT 路径选择、ACL、子网路由、安装生命周期和隔离部署已经形成自动化证据；Windows `xsnet` 测试签名驱动已通过 Windows 11 VM、WDK、SYSTEM 数据面、PnP 和 Driver/Application Verifier 实机门禁，但完整 Windows Agent、生产安装器和正式签名仍未完成。
 
 当前项目是“部分完成”，不是 Release Candidate，也不适合直接投入公网生产或企业关键网络。权威状态见 `PROGRESS.md`、`ACCEPTANCE.md`、`BLOCKERS.md` 和 `FINAL_REPORT.md`。
 
@@ -11,7 +11,7 @@
 - `xs-agent`：Linux TUN/Netlink、XSP/1、NAT 候选、Direct/Relay、ACL 和子网路由。
 - `xs-cli`：Unix socket / Windows Named Pipe 本地状态、路径、路由、诊断和受限控制操作。
 - `xs-console`：基于真实 Controller API 的管理控制台。
-- `windows-xsnet`：自研 UMDF/NetAdapterCx 虚拟 NIC 源码、ABI、测试安装和 VM 采证流程；未通过实机验收。
+- `windows-xsnet`：自研 UMDF/NetAdapterCx 虚拟 NIC、exact ABI v1、严格测试安装和 VM 采证流程；Windows 11 测试签名驱动实验室门禁已通过，尚不属于生产分发包。
 
 核心运行路径不依赖 Tailscale、WireGuard/Wintun、ZeroTier、OpenVPN、FRP 或其他现成组网、VPN、穿透和中继产品。密码学使用成熟库中的标准原语；自研的是协议组合与系统实现，不自创密码算法。
 
@@ -61,7 +61,7 @@ make validate-image-supply-chain
 make test-runtime-stability
 ```
 
-测试会使用真实 PostgreSQL、Docker、Linux network namespace、TUN 和浏览器渲染等适用环境。Windows 源码门禁或 MSVC target check 不等同于 WDK 构建和 Windows 实机结果。
+测试会使用真实 PostgreSQL、Docker、Linux network namespace、TUN 和浏览器渲染等适用环境。Windows 源码门禁或 MSVC target check 不等同于 WDK 构建和 Windows 实机结果；`xsnet` 驱动另有独立、可复核的 WDK/VM 证据，见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，该证据不外推为完整 Windows Agent 验收。
 
 本地 CLI：
 
@@ -99,4 +99,4 @@ xs version
 - 修正重启证据语义后的真实回归：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`，三服务各 11 次采样、恰好一次 PID 转换且 `RestartCount` 全程为零。
 - 数据库备份采用 age X25519 流式认证加密、不同文件系统自动复制、离线 identity 深度校验、取回、保留和销毁墓碑；正式异地主机与密钥仪式仍由 `BLK-007` 阻塞。
 
-当前不可绕过的门禁包括 Windows 11 VM/WDK/Driver Verifier、正式驱动签名、真实 NAS、既有数据库公网端口整改、DNS/生产防火墙、正式离线签名和第三方协议/密码学审计。不得将这些项目描述为已完成。
+当前不可绕过的门禁包括完整 Windows Agent 的 SCM/Named Pipe/私有存储/IP Helper/DAD/睡眠实机联调、生产安装升级与正式驱动签名、真实 NAS 业务验收、既有数据库公网端口整改、DNS/生产防火墙、正式离线签名和第三方协议/密码学审计。不得将这些项目描述为已完成。

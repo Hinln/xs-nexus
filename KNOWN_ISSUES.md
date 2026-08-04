@@ -44,9 +44,10 @@
 ## KI-005 真实 Windows 驱动测试依赖外部 VM
 
 - 严重度：高
-- 状态：开放
-- 说明：Linux 服务器不能证明 Windows 驱动实机稳定。
-- 解除：Windows 11 测试 VM、快照、WDK、Driver Verifier。
+- 状态：已解除（2026-08-04）
+- 历史说明：Linux 服务器不能证明 Windows 驱动实机稳定。
+- 解除证据：Windows 11 24H2 快照 VM 完成 WDK build、测试签名、clean install、SYSTEM Tx/Rx、PnP restart、standard Driver Verifier、UMDF/Application Verifier 三轮重复验证和 clean uninstall；见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
+- 剩余边界：完整 Agent、生产安装器/签名、路由/DAD/睡眠和 Windows 10 是独立开放项，不由本问题的解除覆盖。
 
 ---
 
@@ -232,8 +233,8 @@
 - 首次发现：2026-07-31
 - 影响：`installers/windows` 可在快照 VM 验证测试签名驱动生命周期，但依赖微软禁止重分发和生产使用的本机 WDK DevGen，不能作为最终用户安装器或 RC 分发物。
 - 临时缓解：脚本名称、README、状态和参数均标记 test-only；必须显式提供测试 signer thumbprint 和 Microsoft-signed DevGen 路径，不下载、不打包、不修改 BCD，不允许既有 xsnet 状态。
-- 已完成缓解：安装失败和卸载只操作精确记录的 `Root\XSNET` instance 与 `oem#.inf`，20 秒有界等待，设备或 driver-store 残留返回失败并保留状态。测试包构建固定本机 Microsoft-signed WDK 工具、测试 signer、精确 allowlist、INF `DriverVer`、ABI `1..1` 和哈希；安装前后核对期望/INF/driver-store 版本，受限状态记录 exact ABI v1。VM 编排固定不可复用阶段、双重重启、Verifier oneboot、系统基线和最终证据哈希，但均尚未在 VM 执行。
-- 计划：Windows VM 驱动验证通过后，为正式签名包实现受支持的软件设备创建、升级、回滚和企业部署路径，并单独执行安装器威胁建模。
+- 已完成缓解：安装失败和卸载只操作精确记录的 `Root\XSNET` instance 与 `oem#.inf`，20 秒有界等待，设备或 driver-store 残留返回失败并保留状态。测试包构建固定本机 Microsoft-signed WDK 工具、测试 signer、精确 allowlist、INF `DriverVer`、ABI `1..1` 和哈希；安装前后核对期望/INF/driver-store 版本，受限状态记录 exact ABI v1。VM 编排已真实执行完整阶段、双重重启、Verifier oneboot、系统基线和最终证据哈希，clean uninstall 后设备、包、状态和 DriverStore 残留均为 0；见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
+- 计划：为正式签名包实现受支持的软件设备创建、升级、回滚和企业部署路径，并单独执行安装器威胁建模。
 - 解除条件：不依赖不可分发测试工具的正式安装器完成签名、干净安装、重复安装、升级、失败回滚、卸载、重启和零残留验收。
 
 ---
@@ -243,10 +244,10 @@
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-07-31
-- 影响：隔离 Win32 transport、本地命名管道、私有存储和 Service crate 已实现并通过各自最小 Windows target 编译，但完整 Agent 因缺少 Windows SDK 工具链尚未链接，且没有在 Windows 调用命名管道、存储 ACL/原子替换、SCM、设备枚举、独占 handle 或 `DeviceIoControl`；驱动的空 TX/满 RX 目前以失败状态完成，而通用 Win32 错误尚不能证明 request 未提交，因此仍不能安全启用持续收发。
+- 影响：隔离 Win32 transport、本地命名管道、私有存储和 Service crate 已实现并通过各自最小 Windows target 编译，但完整 Agent 尚未链接。专用 SYSTEM VM harness 已真实完成 Configuration Manager 设备枚举、独占 handle、七个 `DeviceIoControl`、Tx/Rx、reopen、LUID 和 PnP restart；它没有执行 Rust Named Pipe、存储 ACL/原子替换或 SCM。驱动的空 TX/满 RX 目前以失败状态完成，而通用 Win32 错误尚不能证明 request 未提交，因此仍不能安全启用持续收发。
 - 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果；平台 crate 不把任何 Win32 失败映射为 Rejected，所有未知结果、异常字节数、direct 输入变异和畸形成功响应强制重连。`XsnetDeviceSession` 每个方法只执行一个请求，不轮询、不后台重试、不在 Drop 中 I/O，且不接入 runtime。Agent 保持全局禁止 unsafe。
 - 已完成缓解：18 个 Agent xsnet 测试和 3 个 transport crate 测试覆盖 ABI/IOCTL、状态、单步会话、配置先于设备打开校验、协商 buffer 上限、拒绝/毒化、失败启动释放、无效 RX/Drop 零 I/O、显式 shutdown 重试、LinkDown/Detach、buffer mapping、长度、接口列表、identity schema/LUID 与非 Windows 拒绝；源码门禁在 VM 验证前禁止 runtime 接入、后台线程、sleep 和 session Drop I/O，六个 transport unsafe 块保持隔离。Windows 本地 IPC 固定名称、first-instance、远程拒绝、LocalSystem/Administrators DACL、不可继承 handle 和 16+1 容量边界；私有存储固定 exact protected DACL、reparse/父目录检查和 write-through 替换；Service 固定名称、四阶段状态、STOP/SHUTDOWN 一次性通知、状态竞争锁和四个隔离 unsafe 块，且不包含安装 API。Linux 回归、三个最小 Windows crate check 和交叉 Clippy已通过；identity 扩展后的最新完整证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`。
-- 计划：Windows IP Helper、DAD、精确路由事务、受保护 manifest、恢复编排和可信同句柄 LUID 的源码/交叉门禁已经完成；下一步只在具备 Windows Rust 标准库、SDK、WDK 和 VM 的受控环境编译链接完整 Agent/驱动，并执行 SCM、命名管道/存储 DACL、原子替换/崩溃恢复、设备枚举、七个 IOCTL、空 TX/满 RX 精确状态、取消与生命周期验收。只有获得权威 no-commit 证据或新增明确唤醒协议后才接入 runtime。
+- 计划：Windows IP Helper、DAD、精确路由事务、受保护 manifest、恢复编排和可信同句柄 LUID 的源码/交叉门禁已经完成，驱动/七个 IOCTL/取消/PnP 实机门禁也已通过；下一步在同类受控 VM 编译链接完整 Agent，并执行 SCM、命名管道/存储 DACL、原子替换/崩溃恢复、空 TX/满 RX 精确状态和 Agent crash/sleep 生命周期。只有获得权威 no-commit 证据或新增明确唤醒协议后才接入 runtime。
 - 解除条件：完整 Windows Agent 与驱动通过编译、unsafe 复核、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。
 
 ---
@@ -273,7 +274,7 @@
 - 首次发现：2026-07-31
 - 影响：IP Helper FFI、地址/DAD、精确路由、事务补偿、manifest 和恢复源码已实现并通过 MSVC target check/Clippy，但尚未由完整 Agent 在 Windows SDK/WDK 环境链接，也没有真实读取、创建或删除 Windows 地址/路由及 DAD、PnP、睡眠证据；Agent runtime 不得据此宣称 Windows 网络已可用。
 - 临时缓解：新 crate 不接入 runtime；unsafe 只存在于 Windows 平台模块。默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key。
-- 计划：获得 WDK/VM 后真实编译链接和执行既有实现，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复和同句柄 LUID；在证据通过前不接入 runtime。
+- 计划：在已验证的同类 Windows VM 中链接完整 Agent 并执行既有实现，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复和同句柄 LUID；在证据通过前不接入 runtime。
 - 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 

@@ -47,7 +47,7 @@
 - [x] 卸载（Linux M5.1）
 - [x] 稳定性（24 小时长样本与修正重启门禁回归已审计）
 - [x] 安全检查
-- [x] Driver Verifier，或明确外部阻塞（BLK-001）
+- [x] Windows 11 xsnet standard/UMDF/Application Verifier 实机通过（`docs/WINDOWS_XSNET_VM_EVIDENCE.md`）
 
 ## 部署
 
@@ -92,7 +92,8 @@
 ## 实机门禁
 
 - [x] Linux 核心通过（开发服务器与隔离 namespace；真实 NAS/arm64 仍待门禁）
-- [ ] Windows 测试 VM 通过
+- [x] Windows 11 xsnet 测试签名驱动 VM 通过
+- [ ] 完整 Windows Agent/SCM/路由/睡眠 VM 门禁通过
 - [ ] NAS 由用户手动接入
 - [ ] 日常 Windows 仅在 VM 通过后接入
 - [ ] DNS 由用户批准

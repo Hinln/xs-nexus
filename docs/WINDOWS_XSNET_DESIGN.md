@@ -1,7 +1,7 @@
 # xsnet Windows 驱动设计
 
-状态：M6.1 当前环境可完成源码/交叉门禁已完成；阻塞于 WDK/Windows VM  
-实机边界：尚无 WDK 构建、测试签名包、Windows VM、Driver Verifier 或蓝屏结论
+状态：M6.1 源码/交叉门禁与 Windows 11 24H2 WDK/VM 驱动门禁已完成  
+实机边界：测试签名驱动的构建、安装、SYSTEM 收发、PnP 热重启、标准/UMDF/Application Verifier 和卸载已验证；完整 Windows Agent、路由/DAD、睡眠、正式签名及 Windows 10 仍未完成
 
 ## 1. 平台选择
 
@@ -94,7 +94,7 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `apps/agent/src/windows_xsnet.rs` 实现无 `unsafe` 的 Agent 侧 ABI 客户端模型和 `XsnetDeviceSession`：固定 IOCTL、头和批次编码与 C 合约向量互校，单飞请求在成功后才提交 sequence/状态/Attach 参数；明确驱动拒绝保持原状态并允许调用方显式决定是否重试，传输结果不确定则进入 `ReconnectRequired`，禁止猜测 sequence。会话启动严格执行 Hello/Attach/SetLink，TX 输出容量由协商 MTU/深度推导，每个收发方法只执行一个有界请求，shutdown 按 LinkDown/Detach 排序且不在 Drop 中执行 I/O。TX 响应重新执行精确头、MTU、深度、连续描述符和 IPv4 校验。
 
-安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。隔离 `no_std + alloc` Win32 transport 已通过 `x86_64-pc-windows-msvc` core/alloc 构建和交叉 Clippy，使用唯一接口、独占同步 handle、六个 ABI IOCTL、一个独立 identity IOCTL 和六个受限 `unsafe` 块。identity query 在同一 handle 上获取驱动 `NETADAPTER` 的 authoritative LUID，不按名称匹配。完整 Agent 仍缺少 Windows SDK/WDK 链接与 VM 证据；空 TX/满 RX 的失败结果当前不能安全映射为 Rejected，因此会话适配层不接入运行时，不添加后台轮询或自动重试。完整边界见 `docs/WINDOWS_XSNET_TRANSPORT.md`。
+安全 `XsnetTransport` 契约已把平台结果限定为 Success、具有权威未提交证明的 Rejected 和保守 Indeterminate；畸形成功响应也会毒化 handle。隔离 `no_std + alloc` Win32 transport 已通过 `x86_64-pc-windows-msvc` core/alloc 构建和交叉 Clippy，使用唯一接口、独占同步 handle、六个 ABI IOCTL、一个独立 identity IOCTL 和六个受限 `unsafe` 块。identity query 在同一 handle 上获取驱动 `NETADAPTER` 的 authoritative LUID，不按名称匹配。VM harness 已经真实打开同一设备、执行全部会话/Tx/Rx IOCTL 并证明 LUID 在 reopen 和 PnP restart 后稳定；但完整 Rust Agent 尚未在 Windows 链接或接入 runtime，空 TX/满 RX 的 Win32 错误仍没有权威 no-commit 映射，因此会话适配层继续隔离，不添加后台轮询或自动重试。完整边界见 `docs/WINDOWS_XSNET_TRANSPORT.md`。
 
 ## 6. 队列和资源上限
 
@@ -107,20 +107,13 @@ DeviceCreated -> AdapterStopped -> OwnerOpened -> Negotiated -> Attached -> Link
 
 `include/xsnet_dataplane.h` 与 `src/dataplane.c` 已实现平台无关的固定槽队列模型：批次入队先完成全量规范编码、MTU 和容量检查，失败不部分入队；出队按调用方容量选择完整包，无法容纳首包时不消费；成功出队和 reset 清零完整槽。该模型只证明队列语义，不代表已接入 WDF direct I/O 或 NetAdapterCx ring。
 
-NetAdapterCx packet queue 源码按官方 ring 所有权规则缓存 TX/RX ring collection 和虚拟地址 fragment 扩展，并限定 Passive 回调。TX 只读取一包一 fragment 的系统缓冲区，完整复制入私有队列后才推进 Begin/Next；RX 只把已通过 IPv4 version、IHL、总长度和 MTU 校验的包复制到系统缓冲区，设置 `Layer2TypeNull`、IPv4 header length 和单 fragment，再推进 Begin。ring 索引、fragment 数、虚拟地址或容量异常会停止消费并断链。SetLink 只有在双向 packet queue 已启动时才能 link up；queue stop/cancel 会清空对应积压、退回 Attached 并断链。
+NetAdapterCx packet queue 源码按官方 ring 所有权规则缓存 TX/RX ring collection 和虚拟地址 fragment 扩展。Windows 侧媒体类型为 Ethernet，私有 Agent ABI 为 raw IPv4：TX 验证并剥离 14 字节 Ethernet 头，RX 合成固定本地/对端地址与 IPv4 EtherType，再设置 Ethernet/IPv4 layout。同步完成后才推进正常 Begin/Next；发送取消只标记 completion range 并推进 packet `BeginIndex`，不得伪造 post `NextIndex` 或 fragment ownership。ring 索引、fragment 数、虚拟地址或容量异常会停止当前消费；packet queue callback 内不允许同步改变 link state，以免重入 NetAdapterCx stop/cancel。SetLink 只有在双向 packet queue 已启动时才能 link up；queue stop/cancel 会清空对应积压、退回 Attached，并由控制路径维护 link state。
 
-## 7. 未完成门禁
+## 7. 实机门禁状态
 
-以下项目在获得 `BLK-001` 环境前不得标记通过：
+Windows 11 24H2 VM 已完成 WDK/Visual Studio 编译、INF/CAT、测试签名、clean install、真实设备句柄与会话/Tx/Rx IOCTL、PnP 热重启、standard Driver Verifier、UMDF/Application Verifier 和 clean uninstall。三轮 verifier-enabled 重启/数据面均通过，且没有新增 WDF、NDIS/LiveKernel、相关 WER 或错误事件。完整环境、哈希和时间见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，因此 `BLK-001` 的驱动环境门禁已解除。
 
-- WDK/Visual Studio 的 UMDF 2.33 + NetAdapterCx 2.5 编译；
-- INF、CAT、测试签名和驱动安装；
-- Windows 11 24H2 队列收发和 Linux 互通；
-- 取消、Agent crash、设备移除、睡眠/唤醒和网络切换；
-- 反复安装/升级/卸载和失败回滚；
-- Driver Verifier、崩溃转储和蓝屏结果。
-
-正式微软签名继续由 `BLK-004` 阻塞。编译成功也不能替代 VM 或 Driver Verifier 证据。
+尚未完成并不得外推：完整 Rust Agent Windows 链接/runtime 接入、空 TX/满 RX 权威 no-commit 映射、SCM/Named Pipe/私有存储实机、IP Helper/DAD/路由与崩溃恢复、睡眠/唤醒、生产升级/回滚、Windows 10 和正式微软签名。它们继续由 `KI-016`、`KI-017`、`KI-018`、`KI-020` 与 `BLK-004` 跟踪。
 
 ## 8. 当前自动验证
 
@@ -136,4 +129,4 @@ make test-windows-xsnet-source
 
 该命令检查 WDK 工程和 INF 的目标版本、安全指令、IOCTL 模式、源码生命周期调用，以及压力/生命周期测试注册与 Release 断言门禁。当前源码已包含 DriverEntry、DeviceAdd、file create/cleanup/close、串行控制队列、D0/release reset、NetAdapter 创建/start/stop 和 packet queue 生命周期骨架。
 
-SetLink、同步 TX/RX direct-I/O 和 ring copy 源码已经接通，并由源码脚本检查 buffer、通知、ring 和扩展调用存在；平台无关测试验证编码、状态、背压和清零语义。但 Linux 主机没有 WDK/NetAdapterCx 头文件与运行时，这些 Windows 源码没有被真实编译或执行，绝不是可工作的驱动或收发证据。`xsnet.vcxproj` 属性名、INF 和全部 API 仍必须在 WDK 10.0.26100、MSBuild、InfVerif 和 Windows 11 24H2 VM 中真实验证。
+SetLink、同步 TX/RX direct-I/O 和 ring copy 继续由源码门禁与平台无关测试覆盖编码、状态、背压和清零语义；此外，`xsnet.vcxproj`、INF 与驱动 API 已在 WDK 10.0.26100、MSBuild、InfVerif 和 Windows 11 24H2 VM 中真实构建并运行。该实机结果只覆盖测试签名驱动及专用 SYSTEM harness，不等于完整 Windows Agent 或生产分发通过。

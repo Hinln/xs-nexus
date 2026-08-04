@@ -59,6 +59,7 @@ def main() -> int:
                 "'ROOT'",
                 "'/hardwareid'",
                 "'Root\\XSNET'",
+                "'/install'",
                 "for ($attempt = 0; $attempt -lt 40",
                 "'/remove-device'",
                 "'/delete-driver'",

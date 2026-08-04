@@ -175,14 +175,14 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [x] MUST：不使用 Wintun/TAP。
 - [x] MUST：驱动只做虚拟 NIC 和安全 IPC。
 - [x] MUST：所有输入边界校验。
-- [ ] MUST：测试签名构建。
-- [ ] MUST：Windows 11 测试 VM 安装/卸载。
-- [ ] MUST：Driver Verifier 实际记录。
-- [ ] MUST：无蓝屏。
+- [x] MUST：测试签名构建。
+- [x] MUST：Windows 11 测试 VM 安装/卸载。
+- [x] MUST：Driver Verifier 实际记录。
+- [x] MUST：无蓝屏。
 - [ ] MUST：Agent 崩溃不破坏普通网络。
 - [x] MUST：未完成项目不可标记完成。
 
-源码独立实现、驱动职责和全部线格式/队列/事务输入边界已有可执行模型、任意输入压力、720 种 teardown 交错、源码门禁与 MSVC target check，足以勾选前三项；仓库依赖扫描同时拒绝 Wintun/TAP 等禁止实现。安全 Rust `XsnetDeviceSession`、固定 Named Pipe server/client、私有存储、Service/SCM、IP Helper/DAD/路由事务和恢复准备均已完成源码/交叉验证，但未接入 Windows runtime。空 TX/满 RX 的 Win32 失败映射必须先经 VM 证明；Agent、驱动和安装状态固定 ABI v1，测试生命周期只支持 clean install/uninstall。Windows SDK/WDK/InfVerif/签名、VM 安装、真实 ACL/SCM/IP Helper/PnP/power、Driver Verifier、Agent crash 和无蓝屏仍无实机证据，对应条目保持未勾选。项目因此继续明确标记“部分完成”，最后一项已有文档和状态门禁证据。最新完整源码/交叉证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z`；Windows 10 支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
+源码独立实现、驱动职责和全部线格式/队列/事务输入边界已有可执行模型、任意输入压力、720 种 teardown 交错、源码门禁与 MSVC target check；仓库依赖扫描同时拒绝 Wintun/TAP 等禁止实现。测试签名 `xsnet` 又在 Windows 11 24H2 VM 完成 WDK Release 构建、InfVerif/Inf2Cat/签名校验、clean install、SYSTEM Tx/Rx、普通 PnP restart、standard Driver Verifier、UMDF/Application Verifier 三轮 restart/smoke、零新相关 dump/WER/error event 和 clean uninstall，因此测试签名构建、VM 生命周期、Verifier 与该次测试范围内无蓝屏可以勾选；证据边界见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。安全 Rust `XsnetDeviceSession`、固定 Named Pipe server/client、私有存储、Service/SCM、IP Helper/DAD/路由事务和恢复准备仍只有源码/交叉验证，未作为完整 Agent 在 Windows runtime 运行；Agent crash 不破坏普通网络、真实 ACL/SCM/IP Helper/power、生产安装升级和正式签名继续开放。项目因此仍明确标记“部分完成”。Windows 10 支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
 
 ---
 

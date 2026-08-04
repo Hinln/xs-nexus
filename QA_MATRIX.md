@@ -240,10 +240,10 @@
 - `drivers/windows-xsnet/tests/lifecycle_test.c` 从活动 owner/link/双队列/请求状态穷举 cleanup、TX cancel、RX cancel、D0 exit、hardware release 和 I/O stop 的全部 720 种顺序，验证单次完成/取消、断链、session/队列清理、睡眠后重新认证、队列重启和重复 teardown 幂等；
 - `scripts/test-windows-xsnet-abi.sh` 在 Clang 21 Release `-Wall -Wextra -Wpedantic -Werror` 与 GCC 15 ASan/UBSan 配置编译运行五组测试；
 - `scripts/validate-windows-xsnet-source.py` 固定 Windows 11 24H2、UMDF 2.33、NetAdapterCx 2.5、x64、测试签名元数据、仅 LocalSystem SDDL、独立 UMDF host、拒绝内核客户端/未知 file object/直接硬件访问、direct/buffered IOCTL 和关键生命周期回调；
-- TX/RX queue callback 已缓存 ring collection 和必需的虚拟地址扩展，限定 Passive 执行，按一包一 fragment 在系统缓冲区与私有有界队列间复制；TX 不修改只读描述符，RX 填充 `Layer2TypeNull` 和 IPv4 layout，畸形 ring 数据会断链；
+- TX/RX queue callback 已缓存 ring collection 和必需的虚拟地址扩展，按一包一 fragment 在系统缓冲区与私有有界队列间复制；Windows 侧 Ethernet frame 与私有 raw IPv4 ABI 间显式剥离/合成固定 14 字节头，RX 填充 Ethernet/IPv4 layout。畸形 ring 数据停止当前推进；源码门禁禁止在 callback 内同步改变 link state，避免重入 stop/cancel；
 - TX direct-I/O 使用空 payload 请求和 framed 输出；RX direct-I/O 使用 framed direct 输入。请求同步完成且不挂起，空/满/小缓冲/未启动先失败，成功才推进 sequence；SetLink 要求双队列 started，stop/cancel 退回 Attached 并断链；固定 64 包和协商深度同时生效；
 - `scripts/validate-windows-xsnet-installer.py` 静态检查测试安装器的管理员门禁、Windows build 下限、精确三文件包、重解析点拒绝、signer thumbprint、Microsoft-signed WDK DevGen、PnPUtil、精确状态、20 秒有界等待、失败回滚和残留拒绝；
-- 本地 Windows PowerShell parser 已对模块、安装和卸载脚本执行零语法错误解析；未调用脚本、PnPUtil、DevGen 或设备 API，该结果不能替代 PowerShell 7.4/WDK VM 执行；
+- 本地 Windows PowerShell parser 对模块、安装和卸载脚本执行零语法错误解析。该源代码检查本身不替代实机；2026-08-04 的独立 VM 证据已另外真实调用 PowerShell 7.6、PnPUtil、DevGen 和设备 API；
 - 2026-07-31 连续三轮源码门禁、四组 Release/ASan/UBSan 测试和安装器门禁均通过；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-portable-stress-20260731T012940Z`；
 - 生命周期模型加入后再次连续三轮通过五组 Release/ASan/UBSan、源码与安装器门禁；证据为 `/srv/xs-nexus/artifacts/qa/m6.1-lifecycle-20260731T014028Z`；
 - `apps/agent/src/windows_xsnet.rs` 的前 8 个测试覆盖 C ABI/IOCTL 固定向量、完整 Hello/Attach/SetLink/TX 流程、规范 IPv4 批次、单飞请求、已知拒绝复用 sequence、未知结果强制重连、畸形响应失败关闭、transport 分类和非 Windows 拒绝；原契约证据为 `/srv/xs-nexus/artifacts/qa/m6.1-transport-contract-20260731T015900Z`；
@@ -258,14 +258,15 @@
 - `crates/windows-service` 固定 256 UTF-16 unit 以内的路径无关服务名，并把 dispatcher、control handler 和 status FFI 限制在四个可计数 unsafe 块；状态锁和原子 STOP 保证并发 STOP/SHUTDOWN 不被后续 RUNNING 覆盖，Agent 通过 Notify/watch 复用现有关闭契约；
 - `scripts/test-windows-agent-service.sh` 固定 `XsNexusAgent`、Windows-only `service --config`、四阶段 SCM 状态、STOP/SHUTDOWN/INTERROGATE、一次性通知、panic/失败关闭、无安装 API 和无轮询，并实际运行 portable 单测、Agent parser 回归、MSVC target check 与交叉 Clippy；
 - `scripts/validate-m61-agent-session.sh` 汇总格式化、workspace Clippy、Rust/npm 单测、真实 PostgreSQL Agent 控制面、五组 C Release/ASan/UBSan、源码/安装器/VM/兼容/transport/本地 IPC/私有存储/Service 门禁、独立实现、SBOM、秘密扫描、ShellCheck、npm audit，以及 Docker、`1panel-network`、默认路由、nftables、namespace/TUN 和失败服务前后基线；最新证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T043139Z`；
-- 以上未链接完整 Windows Agent，未调用真实 Configuration Manager、CreateFileW、DeviceIoControl、CloseHandle 或 SCM，也未执行取消、服务安装/停止、设备移除或 WDK/VM；这些验收继续由 `BLK-001` 阻塞；
+- 以上仍未链接完整 Windows Agent，也未调用 Rust Named Pipe/存储/SCM 或服务安装/停止；但专用 SYSTEM VM harness 已真实调用 Configuration Manager、独占设备打开/关闭、七个 DeviceIoControl、Tx/Rx、LUID 和 PnP restart，WDK/VM 驱动门禁不再由 `BLK-001` 阻塞；
 - `scripts/windows/build-xsnet-test-package.ps1` 只在显式确认的 Windows 11 26100+ 管理员测试 VM 中运行，固定 Microsoft-signed MSBuild/InfVerif/Inf2Cat/SignTool、Release x64、`SignMode=Off`、先嵌入签名 DLL 再生成并签名 `10_GE_X64` catalog、SHA-256 test signer 和精确 INF/CAT/DLL allowlist；不修改 BCD、信任根或测试签名策略；
 - `scripts/windows/invoke-xsnet-test-vm-stage.ps1` 以 Initialize/Install/EnableVerifier/CollectVerifier/DisableVerifier/Uninstall 六个不可复用阶段保存系统、网卡、路由、设备、驱动、Verifier 和错误事件证据；要求相同 VM/快照声明、Verifier 前后两次人工重启、精确健康状态和卸载零残留，最终生成 SHA-256 证据清单；
-- `scripts/validate-windows-xsnet-vm.py` 禁止下载、BCD、执行策略绕过、自动重启、无限等待和验收伪声明；本地 Windows PowerShell parser 已对两份新增脚本零语法错误解析。以上仅证明源码门禁，未执行 WDK、签名、Verifier 或任何设备操作；
+- `scripts/validate-windows-xsnet-vm.py` 禁止下载、BCD、执行策略绕过、自动重启、无限等待和验收伪声明；该 validator 仍只是源码门禁。2026-08-04 的独立 VM run 已另外执行 WDK、签名、standard/UMDF/Application Verifier 和设备操作；
 - 测试包与 VM 工作流最终自动化证据为 `/srv/xs-nexus/artifacts/qa/m6.1-vm-workflow-20260731T021432Z`，包含 ABI Release/ASan/UBSan、源码、安装器、VM 门禁、秘密扫描以及默认路由、规范化 nftables、完整 `1panel-network`、namespace/TUN 前后比较；
 - `scripts/validate-windows-xsnet-compatibility.py` 强制 C header、Rust Agent 和安装状态共同固定 exact ABI v1，Hello header/min/max 都为 v1，INF 只有一个四段 `DriverVer`，构建清单记录 driver version/ABI `1..1`/IPv4，安装器在 staging 前后核对版本并拒绝任何既有 xsnet；
 - 测试安装器不支持 in-place upgrade；替换包只能在快照 VM 停止 Agent、关闭 handle、精确卸载后 clean install。兼容/回滚边界证据为 `/srv/xs-nexus/artifacts/qa/m6.1-compatibility-20260731T022619Z`，真实版本升级、回滚和跨 ABI 拒绝仍未执行；
-- 当前结果只证明平台无关模型、Agent 单步会话语义、本地 IPC Windows crate/`xs-cli` Named Pipe client 编译和源码文本不变量；命名管道、direct-I/O 与 ring 代码均未在 Windows 执行。命名管道有效 DACL/拒绝矩阵与九命令运行、空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent Windows 链接、运行时接入、MSBuild 属性有效性、InfVerif、测试签名、VM 安装、NetAdapterCx ring 收发、PnP/power 实际行为和 Driver Verifier 全部保持未完成。
+- 当前结果除平台无关模型与交叉编译外，已真实验证 MSBuild 属性、InfVerif、Inf2Cat、测试签名、VM clean install/uninstall、direct-I/O、NetAdapterCx ring Tx/Rx、LUID、PnP restart、standard Driver Verifier 及 UMDF/Application Verifier。仍未完成命名管道有效 DACL/拒绝矩阵与九命令运行、空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent Windows 链接/runtime、SCM、IP Helper/DAD/route、sleep/power、生产更新/回滚和正式签名。
+- 2026-08-04 accepted run `vm-validation-final-004`：测试包 `15.39.27.376`；普通 PnP restart 285 ms，verifier-enabled 三轮为 1,443/2,113/877 ms；每轮 SYSTEM Tx/Rx 通过；新增 WDF/NDIS/相关 WER/错误事件均为 0；clean uninstall 后 device/package/state/DriverStore 均为 0。证据说明与 SHA-256 见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
 
 ---
 

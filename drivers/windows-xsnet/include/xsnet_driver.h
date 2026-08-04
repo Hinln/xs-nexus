@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <wdf.h>
 #include <netadaptercx.h>
+#include <net/virtualaddress.h>
 
 #include "xsnet_abi.h"
 #include "xsnet_dataplane.h"
@@ -12,6 +13,9 @@
 #include "xsnet_session.h"
 
 #define XSNET_LINK_SPEED UINT64_C(1000000000)
+#define XSNET_ETHERNET_HEADER_SIZE UINT32_C(14)
+#define XSNET_MAX_FRAME_SIZE \
+    (XSNET_ABI_MAX_PACKET_SIZE + XSNET_ETHERNET_HEADER_SIZE)
 
 typedef struct XsnetDeviceContext {
     WDFWAITLOCK session_lock;
@@ -33,6 +37,10 @@ typedef struct XsnetFileContext {
     BOOLEAN accepted;
 } XsnetFileContext;
 
+typedef struct XsnetAdapterContext {
+    WDFDEVICE device;
+} XsnetAdapterContext;
+
 typedef enum XsnetQueueDirection {
     XSNET_QUEUE_TRANSMIT = 1,
     XSNET_QUEUE_RECEIVE = 2
@@ -50,6 +58,7 @@ typedef struct XsnetQueueContext {
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(XsnetDeviceContext, XsnetGetDeviceContext);
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(XsnetFileContext, XsnetGetFileContext);
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(XsnetAdapterContext, XsnetGetAdapterContext);
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(XsnetQueueContext, XsnetGetQueueContext);
 
 extern const GUID GUID_DEVINTERFACE_XSNET;

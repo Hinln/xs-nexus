@@ -6,24 +6,19 @@
 
 ## BLK-001 Windows 测试环境
 
-- 状态：阻塞 Windows 实机验收
-- 当前环境核对：开发服务器仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK、UMDF/NetAdapterCx 构建目标、测试签名模式或 Windows VM；因此不能生成或声称测试签名驱动包。
-- 新增可执行准备：已安装与仓库 Rust 1.93.1 匹配的官方最小 rustup 工具链、`x86_64-pc-windows-msvc` 标准库、Clippy 和 rustfmt，用于不依赖 SDK 链接的最小 Windows crate check；本地 IPC、私有存储和 Service crate 已通过，但完整 Agent 仍准确停在 `ring` 查找 `lib.exe`，因此该准备不解除 Windows SDK/WDK/VM 门禁。
-- 需要：
-  - Windows 11 测试 VM；
-  - 快照；
-  - Visual Studio Build Tools；
-  - WDK；
-  - 测试签名模式；
-  - Driver Verifier。
+- 状态：已解除 Windows 11 24H2 测试签名驱动环境门禁（2026-08-04）；完整 Agent 与生产分发边界转由已列明的 KI 和 `BLK-004` 跟踪
+- 环境核对：用户提供的 NAS KVM 快照 VM 已安装 Visual Studio 2022 Build Tools、Windows SDK/WDK 26100、PowerShell 7 和 Driver/Application Verifier；最终通过后测试包已卸载，证据导出并准备恢复干净快照。
+- 新增可执行准备：已安装与仓库 Rust 1.93.1 匹配的官方最小 rustup 工具链、`x86_64-pc-windows-msvc` 标准库、Clippy 和 rustfmt，用于不依赖 SDK 链接的最小 Windows crate check；本地 IPC、私有存储和 Service crate 已通过。该交叉准备本身当时没有解除 Windows SDK/WDK/VM 门禁，后续实机驱动证据才解除该环境门禁；完整 Agent 仍未链接。
+- 已提供并验证：Windows 11 测试 VM、快照、Visual Studio Build Tools、Windows SDK/WDK、测试签名信任、standard Driver Verifier、UMDF Verifier 和 Application Verifier。
 - 不阻塞：
   - Linux 核心；
   - Controller；
   - Relay；
   - Console；
   - 驱动代码和交叉构建准备。
-- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 Win32 transport、无后台重试的单步 Agent 会话、安全命名管道 server 与 `xs-cli` client、显式长度帧、私有存储、固定名称 Service/SCM、IP Helper/DAD、可信同句柄 LUID、精确路由事务/manifest/恢复、Windows-only Agent 准备编排、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；相关最小 Windows crate 和 CLI 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、真实 PostgreSQL Agent 控制面、源码不变量和 PowerShell 语法验证已通过。空 TX/满 RX 的 Win32 权威拒绝映射尚需 VM 证明，因此适配层和路由准备不接入 runtime；完整 Agent 在缺少 Windows SDK C 头时无法构建，Named Pipe、SCM、ACL、原子替换、IP Helper/DAD 和 service token 尚未实机验证，测试安装器只支持 clean install，不冒充热升级或生产回滚；VM 编排不自动重启、不修改 BCD、不声称场景验收。全部 Windows API 和设备操作尚未执行。Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
-- 解除步骤：用户提供可测试 VM，Codex执行安装和验证。
+- 已完成的不受阻塞工作：按 Windows 11 LTSC 2024 门禁选择 UMDF 2.33 + NetAdapterCx 2.5，完成驱动/Agent ABI、单 owner、同步 direct-I/O、有界 IPv4 队列、ring copy、PnP/power 源码、隔离 Win32 transport、无后台重试的单步 Agent 会话、安全命名管道 server 与 `xs-cli` client、显式长度帧、私有存储、固定名称 Service/SCM、IP Helper/DAD、可信同句柄 LUID、精确路由事务/manifest/恢复、Windows-only Agent 准备编排、测试专用安装/卸载、显式 WDK 测试包构建、六阶段 VM 采证和 exact ABI v1/DriverVer/driver-store/受限状态一致性门禁；相关最小 Windows crate 和 CLI 已真实通过 MSVC target check 与交叉 Clippy，Clang Release、ASan/UBSan、workspace 单测、真实 PostgreSQL Agent 控制面、源码不变量和 PowerShell 语法验证已通过。VM harness 已真实执行 Configuration Manager 枚举、独占设备打开、七个 IOCTL、Ethernet/IPv4 TX/RX、LUID、PnP restart、Verifier 和卸载；但空 TX/满 RX 的 Win32 权威拒绝映射、完整 Agent、Named Pipe、SCM、ACL、原子替换、IP Helper/DAD、service token、睡眠和生产更新仍未实机验证，因此适配层和路由准备不接入 runtime。测试安装器只支持 clean install，不冒充热升级或生产回滚；Windows 10 支持矩阵冲突单列为 `KI-016`，不作兼容声明。
+- 解除证据：`docs/WINDOWS_XSNET_VM_EVIDENCE.md`。测试包 `15.39.27.376` 的构建/签名、clean install、SYSTEM Tx/Rx、PnP restart、standard/UMDF/Application Verifier、三轮重复收发和 clean uninstall 通过；新增 WDF/NDIS/相关 WER/错误事件均为 0。
+- 剩余边界：不把该门禁解除解释为 Windows 客户端已可生产发布。正式签名由 `BLK-004` 阻塞；生产安装器、完整 Agent、SCM/Named Pipe/存储、路由/DAD/睡眠和 Windows 10 分别由 `KI-016`、`KI-017`、`KI-018`、`KI-020` 跟踪。
 
 ---
 

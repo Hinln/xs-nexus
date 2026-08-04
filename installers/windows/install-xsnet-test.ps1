@@ -46,7 +46,8 @@ $abiVersion = Get-XsnetAbiVersion
 Assert-XsnetSignature -Path (Join-Path $package 'xsnet.cat') -ExpectedThumbprint $thumbprint
 Assert-XsnetSignature -Path (Join-Path $package 'xsnet.dll') -ExpectedThumbprint $thumbprint
 $devgen = Assert-XsnetDevGen -Path $DevGenPath
-if ((Get-XsnetDevices).Count -ne 0 -or (Get-XsnetDriverPackages).Count -ne 0) {
+if (@(Get-XsnetDevices).Count -ne 0 -or
+    @(Get-XsnetDriverPackages).Count -ne 0) {
     throw 'an xsnet device or driver package already exists; uninstall it first'
 }
 if (-not $PSCmdlet.ShouldProcess('ROOT\XSNET', 'Install test-signed xsnet driver')) {
@@ -74,6 +75,14 @@ try {
         '/hardwareid',
         'Root\XSNET'
     ) | Out-Null
+    # DevGen creates the deterministic root device but does not select a
+    # staged driver. Re-run PnPUtil with /install after enumeration so Windows
+    # binds only the exact signed package that was already validated above.
+    Invoke-XsnetNative -FilePath "$env:SystemRoot\System32\pnputil.exe" -Arguments @(
+        '/add-driver',
+        (Join-Path $package 'xsnet.inf'),
+        '/install'
+    ) | Out-Null
     $devices = @()
     for ($attempt = 0; $attempt -lt 40; $attempt += 1) {
         $devices = @(Get-XsnetDevices)
@@ -85,6 +94,9 @@ try {
     }
     if ($devices.Count -ne 1 -or $devices[0].Status -ne 'OK' -or
         $devices[0].Class -ne 'Net') {
+        $diagnostic = @($devices | Select-Object Status, Class, FriendlyName,
+            InstanceId, Problem, Present) | ConvertTo-Json -Compress
+        Write-Output "xsnet device health diagnostic: $diagnostic"
         throw 'xsnet device did not reach a healthy Net-class state'
     }
     $state = [ordered]@{

@@ -32,8 +32,8 @@ if (Test-XsnetDriverRemovalTarget -PublishedInf $state.published_inf) {
 }
 
 for ($attempt = 0; $attempt -lt 40; $attempt += 1) {
-    if ((Get-XsnetDevices).Count -eq 0 -and
-        (Get-XsnetDriverPackages).Count -eq 0) {
+    if (@(Get-XsnetDevices).Count -eq 0 -and
+        @(Get-XsnetDriverPackages).Count -eq 0) {
         Remove-XsnetState
         return
     }
