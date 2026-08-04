@@ -59,6 +59,28 @@ function Set-RestrictedAcl([string] $Path) {
     }
 }
 
+function Set-AgentPrivateFileAcl([string] $Path) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    Assert-True (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'agent private storage path must be a regular file'
+    $expectedSddl = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)'
+    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    $acl.SetSecurityDescriptorSddlForm($expectedSddl, [Security.AccessControl.AccessControlSections]::Access)
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+    $actualSddl = (Get-Acl -LiteralPath $Path -ErrorAction Stop).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+    Assert-True ($actualSddl -eq $expectedSddl -or $actualSddl -eq 'D:PAI(A;;FA;;;SY)(A;;FA;;;BA)') 'agent private storage ACL verification failed'
+}
+
+function Set-AgentPrivateDirectoryAcl([string] $Path) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    Assert-True ($item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'agent private storage path must be a regular directory'
+    $expectedSddl = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'
+    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    $acl.SetSecurityDescriptorSddlForm($expectedSddl, [Security.AccessControl.AccessControlSections]::Access)
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+    $actualSddl = (Get-Acl -LiteralPath $Path -ErrorAction Stop).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+    Assert-True ($actualSddl -eq $expectedSddl -or $actualSddl -eq 'D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)') 'agent private storage directory ACL verification failed'
+}
+
 function Assert-ExactPayloadTree([string] $Root) {
     $expectedFiles = @('xs-agent.exe', 'xs.exe', 'wintun.dll', 'PAYLOAD.SHA256', 'THIRD_PARTY\WINTUN-LICENSE.txt')
     $expectedDirectories = @('THIRD_PARTY')
@@ -114,7 +136,7 @@ $bstr = [IntPtr]::Zero
 
 try {
     New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
-    Set-RestrictedAcl $temporaryRoot
+    Set-AgentPrivateDirectoryAcl $temporaryRoot
     $manifestPath = Join-Path $temporaryRoot $ManifestName
     $archivePath = Join-Path $temporaryRoot $ArchiveName
     $updateSigningPublicKeyPath = Join-Path $temporaryRoot 'release-public-key.pem'
@@ -195,7 +217,7 @@ try {
     $configPath = Join-Path $InstallRoot 'agent.json'
     $pinnedUpdateSigningPublicKeyPath = Join-Path $InstallRoot 'release-public-key.pem'
     Copy-Item -LiteralPath $updateSigningPublicKeyPath -Destination $pinnedUpdateSigningPublicKeyPath -Force
-    Set-RestrictedAcl $pinnedUpdateSigningPublicKeyPath
+    Set-AgentPrivateFileAcl $pinnedUpdateSigningPublicKeyPath
     $config = [ordered]@{
         controller_url = $ControllerUrl
         node_name = Get-NodeName
@@ -220,6 +242,7 @@ try {
     $value = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
     Assert-True ($value -match '^xsenr1_\S{10,89}$') 'Enrollment Token format is invalid'
     [IO.File]::WriteAllText($tokenPath, $value, [Text.UTF8Encoding]::new($false))
+    Set-AgentPrivateFileAcl $tokenPath
     Remove-Variable value -ErrorAction SilentlyContinue
     & $installedAgent enroll --config $configPath --token-file $tokenPath
     Assert-True ($LASTEXITCODE -eq 0) 'agent enrollment was rejected'

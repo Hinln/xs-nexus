@@ -22,8 +22,13 @@ def main() -> int:
             "update signing public key verification failed",
             "-MaximumRedirection 0",
             "'refusing to change ACL on a reparse point'",
-            "'*S-1-5-18:F', '*S-1-5-32-544:F'",
+            "function Set-AgentPrivateFileAcl",
+            "'D:P(A;;FA;;;SY)(A;;FA;;;BA)'",
+            "function Set-AgentPrivateDirectoryAcl",
+            "'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'",
             "$pinnedUpdateSigningPublicKeyPath",
+            "[IO.File]::WriteAllText($tokenPath, $value, [Text.UTF8Encoding]::new($false))",
+            "Set-AgentPrivateFileAcl $tokenPath",
             "$createdService = $false",
             "if ($createdService -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue))",
             "(@($actualPayload | Sort-Object) -join \"`n\") -eq",
@@ -37,6 +42,8 @@ def main() -> int:
             raise AssertionError("unparenthesized PowerShell architecture assertion is unsafe")
         if "Assert-True (($actualPayload | Sort-Object) -join" in text:
             raise AssertionError("payload comparison must group both joined strings before -eq")
+        if "Set-RestrictedAcl $temporaryRoot" in text:
+            raise AssertionError("temporary token directory must use the Agent private directory ACL")
         if re.search(r"(?m)^\s*Assert-True\s+(?!\()", text):
             raise AssertionError("every Assert-True condition must be parenthesized")
     except (AssertionError, OSError) as error:
