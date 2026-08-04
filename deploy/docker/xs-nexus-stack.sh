@@ -360,6 +360,18 @@ rollback_tag() {
     printf 'xs-nexus/%s-rollback-%s:previous' "$(environment_value XS_DEPLOYMENT)" "$1"
 }
 
+export_running_container_image() {
+    local container=$1 tag=$2 entrypoint command user
+    local -a import_options=()
+    entrypoint=$(docker inspect "$container" --format '{{json .Config.Entrypoint}}')
+    command=$(docker inspect "$container" --format '{{json .Config.Cmd}}')
+    user=$(docker inspect "$container" --format '{{.Config.User}}')
+    [[ $entrypoint == null ]] || import_options+=(--change "ENTRYPOINT $entrypoint")
+    [[ $command == null ]] || import_options+=(--change "CMD $command")
+    [[ -z $user ]] || import_options+=(--change "USER $user")
+    docker export "$container" | docker import "${import_options[@]}" - "$tag" >/dev/null
+}
+
 snapshot_running_images() {
     local state_directory rollback_file temporary service container image_id tag
     state_directory=$(environment_value XS_STATE_DIR)
@@ -376,8 +388,10 @@ snapshot_running_images() {
                 # A rebuild can replace the mutable service tag while an old
                 # container remains healthy. Preserve that running container
                 # as a rollback image instead of activating without recovery.
-                docker commit --pause=false "$container" "$tag" >/dev/null
+                docker commit --pause=false "$container" "$tag" >/dev/null 2>&1 \
+                    || export_running_container_image "$container" "$tag"
             fi
+            docker image inspect "$tag" >/dev/null
             printf '%s=%s\n' "${service^^}_IMAGE" "$tag" >>"$temporary"
         else
             printf '%s=none\n' "${service^^}_IMAGE" >>"$temporary"
