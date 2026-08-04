@@ -34,7 +34,7 @@ const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
 const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route advertisement v1";
 const CONTROL_MESSAGE_LIMIT: usize = 512 * 1024;
-const TELEMETRY_REPORT_INTERVAL: Duration = Duration::from_secs(60);
+const TELEMETRY_REPORT_INTERVAL: Duration = Duration::from_mins(1);
 
 #[derive(Clone, Debug)]
 struct RuntimeUpdateStatus {

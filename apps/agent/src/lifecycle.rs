@@ -1,6 +1,7 @@
+use crate::{config::AgentConfig, error::Result};
+
+#[cfg(target_os = "linux")]
 use crate::{
-    config::AgentConfig,
-    error::Result,
     network::{NetworkPlan, TunNetwork},
     state::NodeState,
     storage::{Identity, read_json},
@@ -32,6 +33,7 @@ pub async fn cleanup_network(config: &AgentConfig) -> Result<()> {
 ///
 /// Always returns [`AgentError::UnsupportedPlatform`].
 #[cfg(not(target_os = "linux"))]
+#[allow(clippy::unused_async)] // Keeps the shared lifecycle cleanup API awaitable across targets.
 pub async fn cleanup_network(_config: &AgentConfig) -> Result<()> {
     Err(AgentError::UnsupportedPlatform)
 }

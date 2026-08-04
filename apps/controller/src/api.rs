@@ -28,9 +28,14 @@ pub fn router(state: AppState) -> Router {
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
         .route("/install", get(downloads::install_script))
+        .route("/install/windows", get(downloads::windows_install_script))
         .route(
             "/downloads/linux/stable/{file_name}",
-            get(downloads::release_file),
+            get(downloads::linux_release_file),
+        )
+        .route(
+            "/downloads/windows/stable/{file_name}",
+            get(downloads::windows_release_file),
         )
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/session", get(auth::current_session))

@@ -31,6 +31,7 @@ xs-windows-private-storage = { path = "../../crates/windows-private-storage" }
 xs-windows-route-manager = { path = "../../crates/windows-route-manager" }
 xs-windows-service = { path = "../../crates/windows-service" }
 xs-windows-transport = { path = "../../crates/windows-transport" }
+xs-windows-wintun = { path = "../../crates/windows-wintun" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

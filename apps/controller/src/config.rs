@@ -31,6 +31,7 @@ pub struct ControllerConfig {
     pub config_signing_key: SigningKey,
     pub update_signing_public_key: Option<VerifyingKey>,
     pub linux_release_directory: Option<PathBuf>,
+    pub windows_release_directory: Option<PathBuf>,
     pub credential_ttl_seconds: u64,
     pub relays: Vec<ConfigurationRelay>,
 }
@@ -74,6 +75,8 @@ pub enum ConfigError {
     UpdateSigningPublicKey,
     #[error("invalid LINUX_RELEASE_DIRECTORY")]
     LinuxReleaseDirectory,
+    #[error("invalid WINDOWS_RELEASE_DIRECTORY")]
+    WindowsReleaseDirectory,
     #[error("invalid RELAY_CATALOG_PATH")]
     RelayCatalog,
     #[error("{0} and {0}_FILE must not both be set")]
@@ -138,13 +141,12 @@ impl ControllerConfig {
             (None, None) => None,
             _ => return Err(ConfigError::ConsoleBootstrap),
         };
-        let console_cookie_secure = env::var("CONSOLE_COOKIE_SECURE")
-            .map(|value| match value.as_str() {
+        let console_cookie_secure =
+            env::var("CONSOLE_COOKIE_SECURE").map_or(Ok(true), |value| match value.as_str() {
                 "true" => Ok(true),
                 "false" => Ok(false),
                 _ => Err(ConfigError::ConsoleCookieSecure),
-            })
-            .unwrap_or(Ok(true))?;
+            })?;
         let console_session_ttl_seconds = env::var("CONSOLE_SESSION_TTL_SECONDS")
             .unwrap_or_else(|_| "28800".to_owned())
             .parse::<u64>()
@@ -165,6 +167,7 @@ impl ControllerConfig {
             .map(|path| load_update_verifying_key(Path::new(&path)))
             .transpose()?;
         let linux_release_directory = optional_linux_release_directory()?;
+        let windows_release_directory = optional_windows_release_directory()?;
 
         let credential_ttl_seconds = env::var("NODE_CREDENTIAL_TTL_SECONDS")
             .unwrap_or_else(|_| "2592000".to_owned())
@@ -194,6 +197,7 @@ impl ControllerConfig {
             config_signing_key,
             update_signing_public_key,
             linux_release_directory,
+            windows_release_directory,
             credential_ttl_seconds,
             relays,
         })
@@ -304,6 +308,18 @@ fn optional_linux_release_directory() -> Result<Option<PathBuf>, ConfigError> {
         .transpose()
 }
 
+fn optional_windows_release_directory() -> Result<Option<PathBuf>, ConfigError> {
+    env::var("WINDOWS_RELEASE_DIRECTORY")
+        .ok()
+        .map(PathBuf::from)
+        .map(|path| {
+            crate::downloads::validate_windows_release_directory(&path)
+                .map(|()| path)
+                .map_err(|_| ConfigError::WindowsReleaseDirectory)
+        })
+        .transpose()
+}
+
 /// Validates a `PostgreSQL` schema identifier before it is quoted into SQL.
 ///
 /// # Errors
@@ -331,6 +347,8 @@ fn load_signing_key(path: &Path) -> Result<SigningKey, ConfigError> {
     if metadata.permissions().mode() & 0o077 != 0 {
         return Err(ConfigError::KeyPermissions);
     }
+    #[cfg(not(unix))]
+    let _ = metadata;
 
     let bytes = Zeroizing::new(std::fs::read(path).map_err(|_| ConfigError::KeyRead)?);
     let seed: &[u8; 32] = bytes

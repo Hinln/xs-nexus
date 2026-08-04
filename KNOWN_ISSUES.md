@@ -285,3 +285,15 @@
 - 有界 disposition：剩余项仅为 glibc `CVE-2026-5435`、`CVE-2026-5450`、`CVE-2026-5928`。源码和精确镜像二进制均不引用对应 `ns_printrrf`/`ns_sprintrr`/`fp_nquery`、`scanf` family 或 `ungetwc` API；`make verify-image-vulnerability-disposition` 会拒绝新增 Critical/High、可修复版本、包/API 漂移。该结论只降低当前调用面的可达性，不等于修复或永久豁免。
 - 复核期限：2026-08-31，或基础镜像 digest、glibc 版本、扫描数据库/结果、二进制导入集合任一变化时立即重扫和重做 disposition；RC 前必须再次复核。
 - 解除条件：基础镜像提供修复并升级重扫为 0，或由项目所有者在期限内正式接受剩余风险；扫描报告不得隐藏或自动忽略。
+
+---
+
+## KI-022 Windows 一键安装的最终在线闭环尚未完成
+
+- 严重度：高
+- 状态：开放
+- 首次发现：2026-08-04
+- 影响：Windows 11 x64 已完成 Wintun 适配器的真实创建/清理、交叉测试、离线发布包构建和安装器完整性校验，但最终发布路径仍需在生产 Controller 提供只读 Windows 发布目录后，使用一次性 Enrollment Token 验证真实 HTTPS 下载、注册、Windows 服务启动、CLI readiness、基本连通性和卸载/重新安装。当前不能把离线 package QA 写成最终在线接入结果。
+- 已完成缓解：引导器固定 `https://vpn.qinwen.co`，固定 manifest 摘要，校验 HTTPS、归档大小/哈希、精确 payload tree、每个 payload hash、Wintun DLL hash 与有效的 `CN=WireGuard LLC` Authenticode 签名；失败时删除仅由本次安装创建的服务和目录。Controller 只暴露精确的 `install.ps1`、manifest 和 ZIP 文件名，目录或未知文件拒绝。
+- 计划：将已校验的 r3 发布目录作为仓库外只读 bind mount 部署，验证 Windows PowerShell User-Agent 与 `/install/windows` 路由、Linux `/install` 回归、下载哈希和 404 边界；随后生成短时 Enrollment Token，在测试 VM 实际运行管理员 PowerShell 安装、服务和网络验证，并保留失败关闭与卸载证据。
+- 解除条件：上述生产下载/注册/服务/基本数据面/卸载重装实测通过，且没有把 Token、密码、私钥、产物或环境文件写入 Git、日志或文档。Windows 10、完整 `xsnet` 实机 Agent、睡眠/路由恢复和独立安全审计仍由既有条目单独跟踪。

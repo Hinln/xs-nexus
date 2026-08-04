@@ -349,3 +349,11 @@ make clean
 - 所有 verifier 设置已删除，关闭后 restart 736 ms；六阶段工作流 clean uninstall 成功，最终 xsnet device/package/安装状态/DriverStore 残留均为 0。通过证据 `work/windows-final-export/passed-004` 共 67 文件、4,700,127 bytes，package manifest 和 `evidence-sha256.json` 独立复核均无 mismatch；完整说明见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
 - `BLK-001` 的 Windows 11 测试签名驱动环境门禁解除，但不表示 Windows 客户端可生产发布。完整 Agent、SCM/Named Pipe/存储、route/DAD/sleep、生产安装器/回滚、Windows 10 和正式签名仍由 `KI-016`、`KI-017`、`KI-018`、`KI-020` 与 `BLK-004` 跟踪。
 - 提交前最终回归：四个 Python 源码/兼容/安装/VM 门禁、五个 PowerShell 文件 parser 与 `git diff --check` 通过；隔离 Linux QA 中 Clang Release 和 GCC ASan/UBSan 各 6/6 便携 ABI 测试通过，`cargo fmt --all -- --check` 与 `cargo check -p xs-agent --example windows_xsnet_smoke` 通过；secret scanner regression、仓库秘密扫描及已知凭据字面量检查均通过。临时 QA 工作树不作为发布产物，提交/推送后精确清理。
+
+## 2026-08-04 Windows signed Wintun enrollment package
+
+- 在项目所有者明确选择已签名适配器边界后，Windows `0.1.0` 发布包新增官方 Wintun `0.14.1` x64 依赖，但没有把 WireGuard 协议、控制面、认证、加密、ACL、候选选择、路由策略或 Relay 实现引入项目；自研 `windows-xsnet` 驱动范围不变。
+- 新增 `xs-windows-wintun` 动态绑定，加载前拒绝相对路径、重解析点、非普通文件、超大 DLL 和哈希不符的 DLL；会话只创建临时 L3 适配器，受限复制 IPv4 包，并在 Drop 中关闭 session/adapter。Agent 的 Windows 数据面经此适配器运行，非 Linux 直接候选/子网发现明确降级为空而继续支持 Relay。
+- Windows 11 x64 VM 的离线验证已通过：`xs-agent` 与 `xs-windows-wintun` 共 45 项测试、Controller 13 项 lib/bin 测试、Rustfmt、严格 Clippy；Controller 数据库集成未运行的唯一原因是 VM 未配置 `XS_TEST_DATABASE_URL`，不是断言失败。真实 Wintun smoke 创建 session、取得非零 LUID/index，并在退出后确认临时 adapter 不存在；没有配置地址、路由或默认路由。
+- VM 构建的 `windows-release-20260804-r3` 已验证 ZIP/manifest/bootstrap 摘要、精确成员集合、逐文件哈希、Wintun DLL 哈希与 `CN=WireGuard LLC` Authenticode 签名。发布包、测试 Token、密码、私钥和 VM 构建缓存均不进入仓库。
+- 生产 Controller 尚未切换到本项变更；下一步是将三份经过验证的 Windows 公开发布文件放入仓库外只读目录、设置 `XS_WINDOWS_RELEASE_DIR`、执行可回滚 Compose 滚动发布，并在公网分别验证 Windows 与 Linux 引导脚本、精确下载 allowlist 和现有服务健康。该结果不表示 Release Candidate、Windows 10 支持、完整 Windows 服务生命周期或独立安全审计完成。

@@ -35,7 +35,7 @@ const MAX_CONFIGURED_PEERS: usize = 1024;
 const MAX_QUEUED_PACKETS_PER_PEER: usize = 32;
 const MAX_QUEUED_BYTES_PER_PEER: usize = 64 * 1024;
 const MAX_RECENT_CLIENT_HELLOS: usize = 64;
-const CLIENT_HELLO_CACHE_LIFETIME: Duration = Duration::from_secs(300);
+const CLIENT_HELLO_CACHE_LIFETIME: Duration = Duration::from_mins(5);
 const HANDSHAKE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const HANDSHAKE_MAX_ATTEMPTS: u8 = 6;
 const MAX_CONCURRENT_PROACTIVE_HANDSHAKES: usize = 32;
@@ -47,7 +47,7 @@ const HANDSHAKE_BACKOFF_BASE: Duration = Duration::from_secs(1);
 #[cfg(feature = "privileged-network-tests")]
 const HANDSHAKE_BACKOFF_BASE: Duration = Duration::from_millis(200);
 #[cfg(not(feature = "privileged-network-tests"))]
-const HANDSHAKE_BACKOFF_MAX: Duration = Duration::from_secs(60);
+const HANDSHAKE_BACKOFF_MAX: Duration = Duration::from_mins(1);
 #[cfg(feature = "privileged-network-tests")]
 const HANDSHAKE_BACKOFF_MAX: Duration = Duration::from_secs(2);
 const KEY_UPDATE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
@@ -68,7 +68,7 @@ const KEY_UPDATE_PACKET_LIMIT: u64 = 1 << 20;
 #[cfg(feature = "privileged-network-tests")]
 const KEY_UPDATE_PACKET_LIMIT: u64 = 4;
 #[cfg(not(feature = "privileged-network-tests"))]
-const KEY_UPDATE_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const KEY_UPDATE_INTERVAL: Duration = Duration::from_hours(1);
 #[cfg(feature = "privileged-network-tests")]
 const KEY_UPDATE_INTERVAL: Duration = Duration::from_secs(2);
 #[cfg(not(feature = "privileged-network-tests"))]
@@ -1147,7 +1147,7 @@ fn configured_candidates(
                 }),
         );
     }
-    candidates.sort_by(|left, right| right.priority.cmp(&left.priority));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.priority));
     let relay_limit = relay_candidates.len().min(MAX_RELAY_CANDIDATES_PER_PEER);
     let direct_limit = MAX_HANDSHAKE_CANDIDATES_PER_CYCLE.saturating_sub(relay_limit);
     candidates.truncate(direct_limit);

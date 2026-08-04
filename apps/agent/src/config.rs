@@ -29,6 +29,34 @@ pub struct AgentConfig {
     pub update_channel: UpdateChannel,
     #[serde(default = "default_update_signing_public_key_path")]
     pub update_signing_public_key_path: PathBuf,
+    #[serde(default)]
+    pub windows_wintun: Option<WindowsWintunConfig>,
+}
+
+/// Pins the exact vendor-signed Wintun library accepted by a Windows Agent release.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsWintunConfig {
+    pub library_path: PathBuf,
+    pub sha256: String,
+}
+
+impl WindowsWintunConfig {
+    /// Decodes the exact canonical hash required before the Windows process loads the library.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AgentError::Configuration`] for a non-canonical hash.
+    pub fn sha256_bytes(&self) -> Result<[u8; 32]> {
+        xs_windows_wintun::parse_sha256(&self.sha256).map_err(|_| AgentError::Configuration)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if !self.library_path.is_absolute() {
+            return Err(AgentError::Configuration);
+        }
+        self.sha256_bytes().map(|_| ())
+    }
 }
 
 const fn default_mtu() -> u16 {
@@ -107,6 +135,11 @@ impl AgentConfig {
             || !(1280..=1500).contains(&self.mtu)
             || !(5..=300).contains(&self.control_sync_interval_seconds)
             || !self.update_signing_public_key_path.is_absolute()
+            || self
+                .windows_wintun
+                .as_ref()
+                .is_some_and(|wintun| wintun.validate().is_err())
+            || (cfg!(windows) && self.windows_wintun.is_none())
         {
             return Err(AgentError::Configuration);
         }
@@ -218,13 +251,26 @@ mod tests {
             controller_url: "https://controller.example/".to_owned(),
             node_name: "linux-node-1".to_owned(),
             device_type: "linux".to_owned(),
-            state_directory: PathBuf::from("/var/lib/xs-nexus"),
-            runtime_directory: PathBuf::from("/run/xs-nexus"),
+            state_directory: if cfg!(windows) {
+                PathBuf::from(r"C:\ProgramData\XS Nexus\state")
+            } else {
+                PathBuf::from("/var/lib/xs-nexus")
+            },
+            runtime_directory: if cfg!(windows) {
+                PathBuf::from(r"C:\ProgramData\XS Nexus")
+            } else {
+                PathBuf::from("/run/xs-nexus")
+            },
             interface_name: "xsn0".to_owned(),
             mtu: 1280,
             control_sync_interval_seconds: 15,
             update_channel: UpdateChannel::Stable,
             update_signing_public_key_path: default_update_signing_public_key_path(),
+            windows_wintun: cfg!(windows).then(|| WindowsWintunConfig {
+                library_path: PathBuf::from(r"C:\ProgramData\XS Nexus\bin\wintun.dll"),
+                sha256: "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce"
+                    .to_owned(),
+            }),
         }
     }
 
@@ -260,5 +306,26 @@ mod tests {
         let config: AgentConfig = serde_json::from_value(encoded).expect("default config");
         assert_eq!(config.update_channel, UpdateChannel::Stable);
         assert!(config.update_signing_public_key_path.is_absolute());
+        assert!(config.windows_wintun.is_none());
+    }
+
+    #[test]
+    fn config_rejects_noncanonical_wintun_hashes() {
+        let mut config = fixture();
+        config.windows_wintun = Some(WindowsWintunConfig {
+            library_path: PathBuf::from("/opt/xs-nexus/wintun.dll"),
+            sha256: "A0".repeat(32),
+        });
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_accepts_the_release_pinned_wintun_hash() {
+        let mut config = fixture();
+        config.windows_wintun = Some(WindowsWintunConfig {
+            library_path: PathBuf::from(r"C:\ProgramData\XS Nexus\bin\wintun.dll"),
+            sha256: "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce".to_owned(),
+        });
+        assert!(config.validate().is_ok());
     }
 }

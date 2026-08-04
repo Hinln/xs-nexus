@@ -1,6 +1,7 @@
 use std::net::Ipv4Addr;
 
 use ipnet::Ipv4Net;
+#[cfg(target_os = "linux")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "linux")]
@@ -11,6 +12,9 @@ use crate::{
     error::{AgentError, Result},
     state::NodeState,
 };
+
+#[cfg(not(windows))]
+use crate::config::WindowsWintunConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NetworkPlan {
@@ -100,6 +104,7 @@ impl NetworkPlan {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct NetworkManifest {
@@ -177,7 +182,12 @@ mod platform {
         ///
         /// Returns [`AgentError::Network`] when a stale resource exists, TUN allocation fails,
         /// Netlink configuration fails, or the recovery manifest cannot be persisted.
-        pub async fn create(plan: NetworkPlan, manifest_path: &Path) -> Result<Self> {
+        pub async fn create(
+            plan: NetworkPlan,
+            manifest_path: &Path,
+            _temporary_path: &Path,
+            _windows_wintun: Option<&WindowsWintunConfig>,
+        ) -> Result<Self> {
             Self::recover_stale(&plan, manifest_path).await?;
             let (connection, handle, _) = new_connection().map_err(|_| AgentError::Network)?;
             let connection = tokio::spawn(connection);
@@ -760,17 +770,28 @@ mod platform {
 #[cfg(target_os = "linux")]
 pub use platform::TunNetwork;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+mod windows;
+
+#[cfg(windows)]
+pub use windows::TunNetwork;
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub struct TunNetwork;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 impl TunNetwork {
     /// Rejects TUN creation on non-Linux targets until the native platform implementation exists.
     ///
     /// # Errors
     ///
     /// Always returns [`AgentError::UnsupportedPlatform`].
-    pub async fn create(_plan: NetworkPlan, _manifest_path: &std::path::Path) -> Result<Self> {
+    pub async fn create(
+        _plan: NetworkPlan,
+        _manifest_path: &std::path::Path,
+        _temporary_path: &std::path::Path,
+        _windows_wintun: Option<&WindowsWintunConfig>,
+    ) -> Result<Self> {
         Err(AgentError::UnsupportedPlatform)
     }
 }

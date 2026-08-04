@@ -10,7 +10,6 @@ use xs_windows_route_manager::{
 use crate::{
     error::{AgentError, Result},
     network::NetworkPlan,
-    windows_xsnet::{Win32DeviceTransport, XsnetDeviceSession},
 };
 
 pub struct WindowsNetworkPreparation {
@@ -18,66 +17,49 @@ pub struct WindowsNetworkPreparation {
 }
 
 impl WindowsNetworkPreparation {
-    /// Recovers stale state using the authoritative LUID bound to this exact xsnet session.
+    /// Recovers a manifest left behind after an ephemeral Wintun adapter was removed.
     ///
     /// # Errors
     ///
     /// Returns an error for manifest drift, ownership conflicts, IP Helper failures, or cleanup
     /// failures.
-    pub fn recover_for_session(
-        plan: &NetworkPlan,
-        session: &XsnetDeviceSession<Win32DeviceTransport>,
-        manifest_path: &Path,
-    ) -> Result<()> {
-        Self::recover_stale(plan, session.interface_luid(), manifest_path)
+    pub fn recover_after_adapter_removal(plan: &NetworkPlan, manifest_path: &Path) -> Result<()> {
+        if !manifest_path.exists() {
+            return Ok(());
+        }
+        let manifest = read_network_manifest(manifest_path).map_err(|_| AgentError::Network)?;
+        validate_manifest_plan(&manifest, plan, None)?;
+        let system = snapshot_routes().map_err(|_| AgentError::Network)?;
+        let recovery = plan_recovery(&manifest, &system, false).map_err(|_| AgentError::Network)?;
+        let mut backend = IpHelperBackend;
+        execute_recovery(&mut backend, &manifest, &recovery).map_err(|_| AgentError::Network)?;
+        remove_network_manifest(manifest_path).map_err(|_| AgentError::Network)
     }
 
-    /// Prepares address and routes for the authoritative LUID bound to this exact xsnet session.
+    /// Prepares address and routes for the LUID read directly from the newly-created Wintun
+    /// adapter.
     ///
     /// # Errors
     ///
     /// Returns an error for stale recovery, unsafe/conflicting routes, persistence, DAD, IP
     /// Helper, or rollback failure.
-    pub fn prepare_for_session(
+    pub fn prepare_for_adapter(
         plan: &NetworkPlan,
-        session: &XsnetDeviceSession<Win32DeviceTransport>,
+        interface_luid: u64,
         desired_prefixes: &[Ipv4Net],
         manifest_path: &Path,
         temporary_path: &Path,
     ) -> Result<Self> {
+        if manifest_path.exists() {
+            return Err(AgentError::Network);
+        }
         Self::prepare(
             plan,
-            session.interface_luid(),
+            interface_luid,
             desired_prefixes,
             manifest_path,
             temporary_path,
         )
-    }
-
-    /// Recovers a trusted stale manifest before any new Windows network mutation.
-    ///
-    /// # Errors
-    ///
-    /// Fails closed for plan mismatch, ownership drift, IP Helper failure, cleanup failure, or
-    /// private manifest removal failure.
-    fn recover_stale(plan: &NetworkPlan, interface_luid: u64, manifest_path: &Path) -> Result<()> {
-        if !manifest_path.exists() {
-            return Ok(());
-        }
-        let manifest = read_network_manifest(manifest_path).map_err(|_| AgentError::Network)?;
-        validate_manifest_plan(&manifest, plan, interface_luid)?;
-        let system = snapshot_routes().map_err(|_| AgentError::Network)?;
-        let address_present = exact_address_present(
-            interface_luid,
-            plan.virtual_ip(),
-            plan.address_pool().prefix_len(),
-        )
-        .map_err(|_| AgentError::Network)?;
-        let recovery =
-            plan_recovery(&manifest, &system, address_present).map_err(|_| AgentError::Network)?;
-        let mut backend = IpHelperBackend;
-        execute_recovery(&mut backend, &manifest, &recovery).map_err(|_| AgentError::Network)?;
-        remove_network_manifest(manifest_path).map_err(|_| AgentError::Network)
     }
 
     /// Persists Preparing state, proves DAD, applies exact routes, then atomically marks Active.
@@ -94,7 +76,6 @@ impl WindowsNetworkPreparation {
         manifest_path: &Path,
         temporary_path: &Path,
     ) -> Result<Self> {
-        Self::recover_stale(plan, interface_luid, manifest_path)?;
         let system = snapshot_routes().map_err(|_| AgentError::Network)?;
         let route_plan = plan_reconcile(interface_luid, desired_prefixes, &[], &system)
             .map_err(|_| AgentError::Network)?;
@@ -163,9 +144,9 @@ impl WindowsNetworkPreparation {
 fn validate_manifest_plan(
     manifest: &NetworkManifest,
     plan: &NetworkPlan,
-    interface_luid: u64,
+    interface_luid: Option<u64>,
 ) -> Result<()> {
-    if manifest.interface_luid != interface_luid
+    if interface_luid.is_some_and(|value| manifest.interface_luid != value)
         || manifest.address != plan.virtual_ip()
         || manifest.prefix_length != plan.address_pool().prefix_len()
     {

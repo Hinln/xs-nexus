@@ -405,3 +405,12 @@
 - 定向测试现必须先观察两个 Agent 都把对端新地址标记为 `authenticated_path_probe`，再发送双向 ICMP；等待上限和业务断言均未放宽。
 - 双向等待版在下一次聚合首轮仍失败，但旧 ERR trap 被 cleanup 覆盖；诊断已改为只保留首错误并保留失败临时目录。随后 fallback/path 组合 12 轮和完整 M5.2 通过，证据 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T194855Z`；连续三轮尚未重新建立。
 - 提交 `52867cd` 后从零重跑三轮聚合全部通过，证据 `/srv/xs-nexus/artifacts/qa/m7.1-three-round-20260731T195752Z`。每轮包含 M5.2 Linux/安装/部署全量、M6.1 Windows 源码/交叉门禁、6 个 E2E、2 个视觉矩阵、image SBOM 和 glibc disposition verifier；没有新增失败、路由/namespace/TUN/Compose 残留或宿主基线变化。
+
+## 14. Windows signed Wintun enrollment package (2026-08-04)
+
+- [x] `cargo test -p xs-agent -p xs-windows-wintun --target x86_64-pc-windows-msvc --offline`：45 项通过（Agent 43、Wintun 2）。
+- [x] `cargo test -p xs-controller --lib --bins --target x86_64-pc-windows-msvc --offline`：13 项通过；完整 Controller 数据库集成未运行，因为 VM 未配置 `XS_TEST_DATABASE_URL`。
+- [x] `cargo fmt --all -- --check` 和 `cargo clippy -p xs-agent -p xs-windows-wintun --all-targets --target x86_64-pc-windows-msvc --offline -- -D warnings`：通过。
+- [x] Windows 11 x64 VM Wintun smoke：临时 adapter/session 成功创建，LUID 与 interface index 非零，退出后 adapter 不存在；不写入地址、路由或默认路由。
+- [x] `windows-release-20260804-r3`：ZIP、manifest、引导器摘要、精确成员集合、逐文件 SHA-256、Wintun DLL SHA-256 与 Authenticode 发行方校验全部通过。
+- [ ] 生产 Controller 只读发布目录、PowerShell `/install`、真实 Enrollment Token、Windows 服务/CLI readiness、端到端数据面和卸载/重新安装：待 `KI-022` 闭环。

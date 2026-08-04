@@ -172,7 +172,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 
 ## K. Windows 驱动
 
-- [x] MUST：不使用 Wintun/TAP。
+- [x] MUST：除经用户批准、仅限 Windows L3 适配器边界的 Wintun 0.14.1 外，不使用 TAP、WireGuard 协议/内核实现或任何第三方组网、VPN、穿透、Relay 实现；该例外必须固定版本、归档/DLL 哈希、发行方签名和许可证，并且不得替代 XS Nexus 的控制、认证、加密、XSP/1、ACL、路由或 Relay。
 - [x] MUST：驱动只做虚拟 NIC 和安全 IPC。
 - [x] MUST：所有输入边界校验。
 - [x] MUST：测试签名构建。

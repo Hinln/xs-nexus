@@ -70,6 +70,7 @@ services:
       CONFIG_SIGNING_KEY_PATH: /run/secrets/xs-controller/configuration-signing-key
       UPDATE_SIGNING_PUBLIC_KEY_PATH: /run/secrets/xs-controller/update-signing-public-key
       LINUX_RELEASE_DIRECTORY: /run/xs-nexus-releases/linux/stable
+      WINDOWS_RELEASE_DIRECTORY: /run/xs-nexus-releases/windows/stable
       RELAY_CATALOG_PATH: /run/secrets/xs-controller/relay-catalog.json
       RUST_LOG: ${XS_RUST_LOG:-info}
     volumes:
@@ -82,6 +83,12 @@ services:
       - type: bind
         source: ${XS_LINUX_RELEASE_DIR:-/nonexistent/xs-nexus-releases}
         target: /run/xs-nexus-releases/linux/stable
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${XS_WINDOWS_RELEASE_DIR:-/nonexistent/xs-nexus-windows-releases}
+        target: /run/xs-nexus-releases/windows/stable
         read_only: true
         bind:
           create_host_path: false

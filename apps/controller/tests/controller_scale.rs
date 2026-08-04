@@ -200,6 +200,7 @@ fn test_config() -> ControllerConfig {
         config_signing_key: SigningKey::from_bytes(&[32_u8; 32]),
         update_signing_public_key: None,
         linux_release_directory: None,
+        windows_release_directory: None,
         credential_ttl_seconds: 86_400,
         relays: Vec::new(),
     }

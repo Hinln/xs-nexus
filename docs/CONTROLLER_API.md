@@ -8,8 +8,9 @@
 
 - Controller 提供 enrollment、配置同步、健康检查和临时管理员入口；不承载节点业务数据。
 - HTTP JSON body 全局上限为 1 MiB；Relay 报告签名输入另限 64 KiB，Agent 控制消息和 Peer 数另有 512 KiB/1024 项边界；未知 JSON 字段拒绝。
-- `GET /install` 公开返回固定生产域名和发布公钥指纹的 Linux 一键引导脚本；仅在完整只读发布目录通过启动校验后可用。
-- `GET /downloads/linux/stable/{file}` 只允许当前版本的 x86_64/aarch64 归档、清单、64 字节签名和发布公钥精确文件名，不提供目录遍历或任意文件读取。
+- `GET /install` 公开返回固定生产域名的一键引导脚本；PowerShell User-Agent 返回 Windows 引导脚本，其他客户端返回 Linux 引导脚本。任一对应的完整只读发布目录未通过启动校验时，该平台的引导不可用。
+- `GET /install/windows` 显式返回 Windows 引导脚本；`GET /downloads/windows/stable/{file}` 只允许当前 Windows `install.ps1`、精确 manifest JSON 和 x86_64 ZIP 三个文件名。
+- `GET /downloads/linux/stable/{file}` 只允许当前版本的 x86_64/aarch64 归档、清单、64 字节签名和发布公钥精确文件名。两个下载端点均不提供目录遍历或任意文件读取。
 - enrollment、管理员 API 和 WebSocket 必须部署在 TLS 反向代理之后；明文监听只允许受控 loopback 或容器内部链路。
 - `X-Request-Id` 被生成并传播；HTTP tracing 不记录 header 或 body。
 - 所有错误使用固定信封，不暴露 SQL、签名、Token 或内部状态。
@@ -33,6 +34,7 @@
 | `CREDENTIAL_SIGNING_KEY_PATH` | 权限不宽于 `0600` 的 32 字节原始 Ed25519 seed 文件 |
 | `CONFIG_SIGNING_KEY_PATH` | 与凭证密钥不同的 32 字节原始 Ed25519 seed 文件 |
 | `UPDATE_SIGNING_PUBLIC_KEY_PATH` | 可选、权限不宽于 `0644` 的 32 字节原始 Ed25519 发布公钥；不配置时更新导入明确不可用 |
+| `WINDOWS_RELEASE_DIRECTORY` | 可选、绝对路径、非符号链接、只读 Windows 发布目录；目录必须只包含已校验的 `install.ps1`、manifest 和 ZIP |
 | `NODE_CREDENTIAL_TTL_SECONDS` | `3600..31536000`，默认 30 天 |
 
 密钥文件和真实环境配置位于仓库外。Credential 与 Configuration key 复用会导致启动失败。

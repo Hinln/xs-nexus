@@ -92,6 +92,12 @@ pub async fn run_ipc_server(
 }
 
 #[cfg(windows)]
+/// Starts the fixed-name Windows local IPC server.
+///
+/// # Errors
+///
+/// Returns [`AgentError::Ipc`] when the named-pipe listener cannot be started or receives an
+/// invalid local request.
 pub async fn run_ipc_server(
     socket_path: PathBuf,
     state: Arc<tokio::sync::RwLock<NodeState>>,

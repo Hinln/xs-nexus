@@ -13,7 +13,7 @@
 - `xs-console`：基于真实 Controller API 的管理控制台。
 - `windows-xsnet`：自研 UMDF/NetAdapterCx 虚拟 NIC、exact ABI v1、严格测试安装和 VM 采证流程；Windows 11 测试签名驱动实验室门禁已通过，尚不属于生产分发包。
 
-核心运行路径不依赖 Tailscale、WireGuard/Wintun、ZeroTier、OpenVPN、FRP 或其他现成组网、VPN、穿透和中继产品。密码学使用成熟库中的标准原语；自研的是协议组合与系统实现，不自创密码算法。
+核心控制面、XSP/1 数据面、Relay、ACL、IPAM 和路由策略不依赖 Tailscale、WireGuard 协议实现、ZeroTier、OpenVPN、FRP 或其他现成组网、VPN、穿透和中继产品。经用户明确批准，Windows 客户端可在受限适配器边界使用发行方签名、哈希固定的 Wintun 0.14.1；它只提供 L3 适配器和包环，不提供或替代 XS Nexus 的协议、认证、加密、控制面或中继实现。
 
 ## 仓库入口
 
@@ -50,7 +50,15 @@ make security-check
 wget -qO- https://vpn.qinwen.co/install | sudo bash
 ```
 
-脚本自动识别 x86_64/aarch64 和主机名，固定使用 `https://vpn.qinwen.co/`，用户只需在隐藏提示中输入控制台生成的一次性 Enrollment Token。Windows 当前仍不能通过该命令接入。
+脚本自动识别 x86_64/aarch64 和主机名，固定使用 `https://vpn.qinwen.co/`，用户只需在隐藏提示中输入控制台生成的一次性 Enrollment Token。
+
+Windows 11 x64 管理员 PowerShell 使用：
+
+```powershell
+irm https://vpn.qinwen.co/install | iex
+```
+
+Windows 引导脚本会下载固定哈希的清单和归档，校验归档、逐文件 SHA-256 与 Wintun 的 Authenticode 签名后才安装。适配器例外的范围和当前验证边界见 `docs/WINDOWS_INSTALLATION.md`。
 
 重要专项入口：
 

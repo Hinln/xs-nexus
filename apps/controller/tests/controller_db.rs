@@ -1303,6 +1303,7 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
         config_signing_key: SigningKey::from_bytes(&[22_u8; 32]),
         update_signing_public_key: Some(SigningKey::from_bytes(&[23_u8; 32]).verifying_key()),
         linux_release_directory: None,
+        windows_release_directory: None,
         credential_ttl_seconds: 86_400,
         relays: vec![ConfigurationRelay {
             relay_id_base64: URL_SAFE_NO_PAD.encode([41_u8; 16]),

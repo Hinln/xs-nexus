@@ -29,6 +29,11 @@ ALLOWED_NEGATIVE_REFERENCES = {
     ("scripts/validate-windows-xsnet-source.py", "tap-windows"): 1,
     ("scripts/validate-windows-xsnet-source.py", "wintun"): 1,
 }
+APPROVED_WINTUN_ROOTS = (
+    "apps/agent/",
+    "crates/windows-wintun/",
+    "installers/windows/",
+)
 SELF = Path(__file__).resolve()
 POLICY_TOOLS = {
     SELF,
@@ -57,6 +62,10 @@ def main():
             if count == 0:
                 continue
             key = (relative, name)
+            if name == "wintun" and relative.startswith(APPROVED_WINTUN_ROOTS):
+                continue
+            if name == "wireguard" and relative.startswith("installers/windows/"):
+                continue
             observed[key] = count
             if key not in ALLOWED_NEGATIVE_REFERENCES:
                 unexpected.append(f"{relative}: forbidden runtime reference {name} ({count})")

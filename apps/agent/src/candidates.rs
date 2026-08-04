@@ -1,14 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV6},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::{Duration, Instant},
 };
 
+#[cfg(target_os = "linux")]
+use std::net::SocketAddrV6;
+
 use chrono::{Duration as ChronoDuration, Utc};
 use ed25519_dalek::VerifyingKey;
+#[cfg(target_os = "linux")]
 use futures_util::TryStreamExt as _;
 use getrandom::fill;
+#[cfg(target_os = "linux")]
 use rtnetlink::{new_connection, packet_route::address::AddressAttribute};
 use tokio::net::UdpSocket;
 use xs_core::{CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind};
@@ -24,9 +29,10 @@ use crate::{
 
 const CANDIDATE_LIFETIME: ChronoDuration = ChronoDuration::minutes(10);
 #[cfg(not(feature = "privileged-network-tests"))]
-const CANDIDATE_REFRESH_INTERVAL: Duration = Duration::from_secs(4 * 60);
+const CANDIDATE_REFRESH_INTERVAL: Duration = Duration::from_mins(4);
 #[cfg(feature = "privileged-network-tests")]
 const CANDIDATE_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+#[cfg(target_os = "linux")]
 const MAX_LOCAL_CANDIDATES: usize = 12;
 const MAX_DISCOVERY_ENDPOINTS: usize = 8;
 const MAX_ADVERTISED_CANDIDATES: usize = 16;
@@ -187,6 +193,7 @@ impl CandidateManager {
     }
 }
 
+#[cfg(target_os = "linux")]
 async fn collect_local_endpoints(
     port: u16,
     virtual_ip: Ipv4Addr,
@@ -226,6 +233,17 @@ async fn collect_local_endpoints(
     Ok(endpoints)
 }
 
+#[cfg(not(target_os = "linux"))]
+#[allow(clippy::unused_async)] // Keeps CandidateManager's platform-independent refresh call awaitable.
+async fn collect_local_endpoints(
+    _port: u16,
+    _virtual_ip: Ipv4Addr,
+) -> Result<Vec<(EndpointCandidateKind, SocketAddr)>> {
+    // Relay operation remains available while native non-Linux interface enumeration is pending.
+    Ok(Vec::new())
+}
+
+#[cfg(target_os = "linux")]
 fn local_candidate(
     address: IpAddr,
     interface_index: u32,

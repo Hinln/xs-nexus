@@ -54,7 +54,13 @@ pub async fn run_agent(config: AgentConfig, shutdown: watch::Receiver<bool>) -> 
     let controller_url = config.controller_url()?;
     state.validate(&identity, controller_url.as_str())?;
     let plan = NetworkPlan::from_state(&config, &state)?;
-    let network = TunNetwork::create(plan.clone(), &config.network_manifest_path()).await?;
+    let network = TunNetwork::create(
+        plan.clone(),
+        &config.network_manifest_path(),
+        &config.network_manifest_temporary_path(),
+        config.windows_wintun.as_ref(),
+    )
+    .await?;
     let data_plane = UdpDataPlane::bind(&state, Arc::clone(&identity)).await?;
     let data_plane_status = data_plane.status_handle();
     let mut telemetry_boot_id = [0_u8; 16];

@@ -30,7 +30,7 @@ const SIGNATURE_FILE: &str = "release.manifest.sig";
 const READY_FILE: &str = "ready.json";
 const UPDATE_REQUEST_FILE: &str = "update-request.json";
 const MAX_PUBLIC_KEY_BYTES: u64 = 2048;
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -11,6 +11,7 @@ members = [
   "crates/windows-route-manager",
   "crates/windows-service",
   "crates/windows-transport",
+  "crates/windows-wintun",
 ]
 resolver = "3"
 
@@ -53,7 +54,7 @@ uuid = { version = "=1.24.0", features = ["serde", "v4"] }
 url = "=2.5.8"
 x25519-dalek = "=2.0.1"
 zeroize = "=1.9.0"
-windows-sys = { version = "=0.61.2", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Services"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Services"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -40,7 +40,11 @@
 | zeroize | 1.9.0 | 临时密钥和 Token 内存清零 | Apache-2.0 OR MIT |
 | windows-sys | 0.61.2 | 隔离 Win32 设备枚举、独占 handle 与同步 `DeviceIoControl` 绑定 | MIT OR Apache-2.0 |
 
-这些 crate 只提供通用 Web、数据库、序列化、标准密码学原语、Linux Netlink 和 `/dev/net/tun` 文件描述符封装，不包含现成组网、VPN、穿透或 Relay 实现。`tokio-tun` 仅用于 Linux TUN 系统调用封装，不启用持久设备，也不用于 Windows；项目未引入 Wintun。
+这些 crate 只提供通用 Web、数据库、序列化、标准密码学原语、Linux Netlink 和 `/dev/net/tun` 文件描述符封装，不包含现成组网、VPN、穿透或 Relay 实现。`tokio-tun` 仅用于 Linux TUN 系统调用封装，不启用持久设备，也不用于 Windows。
+
+### Windows adapter exception (user-approved)
+
+Windows release `0.1.0` distributes the official Wintun `0.14.1` x64 prebuilt `wintun.dll` only as a signed, hash-pinned L3 adapter dependency. The release builder verifies the upstream archive SHA-256 `07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51`, DLL SHA-256 `e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce`, and an Authenticode signer subject of `CN=WireGuard LLC`; the installer repeats the DLL checks before loading it. The upstream prebuilt-binary license is copied into every Windows archive as `THIRD_PARTY/WINTUN-LICENSE.txt`. Wintun is restricted to adapter/session creation and bounded IPv4 packet I/O; it does not replace XS Nexus control, identity, XSP/1, encryption, peer selection, ACL, routing policy, NAT traversal, or relay code.
 
 ### Console 浏览器产物
 

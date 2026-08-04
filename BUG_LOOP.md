@@ -284,3 +284,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 根因：TX queue cancel 回调错误改写 packet/fragment 的 producer ownership indices，使 NetAdapterCx 在取消完成路径无法正确结算 NBL。该问题不能由平台无关生命周期模型或普通 PnP restart 发现。
 - 修复：TX cancel 只标记待取消 packet 并把 packet completion `BeginIndex` 推进到 `EndIndex`；不再改写 packet `NextIndex` 或 fragment `BeginIndex`/`NextIndex`。源码门禁现在单独抽取 cancel 函数并拒绝这些越权写入。
 - 回归：修复包在 Windows 11 24H2 VM 通过普通 restart、standard Driver Verifier oneboot、UMDF/Application Verifier 三轮 restart + SYSTEM smoke，settling 后新增相关 WDF/LiveKernel dump、WER 和 error event 均为零，随后 clean uninstall 零设备、零 driver-store 包。可复核摘要见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
+
+## Windows signed Wintun release packaging closed defects (2026-08-04)
+
+- 首次发布构建把 Cargo 根目录和 CLI package 名称假定错误；构建脚本现显式传入工作区 `--manifest-path`，并构建 `xs-agent` 与 `xs-cli` 的正确 package 名称。
+- Wintun Authenticode Subject 包含完整 DN，严格完整字符串相等会误拒绝有效发行方；现精确匹配 Subject 中独立的 `CN=WireGuard LLC` 字段，不接受任意包含关系。
+- PowerShell 模板标记计数最初使用 `.Split()`，会把 marker 字符逐个作为分隔集合而产生错误计数；现使用精确正则 matches，且仅允许一个 manifest 摘要占位符。
+- 初版安装器在解压后只校验预期文件，尚未拒绝额外内容或重解析点；现强制精确文件/目录集合、拒绝每一个 reparse point，并逐项复验 payload 清单哈希。上述修复后最终 r3 package 校验通过，未放宽任何完整性断言。

@@ -1,12 +1,15 @@
+use std::time::{Duration, Instant};
+#[cfg(target_os = "linux")]
 use std::{
     collections::{BTreeSet, HashMap},
     net::Ipv4Addr,
-    time::{Duration, Instant},
 };
 
 use chrono::{Duration as ChronoDuration, Utc};
+#[cfg(target_os = "linux")]
 use futures_util::TryStreamExt as _;
 use ipnet::Ipv4Net;
+#[cfg(target_os = "linux")]
 use rtnetlink::{
     RouteMessageBuilder, new_connection,
     packet_route::{
@@ -14,7 +17,9 @@ use rtnetlink::{
         route::{RouteAddress, RouteAttribute, RouteProtocol, RouteScope},
     },
 };
-use xs_core::{SubnetRouteAdvertisement, SubnetRouteSuggestion, validate_subnet_route_suggestion};
+#[cfg(target_os = "linux")]
+use xs_core::validate_subnet_route_suggestion;
+use xs_core::{SubnetRouteAdvertisement, SubnetRouteSuggestion};
 
 use crate::{
     error::{AgentError, Result},
@@ -23,7 +28,7 @@ use crate::{
 
 const ADVERTISEMENT_LIFETIME: ChronoDuration = ChronoDuration::minutes(10);
 #[cfg(not(feature = "privileged-network-tests"))]
-const REFRESH_INTERVAL: Duration = Duration::from_secs(4 * 60);
+const REFRESH_INTERVAL: Duration = Duration::from_mins(4);
 #[cfg(feature = "privileged-network-tests")]
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -87,6 +92,7 @@ impl SubnetRouteDiscovery {
     }
 }
 
+#[cfg(target_os = "linux")]
 async fn collect_suggestions(
     address_pool: &str,
     project_interface_name: &str,
@@ -159,11 +165,21 @@ async fn collect_suggestions(
         .into_iter()
         .map(|(prefix, interface_name)| SubnetRouteSuggestion {
             prefix,
-            interface_name,
+            interface_name: interface_name.to_owned(),
         })
         .collect())
 }
 
+#[cfg(not(target_os = "linux"))]
+#[allow(clippy::unused_async)] // Keeps SubnetRouteDiscovery's refresh API uniform across targets.
+async fn collect_suggestions(
+    _address_pool: &str,
+    _project_interface_name: &str,
+) -> Result<Vec<SubnetRouteSuggestion>> {
+    Ok(Vec::new())
+}
+
+#[cfg(target_os = "linux")]
 fn route_table(route: &rtnetlink::packet_route::route::RouteMessage) -> u32 {
     route
         .attributes
@@ -175,6 +191,7 @@ fn route_table(route: &rtnetlink::packet_route::route::RouteMessage) -> u32 {
         .unwrap_or_else(|| u32::from(route.header.table))
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn suggestible_interface(name: &str, project_interface_name: &str) -> bool {
     name != project_interface_name
         && ![

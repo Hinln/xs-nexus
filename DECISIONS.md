@@ -889,3 +889,14 @@
 - 原因：保持 Windows 11 官方支持的 NetAdapterCx Ethernet 路径，同时不把 ARP、邻居、广播策略或二层协议扩散进 Agent/XSP。专用 SYSTEM harness 已证明确定性 UDP IPv4 能进入 TX、raw IPv4 RX 能注入系统 ring，并在 PnP/Verifier 周期后重复成立。
 - 代价：驱动边界增加固定 14 字节复制和 EtherType 检查；当前只接受 IPv4，IPv6/其他 EtherType 被丢弃。固定 peer MAC 只服务首版 point-to-point 三层语义，不声明通用二层交换能力。
 - 安全影响：ABI 的 IPv4 长度、IHL、总长度、MTU、批次和容量验证不变；Windows 提交的其他 L2 流量不能穿过私有 ABI。源码门禁固定 Ethernet INF/capability/layout、头部转换以及 queue callback 内无同步断链。
+
+---
+
+## ADR-077: User-approved signed Wintun adapter boundary for Windows enrollment
+
+- Date: 2026-08-04
+- Status: Accepted as a Windows client exception; it does not change the clean-room `xsnet` driver scope.
+- Decision: Windows release `0.1.0` may ship official Wintun `0.14.1` x64 `wintun.dll` only through the `xs-windows-wintun` adapter boundary. The builder and installer must pin the official archive SHA-256, DLL SHA-256, Authenticode signer subject, exact payload set, and the upstream prebuilt-binary license. The Agent dynamically loads only that regular, absolute, non-reparse DLL, creates an ephemeral L3 adapter/session, and accepts bounded validated IPv4 packets.
+- Rationale: The user explicitly chose an already-signed adapter over distributing the still test-signed `xsnet` driver. This permits practical Windows enrollment without claiming that the self-developed driver is production-signed or that Wintun supplies any XS Nexus network protocol.
+- Non-goals and boundary: Wintun must not implement or replace controller enrollment, node identity, XSP/1, key agreement, encryption, replay protection, NAT traversal, candidate selection, relay, ACL, IPAM, policy, or routing authorization. `drivers/windows-xsnet` remains independently validated and continues to prohibit Wintun in its driver source.
+- Residual gate: This exception is not a production-security certification. Full service/SCM, Named Pipe, protected storage, IP Helper/DAD/route recovery, sleep, repeated install/upgrade/rollback, Windows 10, and independent security review require their own evidence before an RC claim.

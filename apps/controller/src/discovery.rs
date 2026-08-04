@@ -14,7 +14,7 @@ use xs_protocol::{DISCOVERY_REQUEST_LENGTH, discovery_response, verify_discovery
 use crate::state::AppState;
 
 const MAX_TRACKED_SOURCES: usize = 1024;
-const SOURCE_WINDOW: Duration = Duration::from_secs(60);
+const SOURCE_WINDOW: Duration = Duration::from_mins(1);
 const MAX_REQUESTS_PER_SOURCE: u16 = 30;
 
 struct SourceBudget {
