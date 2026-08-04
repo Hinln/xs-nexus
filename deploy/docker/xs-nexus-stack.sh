@@ -370,7 +370,14 @@ snapshot_running_images() {
         if [[ -n $container ]]; then
             image_id=$(docker inspect "$container" --format '{{.Image}}')
             tag=$(rollback_tag "$service")
-            docker image tag "$image_id" "$tag"
+            if docker image inspect "$image_id" >/dev/null 2>&1; then
+                docker image tag "$image_id" "$tag"
+            else
+                # A rebuild can replace the mutable service tag while an old
+                # container remains healthy. Preserve that running container
+                # as a rollback image instead of activating without recovery.
+                docker commit --pause=false "$container" "$tag" >/dev/null
+            fi
             printf '%s=%s\n' "${service^^}_IMAGE" "$tag" >>"$temporary"
         else
             printf '%s=none\n' "${service^^}_IMAGE" >>"$temporary"
