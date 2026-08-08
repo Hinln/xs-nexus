@@ -27,6 +27,7 @@ report_failure() {
 
 cleanup() {
     local status=$?
+    trap - ERR
     set +e
     for namespace in "$NETNS_A" "$NETNS_B"; do
         if ip netns list | awk '{print $1}' | grep -Fxq "$namespace"; then
