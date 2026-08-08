@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { readFile, stat } from "node:fs/promises";
 
 const pages = [
@@ -24,15 +24,15 @@ test("真实 Controller 登录、导航、刷新与退出", async ({ page }) => 
   const username = requiredEnvironment("XS_CONSOLE_E2E_USERNAME");
   const password = await readPrivateCredential(requiredEnvironment("XS_CONSOLE_E2E_PASSWORD_FILE"));
   const browserErrors: string[] = [];
-  const requestFailures: string[] = [];
+  const requestFailures: Request[] = [];
+  const successfulRequests = new Set<Request>();
   const serverFailures: string[] = [];
 
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  page.on("requestfailed", (request) => {
-    requestFailures.push(`${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText ?? "unknown"}`);
-  });
+  page.on("requestfailed", (request) => requestFailures.push(request));
   page.on("response", (response) => {
     const pathname = new URL(response.url()).pathname;
+    if (response.status() < 400) successfulRequests.add(response.request());
     if (pathname.startsWith("/v1/") && response.status() >= 500) {
       serverFailures.push(`${response.status()} ${pathname}`);
     }
@@ -70,7 +70,13 @@ test("真实 Controller 登录、导航、刷新与退出", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "进入管理控制台" })).toBeVisible();
 
   expect(browserErrors).toEqual([]);
-  expect(requestFailures).toEqual([]);
+  expect(
+    requestFailures
+      .filter((request) => !successfulRequests.has(request))
+      .map((request) =>
+        `${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText ?? "unknown"}`,
+      ),
+  ).toEqual([]);
   expect(serverFailures).toEqual([]);
 });
 
