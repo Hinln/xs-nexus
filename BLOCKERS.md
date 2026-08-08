@@ -35,17 +35,19 @@
 
 ## BLK-003 DNS 和生产防火墙
 
-- 状态：阻塞正式域名上线
-- 需要：用户批准 DNS 和端口。
-- 不阻塞：IP 和临时端口测试。
+- 状态：阻塞任务书计划域名 `vpn.xiashikeji.cn` 上线；2026-08-08 该域名经 CDN 返回 `525 SSL Handshake Failed with Origin Server`
+- 需要：用户批准并在 1Panel/CDN 中完成正式源站证书、SNI、反向代理和最小防火墙配置。
+- 已验证：服务器错误时钟已恢复 Chrony/NTP，同步后 525 仍可复现；Controller 回环健康，当前固定 `vpn.qinwen.co` 的 Linux/Windows 公网引导、manifest/ZIP 哈希和未知文件 404 均通过，因此不能把 525 归因于应用路由。
+- 不阻塞：当前 `vpn.qinwen.co` 测试发布、IP 和临时端口测试。
 
 ---
 
 ## BLK-004 正式驱动签名
 
-- 状态：阻塞正式 Windows 公布
-- 不阻塞：测试签名和测试 VM。
-- 解除：完成签名流程。
+- 状态：首版 Wintun 发布路径已解除；自研 xsnet 正式分发仍未签名且不纳入当前发布声明
+- 决策：项目所有者明确允许使用 GitHub 开源、已有发行方签名的 Windows 底层适配器，并确认没有自研驱动正式签名条件。首版固定 Wintun 0.14.1、归档/DLL 哈希、`CN=WireGuard LLC` Authenticode 和许可证；XS Nexus 仍独立实现控制、身份、XSP/1、加密、ACL、路由、NAT 和 Relay。
+- 证据：ADR-077、`THIRD_PARTY.md`、`docs/WINDOWS_INSTALLATION.md` 和 Windows 11 VM 离线包/Wintun smoke 证据。
+- 剩余：`xsnet` 只能作为测试签名实验路径；不得宣称它已正式签名。Windows 在线安装、服务、路由、睡眠和普通网络恢复仍由 `KI-022` 等条目跟踪。
 
 ---
 
@@ -66,16 +68,17 @@
 
 ---
 
-## BLK-005 现有数据库公网暴露整改门禁
+## BLK-005 现有数据库公网暴露整改门禁（已解除）
 
-- 状态：阻塞最终 1Panel 安全验收和 Release Candidate
+- 状态：已解除（2026-08-08）
 - 首次发现：2026-07-29
 - 外部条件：用户批准修改现有 1Panel 端口映射或云防火墙规则，并安排临时凭据轮换。
 - 证据：`/srv/xs-nexus-qa/baseline/20260729T094000Z/external-port-check.txt`
 - 已尝试：完成只读 Docker、监听端口和外部连通性检查；未修改现有资源。
 - 不受影响工作：仓库开发、隔离 namespace 实验、Controller/Agent/Relay/Console 实现和本地测试。
-- 解除步骤：限制 TCP `5432`、`6379` 的公网访问，保留 `1panel-network` 容器内访问，轮换临时数据库和 Redis 密码。
-- 解除后验证：外部端口不可达、容器 DNS 和内部端口可达、现有 1Panel 服务健康、项目数据库连接通过。
+- 解除结果：新生产候选服务器没有 Redis/MySQL 项目容器，项目 PostgreSQL 无 host binding；外部 TCP `3306`、`5432`、`6379` 不可达，项目四容器健康，`1panel-network` 保持 4 个项目成员。
+- 解除证据：`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
+- 后续：所有临时凭据仍必须轮换；该要求独立于端口暴露门禁。
 
 ---
 

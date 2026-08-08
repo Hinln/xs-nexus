@@ -4,7 +4,7 @@
 适用范围：Linux 服务端、Linux Agent、Docker Compose、1Panel 外部网络、项目自带 Caddy HTTPS Edge  
 不适用范围：尚未完成完整 Agent、生产安装器与正式签名门禁的 Windows 客户端；测试签名 `xsnet` 驱动实机结果仅作开发证据
 
-> 重要结论：本手册描述的是当前代码能够执行的完整部署流程，不是“已经生产就绪”的声明。Windows 11 测试签名 `xsnet` 驱动的 WDK/VM/Verifier 门禁已通过，但完整 Windows Agent、生产安装器/正式驱动签名、真实 NAS、正式离线发布与备份密钥仪式、真实异地恢复、数据库公网暴露整改、生产防火墙和第三方协议/密码学审计等门禁仍未完成。权威状态以 `FINAL_REPORT.md`、`RELEASE_CHECKLIST.md`、`BLOCKERS.md` 和 `KNOWN_ISSUES.md` 为准。
+> 重要结论：本手册描述的是当前代码能够执行的完整部署流程，不是“已经生产就绪”的声明。Windows 11 测试签名 `xsnet` WDK/VM/Verifier 已通过，首版又采用固定且发行方签名的 Wintun 0.14.1 适配器边界；但 Windows 在线 Agent/服务/网络、真实 NAS、正式离线发布与备份密钥仪式、真实异地恢复、源站 TLS/生产防火墙和第三方协议/密码学审计等门禁仍未完成。当前主机数据库公网暴露已解除。权威状态以 `FINAL_REPORT.md`、`RELEASE_CHECKLIST.md`、`BLOCKERS.md` 和 `KNOWN_ISSUES.md` 为准。
 
 ## 1. 部署目标和组件
 

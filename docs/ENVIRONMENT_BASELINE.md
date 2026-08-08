@@ -31,7 +31,7 @@
 /srv/xs-nexus-qa/baseline/20260729T094000Z/external-port-check.txt
 ```
 
-根据主机保护规则，本项目未修改 1Panel 端口映射或生产防火墙。修复需要人工批准，并记录为 `KI-006` 和 `BLK-005`。在风险解除前不得通过最终 1Panel 或 Release Candidate 安全验收。
+该段记录的是旧开发服务器基线。项目未修改其 1Panel 端口映射或生产防火墙；迁移到新生产候选服务器后，项目 PostgreSQL 无 host binding 且外部数据库端口不可达，`KI-006` 和 `BLK-005` 已解除。新主机证据见 `ENVIRONMENT.md`，本历史基线不得覆盖当前事实。
 
 ## 网络能力
 

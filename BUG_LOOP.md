@@ -291,3 +291,9 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - Wintun Authenticode Subject 包含完整 DN，严格完整字符串相等会误拒绝有效发行方；现精确匹配 Subject 中独立的 `CN=WireGuard LLC` 字段，不接受任意包含关系。
 - PowerShell 模板标记计数最初使用 `.Split()`，会把 marker 字符逐个作为分隔集合而产生错误计数；现使用精确正则 matches，且仅允许一个 manifest 摘要占位符。
 - 初版安装器在解压后只校验预期文件，尚未拒绝额外内容或重解析点；现强制精确文件/目录集合、拒绝每一个 reparse point，并逐项复验 payload 清单哈希。上述修复后最终 r3 package 校验通过，未放宽任何完整性断言。
+
+## 生产候选继续开发闭环缺陷（2026-08-08）
+
+- `XS-2026-0013`：生产镜像使用历史提交 tag，但 OCI revision 和 active deployment 已指向新提交。修复为 RC 预检强制五个镜像 tag 精确等于发布 Git revision；正向和 stale-tag 负向测试通过，不再允许标签漂移。
+- `XS-2026-0014`：生产服务器 Chrony 被停用，系统时钟比 RTC、外部 HTTPS Date 和 NTP 慢整整一天，影响证书、Token、配置 TTL 和审计时间。恢复既有 Chrony 服务后自动前跳 86400.300154 秒并同步；容器身份、网络、默认路由、nftables 和下载接口均保持。公网 525 仍存在，证明其还需要源站 TLS/反代门禁处理。
+- `XS-2026-0015`：2026-08-08 重新构建时 npm audit 新增 `nanoid <3.3.17` 高危无限循环/DoS 公告。未忽略或豁免；锁文件升级到 `3.3.18`，npm high/critical 清零，Console build 和 4 项测试通过。

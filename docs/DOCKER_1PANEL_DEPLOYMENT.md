@@ -203,7 +203,7 @@ sudo "$STACK" --env-file "$ENV_FILE" down
 
 - 由管理员在 1Panel/反向代理配置正式 HTTPS 和 WebSocket；
 - 只开放获批的 Controller/Discovery/Relay 端口，Console 管理面不得裸露 HTTP；
-- 修复并复测 `KI-006` 中既有 PostgreSQL/Redis 公网暴露；
+- 持续复测数据库无 host binding 和外部端口不可达；`KI-006` 已在当前生产候选服务器解除；
 - 使用固定摘要和干净提交构建 RC 镜像，生成 SBOM、漏洞报告和来源证明；
 - 完成 `BLK-007` 的正式 identity 仪式、真实异地主机挂载和生产恢复演练；
 - 轮换所有临时密码、Bootstrap 密码、管理 Token 和在线签名密钥。

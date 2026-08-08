@@ -900,3 +900,13 @@
 - Rationale: The user explicitly chose an already-signed adapter over distributing the still test-signed `xsnet` driver. This permits practical Windows enrollment without claiming that the self-developed driver is production-signed or that Wintun supplies any XS Nexus network protocol.
 - Non-goals and boundary: Wintun must not implement or replace controller enrollment, node identity, XSP/1, key agreement, encryption, replay protection, NAT traversal, candidate selection, relay, ACL, IPAM, policy, or routing authorization. `drivers/windows-xsnet` remains independently validated and continues to prohibit Wintun in its driver source.
 - Residual gate: This exception is not a production-security certification. Full service/SCM, Named Pipe, protected storage, IP Helper/DAD/route recovery, sleep, repeated install/upgrade/rollback, Windows 10, and independent security review require their own evidence before an RC claim.
+
+## ADR-078 RC 镜像标签必须等于发布 Git revision
+
+- 状态：接受
+- 日期：2026-08-08
+- 背景：生产候选容器曾使用历史提交作为 Docker tag，但镜像 OCI revision 和活动部署记录已经是较新提交。内容本身可运行，然而 tag、标签和部署记录不一致会破坏审计、回滚选择和事故定位。
+- 决策：RC 环境除继续要求干净 Git HEAD、`XS_RELEASE_REVISION` 精确等于 HEAD、镜像 OCI revision 精确匹配外，还要求 Controller、Migration、Relay、Console 和 db-tools 的镜像引用都使用精确 40 位发布 revision 作为 tag；digest 引用或任意旧/语义 tag 在当前 RC 编排中失败关闭。dev 环境保留独立测试 tag。
+- 原因：使 Git、环境文件、镜像引用、OCI 标签、活动部署记录和回滚证据形成单一可追溯链，避免 mutable/stale tag 掩盖实际运行内容。
+- 代价：文档提交若要成为生产工作树 HEAD，也必须重新构建 revision 标签镜像或保留独立部署工作树；不能用旧 tag 快速覆盖。
+- 验证：错误 Controller tag 的 RC 预检被拒绝，正确五镜像 tag 通过，且 Docker 容器/网络、`1panel-network`、默认路由和归一化 nftables 不变；证据 `/srv/xs-nexus-qa/artifacts/deploy-tag-guard-20260807T062812Z`。

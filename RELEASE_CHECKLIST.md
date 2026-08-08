@@ -52,7 +52,7 @@
 ## 部署
 
 - [x] 使用外部 `1panel-network`
-- [ ] 无数据库公网端口
+- [x] 无数据库公网端口（当前生产候选服务器外部探测与 Docker host binding 复核通过）
 - [x] 容器非 root
 - [x] Secret 仓库外
 - [x] 健康检查
@@ -84,7 +84,7 @@
 - [x] 升级（Linux）
 - [x] 卸载（Linux）
 - [x] 恢复（Linux Agent 生命周期）
-- [x] 1Panel（项目部署与恢复；既有公网数据库端口仍由 `BLK-005` 阻塞）
+- [x] 1Panel（项目部署与恢复；当前主机数据库无 host binding，`BLK-005` 已解除）
 - [x] 测试报告（`QA_MATRIX.md` 与各阶段证据目录）
 - [x] 性能报告（`docs/PERFORMANCE_REPORT.md`；含 24 小时稳定性审计）
 - [x] FINAL_REPORT（如实标记部分完成和生产不适用）
@@ -97,7 +97,7 @@
 - [ ] NAS 由用户手动接入
 - [ ] 日常 Windows 仅在 VM 通过后接入
 - [ ] DNS 由用户批准
-- [ ] 正式驱动签名状态明确
+- [x] 正式驱动签名状态明确（首版 Windows 适配器使用固定且发行方签名的 Wintun 0.14.1；自研 xsnet 仅保留测试签名实验路径，不作正式签名声明）
 - [ ] 所有临时密码待发布后轮换
 
 ## 结论

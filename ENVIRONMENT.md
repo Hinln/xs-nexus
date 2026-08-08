@@ -1,27 +1,21 @@
-# ENVIRONMENT.md — 当前临时开发和测试环境
+# ENVIRONMENT.md — 当前生产候选与测试环境
 
 本文件不包含任何密码。真实秘密只允许通过当前会话或仓库外环境文件提供。
 
 ---
 
-## 1. 临时开发服务器
+## 1. 当前生产候选服务器
 
-- 公网地址：`34.92.139.129`
+- 公网地址：`101.32.170.223`
 - SSH 端口：`122`
-- 登录用户：`root`
-- 用途：
-  - Codex 开发；
-  - Git；
-  - Docker；
-  - Controller；
-  - Relay；
-  - Console；
-  - PostgreSQL/Redis 接入；
-  - Linux TUN；
-  - Network Namespace 实验；
-  - Playwright QA。
+- 非特权登录用户：`ubuntu`，日常操作使用专用 SSH key；
+- 系统：Ubuntu 24.04.4 LTS、Linux 6.8.0-124、x86_64、2 vCPU、3.6 GiB RAM；
+- Docker：29.6.2；1Panel 位于 `/opt/1panel`；
+- `/dev/net/tun`、network namespace 与 nftables 可用；宿主没有 Rust、Node、CMake、Ninja 或 Clang，构建通过固定 Docker 工具链执行；
+- 系统 Chrony 曾被停用并造成系统时钟落后 RTC/NTP 86400.300154 秒，已于 2026-08-08 恢复为 enabled/active 和 NTP synchronized；证据 `/srv/xs-nexus-qa/artifacts/time-sync-precorrect-20260807T063050Z`；
+- 初始只读基线位于 `/srv/xs-nexus-qa/baseline/20260807T061137Z`。
 
-该服务器是临时开发环境，开始高风险网络实验前应先创建系统盘快照。
+旧开发服务器只保留历史证据，不再作为当前部署事实来源。任何网络实验仍必须优先使用独立 namespace，不得直接改生产主机默认路由或 1Panel 资源。
 
 ---
 
@@ -50,30 +44,16 @@ networks:
 
 ---
 
-## 3. 基础服务
+## 3. 当前基础服务
 
-### PostgreSQL
+- 项目 PostgreSQL：`xs-nexus-rc-postgres:5432`，只加入 `1panel-network`，没有宿主端口映射；
+- Controller、Relay、Console：`xs-nexus-rc-*`，HTTP 仅绑定 `127.0.0.1:28080/28081`；
+- Discovery 与 Relay UDP：宿主 `42000/42001`；
+- 当前主机没有 Redis 或 MySQL 项目依赖；
+- Secret 位于 `/etc/xs-nexus/deployments/rc/`，环境文件为 `/etc/xs-nexus/deployments/rc.compose.env`，均不进入仓库；
+- 从外部主机验证 TCP `3306`、`5432`、`6379`、`28080`、`28081` 不可达，项目 PostgreSQL 健康且无 host binding；证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
 
-- 容器 DNS：`1Panel-postgresql-AVyu`
-- 端口：`5432`
-- 项目主关系型数据库
-- 用户名和密码从 `/etc/xs-nexus/controller.env` 注入
-
-### Redis
-
-- 容器 DNS：`1Panel-redis-7ZP2`
-- 端口：`6379`
-- 用于缓存、在线状态、任务协调和短期数据
-- 密码从仓库外注入
-
-### MySQL
-
-- 容器 DNS：`1Panel-mysql-Rq1B`
-- 端口：`3306`
-- 首版项目不使用
-- 不得使用 MySQL root 作为业务应用账号
-
-数据库端口不得发布到公网。
+数据库端口不得发布到公网；历史开发服务器的 PostgreSQL/Redis 暴露结论不外推到当前生产候选服务器。
 
 ---
 
@@ -141,14 +121,18 @@ CONSOLE_SESSION_TTL_SECONDS=28800
 
 ---
 
-## 7. 计划域名
+## 7. 计划域名与当前状态
 
-建议：
+当前发布域名：
+
+- `vpn.qinwen.co`：Linux/Windows bootstrap、Controller HTTPS 和下载；当前 A 记录直接指向生产候选服务器，公网健康、引导脚本、Windows manifest/ZIP 精确哈希和未知文件 404 已验证；
+
+任务书计划域名：
 
 - `vpn.xiashikeji.cn`：Web Console 和 HTTPS Controller
 - `relay.vpn.xiashikeji.cn`：UDP Relay 和地址发现
 
-域名和防火墙属于人工门禁。在未授权前使用临时端口完成测试。
+`vpn.xiashikeji.cn` 当前解析到 CDN，但应用路径返回 `525 SSL Handshake Failed with Origin Server`；修正生产服务器时钟后仍可复现。它是未来正式域名门禁，不影响当前固定 `vpn.qinwen.co` 下载入口。Codex 未修改 1Panel OpenResty 或 CDN。
 
 ---
 
@@ -177,7 +161,7 @@ CONSOLE_SESSION_TTL_SECONDS=28800
 - Controller 在线密钥；
 - Enrollment Token。
 
-正式环境建议切换到 SSH Key，并禁止 root 密码远程登录。
+当前服务器已安装项目专用 SSH key；临时密码和全部应用凭据仍须在发布前轮换。是否禁用密码登录属于服务器管理门禁，变更前必须确认备用管理通道。
 
 ---
 
@@ -222,3 +206,5 @@ M5.2 使用以下固定边界：
 ```
 
 默认 Controller/Console/Discovery/Relay 端口只绑定 `127.0.0.1`。正式 DNS、TLS、反向代理和防火墙仍属于人工门禁。完整准备、部署、备份和恢复步骤见 `docs/DOCKER_1PANEL_DEPLOYMENT.md`。
+
+当前生产候选实际为 HTTP 回环、Discovery/Relay UDP 公网监听；数据库无宿主映射。主机 `ufw` inactive，nftables INPUT 默认接受且 1Panel 管理端口仍监听，因此“防火墙最小开放”不得标记完成。

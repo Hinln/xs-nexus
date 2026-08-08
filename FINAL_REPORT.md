@@ -1,16 +1,16 @@
 # XS Nexus 最终交付报告
 
-报告日期：2026-08-04  
-当前检查点：Linux 一键接入生产部署与 Windows xsnet WDK/VM 驱动门禁（以本报告后续提交为准）
+报告日期：2026-08-08  
+当前检查点：生产候选恢复、Windows Wintun 发布路径与剩余外部门禁（以本报告后续提交为准）
 
 ## 1. 结论
 
 - [ ] 完整 Release Candidate
 - [x] 部分完成
-- [ ] 不适合生产
+- [x] 不适合生产
 - [ ] 仅研究/原型
 
-核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、认证加密备份/复制边界、24 小时稳定性、协议安全边界和 Windows xsnet 测试签名驱动 WDK/VM/Verifier 已完成可复现验证；项目仍受完整 Windows Agent/runtime/正式签名、真实 NAS、数据库公网端口整改、正式备份 identity/真实异地主机和第三方审计等门禁约束，不能标记 Release Candidate 或描述为公网生产就绪。
+核心 Linux/Controller/Relay/Console、安装生命周期、签名灰度更新、认证加密备份/复制边界、24 小时稳定性、协议安全边界和 Windows xsnet 测试签名驱动 WDK/VM/Verifier 已完成可复现验证。项目所有者又批准首版 Windows 使用发行方签名的 Wintun 0.14.1 作为仅 L3 适配器的例外；XS Nexus 的控制、身份、XSP/1、加密、ACL、路由、NAT 和 Relay 保持自研。当前 `vpn.qinwen.co` 下载可用，但任务书计划域名的 CDN 525、Windows 在线服务/网络、真实 NAS、正式发布/备份密钥、真实异地主机和第三方审计等门禁仍未完成，不能标记 Release Candidate 或描述为公网生产就绪。
 
 ## 2. 版本和构建
 
@@ -29,6 +29,7 @@
 - Linux 安装、升级、回滚、卸载、备份恢复和部署隔离：M5.1/M5.2 证据；备份又完成 age 流式加密、不同文件系统自动复制、深度认证、取回、保留和销毁墓碑。
 - Windows xsnet ABI、队列/生命周期源码边界、Rust session、命名管道 server/CLI client、私有存储、Service/SCM 隔离：M6.1 证据 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T184122Z` 及最终本地审计 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。测试签名驱动又在 Windows 11 24H2 VM 完成 WDK build、install、SYSTEM Tx/Rx、PnP restart、standard/UMDF/Application Verifier 和 clean uninstall；见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。
 - Windows 路由准备：精确 LUID、IP Helper、DAD、manifest、additions-first、补偿和恢复；`make test-windows-agent-routing` 通过 16 个单测、源码门禁、MSVC target check 和 Clippy。runtime 仍隔离。
+- Windows Wintun 发布路径：固定官方 0.14.1 x64 DLL、归档/DLL SHA-256、`CN=WireGuard LLC` Authenticode 和许可证；Windows 11 VM 已完成真实 adapter/session smoke 与离线 r3 包完整性验证。生产 Controller 回环及 `vpn.qinwen.co` 公网已提供精确 bootstrap/manifest/ZIP 与 404 allowlist；当前缺少可控 Windows VM 会话，尚未完成在线 Enrollment、服务和数据面验收。
 - 性能基线：XSP/1 161,314 seal+open/s；Relay 87,822 包/s；Controller 100/500/1000 节点规模；release Agent Direct/Relay RTT 0.91/1.16 ms；Agent 空闲 CPU 0.55% 单核、RSS 7.95 MiB。证据见 `docs/PERFORMANCE_REPORT.md`。
 - 签名更新：离线签名不可变发布、三通道确定性灰度、节点签名状态、Controller 签名通道、Agent/root helper 双重验证和原子回滚；见 `docs/UPDATE_SYSTEM.md`。
 - 认证遥测：Agent 节点身份签名当前路径、业务流量、握手与 RTT；Relay 目录身份签名脱敏累计指标；Controller 验签、拒绝重放/回滚并保存有界 25 小时窗口，Console 展示新鲜/陈旧状态。
@@ -42,9 +43,9 @@
 ## 5. 未完成功能与外部门禁
 
 - Windows 测试签名驱动环境门禁 `BLK-001` 已解除；完整 Agent、SCM/Named Pipe/存储、route/DAD/sleep 与生产安装器仍由 `KI-016`、`KI-017`、`KI-018`、`KI-020` 跟踪。
-- 正式 Windows 驱动签名：`BLK-004`。
+- Windows 签名边界已明确：首版只发布发行方签名的 Wintun 0.14.1；自研 xsnet 保持测试签名实验路径，不宣称正式签名或生产分发。
 - 真实 NAS 安装、升级、Direct/Relay、子网审批和离线撤销：`BLK-002`。
-- 现有 PostgreSQL/Redis 公网端口整改和临时凭据轮换：`BLK-005`。
+- 当前生产候选数据库公网暴露已解除：项目 PostgreSQL 无 host binding，外部数据库端口不可达；临时凭据轮换仍是发布前独立要求。
 - DNS、生产防火墙、正式公网容量和第三方安全审计：人工/外部门禁。
 - 正式离线发布签名、公钥认证分发/轮换和 RC 更新回滚：`BLK-006`。
 - 正式备份 identity、真实异地主机/对象存储挂载和生产恢复演练：`BLK-007`。
@@ -61,10 +62,10 @@
 
 ## 7. 部署结果
 
-- 开发服务器 Docker Compose 使用既有 external `1panel-network`，未重建或修改该网络。
-- PostgreSQL/Redis 使用仓库外 secret 文件；项目未暴露新的生产端口。
+- 当前生产候选服务器 Docker Compose 使用既有 external `1panel-network`，未重建或修改该网络。
+- 项目 PostgreSQL 使用仓库外 secret 文件、无宿主端口映射；外部 TCP `3306`、`5432`、`6379` 不可达，`KI-006`/`BLK-005` 已解除。
 - Controller/Relay/Console 非 root、健康检查、日志轮转，以及 age 加密/自动复制/取回/保留/恢复演练已通过。
-- 生产 TLS/DNS/防火墙和数据库公网端口仍为外部门禁；不记录任何密码或 token。
+- Chrony/NTP 已恢复，系统时钟修正 86400.300154 秒后容器、网络、路由和 nftables 不变。当前 `vpn.qinwen.co` 公网下载通过；任务书计划域名 `vpn.xiashikeji.cn` 的 TLS/DNS/CDN 和生产防火墙仍为外部门禁。不记录任何密码或 token。
 
 ## 8. 测试
 
@@ -78,7 +79,7 @@
 ## 9. 缺陷与风险
 
 - P0/P1：当前自动化回归无新增 P0/P1；这不替代第三方安全审计。
-- 高风险开放项：完整 Windows Agent/runtime/正式签名、数据库公网暴露、真实 NAS、第三方协议/密码学审计。
+- 高风险开放项：Windows 在线 Agent/service/network、真实 NAS、正式密钥/异地恢复、源站 TLS/防火墙和第三方协议/密码学审计。
 - 镜像漏洞 disposition 已有明确结论，但不等于漏洞修复或自动接受。
 
 ## 10. 安全结论
@@ -97,7 +98,7 @@
 
 - 个人隔离测试：适合。
 - 小规模可信设备：Linux 测试范围内可继续验证，但需接受未完成门禁。
-- 公网生产：不适合，需先完成数据库暴露整改、正式签名、完整 Windows Agent/NAS、真实备份异地主机/密钥仪式和第三方审计门禁。
+- 公网生产：不适合，需先完成源站 TLS/防火墙、Windows 在线 Agent/NAS、真实备份异地主机/密钥仪式、正式发布签名和第三方审计门禁。
 - 企业关键网络：不适合，另需第三方协议/密码学审计、真实故障演练和正式供应链复核。
 
 ## 13. 凭据轮换
@@ -106,9 +107,9 @@
 
 ## 14. 后续优先级
 
-1. 完成 `BLK-007` 的正式备份 identity 仪式、真实异地主机挂载和生产恢复演练。
-2. 在已验证的 Windows VM 路线上构建完整 Agent，执行 SCM/Named Pipe/存储、route/DAD/sleep、失败状态和生产安装器/签名门禁后再决定是否接入 runtime。
-3. 完成数据库公网端口整改、正式离线签名和最终 RC 供应链复核。
+1. 在当前 `vpn.qinwen.co` 入口完成 Windows 11 VM 在线安装、服务、数据面、卸载和重装；并由人工修复 `BLK-003` 的计划域名源站 TLS/SNI/反向代理与最小防火墙。
+2. 在已验证的 Windows 11 VM 使用一次性 Enrollment Token 执行真实在线安装、SCM/Named Pipe/存储、route/DAD/sleep、Agent crash、普通网络、卸载和重装门禁。
+3. 完成 `BLK-007` 的正式备份 identity、真实异地主机恢复演练，以及 `BLK-006` 的正式离线发布签名和最终 RC 供应链复核。
 
 ## 15. 复现入口
 

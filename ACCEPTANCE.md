@@ -157,7 +157,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 
 - [x] MUST：服务加入外部 `1panel-network`。
 - [x] MUST：不重建该网络。
-- [ ] MUST：数据库不向公网暴露。
+- [x] MUST：数据库不向公网暴露。
 - [x] MUST：容器默认非 root。
 - [x] MUST：健康检查。
 - [x] MUST：日志轮转。
@@ -166,7 +166,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [x] MUST：开发和 RC 隔离。
 - [x] MUST：不影响 1Panel 现有服务。
 
-证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及 2026-08-02 隔离 `make test-docker-deployment`。后者覆盖数据库明文不落盘的 age 加密、认证 manifest、不同文件系统自动复制、公开/离线 identity 深度校验、篡改与错误 identity 拒绝、异地取回、恢复回滚、保留和销毁墓碑。项目 Compose 不包含数据库服务或数据库端口，但既有 1Panel PostgreSQL/Redis 公网暴露仍由 `KI-006`/`BLK-005` 阻塞宿主级“数据库不向公网暴露”，因此该项不勾选。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
+证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及 2026-08-02 隔离 `make test-docker-deployment`。当前生产候选服务器又在 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z` 证明项目 PostgreSQL 没有 host binding，外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，四个项目容器健康且 `1panel-network` 未变；旧开发服务器的暴露问题不再适用于当前主机。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
 
 ---
 
@@ -182,7 +182,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [ ] MUST：Agent 崩溃不破坏普通网络。
 - [x] MUST：未完成项目不可标记完成。
 
-源码独立实现、驱动职责和全部线格式/队列/事务输入边界已有可执行模型、任意输入压力、720 种 teardown 交错、源码门禁与 MSVC target check；仓库依赖扫描同时拒绝 Wintun/TAP 等禁止实现。测试签名 `xsnet` 又在 Windows 11 24H2 VM 完成 WDK Release 构建、InfVerif/Inf2Cat/签名校验、clean install、SYSTEM Tx/Rx、普通 PnP restart、standard Driver Verifier、UMDF/Application Verifier 三轮 restart/smoke、零新相关 dump/WER/error event 和 clean uninstall，因此测试签名构建、VM 生命周期、Verifier 与该次测试范围内无蓝屏可以勾选；证据边界见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。安全 Rust `XsnetDeviceSession`、固定 Named Pipe server/client、私有存储、Service/SCM、IP Helper/DAD/路由事务和恢复准备仍只有源码/交叉验证，未作为完整 Agent 在 Windows runtime 运行；Agent crash 不破坏普通网络、真实 ACL/SCM/IP Helper/power、生产安装升级和正式签名继续开放。项目因此仍明确标记“部分完成”。Windows 10 支持冲突见 `KI-016`，生产安装器差距见 `KI-017`。
+源码独立实现、驱动职责和全部线格式/队列/事务输入边界已有可执行模型、任意输入压力、720 种 teardown 交错、源码门禁与 MSVC target check；依赖门禁拒绝 TAP、WireGuard 协议/内核实现和其他第三方组网核心，只允许 ADR-077 固定的 Wintun adapter/session 例外。测试签名 `xsnet` 又在 Windows 11 24H2 VM 完成 WDK Release 构建、InfVerif/Inf2Cat/签名校验、clean install、SYSTEM Tx/Rx、普通 PnP restart、standard Driver Verifier、UMDF/Application Verifier 三轮 restart/smoke、零新相关 dump/WER/error event 和 clean uninstall；首版 Wintun 路径另有发行方签名、离线 adapter smoke、整包完整性和生产回环下载证据。在线 Agent crash 不破坏普通网络、真实 SCM/Named Pipe/IP Helper/power 和公网安装仍开放，因此项目继续明确标记“部分完成”。Windows 10 支持冲突见 `KI-016`，在线安装闭环见 `KI-022`。
 
 ---
 

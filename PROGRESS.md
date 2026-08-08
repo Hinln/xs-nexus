@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-04
-当前 Git 提交：以包含本记录的提交为准；生产 Linux 部署仍对应本文件 Linux 一键接入章节记录的提交
+最后更新时间：2026-08-08
+当前 Git 提交：以包含本记录的提交为准；当前生产候选部署应与该干净提交的精确镜像标签一致
 当前总状态：`BLOCKED_EXTERNAL`
-当前里程碑：`Linux 固定域名一键接入已部署；Windows xsnet 测试签名驱动 VM 门禁已通过`
+当前里程碑：`生产候选环境复核与 Windows 在线接入门禁`
 
 ---
 
@@ -12,8 +12,8 @@
 - Linux、Controller、Relay、Console、XSP/1、NAT/Relay、ACL/子网、安装更新、1Panel 隔离部署、认证遥测、加密备份/复制、镜像供应链、三轮回归、性能与 24 小时稳定性均有正式证据；
 - Linux 一键引导已实现固定 `https://vpn.qinwen.co/`、隐藏交互 Token、双架构离线签名发布和 Controller 精确下载路由；隔离 Docker 构建、安装器安全测试、ShellCheck、下载 smoke、生产部署和公网逐文件复验均通过；
 - 任务书要求的 `xs status`、`xs peers`、`xs ping <virtual-ip>`、`xs path <virtual-ip>`、`xs routes`、`xs netcheck`、`xs diagnostics`、`xs reconnect`、`xs version` 已全部实现并在真实双 Agent namespace 中验证，证据 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z`；
-- Windows ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；`xsnet` 测试签名驱动又通过 WDK/VM/SYSTEM Tx/Rx/PnP/standard+UMDF+Application Verifier 门禁。完整 Windows Agent/runtime、SCM/Named Pipe/存储/IP Helper/DAD/sleep、生产安装升级、Windows 10 和正式签名仍开放；
-- 仅剩 `BLOCKERS.md` 和开放 `KNOWN_ISSUES.md` 所列外部门禁；项目仍是部分完成，不是 Release Candidate，也不适合公网生产。
+- Windows ABI、驱动/Agent/IPC/存储/Service、IP Helper/DAD/路由源码与交叉门禁已完成；`xsnet` 测试签名驱动又通过 WDK/VM/SYSTEM Tx/Rx/PnP/standard+UMDF+Application Verifier 门禁。首版 Wintun Agent/runtime 和离线包已实现，但在线 SCM/Named Pipe/存储/IP Helper/DAD/sleep、Agent crash、生产安装升级、Windows 10 和公网接入实证仍开放；
+- 当前生产候选的数据库公网暴露旧阻塞已解除，Chrony/NTP 已恢复，RC 镜像标签可追溯性和 npm 高危依赖已修复；当前固定 `vpn.qinwen.co` 的公网下载已通过，任务书计划域名 `vpn.xiashikeji.cn` 仍返回 CDN 525。Windows 在线安装/服务/网络、真实 NAS、正式密钥/异地恢复和第三方审计仍未完成。项目仍是部分完成，不是 Release Candidate，也不适合公网生产。
 
 ## 已完成
 
@@ -133,7 +133,7 @@
 - Agent 新增 Windows-only 准备编排：启动前恢复 stale manifest，写 Preparing 后才执行地址/DAD/路由，成功后原子写 Active；shutdown 全部精确清理成功后才删除 manifest。独立源码门禁固定顺序、禁止 unsafe/线程/子进程、禁止 runtime 引用，并加入 `make test-windows-agent-routing` 与 M6.1 全量入口。完整 Windows Agent 仍因 SDK/`ring/lib.exe` 阻塞且模块未接入 runtime，不宣称可用。
 
 - M5.2 已完成全部计划内实现与全量验证，部署、迁移、备份、恢复和回滚均有实际证据；
-- 宿主既有 PostgreSQL/Redis 公网暴露仍由 `BLK-005` 阻塞，项目没有修改 1Panel 或生产防火墙；
+- 该历史开发服务器的 PostgreSQL/Redis 公网暴露已在迁移到新生产候选服务器后解除；新主机证据见 2026-08-08 章节，项目没有修改 1Panel 既有数据库或全局防火墙；
 - M6.1 当时已完成 ABI、会话、便携数据面、NetAdapterCx ring/direct-I/O 源码、测试安装生命周期、确定性压力、teardown 交错模型、Rust Agent ABI 客户端、隔离 Win32 transport、安全命名管道服务器、私有存储和 Service/SCM 边界、测试包构建、VM 分阶段采证和 exact ABI/clean-install 兼容边界；该段所列 Windows 路由管理准备已在后续完成，当前剩余项以本文顶部结论和 `BLOCKERS.md` 为准；
 - 当时开发服务器仅有 `clang-cl`、CMake 和 Ninja，没有 WDK、MSBuild、Windows SDK 或 VM；该环境限制后来由 NAS KVM 的 Windows 11 VM 解除，并完成测试签名驱动实机门禁；
 - 正式驱动签名、完整 Agent 实机和日常 Windows 电脑仍保持独立人工门禁，不从测试签名驱动结果外推。
@@ -190,7 +190,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - NAS 普通节点、Direct/Relay、升级卸载、子网审批、ACL 和离线撤销仍需真实业务验收；
 - 正式驱动签名需要外部签名流程；
 - DNS 和生产防火墙变更需要人工批准；
-- 现有 PostgreSQL、Redis 公网暴露整改需要用户批准修改 1Panel 或云防火墙，见 `BLK-005`。
+- 历史开发服务器的 PostgreSQL/Redis 公网暴露已不适用于当前主机；`BLK-005` 已解除，临时凭据轮换仍保留。
 
 ## 当前风险
 
@@ -198,7 +198,7 @@ sed -n '1,260p' docs/WINDOWS_XSNET_COMPATIBILITY.md
 - Windows transport 最小 crate 已通过 MSVC target 编译，专用 SYSTEM harness 已在真实测试设备完成 exact ABI、Tx/Rx、LUID、reopen、PnP 和 Verifier；但完整 Rust Agent 尚未在 Windows SDK/WDK 环境链接运行，空 TX/满 RX 的 Win32 权威映射、SCM/Named Pipe/存储、route/DAD/sleep 和 Agent crash 仍未验证；
 - Windows 当前只支持 exact ABI v1 和 clean-install 测试生命周期，跨 ABI、热升级和生产回滚均未实现；
 - 源码依赖 SBOM 与四个运行镜像的 OS 包 SBOM、逐包许可证全文闭包及最终构建来源证明均已可复现生成；当前精确证据为 `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。剩余 glibc Critical/High 有界处置不是漏洞修复，仍须按 2026-08-31 到期日或镜像/扫描/API 导入变化提前复核；
-- PostgreSQL、Redis 现有公网端口仍可达；
+- 历史开发服务器曾有 PostgreSQL/Redis 公网端口；当前生产候选外部探测不可达，`KI-006` 已解除；
 - 服务器维护窗口重启已完成并由重启后的 24 小时稳定性、Docker 生命周期与宿主网络不变量复核，`KI-007` 已解除；
 - 临时凭据后续必须轮换。
 
@@ -356,4 +356,14 @@ make clean
 - 新增 `xs-windows-wintun` 动态绑定，加载前拒绝相对路径、重解析点、非普通文件、超大 DLL 和哈希不符的 DLL；会话只创建临时 L3 适配器，受限复制 IPv4 包，并在 Drop 中关闭 session/adapter。Agent 的 Windows 数据面经此适配器运行，非 Linux 直接候选/子网发现明确降级为空而继续支持 Relay。
 - Windows 11 x64 VM 的离线验证已通过：`xs-agent` 与 `xs-windows-wintun` 共 45 项测试、Controller 13 项 lib/bin 测试、Rustfmt、严格 Clippy；Controller 数据库集成未运行的唯一原因是 VM 未配置 `XS_TEST_DATABASE_URL`，不是断言失败。真实 Wintun smoke 创建 session、取得非零 LUID/index，并在退出后确认临时 adapter 不存在；没有配置地址、路由或默认路由。
 - VM 构建的 `windows-release-20260804-r3` 已验证 ZIP/manifest/bootstrap 摘要、精确成员集合、逐文件哈希、Wintun DLL 哈希与 `CN=WireGuard LLC` Authenticode 签名。发布包、测试 Token、密码、私钥和 VM 构建缓存均不进入仓库。
-- 生产 Controller 尚未切换到本项变更；下一步是将三份经过验证的 Windows 公开发布文件放入仓库外只读目录、设置 `XS_WINDOWS_RELEASE_DIR`、执行可回滚 Compose 滚动发布，并在公网分别验证 Windows 与 Linux 引导脚本、精确下载 allowlist 和现有服务健康。该结果不表示 Release Candidate、Windows 10 支持、完整 Windows 服务生命周期或独立安全审计完成。
+- 该段的历史下一步已于 2026-08-08 完成：三份发布文件位于仓库外只读目录，`XS_WINDOWS_RELEASE_DIR` 已挂载；回环和当前固定 `vpn.qinwen.co` 的 Windows/Linux 引导、精确下载哈希和 404 边界通过。任务书计划域名 `vpn.xiashikeji.cn` 仍返回 CDN 525，真实 Windows 在线 Enrollment/服务/网络尚未执行；该结果不表示 Release Candidate、Windows 10 支持、完整 Windows 服务生命周期或独立安全审计完成。
+
+## 2026-08-08 生产候选恢复与继续开发
+
+- 新生产候选服务器基线：Ubuntu 24.04.4 LTS、Linux 6.8.0-124、Docker 29.6.2、外部 `1panel-network` `172.18.0.0/16`；初始证据 `/srv/xs-nexus-qa/baseline/20260807T061137Z`。项目容器和网络均未被删除或重建。
+- 发现 Chrony 已安装但被停用，系统时钟比 RTC、外部 HTTPS Date 和腾讯云 NTP 慢 86400.300154 秒。恢复 `chrony.service` enabled/active 后时钟同步，容器身份、Docker 网络、`1panel-network`、默认路由和归一化 nftables 均不变，四个项目容器健康；证据 `/srv/xs-nexus-qa/artifacts/time-sync-precorrect-20260807T063050Z`。
+- Windows r3 三件套已位于 `/var/lib/xs-nexus-releases/rc/windows/stable` 并只读挂载；回环和 `vpn.qinwen.co` 公网 `/install/windows`、PowerShell User-Agent、manifest/ZIP 精确哈希和未知文件 404 均通过。任务书计划域名 `vpn.xiashikeji.cn` 在时钟修复前后都返回 CDN `525 SSL Handshake Failed with Origin Server`；在线 VM Enrollment 仍由缺少当前可控 Windows VM 会话和 `KI-022` 阻塞，不伪造通过。
+- 生产镜像此前使用旧提交 tag，但 OCI revision 和活动部署记录指向新提交。新增 RC 预检，强制 Controller、Migration、Relay、Console、db-tools 五个镜像 tag 精确等于 40 位 `XS_RELEASE_REVISION`；正向、错误 tag 负向与宿主不变量测试通过，证据 `/srv/xs-nexus-qa/artifacts/deploy-tag-guard-20260807T062812Z`。
+- 构建时 npm registry 新报告 `nanoid <3.3.17` 高危 DoS；锁文件已更新到 `3.3.18`，`npm audit --audit-level=high` 为 0，前端构建、4 项单测、秘密扫描通过，没有添加 ignore 或豁免。
+- 当前生产候选 PostgreSQL 无 host binding；外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，项目四容器健康。`KI-006`/`BLK-005` 和 Acceptance 数据库暴露项已解除，证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
+- 本次继续开发的固定证据入口为 `/srv/xs-nexus-qa/artifacts/production-continuation-20260808`。下一步是使用包含本记录的干净提交重建并滚动部署精确 revision 镜像，执行 npm audit、健康、Windows/Linux 下载、回滚镜像和宿主基线复核；随后继续所有不依赖 DNS、Windows VM、NAS、正式密钥或第三方审计的工作。

@@ -107,4 +107,4 @@ xs version
 - 修正重启证据语义后的真实回归：`/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z`，三服务各 11 次采样、恰好一次 PID 转换且 `RestartCount` 全程为零。
 - 数据库备份采用 age X25519 流式认证加密、不同文件系统自动复制、离线 identity 深度校验、取回、保留和销毁墓碑；正式异地主机与密钥仪式仍由 `BLK-007` 阻塞。
 
-当前不可绕过的门禁包括完整 Windows Agent 的 SCM/Named Pipe/私有存储/IP Helper/DAD/睡眠实机联调、生产安装升级与正式驱动签名、真实 NAS 业务验收、既有数据库公网端口整改、DNS/生产防火墙、正式离线签名和第三方协议/密码学审计。不得将这些项目描述为已完成。
+当前不可绕过的门禁包括 Windows 在线 Agent 的 SCM/Named Pipe/私有存储/IP Helper/DAD/睡眠实机联调、真实 NAS 业务验收、DNS/源站 TLS/生产防火墙、正式离线签名/异地备份和第三方协议/密码学审计。首版 Windows 使用发行方签名的 Wintun 0.14.1 适配器，自研 xsnet 只保留测试签名实验路径；当前主机数据库公网暴露已解除。不得将其余门禁描述为已完成。

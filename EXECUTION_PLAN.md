@@ -545,7 +545,7 @@
 - PostgreSQL 18 运维镜像把 custom archive 流式送入 age X25519 加密，不落持久明文；认证 manifest、公开 index 和复制回执绑定 schema、名称、密文字节数/hash、recipient Key ID 和时间；
 - 每份备份自动复制到带私有 marker 的不同文件系统挂载，支持公开校验、离线 identity 深度验证、取回、恢复前安全备份、失败回滚、独立保留和不可复用销毁墓碑；
 - 实际生命周期测试覆盖镜像构建、迁移、三服务健康、容器安全属性、数据持久化、密文篡改/错误 identity 拒绝、异地取回、恢复、保留、迁移失败不替换服务和错误镜像自动回滚；
-- 初始证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；当前完整生命周期与镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。既有 1Panel PostgreSQL/Redis 公网暴露仍为 `KI-006`/`BLK-005`，正式 identity/真实异地主机由 `BLK-007` 阻塞，项目未修改这些外部资源。
+- 初始证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；当前完整生命周期与镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。新生产候选服务器已证明项目数据库无 host binding 且外部数据库端口不可达，`KI-006`/`BLK-005` 已解除；正式 identity/真实异地主机仍由 `BLK-007` 阻塞。
 
 ---
 
@@ -559,14 +559,14 @@
 ### 验收
 
 - 独立 `xsnet` 实现；
-- 不使用 Wintun/TAP；
+- 除项目所有者批准、固定版本/哈希/发行方签名/许可证且仅提供 L3 适配器会话的 Wintun 0.14.1 外，不使用 TAP、WireGuard 协议/内核实现或其他第三方组网核心；
 - 驱动仅负责 NIC 和安全 IPC；
 - 所有不可信长度和状态验证；
 - 测试签名构建；
 - 安装和卸载脚本；
 - 未实机测试时明确标记。
 
-跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。Windows IPC 的读取命令与受限 `reconnect` 使用同一有界协议；Windows runtime 仍保持禁用。`xsnet` 测试签名驱动已在 Windows 11 VM 完成 WDK Release 构建、安装、SYSTEM 数据面、PnP、standard/UMDF/Application Verifier 和卸载，证据见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`。剩余工作需要在同类受控 VM 完整链接 Agent，并实测命名管道/ACL/SCM/存储/IP Helper/DAD、空 TX/满 RX 状态、Agent crash、sleep、生产安装升级和正式签名。因此 M6.1 仍未完成，不宣称 Windows 客户端可用。
+跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。`xsnet` 测试签名驱动已在 Windows 11 VM 完成 WDK Release 构建、安装、SYSTEM 数据面、PnP、standard/UMDF/Application Verifier 和卸载，证据见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，但不进入首版正式分发。首版 Agent 已接入发行方签名的 Wintun adapter/session，并完成 Windows 11 VM 离线 adapter smoke、整包与安装器完整性验证；生产回环下载也通过。剩余工作是公网 TLS 恢复后在受控 VM 实测在线 Enrollment、SCM/Named Pipe/存储/IP Helper/DAD、Agent crash、sleep、卸载/重装和普通网络。因此 M6.1 仍未完成，不宣称 Windows 客户端可用。
 
 ---
 
@@ -679,4 +679,4 @@
 - Git 干净；
 - 明确未完成外部门禁和未审计风险。
 
-当前不能标记 RC：完整 Windows Agent 实机与正式签名、真实 NAS 业务验收、数据库公网端口整改、DNS/生产防火墙、正式离线发布/备份密钥仪式与真实异地恢复、凭据轮换、跨地域公网容量和第三方协议/密码学审计尚未完成。`xsnet` 测试签名驱动门禁、代码、隔离验证和文档准备不替代这些外部条件。
+当前不能标记 RC：Windows 在线 Agent/服务/网络实机、真实 NAS 业务验收、DNS/源站 TLS/生产防火墙、正式离线发布/备份密钥仪式与真实异地恢复、凭据轮换、跨地域公网容量和第三方协议/密码学审计尚未完成。首版 Wintun 发行方签名边界和 `xsnet` 测试签名驱动门禁不替代这些外部条件。

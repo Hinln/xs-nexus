@@ -414,3 +414,12 @@
 - [x] Windows 11 x64 VM Wintun smoke：临时 adapter/session 成功创建，LUID 与 interface index 非零，退出后 adapter 不存在；不写入地址、路由或默认路由。
 - [x] `windows-release-20260804-r3`：ZIP、manifest、引导器摘要、精确成员集合、逐文件 SHA-256、Wintun DLL SHA-256 与 Authenticode 发行方校验全部通过。
 - [ ] 生产 Controller 只读发布目录、PowerShell `/install`、真实 Enrollment Token、Windows 服务/CLI readiness、端到端数据面和卸载/重新安装：待 `KI-022` 闭环。
+
+## 15. 生产候选继续开发复核（2026-08-08）
+
+- [x] 生产服务器 OS、资源、Docker、1Panel、TUN、namespace、nftables、服务、容器和外部网络只读基线：`/srv/xs-nexus-qa/baseline/20260807T061137Z`。
+- [x] Chrony/NTP 恢复：确认 86400.300154 秒偏差、RTC/外部 Date/NTP 一致，恢复后容器身份、网络、默认路由、nftables 和下载接口不变：`/srv/xs-nexus-qa/artifacts/time-sync-precorrect-20260807T063050Z`。
+- [x] RC 镜像 tag/revision 门禁：正确五镜像精确 tag 通过，stale tag 被拒绝，宿主不变量保持：`/srv/xs-nexus-qa/artifacts/deploy-tag-guard-20260807T062812Z`。
+- [x] Windows 生产发布：回环和 `vpn.qinwen.co` 公网的三件套精确文件、bootstrap/manifest/ZIP SHA-256、PowerShell UA 和未知文件 404 通过；计划域名 `vpn.xiashikeji.cn` 的 CDN 525 转入人工 TLS 门禁。
+- [x] 数据库暴露：项目 PostgreSQL 无 host binding，外部 TCP `3306`/`5432`/`6379`/`28080`/`28081` 不可达，项目容器健康：`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
+- [x] Console 供应链回归：`nanoid` `3.3.18`，npm high/critical 为 0，Vite build 和 4 项 Vitest 通过；最终聚合证据写入 `/srv/xs-nexus-qa/artifacts/production-continuation-20260808`。

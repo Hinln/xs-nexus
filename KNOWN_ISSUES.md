@@ -69,18 +69,20 @@
 
 ---
 
-## KI-006 现有 PostgreSQL 和 Redis 端口可从公网到达
+## KI-006 现有 PostgreSQL 和 Redis 端口可从公网到达（已解除）
 
 - 严重度：高
-- 状态：开放
+- 状态：已解除
 - 首次发现：2026-07-29
 - 影响：违反数据库不得暴露公网的最终验收要求，增加凭据猜测和服务漏洞攻击面。
 - 复现：从开发服务器外部对 `34.92.139.129` 的 TCP `5432`、`6379` 建立连接成功。
 - 证据：`/srv/xs-nexus-qa/baseline/20260729T094000Z/external-port-check.txt`
 - 临时缓解：项目不使用公网端口连接数据库，不扩大暴露面，不记录凭据。
 - 根因：现有 1Panel 容器在项目开始前已经发布到所有主机接口。
-- 计划：由用户批准后在 1Panel 或云防火墙收紧访问，并轮换临时密码。
-- 解除条件：外部探测不可达，容器内 `1panel-network` 连接仍通过，且 1Panel 服务正常。
+- 已完成：项目迁移到新的生产候选服务器；当前只运行无 host binding 的 `xs-nexus-rc-postgres`，外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，Controller/PostgreSQL 和其余项目容器健康，`1panel-network` 保持外部网络且成员未变。
+- 解除证据：`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
+- 解除日期：2026-08-08。
+- 解除条件（已满足）：外部探测不可达、项目数据库无宿主映射、容器内连接和项目健康检查通过。
 
 ---
 
@@ -239,15 +241,15 @@
 
 ---
 
-## KI-018 Windows Agent Win32 transport 尚未完成整包和实机验证
+## KI-018 Windows Agent xsnet Win32 transport 尚未完成整包和实机验证
 
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-07-31
-- 影响：隔离 Win32 transport、本地命名管道、私有存储和 Service crate 已实现并通过各自最小 Windows target 编译，但完整 Agent 尚未链接。专用 SYSTEM VM harness 已真实完成 Configuration Manager 设备枚举、独占 handle、七个 `DeviceIoControl`、Tx/Rx、reopen、LUID 和 PnP restart；它没有执行 Rust Named Pipe、存储 ACL/原子替换或 SCM。驱动的空 TX/满 RX 目前以失败状态完成，而通用 Win32 错误尚不能证明 request 未提交，因此仍不能安全启用持续收发。
+- 影响：该条目只跟踪自研 `xsnet` transport 路径。隔离 Win32 transport、本地命名管道、私有存储和 Service crate 已实现并通过各自最小 Windows target 编译，但完整 Agent 尚未使用 `xsnet` 链接运行。专用 SYSTEM VM harness 已真实完成设备枚举、独占 handle、七个 `DeviceIoControl`、Tx/Rx、reopen、LUID 和 PnP restart；它没有执行 Rust Named Pipe、存储 ACL/原子替换或 SCM。首版 Wintun Agent 是独立发布路径，不能反向证明本条 `xsnet` transport 已完成。
 - 临时缓解：`XsnetTransport` 只暴露 Success/Rejected/Indeterminate 三类结果；平台 crate 不把任何 Win32 失败映射为 Rejected，所有未知结果、异常字节数、direct 输入变异和畸形成功响应强制重连。`XsnetDeviceSession` 每个方法只执行一个请求，不轮询、不后台重试、不在 Drop 中 I/O，且不接入 runtime。Agent 保持全局禁止 unsafe。
 - 已完成缓解：18 个 Agent xsnet 测试和 3 个 transport crate 测试覆盖 ABI/IOCTL、状态、单步会话、配置先于设备打开校验、协商 buffer 上限、拒绝/毒化、失败启动释放、无效 RX/Drop 零 I/O、显式 shutdown 重试、LinkDown/Detach、buffer mapping、长度、接口列表、identity schema/LUID 与非 Windows 拒绝；源码门禁在 VM 验证前禁止 runtime 接入、后台线程、sleep 和 session Drop I/O，六个 transport unsafe 块保持隔离。Windows 本地 IPC 固定名称、first-instance、远程拒绝、LocalSystem/Administrators DACL、不可继承 handle 和 16+1 容量边界；私有存储固定 exact protected DACL、reparse/父目录检查和 write-through 替换；Service 固定名称、四阶段状态、STOP/SHUTDOWN 一次性通知、状态竞争锁和四个隔离 unsafe 块，且不包含安装 API。Linux 回归、三个最小 Windows crate check 和交叉 Clippy已通过；identity 扩展后的最新完整证据为 `/srv/xs-nexus/artifacts/qa/m6.1-agent-session-20260731T173643Z`。
-- 计划：Windows IP Helper、DAD、精确路由事务、受保护 manifest、恢复编排和可信同句柄 LUID 的源码/交叉门禁已经完成，驱动/七个 IOCTL/取消/PnP 实机门禁也已通过；下一步在同类受控 VM 编译链接完整 Agent，并执行 SCM、命名管道/存储 DACL、原子替换/崩溃恢复、空 TX/满 RX 精确状态和 Agent crash/sleep 生命周期。只有获得权威 no-commit 证据或新增明确唤醒协议后才接入 runtime。
+- 计划：`xsnet` 保持测试签名实验路径；只有在未来获得正式签名与同类受控 VM 时，才编译链接完整 Agent 并执行 SCM、命名管道/存储 DACL、原子替换/崩溃恢复、空 TX/满 RX 精确状态和 Agent crash/sleep 生命周期。当前首版发布使用 ADR-077 的 Wintun adapter/session，不把 Wintun 证据冒充 `xsnet` 证据。
 - 解除条件：完整 Windows Agent 与驱动通过编译、unsafe 复核、设备枚举、六 IOCTL、取消/移除、Agent crash 和睡眠恢复测试。
 
 ---
@@ -272,9 +274,9 @@
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-07-31
-- 影响：IP Helper FFI、地址/DAD、精确路由、事务补偿、manifest 和恢复源码已实现并通过 MSVC target check/Clippy，但尚未由完整 Agent 在 Windows SDK/WDK 环境链接，也没有真实读取、创建或删除 Windows 地址/路由及 DAD、PnP、睡眠证据；Agent runtime 不得据此宣称 Windows 网络已可用。
-- 临时缓解：新 crate 不接入 runtime；unsafe 只存在于 Windows 平台模块。默认路由、保留网段、外部重叠、所有权漂移和无界路由表在计划阶段失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key。
-- 计划：在已验证的同类 Windows VM 中链接完整 Agent 并执行既有实现，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复和同句柄 LUID；在证据通过前不接入 runtime。
+- 影响：IP Helper FFI、地址/DAD、精确路由、事务补偿、manifest 和恢复源码已实现并通过 MSVC target check/Clippy，且首版 Wintun Agent runtime 已调用该准备层；但仍没有真实 Windows 在线地址/路由、DAD、崩溃恢复、PnP 或睡眠证据，因此不得宣称 Windows 网络生命周期已通过。
+- 临时缓解：默认路由、保留网段、外部重叠、所有权漂移和无界路由表在任何系统写入前失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key；Windows 子网路由继续失败关闭。
+- 计划：在已验证的 Windows 11 VM 运行当前 Wintun Agent，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复、Agent crash 和睡眠；`xsnet` 路径继续单独跟踪。
 - 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 
@@ -293,7 +295,7 @@
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-08-04
-- 影响：Windows 11 x64 已完成 Wintun 适配器的真实创建/清理、交叉测试、离线发布包构建和安装器完整性校验，但最终发布路径仍需在生产 Controller 提供只读 Windows 发布目录后，使用一次性 Enrollment Token 验证真实 HTTPS 下载、注册、Windows 服务启动、CLI readiness、基本连通性和卸载/重新安装。当前不能把离线 package QA 写成最终在线接入结果。
+- 影响：Windows 11 x64 已完成 Wintun 适配器的真实创建/清理、交叉测试、离线发布包构建和安装器完整性校验；生产 Controller 回环及 `vpn.qinwen.co` 公网下载也已通过。仍需在受控 Windows VM 使用一次性 Enrollment Token 验证注册、Windows 服务启动、CLI readiness、基本连通性和卸载/重新安装。当前不能把离线 package QA 或公开下载写成最终在线接入结果。
 - 已完成缓解：引导器固定 `https://vpn.qinwen.co`，固定 manifest 摘要，校验 HTTPS、归档大小/哈希、精确 payload tree、每个 payload hash、Wintun DLL hash 与有效的 `CN=WireGuard LLC` Authenticode 签名；失败时删除仅由本次安装创建的服务和目录。Controller 只暴露精确的 `install.ps1`、manifest 和 ZIP 文件名，目录或未知文件拒绝。
-- 计划：将已校验的 r3 发布目录作为仓库外只读 bind mount 部署，验证 Windows PowerShell User-Agent 与 `/install/windows` 路由、Linux `/install` 回归、下载哈希和 404 边界；随后生成短时 Enrollment Token，在测试 VM 实际运行管理员 PowerShell 安装、服务和网络验证，并保留失败关闭与卸载证据。
+- 计划：公开发布目录、PowerShell User-Agent、`/install/windows`、Linux `/install`、下载哈希和 404 边界已完成；下一步仅在受控 Windows 11 VM 生成短时 Enrollment Token，实际运行管理员 PowerShell 安装、服务和网络验证，并保留失败关闭、普通网络、卸载和重装证据。
 - 解除条件：上述生产下载/注册/服务/基本数据面/卸载重装实测通过，且没有把 Token、密码、私钥、产物或环境文件写入 Git、日志或文档。Windows 10、完整 `xsnet` 实机 Agent、睡眠/路由恢复和独立安全审计仍由既有条目单独跟踪。
