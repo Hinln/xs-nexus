@@ -1405,6 +1405,10 @@ fn fail_relay_path(peers: &mut HashMap<Ipv4Addr, Peer>, failed_endpoint: SocketA
 }
 
 fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAddr, Vec<u8>)>> {
+    if !matches!(peer.state, PeerState::Established(_)) {
+        peer.pending_path_probe = None;
+        return Ok(None);
+    }
     if let Some(pending) = &mut peer.pending_path_probe {
         return match pending.retry.poll(now) {
             RetryAction::Wait => Ok(None),
@@ -2128,6 +2132,61 @@ mod tests {
 
         replacement[0].priority -= 1;
         assert!(candidate_routes_changed(&current, &replacement));
+    }
+
+    #[test]
+    fn handshake_fallback_does_not_start_a_path_probe_before_session_establishment() {
+        let now = Instant::now();
+        let preferred = "192.0.2.10:42001".parse().expect("preferred endpoint");
+        let fallback = "192.0.2.20:42001".parse().expect("fallback endpoint");
+        let expires_at = Utc::now() + chrono::Duration::minutes(5);
+        let mut peer = Peer {
+            node_id: [1; 16],
+            node_id_base64: "test-peer".to_owned(),
+            virtual_ip: Ipv4Addr::new(100, 127, 253, 2),
+            candidates: vec![
+                EndpointCandidate {
+                    kind: EndpointCandidateKind::Static,
+                    endpoint: preferred,
+                    priority: 200,
+                    expires_at,
+                },
+                EndpointCandidate {
+                    kind: EndpointCandidateKind::Static,
+                    endpoint: fallback,
+                    priority: 199,
+                    expires_at,
+                },
+            ],
+            active_endpoint: Some(fallback),
+            path_reason: Some(PathSelectionReason::HandshakeFallback),
+            state: PeerState::Idle,
+            queued_packets: VecDeque::new(),
+            queued_bytes: 0,
+            recent_client_hellos: VecDeque::new(),
+            pending_path_probe: None,
+            path_probe_retry_after: now,
+            next_latency_probe_at: now,
+            next_proactive_handshake_at: now,
+            handshake_failures: 0,
+            handshake_candidate_attempts: 1,
+            tx_packets_total: 0,
+            tx_bytes_total: 0,
+            rx_packets_total: 0,
+            rx_bytes_total: 0,
+            handshake_attempts_total: 1,
+            handshake_successes_total: 0,
+            latency_samples_total: 0,
+            latency_microseconds_total: 0,
+            last_latency_microseconds: None,
+        };
+
+        assert!(
+            maintain_path_probe(&mut peer, now)
+                .expect("pre-session path probe must remain idle")
+                .is_none()
+        );
+        assert!(peer.pending_path_probe.is_none());
     }
 
     #[test]
