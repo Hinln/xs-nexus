@@ -17,3 +17,7 @@
 ## Result
 
 `BLOCKED_EXTERNAL`，正式生产 `NO_GO`。同机加密文件不是异地灾备 PASS。
+
+## Final Remediation Reassessment
+
+健康守卫确认最新 age 加密备份年龄在阈值内，但副本仍是同机故障域，未执行自动异地备份或全新服务器恢复。状态保持 `BLOCKED_EXTERNAL`。

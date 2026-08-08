@@ -377,3 +377,11 @@ make clean
 - 发布后 `1panel-network` 仍仅含 `xs-nexus-rc-controller-1`、`xs-nexus-rc-relay-1`、`xs-nexus-rc-console-1`、`xs-nexus-rc-postgres`；网络集合、默认路由、按容器服务名规范化的 nftables 语义和失败服务基线不变，无 namespace/TUN 残留。证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
 - 外部 Windows 工作站探测确认 SSH `122/tcp` 可达而 `3306`、`5432`、`6379`、`28080`、`28081` 不可达；证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。`vpn.qinwen.co` 健康、Linux/Windows 引导和全部 10 个公开发布文件逐字节复核通过，未知路由/文件返回 404。
 - `vpn.xiashikeji.cn` 已能完成边缘 TLS，但 `/health/ready` 与 `/install` 仍返回 CDN 525，根路径 404 不构成功能恢复。Windows 在线 Enrollment/SCM/网络/卸载重装、真实 NAS、正式发布与备份密钥仪式、真实异地恢复、生产防火墙、凭据轮换和第三方协议/密码学审计仍是人工门禁；总状态保持 `BLOCKED_EXTERNAL`，不是 Release Candidate，也不适合公网生产。
+
+## 2026-08-09 正式生产发布门禁审计与修复复核
+
+- 首轮只读审计冻结 GitHub main `8745b580`、生产源码/运行 revision `ff9551d`，生成 `audit/production-readiness/` 全部专项报告并判定 `NO_GO`。
+- 修复分支固定 Rust/actions/runner/service/base digest，关闭 Cargo advisory/deny、源 SBOM 漂移、无 executable fuzz、仅 Mock Console E2E 和五镜像不可复现等内部问题。
+- 最终 run `31270487478` 的 baseline、真实 PostgreSQL/Controller Console E2E、protocol fuzz、Edge/Console/Controller/Relay/db-tools 双无缓存 OCI 复现全部通过；证据 artifacts 已秘密扫描并复制到 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z/ci-final-8532eb6`。
+- 生产主机安装五分钟只读健康守卫并完成正常/失败注入；最终 2026-08-08T18:12:05Z 复核四容器健康、备份年龄正常、磁盘 87% warning、`1panel-network` 和默认路由不变，无 failed systemd unit。
+- 修复版本未合并、签名、tag 或部署；凭据轮换、SSH/防火墙/DNS、正式密钥、DB 非 bootstrap 角色、真实 Windows/NAS/WAN、异地恢复、第三方审计和当前版本 24h soak 仍未闭环。最终 `GO_NO_GO_FINAL.md` 保持 `NO_GO`，残余风险 `CRITICAL`。

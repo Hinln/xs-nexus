@@ -19,3 +19,7 @@
 ## Result
 
 `PARTIAL`。这些数据适合开发基线，不足以确定正式公网容量。
+
+## Final Remediation Reassessment
+
+本轮修复没有重新执行 WAN、容量上限或长期性能测试，也不把 CI 时间当作性能证据。状态保持 `PARTIAL`。

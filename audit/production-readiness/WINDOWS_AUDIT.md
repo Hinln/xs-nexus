@@ -14,3 +14,7 @@ install、driver/device、virtual IP、Windows↔Linux、Windows↔NAS、Direct�
 ## Result
 
 `BLOCKED_EXTERNAL`，对正式产品为 `NO_GO`。编译、源码门禁、Mock 或历史文档不能替代 Windows 在线实机。
+
+## Final Remediation Reassessment
+
+最终 CI 的 `x86_64-pc-windows-msvc` check、Clippy 和 18 项 Windows transport 单测通过，但仍未获得当前真实 Windows 在线 Agent 生命周期证据。状态保持 `BLOCKED_EXTERNAL`。

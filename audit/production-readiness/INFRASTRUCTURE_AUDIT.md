@@ -23,3 +23,12 @@
 ## Result
 
 Gate 14 `FAIL`；Gate 15 `PARTIAL`。
+
+## Final Remediation Reassessment
+
+- 只删除精确审计自有的旧 nightly fuzz toolchain，释放 721 MiB；没有 broad prune 或删除生产/1Panel 资源。根分区最终为 87%。
+- 五分钟本地健康守卫已启用；最终四容器健康，无 failed systemd unit。
+- `1panel-network` 仍为 ID `7df70648...3757ac0`、`172.18.0.0/16`、四个项目成员；默认路由与规范化 nftables 已采证。
+- SSH、生产防火墙、1Panel 管理入口、系统更新/reboot 和外部告警仍需人工维护窗口。
+
+最终结果不变：Gate 14 `FAIL`；Gate 15 `PARTIAL`。

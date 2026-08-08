@@ -1,5 +1,7 @@
 # Open Production Findings
 
+> 首个表格冻结首轮发现。本文末尾记录修复后的状态变化；未列入变化表的发现保持原状态。
+
 | ID | Severity | Finding | Owner | Status / Exit Evidence |
 |---|---|---|---|---|
 | PR-001 | P1 / Security High | 已披露凭据无全量轮换与旧值失效证据 | Production Owner | BLOCKED_EXTERNAL；轮换矩阵与拒绝旧凭据日志 |
@@ -29,3 +31,17 @@
 - P2：未完成 owner/期限/缓解闭环
 
 因此 Hard Gate 23 为 `FAIL`。
+
+## Final Remediation Status
+
+| ID | Final Status | Evidence / Residual |
+|---|---|---|
+| PR-005 | PARTIALLY_REMEDIATED | 修复分支 CI 与五镜像双构建复现通过；main、生产、签名 tag 和部署仍未一致 |
+| PR-006 | BLOCKED_EXTERNAL / DBA | bootstrap superuser 不可原地降权；需新非 bootstrap 角色、ownership/grants、secret rotation 和 redeploy |
+| PR-007 | RESOLVED_INTERNAL | 源 SBOM 与锁文件一致，Cargo 325 + npm 110 = 435，最终 baseline 通过 |
+| PR-008 | RESOLVED_INTERNAL | 固定 `cargo audit 0.22.2`、`cargo deny 0.20.2` 与策略门禁在最终 baseline 通过 |
+| PR-009 | RESOLVED_INTERNAL | 新增 executable fuzz targets，artifact `9025496390` 通过；独立审计仍由 PR-004 跟踪 |
+| PR-015 | PARTIALLY_REMEDIATED | 本地五分钟健康守卫、失败注入、备份年龄和磁盘告警通过；外部通知/on-call/TLS 监控和 87% 磁盘仍开放 |
+| PR-019 | CONTAINED | 临时 clone token 未进入 Git/生产；证据脱敏和复扫为零，不能替代全部生产凭据轮换 |
+
+仍未关闭的 P1/Security High 包括 PR-001、PR-002、PR-003、PR-004、PR-006、PR-010、PR-011、PR-012、PR-013、PR-014、PR-015、PR-016，以及 PR-005 的发布残余。P1 和 Security High 未清零，Hard Gate 23 最终仍为 `FAIL`。

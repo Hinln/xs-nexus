@@ -31,3 +31,12 @@
 ## Decision Basis
 
 25 个 Hard Gate 没有一个满足正式 PASS 所需的完整证据。功能回归通过不能覆盖凭据、正式密钥、真实平台、灾备、主机硬化、供应链和独立安全审计的硬失败。
+
+## Remediation Outcome
+
+- 最终修复 revision：`8532eb6992389568643f8a501055c6acc72395ab`。
+- 最终 GitHub run `31270487478` 的 baseline、真实 Console E2E、protocol fuzz 和五镜像可复现性全部成功。
+- 生产只读复核于 `2026-08-08T18:12:05Z` 完成：四容器健康、生产 source `8745b580`、运行 OCI revision `ff9551d`、`1panel-network` 未变化、健康守卫 success、磁盘 87%。
+- 修复版本没有合并到 main、签名/tag 或部署；所有真实 Windows、真实 NAS、正式 DNS/防火墙、正式密钥、凭据轮换、DB 新角色、异地恢复和第三方审计继续保持外部门禁。
+
+最终结论见 `GO_NO_GO_FINAL.md`：`NO_GO`，残余风险 `CRITICAL`。

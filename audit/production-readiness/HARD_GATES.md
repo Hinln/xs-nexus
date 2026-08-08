@@ -1,5 +1,7 @@
 # Production Hard Gates
 
+> 首个表格冻结首轮只读结论。本文末尾的 “Final Remediation Reassessment” 是修复后的最终权威状态。
+
 | Gate | Current | Required | Evidence | Result |
 |---|---|---|---|---|
 | 01 代码与部署一致性 | main 与 deploy 产品代码一致，运行二进制可重建；镜像 ID 不可复现、无 tag、提交未签名、CI 失败 | 固定版本、digest、可复现完整镜像、通过的发布 CI | `git-*`、`runtime-*`、`clean-*`、`github-audit.txt` | FAIL |
@@ -39,3 +41,35 @@
 | offsite restore | 同机 loop 副本 | 独立故障域全新服务器恢复 | `DR_BACKUP_AUDIT.md` | BLOCKED_EXTERNAL |
 | credential rotation | 无失效证据 | 全量轮换与旧凭据拒绝 | `SECURITY_AUDIT.md` | BLOCKED_EXTERNAL |
 | third-party audit | 无 | 独立报告、修复、retest | `SECURITY_AUDIT.md` | BLOCKED_EXTERNAL |
+
+## Final Remediation Reassessment
+
+| Gate | Remediation-State Evidence | Final Result |
+|---|---|---|
+| 01 代码与部署一致性 | 修复分支 `8532eb6` 的五镜像可复现且 CI 通过；GitHub main 仍为 `8745b580`，生产仍运行 `ff9551d`，无签名 tag/部署 | FAIL |
+| 02 Secret 与凭据 | 仓库、artifact、生产复核文件复扫为零；已披露凭据无全量轮换和旧值拒绝，SSH 仍允许密码/root | FAIL |
+| 03 正式密钥体系 | 测试签名链路通过；正式离线 ceremony、rotation、revoke、restore 未发生 | BLOCKED_EXTERNAL |
+| 04 自研协议安全 | 可执行 fuzz targets 与 30 秒 CI 运行通过；无 sanitizer 长跑、独立协议/密码学审计 | PARTIAL |
+| 05 第三方安全审计 | 无独立报告、findings 和 retest | BLOCKED_EXTERNAL |
+| 06 Linux Agent 网络安全 | namespace TUN/systemd/ACL/Relay/Subnet 回归通过；无生产 Agent 和真实主机故障矩阵 | PARTIAL |
+| 07 Direct/NAT | 仅 namespace NAT matrix | SIMULATED_ONLY |
+| 08 Relay | 认证、密文、failover、Direct 恢复和 fuzz 通过；无恶意公网、长期容量和多地域证据 | PARTIAL |
+| 09 ACL | 双端默认拒绝、伪造和 namespace 回归通过；无完整真实拓扑 bypass 证据 | PARTIAL |
+| 10 Subnet Router | namespace proposal/apply/revoke/ACL 通过；无真实网关/NAS | SIMULATED_ONLY |
+| 11 Windows 在线实机 | 交叉 target 与离线边界通过；完整在线安装、服务、路由、升级、卸载未执行 | BLOCKED_EXTERNAL |
+| 12 真实 NAS | arm64 包和 namespace 路由不是 NAS 实机证据 | BLOCKED_EXTERNAL |
+| 13 计划域名/TLS/CDN | 计划域名应用路径仍为 525，正式公网 Console 未闭环 | FAIL |
+| 14 服务器硬化 | 五分钟本地健康守卫已安装；SSH/root/password、INPUT accept、管理入口、补丁和 87% 磁盘仍未整改 | FAIL |
+| 15 1Panel 共存 | `1panel-network` ID、子网和四成员保持不变；未执行 host/1Panel reboot 和正式升级 | PARTIAL |
+| 16 数据库 | 集成和迁移通过；bootstrap superuser 不能原地降权，需新角色、grants、secret rotation、redeploy | FAIL |
+| 17 异地备份/DR | 加密备份健康守卫通过；副本仍同机，无全新服务器恢复 | BLOCKED_EXTERNAL |
+| 18 升级供应链 | 测试签名、篡改、降级和回滚通过；无正式 key ceremony 和真实平台矩阵 | PARTIAL |
+| 19 Web Console | 真实 PostgreSQL/Controller/Vite Playwright 通过且无 API Mock；正式公网 Console 仍不可用 | PARTIAL |
+| 20 可观测性 | 本地 systemd 五分钟守卫和失败注入通过；无外部通知、on-call、TLS/证书监控和指标平台 | PARTIAL |
+| 21 性能 | 本机/namespace/1000 节点基线存在；无 WAN、并发容量和长期负载 | PARTIAL |
+| 22 稳定性 Soak | 当前修复版本没有 24 小时原始证据 | UNKNOWN |
+| 23 P0/P1/P2 | P0 未发现；凭据、主机、密钥、DB、域名、真实平台、DR、第三方审计等 P1/High 未清零 | FAIL |
+| 24 依赖和供应链 | audit/deny/npm/SBOM/许可证/五镜像复现均在修复分支通过；未签名、未部署，生产 glibc 风险仍为限时处置 | PARTIAL |
+| 25 部署演练 | CI 和隔离生命周期通过；未由独立工程师在全新服务器完成正式签名、恢复、节点接入和回滚 | FAIL |
+
+最终计数：PASS 0、FAIL 7、BLOCKED_EXTERNAL 5、PARTIAL 10、SIMULATED_ONLY 2、UNKNOWN 1。最终结论见 `GO_NO_GO_FINAL.md`：`NO_GO`。

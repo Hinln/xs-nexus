@@ -13,3 +13,7 @@
 ## Result
 
 `BLOCKED_EXTERNAL`，正式 NAS 支持为 `NO_GO`。解除方式是由用户在受控真实 NAS 上执行并导出完整原始证据。
+
+## Final Remediation Reassessment
+
+本轮没有连接或修改真实 NAS，也没有伪造实机结果。状态保持 `BLOCKED_EXTERNAL`。

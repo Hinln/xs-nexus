@@ -30,3 +30,11 @@
 ## Result
 
 `FAIL`。源码到二进制的链较强，但源码到完整镜像、发布 tag、签名和 CI 的可复现 provenance 不完整。
+
+## Final Remediation Reassessment
+
+- 修复分支 `8532eb6` 的 Edge、Console、Controller、Relay、db-tools 均通过两次无缓存 OCI 逐字节复现；完整摘要见 `EVIDENCE_INDEX.md`。
+- 最终 GitHub run `31270487478` 四个 job 全部成功，修复了首轮 mutable toolchain/action/base、SBOM 漂移和镜像时间不确定性。
+- 生产仍运行 `ff9551d`，GitHub main 仍为 `8745b580`，修复分支未合并、签名、tag 或部署。因此该改善不能转写成生产 provenance PASS。
+
+最终结果仍为 `FAIL`。

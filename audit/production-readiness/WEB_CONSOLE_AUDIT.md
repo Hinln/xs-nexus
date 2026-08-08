@@ -16,3 +16,11 @@
 ## Result
 
 `FAIL`。真实 Controller/DB/Redis/Console Playwright 和计划公网 Console 都未通过。
+
+## Final Remediation Reassessment
+
+- 新门禁启动真实临时 PostgreSQL、真实 Controller 和 Vite proxy，生成私有临时测试凭据后执行 Playwright；测试源码不调用 `page.route`。
+- 验证真实登录、全部管理导航页、刷新 200、注销 204，且无 page error、5xx 或未解释网络失败。run `31270487478` 与 artifact `9025475853` 成功。
+- 该门禁关闭“只有 Mock E2E”的内部缺口，但计划域名和正式公网 Console 路由仍未修复，生产仍运行旧 Console 镜像。
+
+最终结果：Gate 19 从 `FAIL` 改善为 `PARTIAL`，仍不是生产 PASS。

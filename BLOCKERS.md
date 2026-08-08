@@ -101,3 +101,14 @@
 - 已完成的不受阻塞工作：数据库明文不落盘的流式加密、认证 manifest、密文 hash、不同文件系统 marker、自动复制/取回、离线 identity 深度校验、恢复回滚、保留和销毁墓碑均已实现并通过真实 PostgreSQL/Docker 隔离测试。
 - 解除步骤：离线生成 identity，只向数据库主机分发 public recipient；把 `XS_BACKUP_REPLICA_DIR` 挂载到真实独立故障域，写入匹配 deployment/target marker；执行备份、断开本地副本、异地取回、深度校验和受控恢复演练。
 - 解除后验证：私钥不在数据库主机、仓库、日志或证据；异地主机断连时失败关闭；恢复后的 schema/迁移/业务抽查通过；销毁墓碑和保留记录归档到审计系统。
+
+---
+
+## BLK-008 正式生产安全与运营门禁
+
+- 状态：阻塞 Release Candidate 和正式生产；最终审计 `NO_GO`。
+- 首次发现：2026-08-08 正式生产发布门禁审计。
+- 外部条件：生产所有者批准并执行全量凭据轮换、仅密钥 SSH 与最小防火墙、计划 DNS/CDN/TLS；DBA 创建非 bootstrap 最小权限角色并轮换 secret/redeploy；SRE 配置外部通知/on-call；独立第三方完成安全审计和 retest。
+- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、真实 Console E2E、协议 fuzz、五镜像可复现、五分钟本地健康守卫和最终生产只读复核。
+- 证据：`audit/production-readiness/GO_NO_GO_FINAL.md` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`。
+- 解除后验证：旧凭据全部被拒绝；SSH/端口/防火墙回归；正式域名 API/WS/Console/health/TLS 通过；应用角色非 superuser；外部告警真实送达；第三方 findings 修复并 retest；重新执行全部 Hard Gate。

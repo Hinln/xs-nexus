@@ -27,3 +27,13 @@
 ## Result
 
 `FAIL`。源 SBOM、CI、advisory policy、基础镜像和完整可复现性未闭环。
+
+## Final Remediation Reassessment
+
+- Rust `1.93.0`、Windows target、GitHub actions、Ubuntu runner、PostgreSQL service 和产品基础镜像均固定。
+- `cargo audit`、`cargo deny`、npm audit、源 SBOM、许可证和依赖门禁在 run `31270487478` baseline 中通过。
+- 当前源 SBOM 为 Cargo 325、npm 110、总计 435；旧 321 计数未被静默放宽，而是核对出新增的 DER/PEM/PKCS#8/SPKI 锁定依赖后更新快照。
+- 五个最终 OCI 镜像各自两次无缓存构建逐字节一致；Edge 的唯一差异被定位为 `/var/log/apk.log` 安装时间并从运行时删除，Console 使用固定 digest slim runtime 和隔离许可证阶段。
+- 生产镜像仍为旧 revision，修复版本未签名/tag/部署；实际生产 glibc Critical/High 仍只具有限时不可达性处置。
+
+最终结果：`PARTIAL`，不是正式供应链 PASS。

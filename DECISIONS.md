@@ -931,3 +931,13 @@
 - 原因：使 Git、环境文件、镜像引用、OCI 标签、活动部署记录和回滚证据形成单一可追溯链，避免 mutable/stale tag 掩盖实际运行内容。
 - 代价：文档提交若要成为生产工作树 HEAD，也必须重新构建 revision 标签镜像或保留独立部署工作树；不能用旧 tag 快速覆盖。
 - 验证：错误 Controller tag 的 RC 预检被拒绝，正确五镜像 tag 通过，且 Docker 容器/网络、`1panel-network`、默认路由和归一化 nftables 不变；证据 `/srv/xs-nexus-qa/artifacts/deploy-tag-guard-20260807T062812Z`。
+
+---
+
+## ADR-082 生产审计修复证据不得自动升级为生产 GO
+
+- 状态：接受
+- 日期：2026-08-09
+- 决策：生产审计修复必须在独立分支通过固定版本 baseline、真实 Controller/DB Console E2E、可执行协议 fuzz 和五镜像双无缓存复现；每个失败保留原始日志并修复根因。CI PASS 只证明该 revision 的工程门禁，不得替代 main 合并、签名 tag、正式部署、生产 provenance、真实平台、凭据/密钥、DR 和第三方审计。
+- 实现：Console E2E 禁止 `page.route` 并使用临时 PostgreSQL/Controller；镜像复现记录 manifest/config/layer inventory，Edge 删除易变 `apk.log`，Console 使用固定 slim runtime 与隔离许可证阶段；生产健康守卫只读运行且不修改 1Panel 资源。
+- 结果：revision `8532eb6` 的 run `31270487478` 全部通过，但 GitHub main、生产源码和运行镜像仍是旧 revision，最终发布结论保持 `NO_GO`。

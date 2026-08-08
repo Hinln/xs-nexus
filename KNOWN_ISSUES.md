@@ -304,3 +304,11 @@
 
 - 生产 Controller 的 `vpn.qinwen.co` 健康、Windows/Linux 引导、Windows manifest/ZIP 和 Linux 双架构签名文件已逐字节复核；该下载门禁已完成。
 - `KI-022` 仍保持开放，因为没有当前可控 Windows VM 会话执行一次性 Token Enrollment、SCM、CLI readiness、真实地址/路由、数据面、卸载和重装。不得用离线 Wintun smoke 或公开下载结果替代在线闭环。
+
+---
+
+## 2026-08-09 生产审计补充
+
+- `KI-019` 的当前源 SBOM 计数更新为 Cargo 325、npm 110、总计 435。新增四项为启用 Ed25519 PEM/PKCS#8 支持后进入锁文件的 `der 0.8.1`、`pem-rfc7468 1.0.0`、`pkcs8 0.11.0`、`spki 0.8.0`；许可证与哈希继续 fail-closed，最终 baseline 通过。
+- `KI-021` 仍开放：修复分支实现五镜像逐字节可复现，但没有把生产运行的 glibc Critical/High 限时 disposition 改写为已修复，也没有部署新镜像。
+- 新增生产级残余问题统一由 `audit/production-readiness/OPEN_FINDINGS.md` 和 `BLK-008` 跟踪；修复分支 CI PASS 不表示 Release Candidate。

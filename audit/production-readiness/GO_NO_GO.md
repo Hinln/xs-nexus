@@ -1,5 +1,7 @@
 # Production Readiness Decision
 
+> 本文件冻结首轮只读结论。修复后的最终权威结论见 `GO_NO_GO_FINAL.md`。
+
 ## Decision
 
 `NO_GO`

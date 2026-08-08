@@ -63,3 +63,17 @@
 - 历史 Windows、24h soak、最终导出和大多数 `/srv/xs-nexus/artifacts/qa` 原始证据不存在，不能用于 PASS。
 
 最终 SHA-256 清单在首轮和终审结束时重新生成；原始失败日志全部保留。
+
+## Final Remediation Evidence
+
+- 修复证据根：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`
+- 生产健康守卫：`.../monitoring`
+- 最终 CI 与 artifacts：`.../ci-final-8532eb6`
+- 最终生产只读复核：`.../ci-final-8532eb6/production-final.txt`
+- 最终生产复核文件 SHA-256：`13e0b6c717b8fb52840dd75c6449f47a09fd783c6d847a04ec4872756d5a6df9`
+- CI 证据归档上传前 SHA-256：`cac62337529bdc1c2a4c7557d40d91bb60ee2ccc4590129c10a25d1cf42b85a2`
+- GitHub final run：[31270487478](https://github.com/Hinln/xs-nexus/actions/runs/31270487478)，revision `8532eb6992389568643f8a501055c6acc72395ab`
+- Artifact `9025475853`：`console-real-e2e-evidence`，GitHub digest `sha256:a2667d4fcd00fe818a005cf26bb47b0073ed3b2075b27134e9153560a1e8ef11`
+- Artifact `9025496390`：`protocol-fuzz-evidence`，GitHub digest `sha256:905a28e11fd96d6605bf9989322fa39c4e99974020c78a618438ce798f4fe941`
+- Artifact `9025655997`：`image-reproducibility-evidence`，GitHub digest `sha256:c84f58fb11639c274bed70b93e0a18b008492643714dc26105639f9b2fe24069`
+- 可复现 OCI SHA-256：Edge `3557136259b04170b302c0a1c0ac88aa9b42a1362b65f7bc321c29d1bb671cd4`；Console `88ab58ebc6a9e78932bc5fa22f449a203d5ddac39f6cd583a3a0cfefa21dffcf`；Controller `2740f6e6110a1d22ab8c9f36306567e58d9234a00e9bce6cc1a773919d24c6be`；Relay `70e751415f97b3fb890e9de78068aea5fb4adcc5293fcb192a1c17405bac176a`；db-tools `2f7c53cb37c33125eb37a5d790d72ba735ad50786a8f509f27cb8c08c07db334`。
