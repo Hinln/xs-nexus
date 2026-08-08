@@ -455,6 +455,8 @@ deploy_stack() {
         return
     fi
     printf 'deployment activation failed; restoring previous images\n' >&2
+    "${COMPOSE[@]}" ps >&2 || true
+    "${COMPOSE[@]}" logs --no-color --tail 200 controller relay console >&2 || true
     if rollback_images; then
         printf 'automatic_image_rollback=completed\n' >&2
     else

@@ -214,7 +214,6 @@ printf '%s' "$ADMIN_TOKEN" >"$CONTROLLER_SECRETS/admin-api-token"
 printf '%s' "$CONSOLE_PASSWORD" >"$CONTROLLER_SECRETS/console-bootstrap-password"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/credential-signing-key"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/configuration-signing-key"
-head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/update-signing-public-key"
 printf '%s\n' 'age1wcd4cep4z26php4gteja7n2wgxyukpe4nc5xn8dr6zk85gg26chsy9qyj8' >"$CONTROLLER_SECRETS/backup-recipient"
 printf '%s\n' 'test-public-key' >"$RELEASE_DIRECTORY/release-public-key.pem"
 for architecture in x86_64 aarch64; do
@@ -237,6 +236,8 @@ head -c 32 /dev/urandom >"$RELAY_SECRETS/identity-key"
 
 cargo run --quiet -p xs-protocol --example derive_ed25519_public -- \
     "$CONTROLLER_SECRETS/credential-signing-key" "$RELAY_SECRETS/controller-credential-public-key"
+cargo run --quiet -p xs-protocol --example derive_ed25519_public -- \
+    "$CONTROLLER_SECRETS/configuration-signing-key" "$CONTROLLER_SECRETS/update-signing-public-key"
 cargo run --quiet -p xs-protocol --example derive_ed25519_public -- \
     "$RELAY_SECRETS/identity-key" "$TEMPORARY/relay-public-key"
 
