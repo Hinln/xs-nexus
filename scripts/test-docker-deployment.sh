@@ -294,11 +294,15 @@ cp -- "$ENVIRONMENT_FILE" "$BAD_UDP_BIND_ENVIRONMENT"
 sed -i 's/^XS_UDP_BIND_ADDRESS=.*/XS_UDP_BIND_ADDRESS=203.0.113.1/' "$BAD_UDP_BIND_ENVIRONMENT"
 chmod 0600 "$BAD_HTTP_BIND_ENVIRONMENT" "$BAD_UDP_BIND_ENVIRONMENT" \
     "$RC_ENVIRONMENT" "$BAD_RC_IMAGE_ENVIRONMENT"
+sed -i 's/^deployment=dev$/deployment=rc/' "$REPLICA_DIRECTORY/.xs-nexus-replica"
+chown 65532:65532 "$REPLICA_DIRECTORY/.xs-nexus-replica"
 "$STACK" --env-file "$RC_ENVIRONMENT" preflight
 if "$STACK" --env-file "$BAD_RC_IMAGE_ENVIRONMENT" preflight >/dev/null 2>&1; then
     printf 'RC image tag unrelated to the release revision unexpectedly passed preflight\n' >&2
     exit 1
 fi
+sed -i 's/^deployment=rc$/deployment=dev/' "$REPLICA_DIRECTORY/.xs-nexus-replica"
+chown 65532:65532 "$REPLICA_DIRECTORY/.xs-nexus-replica"
 if "$STACK" --env-file "$BAD_HTTP_BIND_ENVIRONMENT" preflight >/dev/null 2>&1; then
     printf 'public plaintext HTTP bind unexpectedly passed preflight\n' >&2
     exit 1
