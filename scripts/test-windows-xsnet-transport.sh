@@ -10,12 +10,13 @@ CLIPPY_BIN="$TOOL_DIR/cargo-clippy"
     printf 'matching cargo, rustc, and cargo-clippy are required\n' >&2
     exit 2
 }
-RUST_SOURCE="$("$RUSTC_BIN" --print sysroot)/lib/rustlib/src/rust/library"
+RUST_TARGET=x86_64-pc-windows-msvc
+RUST_TARGET_LIB="$("$RUSTC_BIN" --print sysroot)/lib/rustlib/$RUST_TARGET/lib"
 TARGET_DIR=$(mktemp -d /tmp/xs-nexus-windows-transport.XXXXXX)
 trap 'rm -rf -- "$TARGET_DIR"' EXIT INT TERM
 
-[[ -d "$RUST_SOURCE/core" && -d "$RUST_SOURCE/alloc" ]] || {
-    printf 'matching Rust core and alloc source is required\n' >&2
+[[ -d "$RUST_TARGET_LIB" ]] || {
+    printf 'matching %s Rust target is required\n' "$RUST_TARGET" >&2
     exit 2
 }
 
@@ -24,15 +25,12 @@ export CARGO_NET_OFFLINE=true
 "$CARGO_BIN" test --locked -p xs-agent --lib windows_xsnet::tests
 
 export CARGO_TARGET_DIR="$TARGET_DIR"
-export RUSTC_BOOTSTRAP=1
 
 "$CARGO_BIN" check --locked \
-    --target x86_64-pc-windows-msvc \
-    -Z build-std=core,alloc,panic_abort \
+    --target "$RUST_TARGET" \
     -p xs-windows-transport
 "$CLIPPY_BIN" clippy --locked \
-    --target x86_64-pc-windows-msvc \
-    -Z build-std=core,alloc,panic_abort \
+    --target "$RUST_TARGET" \
     -p xs-windows-transport \
     -- -D warnings
 
