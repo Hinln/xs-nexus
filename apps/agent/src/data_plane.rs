@@ -833,8 +833,23 @@ impl UdpDataPlane {
     /// Returns an Agent error when a UDP retransmission fails.
     pub async fn maintain(&mut self, state: &NodeState) -> Result<Option<CandidateAdvertisement>> {
         let now = Instant::now();
-        self.prune_expired_candidates()?;
-        let relay_maintenance = self.relay_manager.maintain(now, unix_time()?)?;
+        self.prune_expired_candidates().map_err(|error| {
+            eprintln!(
+                "xs-agent data_plane=maintenance stage=prune_candidates error={}",
+                error.code()
+            );
+            error
+        })?;
+        let relay_maintenance =
+            self.relay_manager
+                .maintain(now, unix_time()?)
+                .map_err(|error| {
+                    eprintln!(
+                        "xs-agent data_plane=maintenance stage=relay error={}",
+                        error.code()
+                    );
+                    error
+                })?;
         for endpoint in relay_maintenance.failed_endpoints {
             fail_relay_path(&mut self.peers_by_virtual_ip, endpoint);
         }
@@ -869,7 +884,11 @@ impl UdpDataPlane {
                 RetryAction::Expired => {
                     if advance_handshake_candidate(peer) {
                         if let Some(endpoint) = peer.active_endpoint {
-                            let encoded = begin_client_handshake(&self.material, peer, now)?;
+                            let encoded = begin_client_handshake(&self.material, peer, now)
+                                .map_err(|error| {
+                                    eprintln!("xs-agent data_plane=maintenance stage=handshake_fallback error={}", error.code());
+                                    error
+                                })?;
                             retransmissions.push((endpoint, peer.node_id, encoded));
                         }
                     } else {
@@ -879,12 +898,24 @@ impl UdpDataPlane {
                 }
             }
             if let PeerState::Established(established) = &mut peer.state
-                && let Some(encoded) = maintain_established(established, now)?
+                && let Some(encoded) = maintain_established(established, now).map_err(|error| {
+                    eprintln!(
+                        "xs-agent data_plane=maintenance stage=established error={}",
+                        error.code()
+                    );
+                    error
+                })?
                 && let Some(endpoint) = peer.active_endpoint
             {
                 retransmissions.push((endpoint, peer.node_id, encoded));
             }
-            if let Some((endpoint, encoded)) = maintain_path_probe(peer, now)? {
+            if let Some((endpoint, encoded)) = maintain_path_probe(peer, now).map_err(|error| {
+                eprintln!(
+                    "xs-agent data_plane=maintenance stage=path_probe error={}",
+                    error.code()
+                );
+                error
+            })? {
                 retransmissions.push((endpoint, peer.node_id, encoded));
             }
             if matches!(peer.state, PeerState::Idle)
@@ -899,7 +930,14 @@ impl UdpDataPlane {
                 && proactive_started < MAX_PROACTIVE_HANDSHAKES_PER_TICK
             {
                 let endpoint = peer.active_endpoint.ok_or(AgentError::DataPlane)?;
-                let encoded = begin_client_handshake(&self.material, peer, now)?;
+                let encoded =
+                    begin_client_handshake(&self.material, peer, now).map_err(|error| {
+                        eprintln!(
+                            "xs-agent data_plane=maintenance stage=proactive_handshake error={}",
+                            error.code()
+                        );
+                        error
+                    })?;
                 retransmissions.push((endpoint, peer.node_id, encoded));
                 active_client_handshakes = active_client_handshakes.saturating_add(1);
                 proactive_started = proactive_started.saturating_add(1);
@@ -908,7 +946,14 @@ impl UdpDataPlane {
         for (endpoint, destination_node_id, encoded) in retransmissions {
             let _ = self
                 .send_xsp(endpoint, destination_node_id, &encoded)
-                .await?;
+                .await
+                .map_err(|error| {
+                    eprintln!(
+                        "xs-agent data_plane=maintenance stage=send error={}",
+                        error.code()
+                    );
+                    error
+                })?;
         }
         if self.candidate_manager.refresh_due(now)
             && let Err(error) = self.candidate_manager.refresh(&self.socket, state).await
