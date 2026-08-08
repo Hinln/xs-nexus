@@ -35,9 +35,9 @@
 
 ## BLK-003 DNS 和生产防火墙
 
-- 状态：阻塞任务书计划域名 `vpn.xiashikeji.cn` 上线；2026-08-08 该域名经 CDN 返回 `525 SSL Handshake Failed with Origin Server`
+- 状态：阻塞任务书计划域名 `vpn.xiashikeji.cn` 上线；2026-08-08 最终复核中边缘 TLS 可完成且根路径返回 404，但 `/health/ready` 与 `/install` 仍返回 `525 SSL Handshake Failed with Origin Server`
 - 需要：用户批准并在 1Panel/CDN 中完成正式源站证书、SNI、反向代理和最小防火墙配置。
-- 已验证：服务器错误时钟已恢复 Chrony/NTP，同步后 525 仍可复现；Controller 回环健康，当前固定 `vpn.qinwen.co` 的 Linux/Windows 公网引导、manifest/ZIP 哈希和未知文件 404 均通过，因此不能把 525 归因于应用路由。
+- 已验证：服务器错误时钟已恢复 Chrony/NTP，同步后功能路径 525 仍可复现；Controller 回环健康，当前固定 `vpn.qinwen.co` 的健康入口、Linux/Windows 公网引导、全部 10 个发布文件逐字节比较和未知文件 404 均通过，因此不能把 525 归因于应用路由。证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z/public-checks.txt`。
 - 不阻塞：当前 `vpn.qinwen.co` 测试发布、IP 和临时端口测试。
 
 ---

@@ -42,7 +42,7 @@
 
 - Tailscale；
 - Headscale；
-- WireGuard 可执行程序、WireGuard 内核模块或 Wintun；
+- WireGuard 可执行程序或 WireGuard 内核模块；
 - ZeroTier；
 - NetBird；
 - Nebula；
@@ -61,6 +61,8 @@
 - 通过 Shell 调用第三方组网命令完成核心能力；
 - 为了快速通过测试而关闭加密、证书校验、权限检查或驱动签名检查；
 - 自创未经审计的密码算法。
+
+项目所有者批准一个严格受限的 Windows 发行例外：首版可固定使用发行方签名的官方 Wintun `0.14.1` x64 DLL，但只能作为 `xs-windows-wintun` 的 L3 虚拟网卡适配器。Wintun 不得实现或替代注册、身份、XSP/1、密钥协商、加密、重放保护、ACL、路由授权、NAT 穿透、候选路径或 Relay；自研 `drivers/windows-xsnet` 源码继续完全独立，且不得依赖 Wintun。
 
 ### 2.2 允许事项
 
@@ -415,7 +417,7 @@
 - 安装失败、升级失败和卸载时必须可回滚；
 - 必须在虚拟机中执行 Driver Verifier、睡眠恢复、反复安装卸载和异常输入测试。
 
-不得使用 Wintun、TAP-Windows 或复制微软示例代码。可以阅读官方示例理解接口，但实现必须独立完成。
+自研 `xsnet` 驱动源码不得使用 Wintun、TAP-Windows 或复制微软示例代码。可以阅读官方示例理解接口，但实现必须独立完成。首版 Windows 发行可按 2.1 的项目所有者例外，在用户态 Agent 的独立适配器边界使用固定且发行方签名的官方 Wintun `0.14.1`；该例外不改变 `xsnet` 的独立实现、测试签名状态和实机验收要求。
 
 ---
 

@@ -545,7 +545,7 @@
 - PostgreSQL 18 运维镜像把 custom archive 流式送入 age X25519 加密，不落持久明文；认证 manifest、公开 index 和复制回执绑定 schema、名称、密文字节数/hash、recipient Key ID 和时间；
 - 每份备份自动复制到带私有 marker 的不同文件系统挂载，支持公开校验、离线 identity 深度验证、取回、恢复前安全备份、失败回滚、独立保留和不可复用销毁墓碑；
 - 实际生命周期测试覆盖镜像构建、迁移、三服务健康、容器安全属性、数据持久化、密文篡改/错误 identity 拒绝、异地取回、恢复、保留、迁移失败不替换服务和错误镜像自动回滚；
-- 初始证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；当前完整生命周期与镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。新生产候选服务器已证明项目数据库无 host binding 且外部数据库端口不可达，`KI-006`/`BLK-005` 已解除；正式 identity/真实异地主机仍由 `BLK-007` 阻塞。
+- 初始证据：`/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`；当前完整生命周期与镜像供应链证据：`/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`。生产主机精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的最终全量证据为 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z`，滚动部署与宿主不变量证据为 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。项目数据库无 host binding 且外部数据库端口不可达，`KI-006`/`BLK-005` 已解除；正式 identity/真实异地主机仍由 `BLK-007` 阻塞。
 
 ---
 

@@ -299,3 +299,8 @@
 - 已完成缓解：引导器固定 `https://vpn.qinwen.co`，固定 manifest 摘要，校验 HTTPS、归档大小/哈希、精确 payload tree、每个 payload hash、Wintun DLL hash 与有效的 `CN=WireGuard LLC` Authenticode 签名；失败时删除仅由本次安装创建的服务和目录。Controller 只暴露精确的 `install.ps1`、manifest 和 ZIP 文件名，目录或未知文件拒绝。
 - 计划：公开发布目录、PowerShell User-Agent、`/install/windows`、Linux `/install`、下载哈希和 404 边界已完成；下一步仅在受控 Windows 11 VM 生成短时 Enrollment Token，实际运行管理员 PowerShell 安装、服务和网络验证，并保留失败关闭、普通网络、卸载和重装证据。
 - 解除条件：上述生产下载/注册/服务/基本数据面/卸载重装实测通过，且没有把 Token、密码、私钥、产物或环境文件写入 Git、日志或文档。Windows 10、完整 `xsnet` 实机 Agent、睡眠/路由恢复和独立安全审计仍由既有条目单独跟踪。
+
+### 2026-08-08 复核补充
+
+- 生产 Controller 的 `vpn.qinwen.co` 健康、Windows/Linux 引导、Windows manifest/ZIP 和 Linux 双架构签名文件已逐字节复核；该下载门禁已完成。
+- `KI-022` 仍保持开放，因为没有当前可控 Windows VM 会话执行一次性 Token Enrollment、SCM、CLI readiness、真实地址/路由、数据面、卸载和重装。不得用离线 Wintun smoke 或公开下载结果替代在线闭环。

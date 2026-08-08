@@ -899,9 +899,30 @@
 - Decision: Windows release `0.1.0` may ship official Wintun `0.14.1` x64 `wintun.dll` only through the `xs-windows-wintun` adapter boundary. The builder and installer must pin the official archive SHA-256, DLL SHA-256, Authenticode signer subject, exact payload set, and the upstream prebuilt-binary license. The Agent dynamically loads only that regular, absolute, non-reparse DLL, creates an ephemeral L3 adapter/session, and accepts bounded validated IPv4 packets.
 - Rationale: The user explicitly chose an already-signed adapter over distributing the still test-signed `xsnet` driver. This permits practical Windows enrollment without claiming that the self-developed driver is production-signed or that Wintun supplies any XS Nexus network protocol.
 - Non-goals and boundary: Wintun must not implement or replace controller enrollment, node identity, XSP/1, key agreement, encryption, replay protection, NAT traversal, candidate selection, relay, ACL, IPAM, policy, or routing authorization. `drivers/windows-xsnet` remains independently validated and continues to prohibit Wintun in its driver source.
+
+## ADR-078: Production host uses a repository-external containerized QA toolchain
+
+- Status: Accepted, 2026-08-08.
+- Decision: Keep Rust, Node build dependencies and cross headers out of the production host package set. Use a repository-external `xs-nexus/qa-rust:1.93.0` image and narrow wrappers for Cargo, rustc, npm and ShellCheck; mount only the isolated QA worktree, bounded caches and `/tmp`. Privileged namespace tests compile first and execute the resulting host binary directly.
+- Rationale: This preserves the production host baseline while still running the exact compiler, Clippy, rust-src, AArch64 GCC/libc and ShellCheck gates required by the task book. Direct host execution prevents Docker networking from replacing the network namespace under test.
+- Consequence: The QA image and wrappers are operational evidence, not product dependencies or Git artifacts. Any image rebuild must record tool versions and rerun cross-package and full M5.2 validation.
+
+## ADR-079: Authenticated peer traffic and PathResponse are distinct valid path proofs
+
+- Status: Accepted, 2026-08-08.
+- Decision: A matching encrypted PathResponse records `authenticated_path_probe` when the pending probe was created to promote a different endpoint. A periodic latency probe to the existing endpoint does not rewrite the prior path reason. If the peer independently promotes first and sends AEAD-valid traffic from the new endpoint, the receiving side may record `authenticated_peer_traffic` as already specified by XSP/1.
+- Rationale: Simultaneous probes are not guaranteed. Requiring both peers to finish their own Challenge/Response before accepting authenticated traffic introduces a test-only timing assumption and can misreport a valid, identity-bound path as failure.
+- Consequence: Integration tests still require an observed encrypted PathChallenge, at least one completed matching PathResponse, both active endpoints on the new path and bidirectional traffic. No unauthenticated source can change the active path.
+
+## ADR-080: Deployment baselines compare stable identity and semantic firewall state
+
+- Status: Accepted, 2026-08-08.
+- Decision: Existing production Compose projects are captured before and after validation rather than required to be absent. Container snapshots use stable ID/name/image/state fields, not elapsed-time `Status` text. After intentional Docker recreation, nftables comparison removes counters/handles and substitutes ephemeral container IP literals with their Docker service names before canonical comparison.
+- Rationale: Production validation must detect added, removed, restarted or stopped resources without failing merely because a healthy container's human-readable uptime crossed a display boundary or Docker reassigned service IPs.
+- Consequence: Raw before/after Docker, network and nftables snapshots remain in evidence. Canonical equality supplements rather than replaces exact route, network-name, health, OCI revision and service-member checks.
 - Residual gate: This exception is not a production-security certification. Full service/SCM, Named Pipe, protected storage, IP Helper/DAD/route recovery, sleep, repeated install/upgrade/rollback, Windows 10, and independent security review require their own evidence before an RC claim.
 
-## ADR-078 RC 镜像标签必须等于发布 Git revision
+## ADR-081 RC 镜像标签必须等于发布 Git revision
 
 - 状态：接受
 - 日期：2026-08-08

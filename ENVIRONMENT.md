@@ -208,3 +208,12 @@ M5.2 使用以下固定边界：
 默认 Controller/Console/Discovery/Relay 端口只绑定 `127.0.0.1`。正式 DNS、TLS、反向代理和防火墙仍属于人工门禁。完整准备、部署、备份和恢复步骤见 `docs/DOCKER_1PANEL_DEPLOYMENT.md`。
 
 当前生产候选实际为 HTTP 回环、Discovery/Relay UDP 公网监听；数据库无宿主映射。主机 `ufw` inactive，nftables INPUT 默认接受且 1Panel 管理端口仍监听，因此“防火墙最小开放”不得标记完成。
+
+## 12. 生产候选隔离 QA 与最终部署（2026-08-08）
+
+- 产品仓库：`/srv/xs-nexus`；隔离 QA 工作树：`/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo`。
+- 生产宿主继续不安装 Rust 或 Node 编译器。仓库外镜像 `xs-nexus/qa-rust:1.93.0` 与 `/srv/xs-nexus-qa/bin` 包装器提供 rustfmt、Clippy、rust-src、ShellCheck、AArch64 GCC 和 `libc6-dev-arm64-cross`；缓存位于 `/srv/xs-nexus-qa/cache`。
+- QA Cargo 容器只负责构建和非特权命令；TUN、namespace、nftables、systemd 等真实宿主测试在进入 namespace 前编译目标二进制，再由宿主直接执行，避免 Docker 网络替代被测 namespace。
+- 最终验证代码：`ff9551d322067c934d2ac7d55a62af8896660bb3`；证据 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z`。
+- 当前生产环境文件仍位于仓库外 `/etc/xs-nexus/deployments/rc.compose.env`，权限 `0600 root:root`；活动状态目录 `/var/lib/xs-nexus-deploy/rc`。常驻项目容器为 Controller、Relay、Console、PostgreSQL，全部连接既有外部 `1panel-network`，没有创建项目网络。
+- 最终部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`；外部端口证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。不得把 repo 外 QA 镜像、缓存、临时数据库环境文件或测试签名材料当作生产运行依赖或提交到 Git。

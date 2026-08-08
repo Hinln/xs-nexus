@@ -166,7 +166,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [x] MUST：开发和 RC 隔离。
 - [x] MUST：不影响 1Panel 现有服务。
 
-证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及 2026-08-02 隔离 `make test-docker-deployment`。当前生产候选服务器又在 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z` 证明项目 PostgreSQL 没有 host binding，外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，四个项目容器健康且 `1panel-network` 未变；旧开发服务器的暴露问题不再适用于当前主机。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
+证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及生产主机精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的全量 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z` 和部署 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z` 证明项目 PostgreSQL 没有 host binding，外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，四个项目容器健康且 `1panel-network`、默认路由和规范化 nftables 语义未变。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
 
 ---
 

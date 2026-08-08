@@ -118,3 +118,11 @@
 - Windows 驱动 VM：`docs/WINDOWS_XSNET_VM_EVIDENCE.md`；Windows 路由准备：`make test-windows-agent-routing`。
 - 性能报告：`docs/PERFORMANCE_REPORT.md`。
 - 阻塞清单：`BLOCKERS.md`。
+
+## 16. 2026-08-08 最终生产候选复核
+
+- 完整验证提交：`ff9551d322067c934d2ac7d55a62af8896660bb3`；`./scripts/validate-m52.sh` 成功证据 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z`。
+- 同 revision 的 Controller、Relay、Console、db-tools 已构建；迁移前加密备份 `pre-migration-rc-20260808T104233-1345622` 可公开校验，常驻三服务健康，OCI revision 和活动部署记录一致。部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
+- 发布后 Docker 网络集合、`1panel-network` 服务成员、默认路由、按服务名规范化的 nftables 语义和失败服务基线不变；没有 namespace/TUN 残留。外部工作站确认 SSH 探测有效且数据库/内部 HTTP 端口不公开。
+- `vpn.qinwen.co` 健康、双平台引导和 10 个公开发布文件逐字节一致；未知路由/文件 404。`vpn.xiashikeji.cn` 的功能路径仍为 CDN 525，根路径 404 不解除该门禁。
+- 该结果证明当前 Linux 生产候选部署可复现，不证明 Windows 在线客户端、真实 NAS、正式离线签名/备份密钥、真实异地恢复、生产防火墙最小开放、凭据轮换、跨地域容量或独立安全审计完成。最终结论仍是“部分完成、不适合生产、不得标记 Release Candidate”。

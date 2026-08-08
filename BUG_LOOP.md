@@ -297,3 +297,15 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0013`：生产镜像使用历史提交 tag，但 OCI revision 和 active deployment 已指向新提交。修复为 RC 预检强制五个镜像 tag 精确等于发布 Git revision；正向和 stale-tag 负向测试通过，不再允许标签漂移。
 - `XS-2026-0014`：生产服务器 Chrony 被停用，系统时钟比 RTC、外部 HTTPS Date 和 NTP 慢整整一天，影响证书、Token、配置 TTL 和审计时间。恢复既有 Chrony 服务后自动前跳 86400.300154 秒并同步；容器身份、网络、默认路由、nftables 和下载接口均保持。公网 525 仍存在，证明其还需要源站 TLS/反代门禁处理。
 - `XS-2026-0015`：2026-08-08 重新构建时 npm audit 新增 `nanoid <3.3.17` 高危无限循环/DoS 公告。未忽略或豁免；锁文件升级到 `3.3.18`，npm high/critical 清零，Console build 和 4 项测试通过。
+
+## 最终 M5.2 与生产部署缺陷闭环（2026-08-08）
+
+- `XS-2026-0016`：握手 fallback 选择可达候选后，会话尚未 Established 时维护循环错误创建更高优先级 PathProbe 并终止 Agent。修复为仅在 Established 状态创建探测；单元回归和真实 fallback namespace 通过。
+- `XS-2026-0017`：SIGTERM 时 IPC 正常退出可先关闭 runtime command channel，`tokio::select!` 将其误判为运行失败。关闭分支现在先检查 shutdown 状态；systemd 与完整子网生命周期通过。
+- `XS-2026-0018`：候选路径并发中，一侧可能先通过 AEAD peer traffic 晋升，随后周期探测错误覆盖或无法稳定报告路径原因。PendingPathProbe 记录是否为晋升探测；匹配响应只在晋升探测时写 `authenticated_path_probe`。测试接受协议已有的两个认证原因，但强制至少一侧完成 PathResponse，并连续三轮通过。
+- `XS-2026-0019`：NAT nft 计数使用 `nft | awk exit`，在输出超过管道缓冲时生产者收到 SIGPIPE，`pipefail` 返回 141。AWK 现在读取完整输出且只打印首个匹配；六场景矩阵通过。
+- `XS-2026-0020`：one-click cleanup 仅由 trap 间接调用，ShellCheck 报 SC2317。成功路径现在显式清理、清空状态并撤销 trap；ShellCheck 和 one-click 安全测试通过，没有添加 ignore。
+- `XS-2026-0021`：生产环境本来存在 `xs-nexus-rc`，旧验证却要求 dev/RC Compose 项目均为空；首次基线修复又把会变化的 `Up N hours` 写入快照。最终改为前后稳定 ID/name/image/state 比较，并保留全 Docker 运行集合检查。
+- `XS-2026-0022`：仓库外 QA 镜像只有 AArch64 GCC，没有目标 libc 头文件，`ring` 交叉 C 编译失败。镜像补充 `libc6-dev-arm64-cross` 后实际生成 AArch64 Agent/CLI 签名包并通过 ELF 校验；产品运行镜像不受影响。
+- `XS-2026-0023`：部署测试把随机 32 字节当作 Ed25519 公钥，部分随机值不是有效验证键。测试改为从确定性签名私钥推导真实公钥；部署生命周期通过，未放宽 Controller 公钥校验。
+- 最终结果：精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的 M5.2 全量为 `validation_status=0`，随后同 revision 生产部署与宿主基线复核通过。外部门禁继续记录在 `BLOCKERS.md`，没有把失败测试删除、跳过、ignore 或改为 Mock。

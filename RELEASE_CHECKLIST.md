@@ -19,9 +19,9 @@
 
 - [x] Linux x86_64（M5.1 测试签名构建）
 - [x] Linux arm64（M5.1 真实交叉构建与 ELF 验证，目标运行待门禁）
-- [x] Controller（M5.2 开发镜像构建与健康验证）
-- [x] Relay（M5.2 开发镜像构建与健康验证）
-- [x] Console（M5.2 开发镜像构建与健康验证）
+- [x] Controller（精确 revision 生产候选镜像构建、迁移与健康验证）
+- [x] Relay（精确 revision 生产候选镜像构建与健康验证）
+- [x] Console（精确 revision 生产候选镜像构建与健康验证）
 - [x] CLI（Linux x86_64/arm64 包）
 - [ ] Windows Agent
 - [ ] Windows Driver
@@ -103,10 +103,12 @@
 ## 结论
 
 - [ ] 可标记 Release Candidate
-- [x] 仍为部分完成
-- [ ] 不适合生产
+- [ ] 仍为部分完成
+- [x] 不适合生产
 
 必须三选一，并在 `FINAL_REPORT.md` 给出证据。
+
+生产候选代码 revision 为 `ff9551d322067c934d2ac7d55a62af8896660bb3`；全量和部署证据分别为 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z` 与 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。未完成的 Windows 在线、NAS、计划域名/防火墙、正式密钥/异地恢复、凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
 
 ## Runtime image license closure checkpoint (2026-07-31)
 

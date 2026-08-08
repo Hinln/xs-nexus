@@ -87,7 +87,6 @@ Linux Agent、TUN、Netlink、namespace、`nftables` 和 `tc` 优先在宿主机
 - Tailscale；
 - Headscale；
 - WireGuard；
-- Wintun；
 - ZeroTier；
 - NetBird；
 - Nebula；
@@ -101,6 +100,8 @@ Linux Agent、TUN、Netlink、namespace、`nftables` 和 `tc` 优先在宿主机
 - 其他现成组网、VPN、穿透和中继产品。
 
 允许使用公开标准、操作系统原生接口、通用框架和标准密码学库，但不得自行实现密码学原语。
+
+项目所有者已批准唯一例外：Windows 首版发行可固定使用发行方签名的官方 Wintun `0.14.1` x64 DLL，并且只能作为 `xs-windows-wintun` 的 L3 虚拟网卡适配器。它不得承担或替代注册、身份、XSP/1、密钥协商、加密、重放保护、ACL、路由授权、NAT 穿透、候选路径或 Relay；自研 `xsnet` 驱动源码仍不得依赖 Wintun，也不得把测试签名描述为正式签名。
 
 ## 开发顺序
 

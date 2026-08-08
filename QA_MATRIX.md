@@ -423,3 +423,14 @@
 - [x] Windows 生产发布：回环和 `vpn.qinwen.co` 公网的三件套精确文件、bootstrap/manifest/ZIP SHA-256、PowerShell UA 和未知文件 404 通过；计划域名 `vpn.xiashikeji.cn` 的 CDN 525 转入人工 TLS 门禁。
 - [x] 数据库暴露：项目 PostgreSQL 无 host binding，外部 TCP `3306`/`5432`/`6379`/`28080`/`28081` 不可达，项目容器健康：`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
 - [x] Console 供应链回归：`nanoid` `3.3.18`，npm high/critical 为 0，Vite build 和 4 项 Vitest 通过；最终聚合证据写入 `/srv/xs-nexus-qa/artifacts/production-continuation-20260808`。
+
+## 16. 最终 M5.2 与生产部署矩阵（2026-08-08）
+
+- [x] 精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3`：`./scripts/validate-m52.sh` 返回 `validation_status=0`，证据 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z`。
+- [x] 候选路径：真实双 namespace 连续三轮通过；允许两个安全等价的路径证明原因 `authenticated_path_probe` 与 `authenticated_peer_traffic`，但仍强制抓取加密 PathChallenge、至少一侧完成匹配 PathResponse、双端新地址激活和双向 ICMP。
+- [x] NAT：full-cone、restricted、port-restricted、public rebind、symmetric-no-direct、blocked-recovery 全部通过；nft 计数读取完整消费输出，消除 `pipefail` 下生产者 SIGPIPE 假失败。
+- [x] 双架构发布：x86_64 与 AArch64 release 包、ELF 架构、清单、64 字节 Ed25519 签名通过；QA 镜像补齐目标 libc 头文件后 `ring` AArch64 C 代码实际交叉编译。
+- [x] Docker/1Panel：部署测试、真实迁移、迁移前 age 备份、三服务健康、精确 OCI revision、活动部署记录和备份公开校验通过；部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
+- [x] 宿主恢复：`1panel-network` 成员名、Docker 网络集合、默认路由、按容器服务名规范化的 nftables 语义和失败服务前后相同，无 namespace/TUN；PostgreSQL 无 host binding。
+- [x] 公网：`vpn.qinwen.co` 健康、Linux/Windows 引导、10 个发布文件逐字节一致、未知文件 404；外部 TCP `3306`/`5432`/`6379`/`28080`/`28081` 关闭，控制探针 `122` 打开。
+- [ ] 外部门禁：`vpn.xiashikeji.cn` 功能路径 525、Windows 在线客户端、真实 NAS、正式密钥/异地恢复、生产防火墙、凭据轮换和第三方审计未完成。

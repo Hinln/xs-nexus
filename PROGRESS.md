@@ -366,4 +366,14 @@ make clean
 - 生产镜像此前使用旧提交 tag，但 OCI revision 和活动部署记录指向新提交。新增 RC 预检，强制 Controller、Migration、Relay、Console、db-tools 五个镜像 tag 精确等于 40 位 `XS_RELEASE_REVISION`；正向、错误 tag 负向与宿主不变量测试通过，证据 `/srv/xs-nexus-qa/artifacts/deploy-tag-guard-20260807T062812Z`。
 - 构建时 npm registry 新报告 `nanoid <3.3.17` 高危 DoS；锁文件已更新到 `3.3.18`，`npm audit --audit-level=high` 为 0，前端构建、4 项单测、秘密扫描通过，没有添加 ignore 或豁免。
 - 当前生产候选 PostgreSQL 无 host binding；外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，项目四容器健康。`KI-006`/`BLK-005` 和 Acceptance 数据库暴露项已解除，证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。
-- 本次继续开发的固定证据入口为 `/srv/xs-nexus-qa/artifacts/production-continuation-20260808`。下一步是使用包含本记录的干净提交重建并滚动部署精确 revision 镜像，执行 npm audit、健康、Windows/Linux 下载、回滚镜像和宿主基线复核；随后继续所有不依赖 DNS、Windows VM、NAS、正式密钥或第三方审计的工作。
+- 本次继续开发的固定证据入口为 `/srv/xs-nexus-qa/artifacts/production-continuation-20260808`。历史计划中的精确 revision 重建、滚动部署、下载复核和宿主基线复核已在下述最终闭环完成。
+
+## 2026-08-08 最终非阻塞闭环与生产候选部署
+
+- 生产主机不安装 Rust/Node 编译器；仓库外 QA 镜像 `xs-nexus/qa-rust:1.93.0` 提供 rustfmt、Clippy、rust-src、ShellCheck、AArch64 GCC 和目标 libc 头文件，包装器只挂载 QA 工作树、缓存和 `/tmp`，运行网络测试时仍由宿主 namespace 执行已编译二进制。该环境选择不进入产品运行时。
+- 修复并实际回归：握手 fallback 建立会话前错误启动 PathProbe、SIGTERM 时 IPC 正常退出与命令通道关闭的竞争、匹配 PathResponse 的路径原因保留、候选路径双侧并发证明语义、NAT 计数管道 SIGPIPE、one-click 清理函数 ShellCheck 可达性、部署测试无效随机 Ed25519 公钥、TUN 测试构造参数和容器化 Cargo/namespace 边界。
+- 精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的完整 `./scripts/validate-m52.sh` 于 2026-08-08 10:29:39 UTC 通过；证据 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z`。覆盖格式化、严格 Clippy、全 workspace/前端测试、真实 PostgreSQL、TUN/systemd、候选/NAT/Relay/ACL/子网 namespace、安装器、Docker 生命周期、双架构签名包、秘密扫描、ShellCheck、npm audit 和宿主不变量。
+- 同一 revision 已构建 Controller、Relay、Console、db-tools 精确 40 位 SHA 镜像并滚动部署；迁移前 age 加密备份 `pre-migration-rc-20260808T104233-1345622` 已验证。三个常驻服务均为 `running healthy`，OCI revision 与活动部署记录一致。
+- 发布后 `1panel-network` 仍仅含 `xs-nexus-rc-controller-1`、`xs-nexus-rc-relay-1`、`xs-nexus-rc-console-1`、`xs-nexus-rc-postgres`；网络集合、默认路由、按容器服务名规范化的 nftables 语义和失败服务基线不变，无 namespace/TUN 残留。证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
+- 外部 Windows 工作站探测确认 SSH `122/tcp` 可达而 `3306`、`5432`、`6379`、`28080`、`28081` 不可达；证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。`vpn.qinwen.co` 健康、Linux/Windows 引导和全部 10 个公开发布文件逐字节复核通过，未知路由/文件返回 404。
+- `vpn.xiashikeji.cn` 已能完成边缘 TLS，但 `/health/ready` 与 `/install` 仍返回 CDN 525，根路径 404 不构成功能恢复。Windows 在线 Enrollment/SCM/网络/卸载重装、真实 NAS、正式发布与备份密钥仪式、真实异地恢复、生产防火墙、凭据轮换和第三方协议/密码学审计仍是人工门禁；总状态保持 `BLOCKED_EXTERNAL`，不是 Release Candidate，也不适合公网生产。

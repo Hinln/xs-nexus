@@ -1,8 +1,8 @@
 # XS Nexus 全新 Codex 环境启动提示词
 
-你正在接手一个没有任何历史对话记忆的 XS Nexus 开发任务。必须以仓库文件和 Git 历史为唯一事实来源，不得根据本提示词之外的猜测补写进度、测试结果或外部环境状态。
+你正在接手一个没有历史对话记忆的 XS Nexus 开发任务。必须以最新私有 GitHub 仓库、仓库内正式文档、Git 历史和可读取的原始证据为事实来源；不得根据本提示词之外的猜测补写进度、测试结果或外部环境状态。
 
-## 一、取得仓库并确认检查点
+## 一、取得仓库
 
 私有仓库：`https://github.com/Hinln/xs-nexus`
 
@@ -12,22 +12,15 @@ cd xs-nexus
 git checkout main
 git pull --ff-only
 git status --short --branch
+git log -5 --oneline
 git rev-parse HEAD
 ```
 
-首次接手时，预期基线检查点为：
-
-```text
-cca33fa8c4ea0e2cf99955821f82c0692b7e84d5
-```
-
-如果 GitHub `main` 已经前进，应先阅读新增提交和文档，以最新 `origin/main` 为准，不得强制回退到上述旧检查点。工作树必须先保持干净；若发现未知改动，不得覆盖、删除或混入新提交。
+始终以最新 `origin/main` 为准，不要回退到本文件记录的旧提交。工作树必须先保持干净；发现未知改动时不得覆盖、删除或混入新提交。
 
 ## 二、正式执行指令
 
-首先完整读取 `BOOTSTRAP_PROMPT.md`，并将其全部内容作为本次任务的正式执行指令。
-
-同时完整读取并遵守：
+首先完整读取 `BOOTSTRAP_PROMPT.md`，并将其全部内容作为正式执行指令。同时完整读取并遵守：
 
 - `AGENTS.md`
 - `XS_Nexus_Codex_Development_Brief.md`
@@ -45,66 +38,49 @@ cca33fa8c4ea0e2cf99955821f82c0692b7e84d5
 - `DECISIONS.md`
 - `KNOWN_ISSUES.md`
 - `BLOCKERS.md`
+- `FINAL_REPORT.md`
 
-这些文件中的更具体规则优先于本交接摘要。不得只阅读标题、节选或旧对话摘要。
+若文档、代码和本提示词冲突，以安全边界、禁止事项、验收规则和最新证据优先；必须调查并修正文档矛盾，不能选择更宽松的说法。
 
-## 三、当前正式开发状态
+## 三、当前可验证状态
 
-- 当前分支和最新检查点必须以 `git status --short --branch`、`git log -5 --oneline` 和远端状态为准，不再在本文件固定易过期的提交号。
-- 当前里程碑：M6.1 `IN_PROGRESS`；M6.2：`BLOCKED_EXTERNAL`。
-- Linux 主路径已有仓库内门禁及原开发服务器 QA 证据；服务器证据目录不在 Git 仓库中，没有实际读取时不得声称复核了内容。
-- Windows `xsnet` 最新实机证据记录在 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，原始证据保存在仓库外，不得提交测试私钥、证书私钥、构建产物或 VM 工具链。
+- 当前总状态：`BLOCKED_EXTERNAL`。
+- 所有不受外部门禁影响的实现、回归、M5.2 全量验证和生产候选滚动部署已经完成。
+- 不得标记 Release Candidate，不得描述为公网生产就绪。
+- 已完成全量验证并部署的代码 revision：`ff9551d322067c934d2ac7d55a62af8896660bb3`。
+- GitHub `main` 可能包含该 revision 之后的纯文档交接提交；这不代表容器内运行 revision 已变化。
 
-M6.1 已形成检查点的工作包括：
+最终 M5.2 证据：
 
-- 跨平台 xsnet ABI、状态机、数据面和生命周期模型；
-- Windows 11 24H2 x64 UMDF 2.33 / NetAdapterCx 2.5 驱动源码；
-- 严格测试安装器、测试包构建脚本和六阶段 VM 采证流程；
-- exact ABI v1、DriverVer、driver-store 和安装状态一致性门禁；
-- Rust `XsnetTransport` 与无后台重试的 `XsnetDeviceSession`；
-- 固定名称、首实例、拒绝远程、受限 DACL 的 Windows 本地命名管道；
-- exact protected DACL、reparse 拒绝和 write-through 替换的 Windows 私有存储；
-- 固定 `XsNexusAgent`、四阶段状态机、一次性 STOP/SHUTDOWN 桥接的 Windows Service/SCM 边界；
-- 对应源码门禁、MSVC target check、交叉 Clippy、Linux 回归和文档记录。
+```text
+/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z
+```
 
-M6.1 仍未完成，原因包括：
+生产候选部署证据：
 
-- `xsnet` 测试签名驱动已在 Windows 11 24H2 VM 完成 WDK Release 构建、clean install、SYSTEM Tx/Rx、PnP restart、standard/UMDF/Application Verifier 和 clean uninstall；专用 harness 证明设备枚举、独占 handle、exact ABI v1、LUID、数据面和重启后的重新打开。
-- 完整 Windows Agent 仍未在 Windows SDK/WDK 环境完成整包链接和运行；Rust Named Pipe、私有存储、SCM 及 route manager 也未获得实机证据。
-- 驱动取消和移除路径已经过 Verifier 门禁，但通用 Win32 失败到权威 no-commit 的映射、持续 Agent 收发和 Agent crash 生命周期仍未闭环。
-- Windows IP Helper/DAD/路由事务、manifest 恢复、睡眠恢复、正式安装升级、Windows 10 路径和生产签名尚未完成。
+```text
+/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z
+```
 
-## 四、恢复工作的准确断点
+数据库外部暴露验证：
 
-下一项正式工作是：**在已验证的 Windows 11 VM 路线上完成完整 Agent 的 MSVC 链接与受控实机联调**。
+```text
+/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z
+```
 
-Windows 路由管理的隔离 Rust 事务核心、IP Helper 平台层、DAD/路由补偿、受保护 manifest 和恢复编排已经形成源码与交叉编译门禁；它们仍不得在实机证据通过前接入生产 runtime，也不得把专用驱动 harness 的结果外推为完整 Agent 结果。
+没有实际登录服务器并读取这些目录时，不得声称已经复核证据内容。
 
-开始实现前必须重新核对：
+## 四、服务器恢复入口
 
-1. `docs/WINDOWS_XSNET_VM_EVIDENCE.md` 的已验证范围和禁止外推边界；
-2. 完整 Agent 的 Windows SDK/MSVC 链接、unsafe 计数和服务入口；
-3. 固定 Named Pipe 的真实 DACL、远程拒绝、容量和 shutdown 行为；
-4. 私有存储的 NTFS protected DACL、reparse 拒绝、原子替换和崩溃恢复；
-5. SCM 的 LocalSystem 身份、STOP/SHUTDOWN、失败退出和重复启动边界；
-6. 同一驱动 handle 的 LUID、空 TX/满 RX 错误语义和不确定完成后的重连；
-7. IP Helper 地址、DAD、路由补偿、manifest 恢复、PnP 和睡眠生命周期；
-8. 生产安装升级、正式驱动签名和 Windows 10 独立实现/范围决定；
-9. 每个实机阶段均从干净快照开始、导出证据后卸载并回滚，未经验证不得接入生产 runtime。
-
-普通技术选择自行决定，并记录到 `DECISIONS.md`。测试失败时自行定位并修复，不得删除、跳过、忽略或弱化失败测试。
-
-## 五、原开发服务器恢复规则
-
-原远程工作目录：
+生产服务器工作目录：
 
 ```text
 /srv/xs-nexus
 ```
 
-服务器登录凭据、数据库密码、Redis 密码和私钥必须由用户在新会话中临时提供，不得从仓库猜测，也不得写入 Git、日志、文档、命令历史或测试产物。
+服务器登录凭据、私钥、数据库密码和其他秘密由项目所有者在新会话中单独提供。不得将它们写入 Git、Markdown、日志、命令历史、测试产物或构建缓存。
 
-连接服务器后先执行：
+登录后先执行：
 
 ```bash
 cd /srv/xs-nexus
@@ -112,32 +88,55 @@ pwd
 git status --short --branch
 git log -5 --oneline
 git rev-parse HEAD
+docker version
+docker compose version
+docker network inspect 1panel-network
 ```
 
-如果服务器 HEAD 落后于 GitHub，必须先判断是否有未提交改动和服务器专用文件，再使用安全的 fast-forward 流程同步；不得直接 `reset --hard` 覆盖未知状态。
+生产常驻 Controller、Relay、Console 和 PostgreSQL 已部署；当前运行 OCI revision 应为上面的已验证代码 revision。仅文档提交前进时不得因此无意义地重建服务。
 
-## 六、宿主与 1Panel 保护边界
+## 五、Windows 技术边界
+
+项目所有者已批准首版 Windows 使用发行方签名的官方 Wintun `0.14.1` x64 DLL，但它只能作为 `xs-windows-wintun` 的 L3 虚拟网卡适配器：
+
+- 必须固定官方归档哈希、DLL 哈希、Authenticode 签名主体和许可证。
+- Wintun 不得实现或替代 Enrollment、节点身份、XSP/1、密钥协商、加密、重放保护、ACL、IPAM、路由授权、NAT 穿透、候选路径或 Relay。
+- 自研 `drivers/windows-xsnet` 继续作为独立的测试签名实验路径，不得依赖 Wintun，也不得宣称获得正式签名或生产分发资格。
+- Windows 在线结果必须来自受控 Windows 实机或 VM；交叉编译、静态检查、模型测试和 Linux 模拟不能冒充实机证据。
+
+## 六、1Panel 与宿主保护
 
 - `1panel-network` 只能作为 external network 引用。
-- 不得删除、重建、重命名、断开或修改 `1panel-network`。
-- 不得删除、重建或修改任何现有 1Panel 容器、数据库、Redis、卷、路由或生产资源。
-- 网络实验只能在项目创建并可完整回收的 network namespace 中执行。
-- 每次涉及网络、容器或系统服务的验证前后，都要保存并比较 Docker、`1panel-network`、默认路由、nftables、namespace、TUN 和失败服务状态。
-- 不得修改生产防火墙；正式 DNS 和生产端口仍属于人工门禁。
+- 禁止删除、重建、重命名、断开或修改 `1panel-network`。
+- 禁止修改或删除任何无关 1Panel 容器、数据库、Redis、卷、路由、网站或生产资源。
+- 网络实验只能在项目创建且可完整回收的 network namespace 中执行。
+- 禁止修改生产防火墙、默认路由或 SSH 管理入口。
+- 每次宿主验证前后都要保存并比较 Docker 网络、`1panel-network`、默认路由、nftables、namespace、TUN 和失败服务状态。
 
-## 七、安全与提交规则
+## 七、当前外部门禁
 
-- 不提交真实 `.env`、密码、token、私钥、证书私钥、数据库连接串、测试产物、构建缓存或 `artifacts/qa`。
-- 提交前运行仓库秘密扫描、`git diff --check` 和相关源码门禁。
-- 所有新增 unsafe 必须隔离、最小化、计数并由源码验证器固定；不得降低 workspace 的 unsafe 规则。
-- 不使用 Wintun、TAP 或第三方组网实现替代自研协议和 `xsnet`。
-- 不把交叉编译、源码扫描、模型测试或 mock 测试描述为 Windows 实机结果。
-- NAS 业务验收、完整 Windows Agent 实机、日常 Windows 电脑、正式 DNS、正式驱动签名和生产防火墙属于人工门禁；`xsnet` 测试签名驱动的 Windows 11 VM 环境门禁已解除，但不解除这些独立门禁。到达门禁时更新 `BLOCKERS.md`，继续完成所有不受阻塞影响的工作。
-- 每个独立子阶段都要更新 `PROGRESS.md`、`DECISIONS.md`、`QA_MATRIX.md`、`SECURITY_REVIEW.md`、`KNOWN_ISSUES.md`、`BUG_LOOP.md` 及受影响的验收文档。
-- 运行实际验证后创建 Git 检查点，并保证工作树干净。
+只有获得相应真实环境或人工授权后才能继续以下项目：
 
-## 八、开始执行
+1. 受控 Windows VM 上的在线 Enrollment、SCM 服务、CLI、双向网络、卸载和重装闭环；
+2. Windows 10 兼容性验证；
+3. 真实 NAS 安装和业务验收；
+4. `vpn.xiashikeji.cn` CDN/源站 TLS 修复及生产防火墙批准；
+5. 正式离线发布签名密钥仪式、正式备份 identity 和真实异地主机恢复；
+6. 所有临时凭据轮换；
+7. 独立协议与密码学安全审计；
+8. 真实跨地域和公网容量测试。
 
-完成上述核对后，从完整 Windows Agent 的受控链接和实机联调继续实际开发。先保留已通过的驱动证据和源码门禁，再按 SCM、Named Pipe/存储、Win32 session、route/DAD/sleep、安装升级的顺序逐项闭环；未验证前不得接入生产 runtime。
+当前 `vpn.qinwen.co` 的健康入口、Linux/Windows 引导、10 个发布文件逐字节比较和未知文件 404 已有服务器证据；任务书计划域名 `vpn.xiashikeji.cn` 的功能路径仍返回 CDN 525。不得把边缘 TLS 成功或根路径 404 描述为该域名已恢复。
 
-不要只回复计划，不要等待逐阶段批准。持续完成所有不受人工门禁阻塞的工作；只有在用户明确要求暂停时才停止。
+## 八、恢复后的执行规则
+
+1. 对比 GitHub `main`、生产 `/srv/xs-nexus` 和运行容器 OCI revision。
+2. 复核 `PROGRESS.md`、`BLOCKERS.md`、`FINAL_REPORT.md` 和上述证据目录。
+3. 若没有新的外部门禁条件，只执行一致性审计和安全复核，不伪造实机或人工验收结果。
+4. 若门禁解除，从 `BLOCKERS.md` 中最早可执行项开始，先建立失败测试或验收步骤，再实现、验证、记录证据和提交。
+5. 测试失败时自行定位修复；不得删除、跳过、忽略或弱化失败测试。
+6. 普通技术选择自行决定并记录到 `DECISIONS.md`。
+7. 每个检查点更新全部受影响的进度、验收、QA、安全、问题和发布文档。
+8. 提交前运行秘密扫描、`git diff --check` 和适用门禁，保证工作树干净，再安全 fast-forward 同步私有 GitHub。
+
+不要只回复计划，不要等待逐阶段批准。持续完成所有不受人工门禁阻塞的工作；只有真实外部条件不足时才保持 `BLOCKED_EXTERNAL`，并如实记录解除条件和证据边界。

@@ -66,7 +66,7 @@
 核心运行路径不得依赖、调用、封装或改名使用：
 
 - Tailscale / Headscale；
-- WireGuard 可执行程序、内核模块或 Wintun；
+- WireGuard 可执行程序或内核模块；
 - ZeroTier；
 - NetBird；
 - Nebula；
@@ -80,6 +80,8 @@
 不得复制上述项目源代码、私有协议、包格式、密钥格式、目录结构或品牌元素。
 
 允许使用操作系统原生 API、公开标准、通用框架和标准密码学库。
+
+项目所有者已批准一个严格受限的 Windows 发行例外：首版可固定使用发行方签名的官方 Wintun `0.14.1` x64 DLL，但它只能位于 `xs-windows-wintun` L3 虚拟网卡适配器边界。Wintun 不得实现或替代 XS Nexus 的注册、身份、XSP/1、密钥协商、加密、重放保护、ACL、路由授权、NAT 穿透、候选路径或 Relay；自研 `drivers/windows-xsnet` 源码仍不得依赖 Wintun，也不得宣称已获得正式签名。
 
 ---
 
