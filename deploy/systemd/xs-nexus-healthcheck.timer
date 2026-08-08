@@ -1,0 +1,12 @@
+[Unit]
+Description=Run XS Nexus production health guard every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=yes
+Unit=xs-nexus-healthcheck.service
+
+[Install]
+WantedBy=timers.target

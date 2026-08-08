@@ -51,6 +51,8 @@ jobs:
       - run: make test-source-sbom
       - run: make security-check
       - run: make dependency-check
+      - run: make test-production-health
+      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh
 
   protocol-fuzz:
     runs-on: ubuntu-24.04
@@ -62,3 +64,26 @@ jobs:
           toolchain: nightly-2026-08-01
       - run: cargo install --locked cargo-fuzz --version 0.13.2
       - run: FUZZ_SECONDS=30 make test-protocol-fuzz EVIDENCE_DIR=artifacts/fuzz-ci
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: protocol-fuzz-evidence
+          path: artifacts/fuzz-ci
+          if-no-files-found: warn
+
+  image-reproducibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
+        with:
+          version: v0.30.0
+          driver-opts: image=moby/buildkit:v0.30.0
+      - run: make test-image-reproducibility EVIDENCE_DIR=artifacts/image-reproducibility
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: image-reproducibility-evidence
+          path: artifacts/image-reproducibility
+          if-no-files-found: warn

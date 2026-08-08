@@ -319,7 +319,10 @@ verify_images() {
 }
 
 build_images() {
+    local source_date_epoch
     preflight
+    source_date_epoch=$(git -C "$ROOT_DIR" show -s --format=%ct HEAD)
+    export SOURCE_DATE_EPOCH="$source_date_epoch"
     "${COMPOSE[@]}" --profile migration --profile ops build controller relay console db-tools
     verify_images
 }

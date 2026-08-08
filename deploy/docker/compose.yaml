@@ -23,6 +23,7 @@ services:
       dockerfile: deploy/docker/controller.Dockerfile
       args:
         VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:-0}
     command: ["migrate"]
     user: "65532:65532"
     restart: "no"
@@ -50,6 +51,7 @@ services:
       dockerfile: deploy/docker/controller.Dockerfile
       args:
         VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:-0}
     command: ["serve"]
     user: "65532:65532"
     restart: unless-stopped
@@ -122,6 +124,7 @@ services:
       dockerfile: deploy/docker/relay.Dockerfile
       args:
         VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:-0}
     user: "65532:65532"
     restart: unless-stopped
     stop_grace_period: 20s
@@ -176,6 +179,7 @@ services:
       dockerfile: deploy/docker/console.Dockerfile
       args:
         VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:-0}
     user: "101:101"
     restart: unless-stopped
     stop_grace_period: 10s
@@ -213,6 +217,7 @@ services:
       dockerfile: deploy/docker/db-tools.Dockerfile
       args:
         VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:-0}
     user: "65532:65532"
     restart: "no"
     environment:

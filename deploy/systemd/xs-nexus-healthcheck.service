@@ -1,0 +1,21 @@
+[Unit]
+Description=XS Nexus production health guard
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/xs-nexus/monitor.env
+ExecStart=/usr/local/libexec/xs-nexus/check-production-health
+User=root
+Group=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictSUIDSGID=yes
+UMask=0077

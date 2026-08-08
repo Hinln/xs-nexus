@@ -61,19 +61,19 @@ printf 'Image supply-chain validation started at %s\n' "$(date -u --iso-8601=sec
 printf 'git_head=%s\n' "$revision"
 
 make test-image-sbom
-docker build --pull=false --build-arg "VCS_REF=$revision" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
     --tag "xs-nexus/controller:sbom-$short_revision" \
     --file deploy/docker/controller.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
     --tag "xs-nexus/relay:sbom-$short_revision" \
     --file deploy/docker/relay.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
     --tag "xs-nexus/console:sbom-$short_revision" \
     --file deploy/docker/console.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
     --tag "xs-nexus/db-tools:sbom-$short_revision" \
     --file deploy/docker/db-tools.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
     --tag "xs-nexus/edge:sbom-$short_revision" \
     --file deploy/docker/edge.Dockerfile .
 

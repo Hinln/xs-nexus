@@ -130,6 +130,8 @@ require_application() {
 
 case $COMMAND in
     build)
+        SOURCE_DATE_EPOCH=$(git -C "$ROOT_DIR" show -s --format=%ct HEAD)
+        export SOURCE_DATE_EPOCH
         "${COMPOSE[@]}" build edge
         preflight
         ;;
