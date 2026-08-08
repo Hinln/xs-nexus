@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly TEMPORARY="$(mktemp -d)"
+REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly REPOSITORY_ROOT
+TEMPORARY="$(mktemp -d)"
+readonly TEMPORARY
 trap 'rm -rf -- "${TEMPORARY}"' EXIT
 
 mkdir -p "${TEMPORARY}/bin" "${TEMPORARY}/backups"
