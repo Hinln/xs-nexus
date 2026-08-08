@@ -189,6 +189,9 @@ impl AgentRuntime {
                 }
                 command = self.runtime_commands.recv() => {
                     let Some(command) = command else {
+                        if *self.shutdown.borrow() {
+                            break Ok(());
+                        }
                         report_runtime_error("runtime_command_channel", &AgentError::Runtime);
                         break Err(AgentError::Runtime);
                     };
