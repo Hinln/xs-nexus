@@ -38,7 +38,8 @@ RUN apk add --no-cache ca-certificates tzdata libcap spdx-licenses-text \
     && rm -rf /tmp/xs-spdx \
     && addgroup -g 65532 xs-nexus \
     && adduser -D -H -u 65532 -G xs-nexus xs-nexus \
-    && sed -i 's/^xs-nexus:!:[0-9]*:/xs-nexus:!:0:/' /etc/shadow
+    && sed -i 's/^xs-nexus:!:[0-9]*:/xs-nexus:!:0:/' /etc/shadow \
+    && rm -f /var/log/apk.log
 
 FROM scratch
 ARG VCS_REF=unknown
