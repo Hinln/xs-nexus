@@ -10,6 +10,7 @@
     "lint": "npm run lint --workspace @xs-nexus/console",
     "test": "npm run test --workspace @xs-nexus/console",
     "test:e2e": "npm run test:e2e --workspace @xs-nexus/console",
+    "test:e2e:real": "npm run test:e2e:real --workspace @xs-nexus/console",
     "test:visual": "npm run test:visual --workspace @xs-nexus/console"
   }
 }

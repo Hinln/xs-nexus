@@ -8,6 +8,7 @@ const ALLOWED_TEST_SCHEMAS: &[&str] = &[
     "xs_nexus_m23_relay_test",
     "xs_nexus_m52_deploy_dev",
     "xs_nexus_scale",
+    "xs_nexus_console_e2e_test",
 ];
 
 #[tokio::main]

@@ -10,7 +10,7 @@ import {
   updateReleasesFixture,
 } from "./fixtures";
 
-test("真实登录后进入首页", async ({ page }) => {
+test("模拟登录流程后进入首页", async ({ page }) => {
   let authenticated = false;
   await page.route("**/v1/auth/session", (route) =>
     fulfillJson(route, authenticated ? 200 : 401, authenticated ? sessionFixture() : { error: { code: "unauthorized" } }),
