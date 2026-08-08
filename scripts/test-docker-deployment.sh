@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 STACK="$ROOT_DIR/deploy/docker/xs-nexus-stack.sh"
 COMPOSE_FILE="$ROOT_DIR/deploy/docker/compose.yaml"
-EXTERNAL_ENVIRONMENT=/etc/xs-nexus/controller.env
+EXTERNAL_ENVIRONMENT=${XS_TEST_EXTERNAL_ENVIRONMENT:-/etc/xs-nexus/controller.env}
 TEMPORARY=$(mktemp -d)
 ENVIRONMENT_FILE="$TEMPORARY/dev.compose.env"
 BAD_DATABASE_ENVIRONMENT="$TEMPORARY/bad-database.compose.env"
@@ -186,7 +186,10 @@ set -a
 source "$EXTERNAL_ENVIRONMENT"
 set +a
 DATABASE_URL_VALUE=${DATABASE_URL:?DATABASE_URL is required}
-HOST_DATABASE_URL_VALUE=$(python3 -c '
+if [[ -n ${HOST_DATABASE_URL:-} ]]; then
+    HOST_DATABASE_URL_VALUE=$HOST_DATABASE_URL
+else
+    HOST_DATABASE_URL_VALUE=$(python3 -c '
 import sys
 from urllib.parse import urlsplit, urlunsplit
 
@@ -195,7 +198,8 @@ userinfo = parsed.netloc.rsplit("@", 1)[0] + "@" if "@" in parsed.netloc else ""
 port = f":{parsed.port}" if parsed.port is not None else ""
 print(urlunsplit((parsed.scheme, f"{userinfo}127.0.0.1{port}", parsed.path, parsed.query, parsed.fragment)))
 ' <<<"$DATABASE_URL_VALUE")
-unset DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
+fi
+unset DATABASE_URL HOST_DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
 
 mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY" "$RELEASE_DIRECTORY" "$WINDOWS_RELEASE_DIRECTORY"
 chown 65532:65532 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY"
