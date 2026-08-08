@@ -189,6 +189,7 @@ impl AgentRuntime {
                 }
                 command = self.runtime_commands.recv() => {
                     let Some(command) = command else {
+                        report_runtime_error("runtime_command_channel", &AgentError::Runtime);
                         break Err(AgentError::Runtime);
                     };
                     self.handle_runtime_command(command).await;
@@ -198,14 +199,16 @@ impl AgentRuntime {
                     if *self.shutdown.borrow() && result.is_ok() {
                         break Ok(());
                     }
-                    break Err(AgentError::Runtime);
+                    break Err(runtime_task_error("control_task", AgentError::Runtime));
                 }
                 result = &mut self.ipc_task, if !ipc_completed => {
                     ipc_completed = true;
                     match result {
                         Ok(Ok(())) if *self.shutdown.borrow() => break Ok(()),
-                        Ok(Err(error)) => break Err(error),
-                        Err(_) | Ok(Ok(())) => break Err(AgentError::Runtime),
+                        Ok(Err(error)) => break Err(runtime_task_error("ipc_task", error)),
+                        Err(_) | Ok(Ok(())) => {
+                            break Err(runtime_task_error("ipc_task", AgentError::Runtime));
+                        }
                     }
                 }
             }
@@ -307,4 +310,9 @@ async fn stop_task<T>(mut task: JoinHandle<T>) {
 
 fn report_runtime_error(subsystem: &str, error: &AgentError) {
     eprintln!("xs-agent subsystem={subsystem} error={}", error.code());
+}
+
+fn runtime_task_error(subsystem: &str, error: AgentError) -> AgentError {
+    report_runtime_error(subsystem, &error);
+    error
 }
