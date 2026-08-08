@@ -23,9 +23,7 @@ RUN git init \
         -ldflags="-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=v2.11.4-xs1" \
         -o /usr/local/bin/caddy ./cmd/caddy
 
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
-
-ARG VCS_REF=unknown
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS runtime-rootfs
 
 COPY --from=caddy-builder /usr/local/bin/caddy /usr/bin/caddy
 COPY --from=caddy-builder /src/caddy/LICENSE /usr/share/licenses/caddy/LICENSE
@@ -39,7 +37,13 @@ RUN apk add --no-cache ca-certificates tzdata libcap spdx-licenses-text \
     && cp -a /tmp/xs-spdx/. /usr/share/licenses/spdx/ \
     && rm -rf /tmp/xs-spdx \
     && addgroup -g 65532 xs-nexus \
-    && adduser -D -H -u 65532 -G xs-nexus xs-nexus
+    && adduser -D -H -u 65532 -G xs-nexus xs-nexus \
+    && sed -i 's/^xs-nexus:!:[0-9]*:/xs-nexus:!:0:/' /etc/shadow
+
+FROM scratch
+ARG VCS_REF=unknown
+COPY --from=runtime-rootfs / /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 USER 65532:65532
 
