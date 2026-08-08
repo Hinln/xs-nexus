@@ -139,9 +139,9 @@ nat_packet_count() {
         awk '
             /iifname "lan0".*oifname "wan0".*counter packets/ {
                 for (field = 1; field <= NF; field++) {
-                    if ($field == "packets") {
+                    if (!found && $field == "packets") {
                         print $(field + 1)
-                        exit
+                        found = 1
                     }
                 }
             }
