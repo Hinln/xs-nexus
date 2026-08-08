@@ -181,6 +181,20 @@ wait_for_interface() {
     exit 1
 }
 
+wait_discovery_packet() {
+    local namespace=$1
+    for _ in $(seq 1 100); do
+        local ruleset
+        ruleset=$(ip netns exec "$namespace" nft list table inet xsm21observe)
+        if [[ $ruleset =~ packets\ [1-9][0-9]*\ bytes\ [1-9][0-9]* ]]; then
+            return
+        fi
+        sleep 0.1
+    done
+    printf 'authenticated discovery refresh was not observed\n' >&2
+    exit 1
+}
+
 wait_controller_connected() {
     local socket=$1
     for _ in $(seq 1 120); do
@@ -277,21 +291,21 @@ PY
 wait_peer_path() {
     local socket=$1
     local address=$2
-    local reason=$3
+    local reasons=$3
     for _ in $(seq 1 160); do
         local response
         response=$("$CLI" peers --socket "$socket" --json 2>/dev/null || true)
-        if [[ -n $response ]] && python3 - "$address" "$reason" "$response" <<'PY'
+        if [[ -n $response ]] && python3 - "$address" "$reasons" "$response" <<'PY'
 import json
 import sys
 
 address = sys.argv[1]
-reason = sys.argv[2]
+reasons = set(sys.argv[2].split(","))
 response = json.loads(sys.argv[3])
 for peer in response["peers"]:
     endpoint = peer.get("active_endpoint")
     if endpoint and endpoint.rsplit(":", 1)[0] == address:
-        if peer.get("path_reason") == reason and peer.get("session_established"):
+        if peer.get("path_reason") in reasons and peer.get("session_established"):
             raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -300,9 +314,27 @@ PY
         fi
         sleep 0.1
     done
-    printf 'peer path did not become active: %s reason=%s\n' "$address" "$reason" >&2
+    printf 'peer path did not become active: %s reasons=%s\n' "$address" "$reasons" >&2
     "$CLI" peers --socket "$socket" --json >&2 || true
     exit 1
+}
+
+assert_path_probe_completed() {
+    local response_a
+    local response_b
+    response_a=$("$CLI" peers --socket "$1" --json)
+    response_b=$("$CLI" peers --socket "$2" --json)
+    python3 - "$response_a" "$response_b" <<'PY'
+import json
+import sys
+
+reasons = {
+    peer.get("path_reason")
+    for raw_response in sys.argv[1:]
+    for peer in json.loads(raw_response)["peers"]
+}
+raise SystemExit("authenticated_path_probe" not in reasons)
+PY
 }
 
 verify_complete_cli() {
@@ -536,9 +568,7 @@ ip netns exec "$NETNS_A" nft add chain inet xsm21observe output \
     '{ type filter hook output priority 0; policy accept; }'
 ip netns exec "$NETNS_A" nft add rule inet xsm21observe output \
     ip daddr "$BRIDGE_IP" udp sport "$port_a" udp dport "$CONTROLLER_PORT" counter
-sleep 3
-ip netns exec "$NETNS_A" nft list table inet xsm21observe |
-    grep -Eq 'packets [1-9][0-9]* bytes [1-9][0-9]*'
+wait_discovery_packet "$NETNS_A"
 
 virtual_ip_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-a/state/node-state.json")
 virtual_ip_b=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-b/state/node-state.json")
@@ -568,8 +598,12 @@ wait "$CAPTURE_PID"
 CAPTURE_PID=
 cat "$TEMPORARY/path-capture.log"
 
-wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$PATH_IP_B" authenticated_path_probe
-wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$PATH_IP_A" authenticated_path_probe
+accepted_promotion_reasons=authenticated_path_probe,authenticated_peer_traffic
+wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$PATH_IP_B" "$accepted_promotion_reasons"
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$PATH_IP_A" "$accepted_promotion_reasons"
+assert_path_probe_completed \
+    "$TEMPORARY/node-a/run/agent.sock" \
+    "$TEMPORARY/node-b/run/agent.sock"
 ip netns exec "$NETNS_A" "$PROBE" icmp \
     --destination "$virtual_ip_b" \
     --payload xs-m21-promoted-path \
@@ -581,7 +615,7 @@ ip netns exec "$NETNS_B" "$PROBE" icmp \
     --sequence 3 \
     --timeout 3
 "$CLI" peers --socket "$TEMPORARY/node-a/run/agent.sock" |
-    grep -F 'reason=authenticated_path_probe' >/dev/null
+    grep -E 'reason=(authenticated_path_probe|authenticated_peer_traffic)' >/dev/null
 verify_complete_cli \
     "$TEMPORARY/node-a/run/agent.sock" \
     "$virtual_ip_b" \
