@@ -49,7 +49,7 @@ snapshot_test_projects() {
     for project in xs-nexus-dev xs-nexus-rc; do
         docker ps -a \
             --filter "label=com.docker.compose.project=$project" \
-            --format "$project {{.ID}} {{.Names}} {{.Image}} {{.Status}}"
+            --format "$project {{.ID}} {{.Names}} {{.Image}} {{.State}}"
     done | sort
 }
 
