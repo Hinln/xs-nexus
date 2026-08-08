@@ -8,8 +8,10 @@ if [[ ${1:-} == --inside-namespace ]]; then
         printf 'network namespace isolation failed\n' >&2
         exit 1
     fi
+    [[ ${XS_TUN_LIFECYCLE_TEST_BINARY:-} == "$ROOT_DIR"/target/debug/deps/tun_lifecycle-* ]]
+    [[ -f $XS_TUN_LIFECYCLE_TEST_BINARY && -x $XS_TUN_LIFECYCLE_TEST_BINARY && ! -L $XS_TUN_LIFECYCLE_TEST_BINARY ]]
     cd "$ROOT_DIR"
-    exec cargo test -p xs-agent --features privileged-network-tests --test tun_lifecycle -- --test-threads=1
+    exec "$XS_TUN_LIFECYCLE_TEST_BINARY" --test-threads=1
 fi
 
 if [[ ! -c /dev/net/tun ]]; then
@@ -27,6 +29,11 @@ fi
 
 host_namespace=$(readlink /proc/self/ns/net)
 export XS_HOST_NETWORK_NAMESPACE="$host_namespace"
+cargo test -p xs-agent --features privileged-network-tests --test tun_lifecycle --no-run
+XS_TUN_LIFECYCLE_TEST_BINARY=$(find "$ROOT_DIR/target/debug/deps" -maxdepth 1 -type f \
+    -name 'tun_lifecycle-*' -perm -0100 -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)
+[[ -n $XS_TUN_LIFECYCLE_TEST_BINARY ]]
+export XS_TUN_LIFECYCLE_TEST_BINARY
 unshare --net --mount-proc "$ROOT_DIR/scripts/test-agent-network.sh" --inside-namespace
 
 if [[ -e /sys/class/net/xstest0 ]]; then
