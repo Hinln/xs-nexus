@@ -73,7 +73,7 @@ Windows release `0.1.0` distributes the official Wintun `0.14.1` x64 prebuilt `w
 | 镜像/组件 | 固定系列 | 用途 | 许可说明 |
 |---|---|---|---|
 | Distroless `cc-debian12:nonroot` | 固定 SHA-256 digest | Controller/Relay 非 root 运行时 | Debian/distroless 包逐包许可证闭包；无 shell/package manager |
-| NGINX unprivileged | `1.29-alpine` | Console 非 root 静态服务和反向代理 | NGINX BSD-2-Clause 与 Alpine 包逐包许可证闭包 |
+| NGINX unprivileged | `1.29.8-alpine-slim` | Console 非 root 静态服务和反向代理 | NGINX BSD-2-Clause 与 Alpine 包逐包许可证闭包 |
 | PostgreSQL Alpine | `18-alpine3.22` | `pg_dump`/`pg_restore`/`psql` 与 age 加密备份运维镜像 | PostgreSQL License、Alpine 包及固定 age 源码许可证闭包 |
 | Alpine | `3.22` | 外部网络只读配置探针和错误镜像测试 | Alpine 包各自许可证 |
 
