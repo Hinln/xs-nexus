@@ -41,11 +41,12 @@ async fn tun_lifecycle_is_scoped_and_recovers_after_drop() {
     .expect("safe network plan");
     let temporary = tempfile::tempdir().expect("temporary network state");
     let manifest = temporary.path().join("network-manifest.json");
+    let temporary_manifest = temporary.path().join("network-manifest.tmp");
     let (handle, connection) = netlink();
     let default_routes = default_route_fingerprints(&handle).await;
     assert_virtual_pool_conflict_rejected(&handle, &plan, &manifest).await;
 
-    let mut network = TunNetwork::create(plan.clone(), &manifest)
+    let mut network = TunNetwork::create(plan.clone(), &manifest, &temporary_manifest, None)
         .await
         .expect("create TUN network");
     assert!(manifest.is_file());
@@ -74,6 +75,7 @@ async fn assert_virtual_pool_conflict_rejected(
     plan: &NetworkPlan,
     manifest: &Path,
 ) {
+    let temporary_manifest = manifest.with_extension("tmp");
     handle
         .link()
         .add(LinkDummy::new("xsconflict0").up().build())
@@ -92,7 +94,9 @@ async fn assert_virtual_pool_conflict_rejected(
         .await
         .expect("install conflicting connected route");
     assert!(
-        TunNetwork::create(plan.clone(), manifest).await.is_err(),
+        TunNetwork::create(plan.clone(), manifest, &temporary_manifest, None)
+            .await
+            .is_err(),
         "overlapping system route must reject TUN creation"
     );
     assert!(!manifest.exists());
@@ -222,9 +226,10 @@ async fn assert_stale_gateway_recovery(
     default_routes: &[String],
     subnet: Ipv4Net,
 ) {
+    let temporary_manifest = manifest.with_extension("tmp");
     let lan_index = create_gateway_lan(handle).await;
     let lan_forwarding_before = forwarding_value("xslan0");
-    let mut dropped = TunNetwork::create(plan.clone(), manifest)
+    let mut dropped = TunNetwork::create(plan.clone(), manifest, &temporary_manifest, None)
         .await
         .expect("recreate TUN network");
     let mut stale_state = subnet_route_state(subnet, "gateway-node", true);
