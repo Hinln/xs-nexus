@@ -44,6 +44,15 @@ json.dump(normalize(json.load(sys.stdin)), sys.stdout, sort_keys=True, separator
 '
 }
 
+snapshot_test_projects() {
+    local project
+    for project in xs-nexus-dev xs-nexus-rc; do
+        docker ps -a \
+            --filter "label=com.docker.compose.project=$project" \
+            --format "$project {{.ID}} {{.Names}} {{.Image}} {{.Status}}"
+    done | sort
+}
+
 cd "$ROOT_DIR"
 exec > >(tee "$LOG_FILE") 2>&1
 
@@ -52,6 +61,7 @@ printf 'git_head=%s\n' "$(git rev-parse HEAD)"
 docker_before=$(docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' | sort)
 docker_networks_before=$(docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort)
 network_members_before=$(docker network inspect 1panel-network --format '{{json .Containers}}')
+test_projects_before=$(snapshot_test_projects)
 default_routes_before=$(ip -json route show default)
 snapshot_firewall >"$FIREWALL_BEFORE"
 
@@ -121,9 +131,8 @@ network_definition=$(docker network inspect 1panel-network --format '{{.Name}} {
 printf '%s\n' "$network_definition" | grep -Fx '1panel-network bridge 172.18.0.0/16 '
 docker run --rm --entrypoint pg_dump xs-nexus/db-tools:m52test --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
 
-for project in xs-nexus-dev xs-nexus-rc; do
-    test -z "$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}')"
-done
+test_projects_after=$(snapshot_test_projects)
+[[ "$test_projects_before" == "$test_projects_after" ]]
 if ip netns list | awk '{print $1}' |
     grep -Eq '^(xsm13|xsm2f|xsm21|xsm22|xsm23|xsm31|xsm32|x22)'; then
     ip netns list >&2
