@@ -160,7 +160,7 @@ validate_available_port() {
 }
 
 preflight() {
-    local deployment project schema http_bind udp_bind controller_port console_port discovery_port relay_port
+    local deployment project schema http_bind udp_bind controller_port console_port discovery_port relay_port revision image variable
     local controller_secrets linux_release_directory windows_release_directory relay_secrets backup_directory replica_directory state_directory
     local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
@@ -226,7 +226,13 @@ preflight() {
     else
         [[ $schema == *_rc ]] || fail 'RC schema must end in _rc'
         [[ -z $(git -C "$ROOT_DIR" status --porcelain) ]] || fail 'RC build requires a clean Git worktree'
-        [[ $(environment_value XS_RELEASE_REVISION) == "$(git -C "$ROOT_DIR" rev-parse HEAD)" ]] || fail 'RC revision must equal the clean Git HEAD'
+        revision=$(environment_value XS_RELEASE_REVISION)
+        [[ $revision == "$(git -C "$ROOT_DIR" rev-parse HEAD)" ]] || fail 'RC revision must equal the clean Git HEAD'
+        for variable in XS_CONTROLLER_IMAGE XS_MIGRATION_IMAGE XS_RELAY_IMAGE XS_CONSOLE_IMAGE XS_DB_TOOLS_IMAGE; do
+            image=$(environment_value "$variable")
+            [[ $image != *@* && $image == *":$revision" ]] \
+                || fail "RC image tag must equal the release revision: $variable"
+        done
     fi
 
     controller_secrets=$(environment_value XS_CONTROLLER_SECRETS_DIR)

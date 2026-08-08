@@ -12,6 +12,8 @@ BAD_IMAGE_ENVIRONMENT="$TEMPORARY/bad-image.compose.env"
 BAD_HTTP_BIND_ENVIRONMENT="$TEMPORARY/bad-http-bind.compose.env"
 BAD_UDP_BIND_ENVIRONMENT="$TEMPORARY/bad-udp-bind.compose.env"
 BAD_PORT_ENVIRONMENT="$TEMPORARY/bad-port.compose.env"
+RC_ENVIRONMENT="$TEMPORARY/rc.compose.env"
+BAD_RC_IMAGE_ENVIRONMENT="$TEMPORARY/bad-rc-image.compose.env"
 CONTROLLER_SECRETS="$TEMPORARY/controller"
 BAD_CONTROLLER_SECRETS="$TEMPORARY/bad-controller"
 RELEASE_DIRECTORY="$TEMPORARY/releases/linux/stable"
@@ -267,11 +269,32 @@ find "$BAD_CONTROLLER_SECRETS" -type f -exec chmod 0400 {} +
 write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
 write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
 write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
+cp -- "$ENVIRONMENT_FILE" "$RC_ENVIRONMENT"
+revision=$(git rev-parse HEAD)
+sed -i \
+    -e 's/^XS_DEPLOYMENT=.*/XS_DEPLOYMENT=rc/' \
+    -e 's/^XS_COMPOSE_PROJECT_NAME=.*/XS_COMPOSE_PROJECT_NAME=xs-nexus-rc/' \
+    -e "s/^XS_CONTROLLER_IMAGE=.*/XS_CONTROLLER_IMAGE=xs-nexus\/controller:$revision/" \
+    -e "s/^XS_MIGRATION_IMAGE=.*/XS_MIGRATION_IMAGE=xs-nexus\/controller:$revision/" \
+    -e "s/^XS_RELAY_IMAGE=.*/XS_RELAY_IMAGE=xs-nexus\/relay:$revision/" \
+    -e "s/^XS_CONSOLE_IMAGE=.*/XS_CONSOLE_IMAGE=xs-nexus\/console:$revision/" \
+    -e "s/^XS_DB_TOOLS_IMAGE=.*/XS_DB_TOOLS_IMAGE=xs-nexus\/db-tools:$revision/" \
+    -e 's/^XS_DATABASE_SCHEMA=.*/XS_DATABASE_SCHEMA=xs_nexus_m52_deploy_rc/' \
+    "$RC_ENVIRONMENT"
+cp -- "$RC_ENVIRONMENT" "$BAD_RC_IMAGE_ENVIRONMENT"
+sed -i 's/^XS_CONTROLLER_IMAGE=.*/XS_CONTROLLER_IMAGE=xs-nexus\/controller:stale-revision/' \
+    "$BAD_RC_IMAGE_ENVIRONMENT"
 cp -- "$ENVIRONMENT_FILE" "$BAD_HTTP_BIND_ENVIRONMENT"
 sed -i 's/^XS_BIND_ADDRESS=.*/XS_BIND_ADDRESS=0.0.0.0/' "$BAD_HTTP_BIND_ENVIRONMENT"
 cp -- "$ENVIRONMENT_FILE" "$BAD_UDP_BIND_ENVIRONMENT"
 sed -i 's/^XS_UDP_BIND_ADDRESS=.*/XS_UDP_BIND_ADDRESS=203.0.113.1/' "$BAD_UDP_BIND_ENVIRONMENT"
-chmod 0600 "$BAD_HTTP_BIND_ENVIRONMENT" "$BAD_UDP_BIND_ENVIRONMENT"
+chmod 0600 "$BAD_HTTP_BIND_ENVIRONMENT" "$BAD_UDP_BIND_ENVIRONMENT" \
+    "$RC_ENVIRONMENT" "$BAD_RC_IMAGE_ENVIRONMENT"
+"$STACK" --env-file "$RC_ENVIRONMENT" preflight
+if "$STACK" --env-file "$BAD_RC_IMAGE_ENVIRONMENT" preflight >/dev/null 2>&1; then
+    printf 'RC image tag unrelated to the release revision unexpectedly passed preflight\n' >&2
+    exit 1
+fi
 if "$STACK" --env-file "$BAD_HTTP_BIND_ENVIRONMENT" preflight >/dev/null 2>&1; then
     printf 'public plaintext HTTP bind unexpectedly passed preflight\n' >&2
     exit 1
