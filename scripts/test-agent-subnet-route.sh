@@ -16,8 +16,20 @@ AGENT_A_PID=
 AGENT_B_PID=
 FORWARD_LAN_BEFORE=
 
+report_failure() {
+    local status=$?
+    for log in "$FIXTURE_ROOT"/agent-a.log "$FIXTURE_ROOT"/agent-b.log; do
+        if [[ -f $log ]]; then
+            printf '%s\n' "=== $(basename "$log") ===" >&2
+            tail -n 80 "$log" >&2
+        fi
+    done
+    return "$status"
+}
+
 cleanup() {
     local status=$?
+    trap - ERR
     set +e
     stop_agents
     ip netns del "$NETNS_A" >/dev/null 2>&1
@@ -26,6 +38,7 @@ cleanup() {
     rm -rf "$FIXTURE_ROOT"
     exit "$status"
 }
+trap report_failure ERR
 trap cleanup EXIT INT TERM
 
 stop_agents() {
