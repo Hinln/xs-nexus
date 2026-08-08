@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+readonly ROOT_DIR
 readonly EVIDENCE_INPUT="${1:?usage: test-console-real-e2e.sh EVIDENCE_DIR}"
 readonly DATABASE_URL_VALUE="${XS_TEST_DATABASE_URL:?XS_TEST_DATABASE_URL is required}"
 readonly DATABASE_SCHEMA=xs_nexus_console_e2e_test
@@ -9,8 +10,10 @@ readonly CONTROLLER_URL=http://127.0.0.1:8080
 readonly CONSOLE_USERNAME=admin
 
 mkdir -p "$EVIDENCE_INPUT"
-readonly EVIDENCE_DIR=$(cd "$EVIDENCE_INPUT" && pwd)
-readonly TEMPORARY=$(mktemp -d)
+EVIDENCE_DIR=$(cd "$EVIDENCE_INPUT" && pwd)
+readonly EVIDENCE_DIR
+TEMPORARY=$(mktemp -d)
+readonly TEMPORARY
 readonly CONTROLLER_LOG="$EVIDENCE_DIR/controller.log"
 controller_pid=''
 test_status=1
