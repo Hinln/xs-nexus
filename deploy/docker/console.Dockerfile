@@ -1,5 +1,5 @@
-ARG NODE_IMAGE=node:24-bookworm-slim
-ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.29-alpine
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
+ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
 
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /src
@@ -15,8 +15,7 @@ LABEL org.opencontainers.image.title="XS Nexus Console" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="XS Nexus clean-room repository"
 USER root
-RUN apk upgrade --no-cache \
-    && apk add --no-cache spdx-licenses-text \
+RUN apk add --no-cache spdx-licenses-text \
     && install -d /tmp/xs-spdx /usr/share/licenses/spdx \
     && cp -a /usr/share/spdx/text/. /tmp/xs-spdx/ \
     && apk del --no-cache spdx-licenses-text \

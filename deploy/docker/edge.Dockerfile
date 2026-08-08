@@ -29,8 +29,7 @@ ARG VCS_REF=unknown
 COPY --from=caddy-builder /usr/local/bin/caddy /usr/bin/caddy
 COPY --from=caddy-builder /src/caddy/LICENSE /usr/share/licenses/caddy/LICENSE
 
-RUN apk upgrade --no-cache \
-    && apk add --no-cache ca-certificates tzdata libcap spdx-licenses-text \
+RUN apk add --no-cache ca-certificates tzdata libcap spdx-licenses-text \
     && install -d /tmp/xs-spdx /usr/share/licenses/spdx \
     && cp -a /usr/share/spdx/text/. /tmp/xs-spdx/ \
     && if [ -n "$(getcap /usr/bin/caddy)" ]; then setcap -r /usr/bin/caddy; fi \

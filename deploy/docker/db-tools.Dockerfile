@@ -19,13 +19,12 @@ RUN git init \
         -o /usr/local/bin/age-keygen ./cmd/age-keygen \
     && install -D -m 0644 LICENSE /usr/share/licenses/age/LICENSE
 
-FROM postgres:18-alpine3.22
+FROM postgres:18-alpine3.22@sha256:774521500f4c22761b25a6bdb772a0a3c2e8dd32468210bdad9231c5752ea398
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="XS Nexus PostgreSQL Operations" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.source="XS Nexus clean-room repository"
-RUN apk upgrade --no-cache \
-    && apk add --no-cache bash coreutils spdx-licenses-text \
+RUN apk add --no-cache bash coreutils spdx-licenses-text \
     && install -d /tmp/xs-spdx /usr/share/licenses/spdx \
     && cp -a /usr/share/spdx/text/. /tmp/xs-spdx/ \
     && apk del --no-cache spdx-licenses-text \

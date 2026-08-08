@@ -1,0 +1,23 @@
+[graph]
+all-features = true
+targets = [
+  { triple = "x86_64-unknown-linux-gnu" },
+  { triple = "aarch64-unknown-linux-gnu" },
+  { triple = "x86_64-pc-windows-msvc" },
+]
+
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "paste is transitive through rtnetlink; review or remove by 2026-08-31" },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
