@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 readonly EVIDENCE_DIR="${1:?usage: test-image-reproducibility.sh EVIDENCE_DIR}"
-readonly SERVICES=(console controller relay db-tools edge)
+readonly SERVICES=(edge console controller relay db-tools)
 
 declare -A dockerfiles=(
     [controller]=deploy/docker/controller.Dockerfile
@@ -33,6 +33,7 @@ mkdir -p "${EVIDENCE_DIR}/first" "${EVIDENCE_DIR}/second"
 record_oci_metadata() {
     python3 - "$1" "$2" <<'PY'
 import json
+import hashlib
 import sys
 import tarfile
 from pathlib import Path
@@ -45,9 +46,41 @@ with tarfile.open(archive_path) as archive:
     manifest = json.load(archive.extractfile(f"blobs/sha256/{manifest_digest}"))
     config_digest = manifest["config"]["digest"].removeprefix("sha256:")
     config = json.load(archive.extractfile(f"blobs/sha256/{config_digest}"))
+    last_layer = manifest["layers"][-1]
+    last_layer_digest = last_layer["digest"].removeprefix("sha256:")
+    entries = []
+    with tarfile.open(
+        fileobj=archive.extractfile(f"blobs/sha256/{last_layer_digest}"), mode="r|*"
+    ) as layer_archive:
+        for member in layer_archive:
+            entry = {
+                "name": member.name,
+                "type": member.type.decode("latin-1"),
+                "size": member.size,
+                "mode": member.mode,
+                "uid": member.uid,
+                "gid": member.gid,
+                "uname": member.uname,
+                "gname": member.gname,
+                "mtime": member.mtime,
+                "linkname": member.linkname,
+                "pax_headers": member.pax_headers,
+            }
+            if member.isfile():
+                content = layer_archive.extractfile(member)
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: content.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                entry["sha256"] = digest.hexdigest()
+            entries.append(entry)
 Path(output_path).write_text(
     json.dumps(
-        {"index_descriptor": descriptor, "manifest": manifest, "config": config},
+        {
+            "index_descriptor": descriptor,
+            "manifest": manifest,
+            "config": config,
+            "last_layer_entries": entries,
+        },
         indent=2,
         sort_keys=True,
     )
