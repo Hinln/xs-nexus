@@ -274,6 +274,9 @@ for ((status_attempt = 1; status_attempt <= 20; status_attempt++)); do
         printf '\nXS Nexus installation completed.\n'
         systemctl --no-pager --full status xs-agent.service | sed -n '1,12p' || true
         printf '%s\n' "$status_output"
+        cleanup
+        temporary_directory=
+        trap - EXIT INT TERM HUP
         exit 0
     fi
     sleep 1
