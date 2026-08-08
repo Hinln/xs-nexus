@@ -195,6 +195,7 @@ struct PendingPathProbe {
     endpoint: SocketAddr,
     path_id: u32,
     token: [u8; 8],
+    promotes_path: bool,
     retry: RetryState,
 }
 
@@ -1412,6 +1413,7 @@ fn create_path_probe(peer: &mut Peer, endpoint: SocketAddr, now: Instant) -> Res
         endpoint,
         path_id,
         token,
+        promotes_path: peer.active_endpoint != Some(endpoint),
         retry: RetryState::path_probe(encoded.clone(), now),
     });
     peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
@@ -1662,7 +1664,7 @@ fn handle_data(
     now: Instant,
     allow_routed_data: bool,
 ) -> ProcessResult {
-    let mut path_probe_latency = None;
+    let mut path_probe_result = None;
     let result = {
         let PeerState::Established(established) = &mut peer.state else {
             return ProcessResult::empty();
@@ -1721,18 +1723,23 @@ fn handle_data(
                 path_authenticated: false,
             },
             PacketType::PathResponse => {
-                path_probe_latency = peer.pending_path_probe.as_ref().and_then(|pending| {
+                path_probe_result = peer.pending_path_probe.as_ref().and_then(|pending| {
                     (pending.endpoint == source
                         && pending.path_id == opened.path_id
                         && pending.token.as_slice() == opened.plaintext)
-                        .then(|| now.saturating_duration_since(pending.retry.last_sent))
+                        .then(|| {
+                            (
+                                now.saturating_duration_since(pending.retry.last_sent),
+                                pending.promotes_path,
+                            )
+                        })
                 });
                 ProcessResult::empty()
             }
             PacketType::Close => ProcessResult::empty(),
         }
     };
-    if let Some(latency) = path_probe_latency {
+    if let Some((latency, promotes_path)) = path_probe_result {
         peer.pending_path_probe = None;
         let latency_microseconds = u64::try_from(latency.as_micros()).unwrap_or(u64::MAX);
         peer.last_latency_microseconds = Some(latency_microseconds);
@@ -1741,7 +1748,7 @@ fn handle_data(
             .latency_microseconds_total
             .saturating_add(latency_microseconds);
         peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
-        if peer.active_endpoint != Some(source) {
+        if promotes_path {
             promote_path(peer, source, PathSelectionReason::AuthenticatedPathProbe);
         }
     }
