@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "scripts" / "generate-source-sbom.py"
 SNAPSHOT = ROOT / "supply-chain" / "npm-licenses.json"
-EXPECTED_COUNTS = {"cargo": 321, "npm": 110, "total": 431}
+EXPECTED_COUNTS = {"cargo": 325, "npm": 110, "total": 435}
 OUTPUT_FILES = (
     "manifest.json",
     "xs-nexus-source.cdx.json",
@@ -50,7 +50,10 @@ def assert_documents(output):
     manifest = load_json(output / "manifest.json")
     cdx = load_json(output / "xs-nexus-source.cdx.json")
     spdx = load_json(output / "xs-nexus-source.spdx.json")
-    assert manifest["component_counts"] == EXPECTED_COUNTS
+    assert manifest["component_counts"] == EXPECTED_COUNTS, (
+        manifest["component_counts"],
+        EXPECTED_COUNTS,
+    )
     assert manifest["network_required"] is False
     assert "container operating-system packages are excluded" in manifest["scope"]
     assert cdx["bomFormat"] == "CycloneDX"
