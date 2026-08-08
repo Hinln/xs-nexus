@@ -49,11 +49,12 @@ jobs:
       - run: cargo fetch --locked --target x86_64-pc-windows-msvc
       - run: make test-windows-xsnet-transport
       - run: make test-independent-implementation
+      - run: cargo fetch --locked
       - run: make test-source-sbom
       - run: make security-check
       - run: make dependency-check
       - run: make test-production-health
-      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh
+      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh
 
   console-real-e2e:
     runs-on: ubuntu-24.04

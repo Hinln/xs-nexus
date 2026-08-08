@@ -207,7 +207,10 @@ def cargo_components():
             text=True,
         )
         metadata = json.loads(completed.stdout)
-    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() if error.stderr else str(error)
+        raise ValidationError(f"cargo metadata failed: {detail}") from error
+    except (OSError, json.JSONDecodeError) as error:
         raise ValidationError(f"cargo metadata failed: {error}") from error
     components = []
     seen = set()
