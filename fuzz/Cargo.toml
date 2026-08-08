@@ -1,0 +1,50 @@
+[package]
+name = "xs-nexus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+ed25519-dalek = "=3.0.0"
+libfuzzer-sys = "=0.4.13"
+xs-protocol = { path = "../crates/protocol" }
+
+[[bin]]
+name = "credential"
+path = "fuzz_targets/credential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "data"
+path = "fuzz_targets/data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "discovery"
+path = "fuzz_targets/discovery.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "handshake"
+path = "fuzz_targets/handshake.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "relay"
+path = "fuzz_targets/relay.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
