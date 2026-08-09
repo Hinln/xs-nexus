@@ -4,8 +4,8 @@ No credential values are permitted in this file.
 
 | Secret ID | Category | Rotated | Old Rejected | Evidence | Status |
 |---|---|---:|---:|---|---|
-| CRED-SSH-ROOT | Server root/password authentication | no | no | pending | OPEN |
-| CRED-SSH-ADMIN | Deployment administrator key/account | no | no | pending | OPEN |
+| CRED-SSH-ROOT | Server root/password authentication | no | no | Gate 14 proves the SSH password path disabled; the disclosed OS credential itself still requires rotation and rejection | OPEN |
+| CRED-SSH-ADMIN | Deployment administrator key/account | yes | yes | Gate 14 current-key success and prior-key rejection | COMPLETE |
 | CRED-NAS | NAS login | no | no | external owner action required | BLOCKED_EXTERNAL |
 | CRED-PG-BOOTSTRAP | PostgreSQL bootstrap/superuser | no | no | removed from runtime; authorized rotation still pending | OPEN |
 | CRED-PG-APP | PostgreSQL runtime application role | yes (new role) | n/a (no prior role credential) | Gate 16 production evidence | COMPLETE |

@@ -4,7 +4,7 @@
 |---|---|---:|---|---|
 | PRV2-001 | Critical | 02 | Previously disclosed infrastructure, application, enrollment, and recovery credentials lack complete rotation and old-value rejection evidence | OPEN |
 | PRV2-002 | Critical | 03/18 | No formal offline release/recovery key ceremony, authenticated public-key distribution, revocation, or restore exercise | BLOCKED_EXTERNAL |
-| PRV2-003 | High | 14 | SSH password/root access, permissive host INPUT policy, public management exposure, patch state, and disk pressure are not closed | OPEN |
+| PRV2-003 | High | 14 | SSH/root/password exposure, public management TCP `188`, and permissive INPUT are closed; security-update/reboot regression, disk pressure, and externally delivered disk alerts remain open | OPEN |
 | PRV2-004 | High | 16 | Long-running Controller database access depended on a bootstrap superuser; production now uses separated owner/app/migrator roles | CLOSED |
 | PRV2-005 | High | 13/19 | Planned production domain does not provide a complete strict-TLS Console/API/WebSocket path | OPEN |
 | PRV2-006 | High | 05 | Proprietary protocol, cryptography, API, Relay, Agents, Windows, and supply chain have no independent audit and retest | BLOCKED_EXTERNAL |

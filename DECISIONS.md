@@ -967,3 +967,16 @@
 - 生产变更：每次尝试先验证加密备份和隔离 restore，保留独立 SSH 会话并启用 20 分钟 systemd 回滚。Docker 重建只允许经 container inspect 认证的项目地址/端口规则变化；所有非项目 nftables 规则、默认路由、IP rule、`1panel-network` 和无关 1Panel 容器必须不变。
 - 证据：Git commits `02fc54e`、`3e2caed`、`e0fd15d`、`0533727`、`3d93656`；CI run `31294988591`；隔离证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z`；生产证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`。
 - 边界：该决策关闭 Gate 16，不关闭 Gate 02。bootstrap 仍作为受控平台管理身份存在，必须单独轮换并验证旧值拒绝；正式 release、主机防火墙、TLS、真实设备和第三方审计结论均不由此推导。
+
+---
+
+## ADR-085：生产 INPUT 防火墙使用独立 nftables 表，1Panel 仅经受限 SSH 隧道管理
+
+- 状态：接受
+- 日期：2026-08-09
+- 背景：生产宿主 INPUT policy 长期为 accept，1Panel TCP `188` 直接公网监听；同时 Docker/1Panel 已维护自己的 nftables 表，使用全局 `flush ruleset` 或接管默认规则会破坏受保护资源。
+- 决策：XS Nexus 只拥有 `inet xs_nexus_host_guard` 表，INPUT hook priority `-10`、默认 drop；仅放行 loopback、established/related、必要 ICMP/DHCP、限速 SSH TCP `122`、Web TCP `80`/`443` 与 QUIC UDP `443`。不允许公网 TCP `188`，管理员只能用 key-only SSH 的 local forwarding 到 `127.0.0.1:188`/`[::1]:188`；其他转发和 tunnel 全部关闭。
+- 安全边界：脚本只增删该表，不调用全局 flush，不修改 Docker/1Panel/UFW/iptables compatibility、默认 route、IP rule、Docker network 或 1Panel 配置。Discovery/Relay UDP `42000`/`42001` 继续由 Docker DNAT/forward 路径承载。
+- 变更纪律：任何 SSH/firewall 更新都必须有冻结 baseline、两条保留会话、20 分钟自动回滚、候选语法验证、全新会话和外部端口/认证负向测试；只有 protected services、OpenResty、`1panel-network` 和非项目网络状态全部通过后才能取消回滚。
+- 证据：Git commit `ae74783cdf9f75fd90e496fe837e50b744990310`；CI run `31300939362`；生产证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。
+- 残余：该决策关闭 SSH/公网管理暴露和最小 INPUT 子项，不代表 Gate 14 全部通过。安全更新/重启、磁盘压力和外部告警仍需单独完成。

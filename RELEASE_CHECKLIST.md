@@ -60,7 +60,7 @@
 - [x] 备份（age 流式认证加密、独立文件系统自动复制、公开/深度校验、保留和销毁墓碑）
 - [x] 恢复演练（真实 PostgreSQL 测试 schema、错误 identity/篡改拒绝、异地取回和失败回滚）
 - [ ] 正式离线备份 identity 与真实异地主机（产品边界已完成，外部门禁 `BLK-007`）
-- [ ] 防火墙最小开放
+- [x] 防火墙最小开放（Gate 14：独立 nftables 表、默认拒绝、外部端口和 SSH 负向验证）
 - [x] 开发和 RC 隔离
 
 ## 更新
@@ -108,7 +108,7 @@
 
 必须三选一，并在 `FINAL_REPORT.md` 给出证据。
 
-当前生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；Gate 16 隔离和生产证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`。未完成的 Windows 在线、NAS、计划域名/防火墙、正式密钥/异地恢复、全量凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
+当前生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；Gate 16 隔离和生产证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`，Gate 14 防火墙证据为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。未完成的 Windows 在线、NAS、计划域名 strict TLS、主机补丁/磁盘告警、正式密钥/异地恢复、全量凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
 
 ## Runtime image license closure checkpoint (2026-07-31)
 

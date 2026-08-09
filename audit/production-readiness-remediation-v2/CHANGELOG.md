@@ -28,3 +28,13 @@
 - Promoted the repository-external canonical environment atomically, archived the prior environment as root-only rollback material, and removed the temporary raw password staging directory. No credential value entered Git or evidence.
 - Preserved `1panel-network` ID/subnet, unrelated OpenResty, default route, IP rules, and all non-project nftables rules. Docker-managed project rules were validated against actual container addresses and published ports rather than falsely required to remain byte-identical across container recreation.
 - Gate 16 is now `PASS`. Gate 02 remains `FAIL` until the bootstrap and all other disclosed credentials are rotated and old values are independently rejected.
+
+### Gate 14 SSH and minimal host firewall
+
+- Added the independent `inet xs_nexus_host_guard` INPUT table, rate-limited SSH, approved web/QUIC traffic, and default drop without flushing or editing Docker, 1Panel, UFW, iptables compatibility, or unrelated nftables tables.
+- Restricted SSH to the `ubuntu` administrator and public keys; disabled root/password/keyboard-interactive authentication, X11, agent/remote/stream-local forwarding and tunnels. Local forwarding is limited to loopback 1Panel TCP `188`.
+- Exact source `ae74783cdf9f75fd90e496fe837e50b744990310` passed GitHub Actions run `31300939362` and isolated namespace/source validation before production application.
+- Applied with frozen baseline, two retained SSH sessions and a 20-minute systemd rollback. Fresh sessions, firewall service restart, external port probes, authentication negatives, restricted tunnel, production health, OpenResty, default routes, IP rules, non-project nftables and `1panel-network` passed before rollback cancellation.
+- External TCP `80`/`122`/`443` remain reachable; TCP `22`/`188`/database/loopback application/TCP discovery-relay probes are closed or filtered. Docker-published UDP `42000`/`42001` remain intact.
+- Final evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` contains 117 SHA-256 verified files and a zero-finding no-value secret scan.
+- Gate 14 moves from `FAIL` to `PARTIAL`. Security updates/reboot, root-disk pressure, and independent disk-alert delivery remain open and are not hidden by the firewall result.

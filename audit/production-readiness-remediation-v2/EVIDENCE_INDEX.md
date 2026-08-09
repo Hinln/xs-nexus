@@ -52,6 +52,27 @@ The running Controller, Relay, and Console images expose revision `3d93656cc9ec3
 
 The production rollout used an exact clean release checkout and five prebuilt images. Four verifier defects were retained rather than hidden: container tmpfs rejected `docker cp`, the hardened database container lacked `CAP_CHOWN`, binary `--version` was text rather than JSON, and byte-exact nftables comparison rejected expected Docker rule refresh. Every failed attempt left its 20-minute rollback armed and automatically restored `ff9551d3`; only the fifth attempt canceled rollback after independent SSH verification.
 
+## Gate 14 Production Host Hardening Evidence
+
+| Evidence | Location | Status |
+|---|---|---|
+| Firewall/SSH implementation | Git commit `ae74783cdf9f75fd90e496fe837e50b744990310` | VERIFIED |
+| Exact-head CI | GitHub Actions run [`31300939362`](https://github.com/Hinln/xs-nexus/actions/runs/31300939362) | PASS |
+| Read-only OS/network/SSH/Docker/update baseline | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` | PASS |
+| Protected production application | `application-20260809T075244Z` under the Gate 14 evidence root | PASS |
+| Independent new-session verification | `independent-new-ssh-verification.txt` | PASS |
+| External exposure and authentication | `external-verification.txt`, `external-post-cancel.txt` | PASS |
+| Route/rule/non-project nftables invariants | `ip-route-default-*.json`, `ip-rule-*.json`, `nftables-nonproject-*.canonical.json` | PASS |
+| Rollback protection and cancellation | `rollback-*.txt`, `finalization.txt`, `post-finalization-new-ssh.txt` | PASS |
+| Verification-tooling disposition | `apply.log`, `verification-tooling-disposition.txt` | REVIEWED |
+| Evidence secret scan | `evidence-secret-scan.json`, `evidence-secret-scan-summary.txt` | PASS, 0 FINDINGS |
+| Residual update/disk state | `residual-host-items.txt`, baseline apt/disk files | OPEN |
+| Evidence integrity | `SHA256SUMS.final` in the Gate 14 root | 117 FILES VERIFIED |
+
+The deployed host firewall is an independent `inet xs_nexus_host_guard` table and does not modify existing 1Panel/Docker tables. TCP `188` is no longer public and is reachable only through the key-only, destination-restricted SSH tunnel. The production application revision remains `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `1panel-network` remains ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`, subnet `172.18.0.0/16`.
+
+Gate 14 remains `PARTIAL`, not `PASS`, because host security updates/reboot and disk/external-alert closure remain outstanding.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.
@@ -64,7 +85,7 @@ The production rollout used an exact clean release checkout and five prebuilt im
 
 - Gate 01 owner-controlled formal key ceremony, signed RC tag/bundle, authenticated public-key publication, and merge to `main`. Branch production deployment, runtime reverse verification, and rollback to `ff9551d3` are now evidenced.
 - Gate 02 no-value secret inventory, rotation receipts, old-value rejection checks, deep artifact/history/layer scan.
-- Gate 14 host-hardening baseline/change/rollback verification.
+- Gate 14 security-update/reboot regression, bounded project-owned disk cleanup, and independent disk-alert delivery. SSH/firewall/public-management exposure is now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gates 04/06/08/09/15/18/19/20/21/22/23/24/25 current-revision regressions.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

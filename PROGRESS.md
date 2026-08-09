@@ -400,3 +400,13 @@ make clean
 - `fea456b3d6feff36856b1f2066ace8a22b650bce` 修正 lock 元数据后，run `31289641228` 的 baseline、protocol fuzz、real Console E2E 和五镜像双无缓存复现全部通过；artifacts 为 `9031132937`、`9031005160`、`9030990379`。
 - 生产主机只读复核仍显示 checkout `8745b5804312587534c1e91980dfb11720952ed1`、运行 OCI revision `ff9551d322067c934d2ac7d55a62af8896660bb3`；本阶段没有部署或修改 1Panel、Docker 网络、数据库、凭据、防火墙、SSH 或运行服务。
 - Gate 01 仍为 `FAIL`：下一步需要正式离线密钥仪式、有效签名 RC tag/bundle、main 合并、clean deployment、运行时反向核验和 `ff9551d3 -> RC -> rollback` 演练。当前开始 Gate 02 的无值凭据清单、全历史/CI/镜像/日志扫描和安全轮换设计。
+
+## 2026-08-09 Gate 14 SSH 与生产主机最小防火墙
+
+- 分支精确提交 `ae74783cdf9f75fd90e496fe837e50b744990310` 增加独立 `inet xs_nexus_host_guard` 表、最小 INPUT 默认拒绝、TCP `122` 新连接限速、Web/QUIC 放行、项目专属 systemd 单元和 SSH 强化配置；GitHub Actions run `31300939362` 四项作业全部通过。
+- 生产变更前冻结 OS、磁盘、内存、接口、route/rule、listeners、nftables、Docker、1Panel、SSH、账户、更新和服务基线，保留两条 SSH 会话并启动 20 分钟 systemd 自动回滚；没有删除、重建或修改 `1panel-network` 或无关 1Panel 资源。
+- SSH 仅允许 `ubuntu` 公钥；root、密码、键盘交互、X11、Agent/远程/stream-local forwarding 和 tunnel 均关闭。本地转发只允许 `127.0.0.1:188`/`[::1]:188`。当前管理钥匙成功，密码-only、root key 和旧管理钥匙均被独立拒绝。
+- 外部验证确认 TCP `80`/`122`/`443` 可达，TCP `22`/`188`/`3306`/`5432`/`6379`/`28080`/`28081`/`42000`/`42001` 关闭或过滤；受限 SSH 隧道可以访问 1Panel loopback `188`。Controller/Relay/Console/PostgreSQL 与无关 OpenResty 持续健康。
+- 防火墙 service restart、全新 SSH、回滚取消后全新 SSH、默认 route、IP rule、非项目 nftables 语义、受保护 container ID、`1panel-network` ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`/`172.18.0.0/16` 和 failed units 全部通过；随后移除回滚脚本/归档及保留会话。
+- 证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` 共 117 个文件，`SHA256SUMS.final` 通过；应用子目录 56 个文件独立校验，无值秘密扫描 0 findings。初次 apply 的 SSH `reloading` 瞬时状态和 verifier 日志 wrapper 缺陷如实 disposition，未当成产品失败或隐藏。
+- Gate 14 从 `FAIL` 降为 `PARTIAL`，不是 `PASS`：模拟 dist-upgrade 仍包含 157 个升级和 9 个新依赖包，其中 119 个操作来自 security 源；根分区 `83%`、约 `9.8G` 可用，磁盘告警仍没有外部送达。下一步先做受回滚保护的补丁/重启回归和仅项目可重建数据的磁盘治理，再进入 Gate 13。

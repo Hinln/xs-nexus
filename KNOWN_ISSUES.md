@@ -324,3 +324,15 @@
 - 已完成缓解：runtime 与 migrator 使用新建独立角色和仓库外 Secret；bootstrap 不在长驻 Controller secret 目录；临时明文 staging 已删除；证据中不记录新值。
 - 计划：按 `audit/production-readiness-remediation-v2/CREDENTIAL_ROTATION.md` 逐项轮换，使用不回显渠道激活新值，从独立会话验证旧值拒绝，并扫描当前树、Git 历史、CI、镜像层、日志、截图和 QA 证据。
 - 解除条件：所有非外部条目 `rotated=yes` 且 `old rejected=yes`（新建、无旧值的身份允许有原始创建证据）；外部所有者条目完成后 Gate 02 才可 `PASS`。
+
+---
+
+## KI-024 生产主机补丁、磁盘压力和外部磁盘告警未闭合
+
+- 严重度：高
+- 状态：开放
+- 首次发现：2026-08-09 Gate 14 生产基线。
+- 已完成：仅密钥 SSH、root/password/旧钥拒绝、最小 INPUT 默认拒绝、1Panel TCP `188` 公网关闭与受限 tunnel、路由/IP rule/非项目 nftables/`1panel-network` 不变量和回滚安全均已通过。证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。
+- 影响：模拟 dist-upgrade 仍包含 157 个升级和 9 个新依赖包，其中 119 个操作来自 security 源；根分区使用率 `83%`、约 `9.8G` 可用；本机健康守卫没有独立外部磁盘通知目标。OpenSSH、Docker、systemd、libc、nftables 等更新在应用和重启前不能视为已闭环。
+- 计划：冻结包/服务/route/rule/nft/Docker/1Panel 基线，验证备份和多 SSH 会话，安排自动回滚；执行受控升级和必要重启；只清理明确属于本项目且可重建的 QA/build/cache/旧镜像，禁止全局 prune；配置外部 warning/critical 告警并触发真实送达。
+- 解除条件：补丁安装与 reboot 后 SSH、Docker、OpenResty、四个项目容器、默认路由、IP rule、非项目 nftables、`1panel-network`、端口策略和 failed units 全部通过；磁盘阈值恢复到批准范围且外部告警真实送达。完成前 Gate 14 保持 `PARTIAL`。

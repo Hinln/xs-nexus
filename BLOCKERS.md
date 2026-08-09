@@ -33,11 +33,12 @@
 
 ---
 
-## BLK-003 DNS 和生产防火墙
+## BLK-003 DNS/CDN 与严格源站 TLS
 
 - 状态：阻塞任务书计划域名 `vpn.xiashikeji.cn` 上线；2026-08-08 最终复核中边缘 TLS 可完成且根路径返回 404，但 `/health/ready` 与 `/install` 仍返回 `525 SSL Handshake Failed with Origin Server`
-- 需要：用户批准并在 1Panel/CDN 中完成正式源站证书、SNI、反向代理和最小防火墙配置。
+- 需要：用户批准并在 1Panel/CDN 中完成正式源站证书、SNI、反向代理和 strict TLS 配置。
 - 已验证：服务器错误时钟已恢复 Chrony/NTP，同步后功能路径 525 仍可复现；Controller 回环健康，当前固定 `vpn.qinwen.co` 的健康入口、Linux/Windows 公网引导、全部 10 个发布文件逐字节比较和未知文件 404 均通过，因此不能把 525 归因于应用路由。证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z/public-checks.txt`。
+- 已完成：生产最小 INPUT 防火墙和 1Panel TCP `188` 公网关闭已由 Gate 14 独立完成，不再属于本阻塞项；不得为了修复 525 放宽该策略或关闭 TLS 验证。
 - 不阻塞：当前 `vpn.qinwen.co` 测试发布、IP 和临时端口测试。
 
 ---
@@ -108,7 +109,7 @@
 
 - 状态：阻塞 Release Candidate 和正式生产；最终审计 `NO_GO`。
 - 首次发现：2026-08-08 正式生产发布门禁审计。
-- 外部条件：生产所有者批准并执行全量凭据轮换、仅密钥 SSH 与最小防火墙、计划 DNS/CDN/TLS；DBA 创建非 bootstrap 最小权限角色并轮换 secret/redeploy；SRE 配置外部通知/on-call；独立第三方完成安全审计和 retest。
-- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、真实 Console E2E、协议 fuzz、五镜像可复现、五分钟本地健康守卫和最终生产只读复核。
-- 证据：`audit/production-readiness/GO_NO_GO_FINAL.md` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`。
+- 外部条件：生产所有者完成剩余全量凭据轮换和旧值拒绝、计划 DNS/CDN/strict origin TLS；SRE 配置外部通知/on-call；独立第三方完成安全审计和 retest。
+- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、真实 Console E2E、协议 fuzz、五镜像可复现、五分钟本地健康守卫、PostgreSQL 最小权限、仅密钥 SSH、最小 INPUT 防火墙和 1Panel 公网管理端口关闭。
+- 证据：`audit/production-readiness/GO_NO_GO_FINAL.md`、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`、Gate 16 生产证据和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。
 - 解除后验证：旧凭据全部被拒绝；SSH/端口/防火墙回归；正式域名 API/WS/Console/health/TLS 通过；应用角色非 superuser；外部告警真实送达；第三方 findings 修复并 retest；重新执行全部 Hard Gate。

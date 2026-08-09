@@ -433,7 +433,7 @@
 - [x] Docker/1Panel：部署测试、真实迁移、迁移前 age 备份、三服务健康、精确 OCI revision、活动部署记录和备份公开校验通过；部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
 - [x] 宿主恢复：`1panel-network` 成员名、Docker 网络集合、默认路由、按容器服务名规范化的 nftables 语义和失败服务前后相同，无 namespace/TUN；PostgreSQL 无 host binding。
 - [x] 公网：`vpn.qinwen.co` 健康、Linux/Windows 引导、10 个发布文件逐字节一致、未知文件 404；外部 TCP `3306`/`5432`/`6379`/`28080`/`28081` 关闭，控制探针 `122` 打开。
-- [ ] 外部门禁：`vpn.xiashikeji.cn` 功能路径 525、Windows 在线客户端、真实 NAS、正式密钥/异地恢复、生产防火墙、凭据轮换和第三方审计未完成。
+- [ ] 外部门禁：`vpn.xiashikeji.cn` 功能路径 525、Windows 在线客户端、真实 NAS、正式密钥/异地恢复、凭据轮换和第三方审计未完成；生产防火墙已完成，主机补丁/磁盘/外部告警仍是内部未完成项。
 
 ## 17. Gate 01 发布 provenance 回归（2026-08-09）
 
@@ -457,3 +457,14 @@
 - [x] 最终不变量：`1panel-network` ID/subnet、无关 OpenResty、默认路由、IP rule 和非项目 nftables 规则不变；PostgreSQL 无 host binding；失败 systemd unit 为 0。
 - [x] 证据完整性：生产证据目录 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z` 共 81 个文件，`SHA256SUMS` 复核通过；通用秘密扫描的三项路径型误报逐行固定复核，任何额外发现仍失败关闭。
 - [ ] Gate 02 独立残余：bootstrap 及其他已披露凭据轮换、旧值拒绝尚未完成，不因 Gate 16 通过而勾选。
+
+## 19. Gate 14 SSH 与最小 INPUT 防火墙（2026-08-09）
+
+- [x] exact source `ae74783cdf9f75fd90e496fe837e50b744990310`、GitHub Actions run `31300939362`、本地源码测试和隔离 namespace nft apply/reapply/remove 通过。
+- [x] 生产只读基线覆盖 listeners、SSH/accounts、route/rule/interfaces、nftables、Docker/1Panel、更新、磁盘、服务和 `1panel-network`；第二 SSH 会话与 sudo/服务/网络不变量通过。
+- [x] 20 分钟 systemd 自动回滚在变更前启用；旧 SSH drop-in、authorized_keys、项目防火墙文件精确封存。全新会话与外部验证通过后才取消并删除回滚材料。
+- [x] SSH 仅 `ubuntu` publickey；root/password/keyboard-interactive 和不必要 forwarding/tunnel 关闭；当前钥匙接受，password-only、root key 与旧钥匙拒绝；只允许 loopback TCP `188` local tunnel。
+- [x] `inet xs_nexus_host_guard` 默认 drop；不 flush/修改 Docker、1Panel 或其他 nftables 表。外部 TCP `80`/`122`/`443` 开放，TCP `188`、数据库、loopback 应用及 TCP discovery/relay 关闭或过滤。
+- [x] firewall service restart、默认 route、IP rule、非项目 nftables、protected container ID、OpenResty、四个项目容器、`1panel-network` 和 failed units 前后通过；回滚取消后再次验证。
+- [x] 最终证据 117 文件和应用证据 56 文件 SHA-256 通过；无值秘密扫描 0 findings；验证器工具缺陷单独 disposition。
+- [ ] Gate 14 残余：157 个升级加 9 个新依赖包（119 个 security 源操作）、必要 reboot、根分区 `83%` 和外部磁盘告警未闭环，因此当前状态为 `PARTIAL`。
