@@ -33,6 +33,7 @@ services:
       DATABASE_URL_FILE: /run/secrets/xs-database/database-url
       DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
       DATABASE_OWNER_ROLE: ${XS_DATABASE_OWNER_ROLE:?set XS_DATABASE_OWNER_ROLE}
+      DATABASE_APP_ROLE: ${XS_DATABASE_APP_ROLE:?set XS_DATABASE_APP_ROLE}
       RUST_LOG: ${XS_RUST_LOG:-info}
     volumes:
       - type: bind

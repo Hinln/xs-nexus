@@ -18,6 +18,10 @@ SELECT NOT pg_has_role(:'app_role', :'owner_role', 'MEMBER') AS not_owner_member
        has_table_privilege(:'app_role', format('%I.networks', :'schema'), 'INSERT') AS table_insert,
        has_table_privilege(:'app_role', format('%I.networks', :'schema'), 'UPDATE') AS table_update,
        has_table_privilege(:'app_role', format('%I.networks', :'schema'), 'DELETE') AS table_delete,
+       has_table_privilege(:'app_role', format('%I._sqlx_migrations', :'schema'), 'SELECT') AS migration_table_select,
+       NOT has_table_privilege(:'app_role', format('%I._sqlx_migrations', :'schema'), 'INSERT') AS no_migration_table_insert,
+       NOT has_table_privilege(:'app_role', format('%I._sqlx_migrations', :'schema'), 'UPDATE') AS no_migration_table_update,
+       NOT has_table_privilege(:'app_role', format('%I._sqlx_migrations', :'schema'), 'DELETE') AS no_migration_table_delete,
        NOT has_table_privilege(:'app_role', 'pg_catalog.pg_authid', 'SELECT') AS no_auth_catalog
 \gset
 
@@ -89,6 +93,22 @@ SELECT 1 / 0;
 SELECT 1 / 0;
 \endif
 \if :table_delete
+\else
+SELECT 1 / 0;
+\endif
+\if :migration_table_select
+\else
+SELECT 1 / 0;
+\endif
+\if :no_migration_table_insert
+\else
+SELECT 1 / 0;
+\endif
+\if :no_migration_table_update
+\else
+SELECT 1 / 0;
+\endif
+\if :no_migration_table_delete
 \else
 SELECT 1 / 0;
 \endif

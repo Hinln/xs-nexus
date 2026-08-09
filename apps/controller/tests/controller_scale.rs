@@ -26,6 +26,7 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
         database_url: config.database_url.clone(),
         database_schema: config.database_schema.clone(),
         database_owner_role: None,
+        database_app_role: None,
     })
     .await
     .expect("controller database migrates");

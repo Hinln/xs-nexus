@@ -40,6 +40,7 @@ async fn agent_enrolls_authenticates_and_applies_new_configuration() {
         database_url: controller_config.database_url.clone(),
         database_schema: controller_config.database_schema.clone(),
         database_owner_role: None,
+        database_app_role: None,
     })
     .await
     .expect("controller database migrates");

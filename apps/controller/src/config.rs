@@ -41,6 +41,7 @@ pub struct MigrationConfig {
     pub database_url: String,
     pub database_schema: String,
     pub database_owner_role: Option<String>,
+    pub database_app_role: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -226,10 +227,15 @@ impl MigrationConfig {
         if let Some(role) = database_owner_role.as_deref() {
             validate_database_role(role)?;
         }
+        let database_app_role = env::var("DATABASE_APP_ROLE").ok();
+        if let Some(role) = database_app_role.as_deref() {
+            validate_database_role(role)?;
+        }
         Ok(Self {
             database_url,
             database_schema,
             database_owner_role,
+            database_app_role,
         })
     }
 }

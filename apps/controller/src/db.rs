@@ -43,6 +43,7 @@ pub async fn migrate(config: &MigrationConfig) -> Result<(), DatabaseError> {
         &config.database_url,
         &config.database_schema,
         config.database_owner_role.as_deref(),
+        config.database_app_role.as_deref(),
     )
     .await?;
     let pool = connect_pool(
@@ -55,6 +56,9 @@ pub async fn migrate(config: &MigrationConfig) -> Result<(), DatabaseError> {
         .run(&pool)
         .await
         .map_err(DatabaseError::Migration)?;
+    if let Some(app_role) = config.database_app_role.as_deref() {
+        grant_runtime_privileges(&pool, &config.database_schema, app_role).await?;
+    }
     pool.close().await;
     Ok(())
 }
@@ -92,6 +96,7 @@ async fn create_schema(
     database_url: &str,
     schema: &str,
     owner_role: Option<&str>,
+    app_role: Option<&str>,
 ) -> Result<(), DatabaseError> {
     let mut connection = PgConnection::connect(database_url)
         .await
@@ -106,6 +111,12 @@ async fn create_schema(
         .execute(format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\"").as_str())
         .await
         .map_err(DatabaseError::Schema)?;
+    if let Some(app_role) = app_role {
+        connection
+            .execute(format!("GRANT USAGE ON SCHEMA \"{schema}\" TO \"{app_role}\"").as_str())
+            .await
+            .map_err(DatabaseError::Schema)?;
+    }
     Ok(())
 }
 
@@ -125,6 +136,41 @@ async fn verify_runtime_role(
         .map_err(|_| DatabaseError::RuntimeRole)?;
     if role_name != expected_role {
         return Err(DatabaseError::RuntimeRole);
+    }
+    Ok(())
+}
+
+async fn grant_runtime_privileges(
+    pool: &PgPool,
+    schema: &str,
+    app_role: &str,
+) -> Result<(), DatabaseError> {
+    let statements = [
+        format!("GRANT USAGE ON SCHEMA \"{schema}\" TO \"{app_role}\""),
+        format!(
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA \"{schema}\" TO \"{app_role}\""
+        ),
+        format!(
+            "REVOKE INSERT, UPDATE, DELETE ON TABLE \"{schema}\"._sqlx_migrations FROM \"{app_role}\""
+        ),
+        format!(
+            "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA \"{schema}\" TO \"{app_role}\""
+        ),
+        format!("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA \"{schema}\" TO \"{app_role}\""),
+        format!(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{schema}\" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{app_role}\""
+        ),
+        format!(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{schema}\" GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO \"{app_role}\""
+        ),
+        format!(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA \"{schema}\" GRANT EXECUTE ON FUNCTIONS TO \"{app_role}\""
+        ),
+    ];
+    for statement in statements {
+        pool.execute(statement.as_str())
+            .await
+            .map_err(DatabaseError::Schema)?;
     }
     Ok(())
 }

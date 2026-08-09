@@ -97,7 +97,10 @@ run_migration() {
         -e DATABASE_SCHEMA=gate16_schema
     )
     if [[ -n $owner_role ]]; then
-        environment+=(-e "DATABASE_OWNER_ROLE=$owner_role")
+        environment+=(
+            -e "DATABASE_OWNER_ROLE=$owner_role"
+            -e DATABASE_APP_ROLE=gate16_app
+        )
     fi
     docker run --rm --network 1panel-network \
         "${cargo_mounts[@]}" \
@@ -125,7 +128,6 @@ docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
     psql -q -h 127.0.0.1 -U gate16_bootstrap -d gate16 \
         -c "DROP SCHEMA gate16_schema CASCADE"
 '
-run_role_hardening
 run_migration migrator-url gate16_owner
 
 docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
@@ -174,6 +176,9 @@ negative_sql 'CREATE SCHEMA gate16_forbidden'
 negative_sql 'CREATE TABLE public.gate16_forbidden(id integer)'
 negative_sql 'SELECT rolpassword FROM pg_catalog.pg_authid'
 negative_sql 'BEGIN; ALTER TABLE gate16_schema.networks ADD COLUMN gate16_forbidden integer; ROLLBACK'
+negative_sql "INSERT INTO gate16_schema._sqlx_migrations (version, description, installed_on, success, checksum, execution_time) VALUES (999999, 'forbidden', now(), true, decode('00', 'hex'), 0)"
+negative_sql 'UPDATE gate16_schema._sqlx_migrations SET success = false'
+negative_sql 'DELETE FROM gate16_schema._sqlx_migrations'
 
 printf '%s\n' \
     'migration_as_owner=pass' \
