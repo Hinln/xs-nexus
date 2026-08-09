@@ -1,9 +1,10 @@
 use axum::{
     Json,
+    extract::{FromRequest, Request, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -11,6 +12,8 @@ pub struct ApiError {
     code: &'static str,
     message: &'static str,
 }
+
+pub(crate) struct ApiJson<T>(pub T);
 
 #[derive(Serialize)]
 struct ErrorEnvelope {
@@ -127,5 +130,101 @@ impl IntoResponse for ApiError {
             }),
         )
             .into_response()
+    }
+}
+
+impl<S, T> FromRequest<S> for ApiJson<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+    Json<T>: FromRequest<S, Rejection = JsonRejection>,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        Json::<T>::from_request(request, state)
+            .await
+            .map(|Json(value)| Self(value))
+            .map_err(|_| ApiError::validation())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        Router,
+        body::Body,
+        http::{Request, StatusCode, header},
+        routing::post,
+    };
+    use http_body_util::BodyExt;
+    use serde::Deserialize;
+    use tower::ServiceExt;
+
+    use super::ApiJson;
+
+    #[derive(Deserialize)]
+    struct Fixture {
+        value: String,
+    }
+
+    async fn accept_json(ApiJson(fixture): ApiJson<Fixture>) -> StatusCode {
+        if fixture.value == "accepted" {
+            StatusCode::NO_CONTENT
+        } else {
+            StatusCode::BAD_REQUEST
+        }
+    }
+
+    async fn request(
+        body: &'static str,
+        content_type: Option<&'static str>,
+    ) -> axum::response::Response {
+        let mut builder = Request::builder().method("POST").uri("/");
+        if let Some(content_type) = content_type {
+            builder = builder.header(header::CONTENT_TYPE, content_type);
+        }
+        Router::new()
+            .route("/", post(accept_json))
+            .oneshot(builder.body(Body::from(body)).expect("request"))
+            .await
+            .expect("response")
+    }
+
+    #[tokio::test]
+    async fn accepts_valid_json() {
+        let response = request(r#"{"value":"accepted"}"#, Some("application/json")).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn json_rejections_return_one_sanitized_envelope() {
+        for (body, content_type) in [
+            (
+                r#"{"value":"accepted","sensitive_field_marker":}"#,
+                Some("application/json"),
+            ),
+            (r#"{"value":42}"#, Some("application/json")),
+            (r#"{"value":"accepted"}"#, Some("text/plain")),
+            (r#"{"value":"accepted"}"#, None),
+        ] {
+            let response = request(body, content_type).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                response.headers().get(header::CONTENT_TYPE),
+                Some(&header::HeaderValue::from_static("application/json"))
+            );
+            let response_body = response
+                .into_body()
+                .collect()
+                .await
+                .expect("response body")
+                .to_bytes();
+            assert_eq!(
+                response_body.as_ref(),
+                br#"{"error":{"code":"invalid_request","message":"request validation failed"}}"#
+            );
+            assert!(!String::from_utf8_lossy(&response_body).contains("sensitive_field_marker"));
+        }
     }
 }

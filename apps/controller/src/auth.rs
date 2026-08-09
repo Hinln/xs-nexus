@@ -14,7 +14,11 @@ use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use crate::{config::ControllerConfig, error::ApiError, state::AppState};
+use crate::{
+    config::ControllerConfig,
+    error::{ApiError, ApiJson},
+    state::AppState,
+};
 
 const SESSION_COOKIE: &str = "xs_nexus_session";
 const SESSION_TOKEN_DOMAIN: &[u8] = b"XS Nexus console session token v1";
@@ -218,7 +222,7 @@ pub(crate) async fn ensure_bootstrap_administrator(
 
 pub(crate) async fn login(
     State(state): State<AppState>,
-    Json(request): Json<LoginRequest>,
+    ApiJson(request): ApiJson<LoginRequest>,
 ) -> Result<(HeaderMap, Json<LoginResponse>), ApiError> {
     let (user, role) = authenticate_login(&state, request).await?;
     let (session_token, response) = create_login_session(&state, user, role).await?;
@@ -432,7 +436,7 @@ pub(crate) async fn list_users(
 pub(crate) async fn create_user(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<CreateConsoleUserRequest>,
+    ApiJson(request): ApiJson<CreateConsoleUserRequest>,
 ) -> Result<(StatusCode, Json<ConsoleUserResponse>), ApiError> {
     let actor = authorize(&state, &headers, Permission::ManageUsers, true).await?;
     let username = normalize_username(&request.username).ok_or_else(ApiError::validation)?;

@@ -13,7 +13,7 @@ use tower_http::{
 use crate::{
     auth::{self, Permission},
     downloads,
-    error::ApiError,
+    error::{ApiError, ApiJson},
     model::{
         CreateEnrollmentTokenRequest, CreateNetworkRequest, CreateUpdateReleaseRequest,
         EnrollRequest, ExplainAclRequest, HealthResponse, ReplaceAclPolicyRequest,
@@ -129,7 +129,7 @@ async fn ready(State(state): State<AppState>) -> Result<Json<HealthResponse>, Ap
 async fn create_network(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<CreateNetworkRequest>,
+    ApiJson(request): ApiJson<CreateNetworkRequest>,
 ) -> Result<(StatusCode, Json<crate::model::NetworkResponse>), ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response = crate::service::create_network(&state, request, &actor).await?;
@@ -155,7 +155,7 @@ async fn console_snapshot(
 async fn create_enrollment_token(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<CreateEnrollmentTokenRequest>,
+    ApiJson(request): ApiJson<CreateEnrollmentTokenRequest>,
 ) -> Result<(StatusCode, Json<crate::model::EnrollmentTokenResponse>), ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response = crate::service::create_enrollment_token(&state, request, &actor).await?;
@@ -165,7 +165,7 @@ async fn create_enrollment_token(
 async fn create_update_release(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<CreateUpdateReleaseRequest>,
+    ApiJson(request): ApiJson<CreateUpdateReleaseRequest>,
 ) -> Result<(StatusCode, Json<crate::model::UpdateReleaseResponse>), ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response = crate::updates::create_release(&state, request, &actor).await?;
@@ -195,7 +195,7 @@ async fn replace_update_policy(
     State(state): State<AppState>,
     Path((network_id, channel, platform, architecture)): Path<(uuid::Uuid, String, String, String)>,
     headers: HeaderMap,
-    Json(request): Json<ReplaceUpdatePolicyRequest>,
+    ApiJson(request): ApiJson<ReplaceUpdatePolicyRequest>,
 ) -> Result<Json<crate::model::UpdatePolicyResponse>, ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     Ok(Json(
@@ -216,7 +216,7 @@ async fn replace_acl_policy(
     State(state): State<AppState>,
     Path(network_id): Path<uuid::Uuid>,
     headers: HeaderMap,
-    Json(request): Json<ReplaceAclPolicyRequest>,
+    ApiJson(request): ApiJson<ReplaceAclPolicyRequest>,
 ) -> Result<Json<crate::model::ReplaceAclPolicyResponse>, ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response = crate::service::replace_acl_policy(&state, network_id, request, &actor).await?;
@@ -227,7 +227,7 @@ async fn explain_acl(
     State(state): State<AppState>,
     Path(network_id): Path<uuid::Uuid>,
     headers: HeaderMap,
-    Json(request): Json<ExplainAclRequest>,
+    ApiJson(request): ApiJson<ExplainAclRequest>,
 ) -> Result<Json<crate::model::ExplainAclResponse>, ApiError> {
     auth::authorize(&state, &headers, Permission::Read, false).await?;
     let response = crate::service::explain_acl(&state, network_id, request).await?;
@@ -238,7 +238,7 @@ async fn revoke_node(
     State(state): State<AppState>,
     Path((network_id, node_id_base64)): Path<(uuid::Uuid, String)>,
     headers: HeaderMap,
-    Json(request): Json<RevokeNodeRequest>,
+    ApiJson(request): ApiJson<RevokeNodeRequest>,
 ) -> Result<Json<crate::model::RevokeNodeResponse>, ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response =
@@ -250,7 +250,7 @@ async fn replace_node_update_channel(
     State(state): State<AppState>,
     Path((network_id, node_id_base64)): Path<(uuid::Uuid, String)>,
     headers: HeaderMap,
-    Json(request): Json<ReplaceNodeUpdateChannelRequest>,
+    ApiJson(request): ApiJson<ReplaceNodeUpdateChannelRequest>,
 ) -> Result<Json<crate::model::ReplaceNodeUpdateChannelResponse>, ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     let response = crate::service::replace_node_update_channel(
@@ -279,7 +279,7 @@ async fn replace_subnet_routes(
     State(state): State<AppState>,
     Path(network_id): Path<uuid::Uuid>,
     headers: HeaderMap,
-    Json(request): Json<ReplaceSubnetRoutesRequest>,
+    ApiJson(request): ApiJson<ReplaceSubnetRoutesRequest>,
 ) -> Result<Json<crate::model::ReplaceSubnetRoutesResponse>, ApiError> {
     let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
     Ok(Json(
@@ -289,7 +289,7 @@ async fn replace_subnet_routes(
 
 async fn enroll(
     State(state): State<AppState>,
-    Json(request): Json<EnrollRequest>,
+    ApiJson(request): ApiJson<EnrollRequest>,
 ) -> Result<(StatusCode, Json<crate::model::EnrollResponse>), ApiError> {
     let response = crate::service::enroll_node(&state, request).await?;
     Ok((StatusCode::CREATED, Json(response)))
@@ -304,7 +304,7 @@ async fn control(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Re
 
 async fn record_relay_metrics(
     State(state): State<AppState>,
-    Json(report): Json<xs_core::SignedRelayTelemetryReport>,
+    ApiJson(report): ApiJson<xs_core::SignedRelayTelemetryReport>,
 ) -> Result<Json<crate::relay_telemetry::RelayTelemetryAcknowledgement>, ApiError> {
     Ok(Json(crate::relay_telemetry::record(&state, report).await?))
 }
