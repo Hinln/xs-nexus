@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-controller-scale test-postgres-least-privilege test-protocol-throughput test-relay-throughput test-agent-rtt test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-linux-one-click test-docker-deployment test-runtime-stability test-production-health test-console-real-e2e test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-windows-xsnet-compatibility test-windows-xsnet-transport test-windows-agent-ipc test-windows-agent-storage test-windows-agent-routing test-windows-agent-service test-host-hardening test-independent-implementation test-source-sbom test-image-sbom test-image-reproducibility test-release-provenance test-secret-surface-audit test-strict-tls-audit source-sbom validate-image-supply-chain scan-image-vulnerabilities verify-image-vulnerability-disposition test-protocol-vectors test-protocol-fuzz test-spec test-network test-e2e test-visual security-check dependency-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 validate-m61-agent-session release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-controller-scale test-postgres-least-privilege test-production-postgres-policy test-protocol-throughput test-relay-throughput test-agent-rtt test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-linux-one-click test-docker-deployment test-runtime-stability test-production-health test-console-real-e2e test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-windows-xsnet-compatibility test-windows-xsnet-transport test-windows-agent-ipc test-windows-agent-storage test-windows-agent-routing test-windows-agent-service test-host-hardening test-independent-implementation test-source-sbom test-image-sbom test-image-reproducibility test-release-provenance test-secret-surface-audit test-strict-tls-audit source-sbom validate-image-supply-chain scan-image-vulnerabilities verify-image-vulnerability-disposition test-protocol-vectors test-protocol-fuzz test-spec test-network test-e2e test-visual security-check dependency-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 validate-m61-agent-session release clean
 
 setup:
 >npm ci
@@ -37,6 +37,9 @@ test-controller-scale:
 
 test-postgres-least-privilege:
 >./scripts/test-postgres-least-privilege.sh
+
+test-production-postgres-policy:
+>python3 scripts/test-audit-production-postgres.py
 
 test-protocol-throughput:
 >./scripts/test-protocol-throughput.sh
@@ -176,7 +179,7 @@ test-protocol-fuzz:
 test-strict-tls-audit:
 >python3 scripts/test-audit-strict-tls.py
 
-test-spec: test-strict-tls-audit
+test-spec: test-strict-tls-audit test-production-postgres-policy
 >python3 scripts/validate-m02.py
 >python3 scripts/validate-plan-status.py
 >python3 scripts/validate-public-edge.py
