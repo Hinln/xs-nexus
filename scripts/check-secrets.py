@@ -84,6 +84,23 @@ def repository_files(root: Path):
 
 def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
     findings: list[Finding] = []
+    for path in repository_files(root):
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        relative = path.relative_to(root)
+        findings.extend(scan_bytes(relative, data, references))
+
+    return sorted(set(findings), key=lambda item: (str(item.path), item.line, item.rule))
+
+
+def scan_bytes(
+    path: Path,
+    data: bytes,
+    references: dict[str, bytes],
+) -> list[Finding]:
+    findings: list[Finding] = []
     private_header = re.compile(rb"-----BEGIN (?:OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----")
     credential_uri = re.compile(rb"(?i)(?:postgres(?:ql)?|mysql|redis)://[^\s/@:]+:[^\s/@]+@")
     source_literal = re.compile(rb"^(?:b?[\"'`]|(?:br|r)#*\")")
@@ -93,51 +110,45 @@ def scan(root: Path, references: dict[str, bytes]) -> list[Finding]:
         rb"ret|token|private[_-]?key)\s*(?::(?!:)|=(?!>))\s*([^\s]+)"
     )
 
-    for path in repository_files(root):
-        try:
-            data = path.read_bytes()
-        except OSError:
-            continue
-        relative = path.relative_to(root)
-        lines = data.splitlines()
+    lines = data.splitlines()
 
-        for name, value in references.items():
-            for line_number, line in enumerate(lines, start=1):
-                if value in line:
-                    findings.append(Finding(relative, line_number, f"reference:{name}"))
-
+    for name, value in references.items():
         for line_number, line in enumerate(lines, start=1):
-            if private_header.search(line):
-                findings.append(Finding(relative, line_number, "private-key"))
-            if path.name != ".env.example" and credential_uri.search(line):
-                findings.append(Finding(relative, line_number, "credential-uri"))
-            if path.name != ".env.example":
-                match = assignment.search(line)
-                if match is not None:
-                    raw_value = match.group(1).strip()
-                    value = raw_value.strip(b"\"'").decode(errors="ignore")
-                    rust_type_annotation = (
-                        path.suffix == ".rs"
-                        and b"=" not in line
-                        and line.rstrip().endswith(b",")
-                    )
-                    source_nonliteral_assignment = (
-                        path.suffix in SOURCE_SUFFIXES
-                        and source_literal.match(raw_value) is None
-                    )
-                    shell_nonliteral_assignment = (
-                        path.suffix in SHELL_SUFFIXES
-                        and re.search(rb"\$(?:[A-Za-z_{(])", raw_value) is not None
-                    )
-                    if (
-                        value not in PLACEHOLDERS
-                        and len(value) >= 8
-                        and value not in PSEUDOCODE_ASSIGNMENT_VALUES
-                        and not rust_type_annotation
-                        and not source_nonliteral_assignment
-                        and not shell_nonliteral_assignment
-                    ):
-                        findings.append(Finding(relative, line_number, "secret-assignment"))
+            if value in line:
+                findings.append(Finding(path, line_number, f"reference:{name}"))
+
+    for line_number, line in enumerate(lines, start=1):
+        if private_header.search(line):
+            findings.append(Finding(path, line_number, "private-key"))
+        if path.name != ".env.example" and credential_uri.search(line):
+            findings.append(Finding(path, line_number, "credential-uri"))
+        if path.name != ".env.example":
+            match = assignment.search(line)
+            if match is not None:
+                raw_value = match.group(1).strip()
+                value = raw_value.strip(b"\"'").decode(errors="ignore")
+                rust_type_annotation = (
+                    path.suffix == ".rs"
+                    and b"=" not in line
+                    and line.rstrip().endswith(b",")
+                )
+                source_nonliteral_assignment = (
+                    path.suffix in SOURCE_SUFFIXES
+                    and source_literal.match(raw_value) is None
+                )
+                shell_nonliteral_assignment = (
+                    path.suffix in SHELL_SUFFIXES
+                    and re.search(rb"\$(?:[A-Za-z_{(])", raw_value) is not None
+                )
+                if (
+                    value not in PLACEHOLDERS
+                    and len(value) >= 8
+                    and value not in PSEUDOCODE_ASSIGNMENT_VALUES
+                    and not rust_type_annotation
+                    and not source_nonliteral_assignment
+                    and not shell_nonliteral_assignment
+                ):
+                    findings.append(Finding(path, line_number, "secret-assignment"))
 
     return sorted(set(findings), key=lambda item: (str(item.path), item.line, item.rule))
 
