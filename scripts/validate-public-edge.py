@@ -97,6 +97,33 @@ def main() -> int:
     if "tls internal" in caddy:
         raise SystemExit("public Edge template must use publicly trusted ACME certificates")
 
+    openresty = require(
+        ROOT / "deploy/host/openresty-xs-nexus-vhost.conf.example",
+        (
+            "server_name __XS_NEXUS_DOMAIN__;",
+            "ssl_certificate __XS_NEXUS_CERTIFICATE_FULLCHAIN__;",
+            "ssl_certificate_key __XS_NEXUS_CERTIFICATE_KEY__;",
+            "ssl_protocols TLSv1.2 TLSv1.3;",
+            "ssl_session_tickets off;",
+            "return 308 https://$host$request_uri;",
+            "proxy_pass http://127.0.0.1:28081;",
+            "proxy_http_version 1.1;",
+            "proxy_set_header Upgrade $http_upgrade;",
+            "proxy_set_header Connection $xs_nexus_connection_upgrade;",
+            "Strict-Transport-Security",
+        ),
+    )
+    for forbidden in (
+        "proxy_ssl_verify off",
+        "ssl_protocols TLSv1 ",
+        "ssl_protocols TLSv1.1",
+        "127.0.0.1:28080",
+    ):
+        if forbidden in openresty:
+            raise SystemExit(f"OpenResty planned-domain template contains forbidden setting {forbidden!r}")
+    if openresty.count("proxy_pass http://127.0.0.1:28081;") != 1:
+        raise SystemExit("OpenResty planned-domain template must have one Console upstream")
+
     print("public HTTPS Edge source validation passed")
     return 0
 
