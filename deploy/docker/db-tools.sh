@@ -7,7 +7,9 @@ BACKUP_IDENTITY_FILE=${BACKUP_IDENTITY_FILE:-}
 BACKUP_DIRECTORY=${BACKUP_DIRECTORY:-/backups}
 REPLICA_DIRECTORY=${REPLICA_DIRECTORY:-/replica}
 DATABASE_SCHEMA=${DATABASE_SCHEMA:-}
+DATABASE_OWNER_ROLE=${DATABASE_OWNER_ROLE:-}
 DEPLOYMENT_NAME=${DEPLOYMENT_NAME:-}
+SKIP_SAFETY_BACKUP=${SKIP_SAFETY_BACKUP:-false}
 LOCAL_RETENTION_DAYS=${LOCAL_RETENTION_DAYS:-30}
 REPLICA_RETENTION_DAYS=${REPLICA_RETENTION_DAYS:-180}
 MIN_RETAINED_BACKUPS=${MIN_RETAINED_BACKUPS:-3}
@@ -22,6 +24,10 @@ fail() {
 
 validate_schema() {
     [[ $DATABASE_SCHEMA =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'invalid DATABASE_SCHEMA'
+}
+
+validate_database_role() {
+    [[ $DATABASE_OWNER_ROLE =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'invalid DATABASE_OWNER_ROLE'
 }
 
 validate_backup_name() {
@@ -273,7 +279,8 @@ create_backup() {
     consume_custom_archive <"$plaintext_temporary/archive.pipe" &
     validator_pid=$!
     set +e
-    pg_dump --dbname="$DATABASE_CONNECTION_URI" --format=custom --no-owner --no-acl --schema="$DATABASE_SCHEMA" | \
+    pg_dump --dbname="$DATABASE_CONNECTION_URI" --role="$DATABASE_OWNER_ROLE" \
+        --format=custom --no-owner --no-acl --schema="$DATABASE_SCHEMA" | \
         tee "$plaintext_temporary/archive.pipe" | \
         age --encrypt -R "$BACKUP_RECIPIENT_FILE" --output "$encrypted_temporary/$name.dump.age"
     pipeline_status=("${PIPESTATUS[@]}")
@@ -395,17 +402,17 @@ fetch_backup() {
 
 drop_schema() {
     psql --dbname="$DATABASE_CONNECTION_URI" --no-psqlrc --set ON_ERROR_STOP=1 \
-        --command "DROP SCHEMA IF EXISTS \"$DATABASE_SCHEMA\" CASCADE" >/dev/null
+        --command "SET ROLE \"$DATABASE_OWNER_ROLE\"; DROP SCHEMA IF EXISTS \"$DATABASE_SCHEMA\" CASCADE" >/dev/null
 }
 
 restore_archive() {
     local archive=$1
     local -a pipeline_status
     psql --dbname="$DATABASE_CONNECTION_URI" --no-psqlrc --set ON_ERROR_STOP=1 \
-        --command "CREATE SCHEMA \"$DATABASE_SCHEMA\"" >/dev/null
+        --command "SET ROLE \"$DATABASE_OWNER_ROLE\"; CREATE SCHEMA \"$DATABASE_SCHEMA\" AUTHORIZATION \"$DATABASE_OWNER_ROLE\"" >/dev/null
     set +e
     age --decrypt -i "$BACKUP_IDENTITY_FILE" "$archive" | \
-        pg_restore --exit-on-error --no-owner --no-acl --schema="$DATABASE_SCHEMA" \
+        pg_restore --exit-on-error --no-owner --no-acl --role="$DATABASE_OWNER_ROLE" --schema="$DATABASE_SCHEMA" \
             --dbname="$DATABASE_CONNECTION_URI"
     pipeline_status=("${PIPESTATUS[@]}")
     set -e
@@ -417,7 +424,7 @@ restore_backup() {
     [[ $confirmation == "$DATABASE_SCHEMA" ]] || fail 'CONFIRM_SCHEMA must exactly match DATABASE_SCHEMA'
     verify_backup "$name"
     authenticate_backup "$BACKUP_DIRECTORY" "$name" replicated
-    if schema_exists; then
+    if schema_exists && [[ $SKIP_SAFETY_BACKUP == false ]]; then
         load_recipient
         safety_name="pre-restore-$DATABASE_SCHEMA-$(date -u +%Y%m%dT%H%M%SZ)"
         create_backup "$safety_name" >/dev/null
@@ -546,6 +553,9 @@ prune_backups() {
 
 main() {
     validate_schema
+    validate_database_role
+    [[ $SKIP_SAFETY_BACKUP == true || $SKIP_SAFETY_BACKUP == false ]] \
+        || fail 'invalid SKIP_SAFETY_BACKUP'
     validate_storage
     umask 077
     case ${1:-} in

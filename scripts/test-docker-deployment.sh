@@ -85,7 +85,7 @@ cleanup() {
         wait "$OCCUPIED_PID" 2>/dev/null || true
     fi
     if [[ -f $ENVIRONMENT_FILE ]]; then
-        "$STACK" --env-file "$ENVIRONMENT_FILE" down >/dev/null 2>&1 || true
+        compose down --remove-orphans >/dev/null 2>&1 || true
     fi
     reset_schema || true
     rm -rf -- "$TEMPORARY"
@@ -487,9 +487,9 @@ sleep 1
 LOCAL_RETENTION_DAYS=0
 REPLICA_RETENTION_DAYS=3650
 MIN_RETAINED_BACKUPS=1
-write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
-write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
-write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
+write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" "$DATABASE_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" "$BAD_DATABASE_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" "$DATABASE_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
 RETENTION_CONFIRMATION=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 "$STACK" --env-file "$ENVIRONMENT_FILE" prune-backups \
     --confirm-before "$RETENTION_CONFIRMATION" \
@@ -500,9 +500,9 @@ RETENTION_CONFIRMATION=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 sleep 1
 REPLICA_RETENTION_DAYS=0
-write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
-write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
-write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
+write_environment "$ENVIRONMENT_FILE" "$CONTROLLER_SECRETS" "$DATABASE_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_DATABASE_ENVIRONMENT" "$BAD_CONTROLLER_SECRETS" "$BAD_DATABASE_SECRETS" xs-nexus/controller:m52test "$TEST_DATABASE_SCHEMA"
+write_environment "$BAD_IMAGE_ENVIRONMENT" "$CONTROLLER_SECRETS" "$DATABASE_SECRETS" alpine:3.22 "$TEST_DATABASE_SCHEMA"
 RETENTION_CONFIRMATION=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 "$STACK" --env-file "$ENVIRONMENT_FILE" prune-backups \
     --confirm-before "$RETENTION_CONFIRMATION" \

@@ -385,6 +385,10 @@ migrate_database() {
     verify_images
     migration_backup="pre-migration-$(environment_value XS_DEPLOYMENT)-$(date -u +%Y%m%dT%H%M%S)-$$"
     backup_schema_if_present "$migration_backup"
+    run_migration_job
+}
+
+run_migration_job() {
     "${COMPOSE[@]}" --profile migration run --rm --no-deps migration
 }
 
@@ -494,7 +498,7 @@ deploy_stack() {
 
 restore_backup() {
     local name=${1:-} confirmation_flag=${2:-} confirmation=${3:-} identity_flag=${4:-} identity=${5:-}
-    local schema container was_running=0 status
+    local schema container safety_name='' schema_status safety_status=0 status rollback_status=1 restart_status=0 was_running=0
     [[ -n $name && $confirmation_flag == --confirm-schema && -n $confirmation && $identity_flag == --identity-file && -n $identity ]] || usage
     schema=$(environment_value XS_DATABASE_SCHEMA)
     [[ $confirmation == "$schema" ]] || fail 'restore confirmation does not match the configured schema'
@@ -504,16 +508,76 @@ restore_backup() {
         was_running=1
         "${COMPOSE[@]}" stop --timeout 20 controller
     fi
+    safety_name="pre-restore-$schema-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    set +e
+    run_db_tools schema-exists >/dev/null
+    schema_status=$?
+    set -e
+    case $schema_status in
+        0)
+            set +e
+            run_db_tools -e "BACKUP_NAME=$safety_name" backup
+            safety_status=$?
+            if (( safety_status == 0 )); then
+                run_db_tools -e "BACKUP_NAME=$safety_name" \
+                    -e 'BACKUP_IDENTITY_FILE=/run/secrets/xs-backup/identity' \
+                    -v "$identity:/run/secrets/xs-backup/identity:ro" verify-deep
+                safety_status=$?
+            fi
+            set -e
+            if (( safety_status != 0 )); then
+                if (( was_running == 1 )); then
+                    "${COMPOSE[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 90 controller
+                fi
+                fail 'restore safety backup verification failed; restore was not attempted'
+            fi
+            ;;
+        3)
+            safety_name=''
+            ;;
+        *)
+            if (( was_running == 1 )); then
+                "${COMPOSE[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 90 controller
+            fi
+            fail 'unable to determine whether a restore safety backup is required'
+            ;;
+    esac
     set +e
     run_db_tools -e "BACKUP_NAME=$name" -e "CONFIRM_SCHEMA=$confirmation" \
+        -e 'SKIP_SAFETY_BACKUP=true' \
         -e 'BACKUP_IDENTITY_FILE=/run/secrets/xs-backup/identity' \
         -v "$identity:/run/secrets/xs-backup/identity:ro" restore
     status=$?
-    set -e
-    if (( was_running == 1 )); then
-        "${COMPOSE[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 90 controller
+    if (( status == 0 )); then
+        run_migration_job
+        status=$?
     fi
-    (( status == 0 )) || fail 'database restore failed'
+    if (( status != 0 )) && [[ -n $safety_name ]]; then
+        run_db_tools -e "BACKUP_NAME=$safety_name" -e "CONFIRM_SCHEMA=$confirmation" \
+            -e 'SKIP_SAFETY_BACKUP=true' \
+            -e 'BACKUP_IDENTITY_FILE=/run/secrets/xs-backup/identity' \
+            -v "$identity:/run/secrets/xs-backup/identity:ro" restore
+        rollback_status=$?
+        if (( rollback_status == 0 )); then
+            run_migration_job
+            rollback_status=$?
+        fi
+    fi
+    set -e
+    if (( was_running == 1 )) && (( status == 0 || rollback_status == 0 )); then
+        set +e
+        "${COMPOSE[@]}" up -d --no-deps --no-build --pull never --wait --wait-timeout 90 controller
+        restart_status=$?
+        set -e
+    fi
+    if (( status != 0 )); then
+        [[ -n $safety_name ]] || fail 'database restore failed without a prior schema to restore'
+        (( rollback_status == 0 )) || fail 'database restore failed and safety rollback also failed; controller remains stopped'
+        (( restart_status == 0 )) || fail 'database restore failed; previous schema state was restored but controller restart failed'
+        fail 'database restore failed; previous schema state was restored'
+    fi
+    (( restart_status == 0 )) || fail 'database restore succeeded but controller restart failed'
+    [[ -z $safety_name ]] || printf 'safety_backup=%s\n' "$safety_name"
 }
 
 verify_backup_deep() {

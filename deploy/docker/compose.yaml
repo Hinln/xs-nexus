@@ -237,6 +237,7 @@ services:
       DATABASE_URL_FILE: /run/secrets/xs-database/database-url
       BACKUP_RECIPIENT_FILE: /run/secrets/xs-controller/backup-recipient
       DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
+      DATABASE_OWNER_ROLE: ${XS_DATABASE_OWNER_ROLE:?set XS_DATABASE_OWNER_ROLE}
       DEPLOYMENT_NAME: ${XS_DEPLOYMENT:?set XS_DEPLOYMENT}
       BACKUP_DIRECTORY: /backups
       REPLICA_DIRECTORY: /replica
