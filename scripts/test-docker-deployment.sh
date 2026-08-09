@@ -31,7 +31,9 @@ DISCOVERY_PORT=42180
 RELAY_PORT=42181
 ADMIN_TOKEN=''
 DATABASE_URL_VALUE=''
-DATABASE_ROLE=''
+MIGRATION_DATABASE_URL_VALUE=''
+DATABASE_APP_ROLE=''
+DATABASE_OWNER_ROLE_VALUE=''
 HOST_DATABASE_URL_VALUE=''
 NETWORK_MEMBERS_BEFORE=''
 DOCKER_NETWORKS_BEFORE=''
@@ -128,8 +130,8 @@ XS_BACKUP_REPLICA_RETENTION_DAYS=$REPLICA_RETENTION_DAYS
 XS_BACKUP_MIN_RETAINED=$MIN_RETAINED_BACKUPS
 XS_STATE_DIR=$STATE_DIRECTORY
 XS_DATABASE_SCHEMA=$database_schema
-XS_DATABASE_APP_ROLE=$DATABASE_ROLE
-XS_DATABASE_OWNER_ROLE=$DATABASE_ROLE
+XS_DATABASE_APP_ROLE=$DATABASE_APP_ROLE
+XS_DATABASE_OWNER_ROLE=$DATABASE_OWNER_ROLE_VALUE
 XS_CONSOLE_BOOTSTRAP_USERNAME=admin
 XS_CONSOLE_BOOTSTRAP_PASSWORD_FILE=/run/secrets/xs-controller/console-bootstrap-password
 XS_BIND_ADDRESS=127.0.0.1
@@ -194,8 +196,16 @@ set -a
 source "$EXTERNAL_ENVIRONMENT"
 set +a
 DATABASE_URL_VALUE=${DATABASE_URL:?DATABASE_URL is required}
-DATABASE_ROLE=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.stdin.read()).username or "")' <<<"$DATABASE_URL_VALUE")
-[[ $DATABASE_ROLE =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+MIGRATION_DATABASE_URL_VALUE=${MIGRATION_DATABASE_URL:?MIGRATION_DATABASE_URL is required}
+DATABASE_OWNER_ROLE_VALUE=${DATABASE_OWNER_ROLE:?DATABASE_OWNER_ROLE is required}
+DATABASE_APP_ROLE=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.stdin.read()).username or "")' <<<"$DATABASE_URL_VALUE")
+database_migrator_role=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.stdin.read()).username or "")' <<<"$MIGRATION_DATABASE_URL_VALUE")
+[[ $DATABASE_APP_ROLE =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+[[ $database_migrator_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+[[ $DATABASE_OWNER_ROLE_VALUE =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+[[ $DATABASE_APP_ROLE != "$database_migrator_role" ]]
+[[ $DATABASE_APP_ROLE != "$DATABASE_OWNER_ROLE_VALUE" ]]
+[[ $database_migrator_role != "$DATABASE_OWNER_ROLE_VALUE" ]]
 if [[ -n ${HOST_DATABASE_URL:-} ]]; then
     HOST_DATABASE_URL_VALUE=$HOST_DATABASE_URL
 else
@@ -209,7 +219,7 @@ port = f":{parsed.port}" if parsed.port is not None else ""
 print(urlunsplit((parsed.scheme, f"{userinfo}127.0.0.1{port}", parsed.path, parsed.query, parsed.fragment)))
 ' <<<"$DATABASE_URL_VALUE")
 fi
-unset DATABASE_URL HOST_DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
+unset DATABASE_URL MIGRATION_DATABASE_URL DATABASE_OWNER_ROLE HOST_DATABASE_URL DATABASE_SCHEMA REDIS_URL MYSQL_URL
 
 mkdir -p "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$DATABASE_SECRETS" "$BAD_DATABASE_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$STATE_DIRECTORY" "$RELEASE_DIRECTORY" "$WINDOWS_RELEASE_DIRECTORY"
 chown 65532:65532 "$CONTROLLER_SECRETS" "$BAD_CONTROLLER_SECRETS" "$DATABASE_SECRETS" "$BAD_DATABASE_SECRETS" "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY"
@@ -220,7 +230,7 @@ chmod 0755 "$WINDOWS_RELEASE_DIRECTORY"
 ADMIN_TOKEN=$(openssl rand -hex 32)
 CONSOLE_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
 printf '%s' "$DATABASE_URL_VALUE" >"$CONTROLLER_SECRETS/database-url"
-printf '%s' "$DATABASE_URL_VALUE" >"$DATABASE_SECRETS/database-url"
+printf '%s' "$MIGRATION_DATABASE_URL_VALUE" >"$DATABASE_SECRETS/database-url"
 printf '%s' "$ADMIN_TOKEN" >"$CONTROLLER_SECRETS/admin-api-token"
 printf '%s' "$CONSOLE_PASSWORD" >"$CONTROLLER_SECRETS/console-bootstrap-password"
 head -c 32 /dev/urandom >"$CONTROLLER_SECRETS/credential-signing-key"
