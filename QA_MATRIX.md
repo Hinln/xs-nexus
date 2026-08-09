@@ -473,3 +473,13 @@
 - [x] 有界清理：仅删除精确项目 build cache、157 个验签 rollback 包、临时配置归档、APT 下载和 `dpkg-repack`；不运行 global prune/autoremove；根分区由 `83%` 降至 `77%`，约 `14.15 GB` 可用。
 - [x] 维护证据 218 文件 SHA-256 复核和无值秘密扫描 0 findings；所有失败尝试与纠正 disposition 保留。
 - [ ] Gate 14 唯一残余：外部 warning/critical 磁盘告警未真实送达和 on-call 确认，状态 `BLOCKED_EXTERNAL`；Gate 14 仍为 `PARTIAL`。
+
+## 20. Gate 13 计划域名 strict TLS（2026-08-09）
+
+- [x] 只读 DNS/边缘：计划域名解析到 EdgeOne；边缘 TLS 1.3、证书链和主机名验证通过。
+- [x] 失败复现：公网 `/`、`/health/ready`、`/install` 与 `/v1/control` 均为 HTTP `525`；直连源站并发送计划域名 SNI 时 TLS `unrecognized_name`，不产生 HTTP 响应。
+- [x] 源站定界：无计划域名 vhost/证书；现有证书仅覆盖 `qinwen.co`；现有 public root 指向 Controller `28080`，而 Console `28081` 的 root/health/WebSocket 控制验证通过。
+- [x] 工具回归：严格 TLS 最低版本、证书/主机名验证、SNI、精确 HTTP status、完整 WebSocket accept、畸形 header、非法输入和证书失败关闭均通过。
+- [x] 模板源码门禁：HTTP 308、TLS 1.2/1.3、证书占位符、HSTS、Console-only loopback、WebSocket header 存在；TLS 1.0/1.1、Controller root upstream 和禁用验证标记被拒绝。
+- [x] 证据完整性：只读根和精确提交工具根均无生产变更；后者 8 文件 SHA-256 与秘密扫描通过，路径记录在 V2 `EVIDENCE_INDEX.md`。
+- [ ] 生产修复：所有者批准证书、计划域名 vhost、CDN Origin Host/SNI/strict mode，并完成 direct-origin、CDN、浏览器、登录、认证 API、WebSocket、Console 与未知路由 E2E。完成前 Gate 13 保持 `FAIL`。

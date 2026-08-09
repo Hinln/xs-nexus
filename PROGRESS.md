@@ -420,3 +420,11 @@ make clean
 - 仅删除精确项目 build `target`、157 个已验签旧包、临时关键配置归档、APT 下载缓存和维护专用 `dpkg-repack`；没有运行 Docker global prune 或 apt autoremove。根分区从 `83%`/约 `9.8G` 可用改善到 `77%`/`14,152,945,664` bytes 可用。
 - 维护证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z` 共 218 个文件，`SHA256SUMS.final` 复核通过，无值秘密扫描 0 findings；全部 verifier/cleanup 失败尝试和显式 `grub-editenv` 纠正均保留。
 - Gate 14 仍为 `PARTIAL`：内部补丁、重启和磁盘压力已闭合，但没有所有者批准的独立外部通知目标/on-call，warning/critical 磁盘告警未真实送达，记录为 `BLOCKED_EXTERNAL`。下一步从 Gate 13 只读取证开始：复核 `vpn.xiashikeji.cn` DNS、SNI、源站证书链、CDN strict 模式、Host/WebSocket/health；任何 DNS/CDN/1Panel 站点修改仍需所有者授权。
+
+## 2026-08-09 Gate 13 计划域名严格 TLS 只读审计与内部准备
+
+- 只读冻结确认 `vpn.xiashikeji.cn` 经 EdgeOne 边缘完成 TLS 1.3 和主机名验证，但 `/`、`/health/ready`、`/install`、`/v1/control` 均返回 HTTP `525`；直连 `101.32.170.223:443` 并使用计划域名 SNI 时收到 `unrecognized_name`，没有 HTTP 响应。
+- 源站只存在 `vpn.qinwen.co` vhost 和仅覆盖 `qinwen.co` 的证书，没有计划域名 vhost/证书。当前站点根路径代理 Controller `127.0.0.1:28080` 并返回 404；Console `127.0.0.1:28081` 的根、Console/Controller health 与 WebSocket `101` 均通过，因此根因已精确定位到源站 SNI/vhost/certificate 及 public upstream。
+- 提交 `94ccae3e8b4bf0279336d01db8b1ab53abf15aae` 增加 `scripts/audit-strict-tls.py`、完整负向回归、Makefile 门禁和只代理 Console 的 OpenResty 占位符模板；本地 py_compile、回归、public-edge validator、真实公网 smoke、秘密扫描和 diff check 通过。Windows 环境缺少可执行 `python3`，因此未把该环境的 `validate-m02.py` 启动失败伪报为产品通过；Linux CI/复核仍需执行。
+- 原始只读证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z`；精确提交工具证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z` 为 root-only 只读、8 文件且 manifest/秘密扫描通过。失败 collector 证据保留，未隐藏。
+- 没有修改 DNS、CDN、证书、1Panel/OpenResty、Docker、网络、防火墙或运行服务。Gate 13 保持 `FAIL`、`PRV2-005`/`KI-025` 为 `BLOCKED_EXTERNAL`；下一步进入 Gate 23 可自行修复的 P0/P1/Critical/High 清零，同时等待所有者授权计划域名生产变更。

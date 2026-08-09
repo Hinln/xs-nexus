@@ -35,10 +35,12 @@
 
 ## BLK-003 DNS/CDN 与严格源站 TLS
 
-- 状态：阻塞任务书计划域名 `vpn.xiashikeji.cn` 上线；2026-08-08 最终复核中边缘 TLS 可完成且根路径返回 404，但 `/health/ready` 与 `/install` 仍返回 `525 SSL Handshake Failed with Origin Server`
-- 需要：用户批准并在 1Panel/CDN 中完成正式源站证书、SNI、反向代理和 strict TLS 配置。
-- 已验证：服务器错误时钟已恢复 Chrony/NTP，同步后功能路径 525 仍可复现；Controller 回环健康，当前固定 `vpn.qinwen.co` 的健康入口、Linux/Windows 公网引导、全部 10 个发布文件逐字节比较和未知文件 404 均通过，因此不能把 525 归因于应用路由。证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z/public-checks.txt`。
-- 已完成：生产最小 INPUT 防火墙和 1Panel TCP `188` 公网关闭已由 Gate 14 独立完成，不再属于本阻塞项；不得为了修复 525 放宽该策略或关闭 TLS 验证。
+- 状态：外部阻塞；计划域名 `vpn.xiashikeji.cn` 的 Gate 13 保持 `FAIL`。2026-08-09 外部复核中，边缘证书与 TLS 1.3 可验证，但 `/`、`/health/ready`、`/install`、`/v1/control` 全部返回 `525`；直连源站并发送计划域名 SNI 时在 HTTP 前收到 `unrecognized_name` TLS alert。
+- 根因：源站没有计划域名 1Panel/OpenResty vhost 和匹配证书；现有证书只覆盖 `qinwen.co`。现有 `vpn.qinwen.co` 根路径还代理到 Controller `127.0.0.1:28080`，而不是可提供 Console/API/WebSocket 的 Console `127.0.0.1:28081`。
+- 外部条件：用户批准 DNS/CDN/1Panel 变更窗口和回滚，提供或授权签发计划域名源站证书，并由控制面所有者配置 HTTPS 443、计划域名 Origin Host/SNI 与严格证书验证。禁止 Flexible SSL、明文回源、忽略证书错误或关闭验证。
+- 已完成的不受阻塞工作：提交 `94ccae3` 增加严格 TLS/SNI/HTTP/WebSocket 审计器、负向测试和占位符 OpenResty 模板；模板只代理 Console loopback 且不修改任何现有站点。生产最小 INPUT 防火墙和 1Panel TCP `188` 公网关闭已由 Gate 14 独立完成。
+- 证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z`。完整批准、基线、变更、回滚和复验步骤见 `audit/production-readiness-remediation-v2/CDN_TLS.md`。
+- 解除条件：直连源站和 CDN 严格 TLS 均验证通过，公网 health/login/authenticated API/WebSocket/Console/未知路由与浏览器 E2E 通过，且无关站点、路由、防火墙、容器和 `1panel-network` 不变量保持。
 - 不阻塞：当前 `vpn.qinwen.co` 测试发布、IP 和临时端口测试。
 
 ---

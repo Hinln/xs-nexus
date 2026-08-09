@@ -48,3 +48,12 @@
 - Removed only one exact project build cache, 157 verified rollback packages, the temporary critical-config archive, APT downloads, and maintenance-only `dpkg-repack`; no global Docker prune or autoremove ran. Root usage fell from `83%` to `77%` with about `14.15 GB` available.
 - Final evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z` contains 218 SHA-256 verified files and a zero-finding no-value secret scan. Failed verifier/cleanup attempts and the explicit `grub-editenv` correction are retained.
 - Gate 14 remains `PARTIAL`, not `PASS`, solely because no owner-approved independent external destination or on-call path exists for real warning/critical disk-alert delivery.
+
+### Gate 13 planned-domain strict TLS diagnosis and preparation
+
+- Re-ran a read-only origin/CDN/OpenResty audit. Client-to-edge TLS validates, but `/`, `/health/ready`, `/install`, and `/v1/control` all return `525`; direct origin with planned-domain SNI fails with `unrecognized_name` before HTTP.
+- Confirmed there is no planned-domain origin virtual host or certificate. The current `vpn.qinwen.co` certificate does not cover the planned name, and its public root proxies to Controller `127.0.0.1:28080` rather than Console `127.0.0.1:28081`.
+- Added strict certificate-required TLS 1.2/1.3, SNI, HTTP-status, and WebSocket-handshake audit tooling with negative regression tests. Added a placeholder-only OpenResty template that redirects HTTP, terminates strict TLS, forwards all paths to Console, and preserves WebSocket upgrade.
+- Exact implementation commit `94ccae3e8b4bf0279336d01db8b1ab53abf15aae` passed local regression, public-edge source validation, live public smoke, repository secret scan, and diff checks. The Windows-only environment could not execute the unrelated `validate-m02.py` subprocess until a real `python3` executable is available; no assertion was skipped or modified.
+- Sealed read-only evidence under `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z` and the exact-commit tool rerun under `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z`.
+- No DNS, CDN, certificate, 1Panel, OpenResty, Docker, firewall, network, route, or running-service change was made. Gate 13 remains `FAIL`; production correction is `BLOCKED_EXTERNAL` pending owner authorization.

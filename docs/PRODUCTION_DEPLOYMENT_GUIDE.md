@@ -393,6 +393,29 @@ Caddy 自动处理：
 - HSTS、`nosniff`、`DENY` 和 Referrer Policy；
 - WebSocket Upgrade/Connection 透传。
 
+### 7.3 既有 1Panel/OpenResty 作为严格 TLS 源站
+
+若生产入口由 1Panel/OpenResty 管理，不要把 Controller `127.0.0.1:28080` 作为站点根 upstream。Controller 根路径不是 Console；站点的所有路径必须先进入 Console `127.0.0.1:28081`，再由 Console 转发 `/v1/`、`/health/` 和 WebSocket。
+
+仓库提供 `deploy/host/openresty-xs-nexus-vhost.conf.example`，但它只包含占位符，不能直接复制到生产。经所有者批准后，应在仓库外渲染域名、full chain 和私钥路径，保持证书/私钥 root-only，先备份当前站点和全局基线，再执行 OpenResty 配置测试。只新增计划域名站点；不得覆盖全局配置或修改无关 1Panel 站点。
+
+CDN 回源必须使用 HTTPS `443`、计划域名 Origin Host/SNI 和完整证书链/主机名验证。禁止 Flexible SSL、明文回源、关闭验证或忽略证书错误。边缘证书成功不证明严格回源成功。
+
+变更前后用仓库工具分别检查边缘和直连源站：
+
+```bash
+python3 scripts/audit-strict-tls.py \
+  --hostname console.example.com \
+  --origin 203.0.113.10 \
+  --http-check /=200 \
+  --http-check /console-health=200 \
+  --http-check /health/ready=200 \
+  --websocket-check /v1/control \
+  --output /path/outside/repository/strict-tls-report.json
+```
+
+工具要求 TLS 1.2 以上、受信证书与主机名匹配，并验证精确 HTTP 状态和完整 WebSocket accept。它只能证明探测客户端观察到的链路；CDN 控制面 strict 模式仍需无秘密配置导出和所有者复核。任一检查失败时退出非零，不得通过降低 TLS 标准使其通过。
+
 ## 8. 构建、预检和部署
 
 统一入口：

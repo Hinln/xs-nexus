@@ -993,3 +993,16 @@
 - 清理边界：只删除已验证、路径固定、非 symlink/mount、无打开引用且可重建的项目/维护缓存；禁止 global Docker prune 和 apt autoremove。维护专用旧包和敏感配置归档只在新内核内外部回归通过后销毁。
 - 证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`，218 个最终 manifest 条目，无值秘密扫描 0 findings。
 - 残余：该决策关闭 Gate 14 的补丁、reboot 和磁盘压力内部项；没有外部通知目标时不得把本地状态或模拟阈值称为真实磁盘告警送达，Gate 14 仍为 `PARTIAL`。
+
+---
+
+## ADR-087：计划域名必须独立验证边缘与源站严格 TLS，并统一经 Console 进入应用
+
+- 状态：接受
+- 日期：2026-08-09
+- 背景：边缘证书可验证并不证明 CDN 到源站的严格 TLS 成功。计划域名当前在所有功能路径返回 `525`，源站 SNI 失败；现有 public vhost 又把根路径送到只提供 API 的 Controller，导致即使 TLS 修复也无法提供 Console 根页面。
+- 决策：生产验收必须分别探测 edge DNS 和 direct origin；两者都以计划域名作为 SNI/Host，使用系统信任或明确批准的 CA、`CERT_REQUIRED`、主机名验证和 TLS 1.2 以上。HTTP 路径必须验证精确状态，WebSocket 必须验证完整 `101`/Upgrade/Accept。计划域名 OpenResty 只把全部路径代理到 Console loopback `127.0.0.1:28081`，由 Console 统一处理 SPA、health、API 与 WebSocket，不直接把根路径指向 Controller。
+- 失败策略：证书链、SAN、SNI、协议版本、HTTP 状态、WebSocket accept 任一失败即失败关闭；工具只报告可观察结果，不推断 CDN control-plane strict 模式，也不把模板存在视为部署完成。Flexible SSL、明文回源、禁用验证、忽略证书错误和 Controller 根 upstream 均被禁止。
+- 所有权边界：仓库只提供 `scripts/audit-strict-tls.py` 和 `deploy/host/openresty-xs-nexus-vhost.conf.example`。DNS/CDN、证书私钥和 1Panel/OpenResty 站点属于所有者控制面，未经批准不得应用；任何批准后的变更必须保留现有站点、`1panel-network`、防火墙、路由和容器不变量及回滚。
+- 证据：Git commit `94ccae3e8b4bf0279336d01db8b1ab53abf15aae`；`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z`；`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z`。
+- 残余：当前生产没有应用该模板或计划域名证书/CDN 设置，Gate 13 仍为 `FAIL`，Gate 19 仍为 `PARTIAL`，正式修复为 `BLOCKED_EXTERNAL`。

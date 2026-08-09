@@ -336,3 +336,16 @@
 - 影响：主机仍没有独立于被监控服务器的 warning/critical 磁盘通知目标、真实送达回执或 on-call acknowledgement。主机本地日志或静态状态不能证明通知路径可用，因此 Gate 14/20 不能因补丁和空间恢复而判定 `PASS`。
 - 计划：由所有者/SRE 提供并批准外部通知 provider、destination、凭据和 on-call；配置 warning/critical 阈值，分别触发真实告警，确认外部接收/确认，再清除条件并证明恢复通知。不得把模拟、本机 journal 或未送达事件计作通过。
 - 解除条件：warning 与 critical 事件均由独立目标真实收到并被记录的 on-call 确认，故障解除后 recovery/closure 也真实送达；证据无秘密且加入审计索引。完成前 Gate 14 保持 `PARTIAL`。
+
+---
+
+## KI-025 计划域名严格 TLS 与 Console 公网路径未闭合
+
+- 严重度：高
+- 状态：外部阻塞（仓库侧准备已完成）
+- 首次发现：2026-08-08 CDN `525`；2026-08-09 Gate 13 独立定界。
+- 影响：`vpn.xiashikeji.cn` 的边缘证书可验证，但根、health、install 与 WebSocket 路径均返回 `525`；直连源站使用计划域名 SNI 时 TLS 握手失败。计划域名无法提供严格 TLS Console/API/WebSocket 路径，Gate 13/19 不能通过，项目不能正式生产上线。
+- 根因：源站无计划域名证书和 1Panel/OpenResty vhost；现有站点证书只覆盖 `qinwen.co`，且现有站点根路径代理 Controller 而非 Console。
+- 已完成缓解：提交 `94ccae3` 增加失败关闭的严格 TLS/SNI/HTTP/WebSocket 审计器及负向测试，并提供只含占位符、TLS 1.2/1.3、HTTP 308、Console loopback 和 WebSocket 透传的 OpenResty 模板。证据已秘密扫描和 SHA-256 封存；未修改生产配置。
+- 计划：所有者按 `audit/production-readiness-remediation-v2/CDN_TLS.md` 批准并执行证书、计划域名 vhost、CDN Origin Host/SNI 和 strict 验证变更，以完整基线和自动/手工回滚保护；随后从独立外部客户端和真实浏览器复验。
+- 解除条件：源站和 CDN 严格证书/主机名验证、根/health/install、登录、认证 API、WebSocket、Console E2E 和未知路由全部通过；无关 1Panel 站点、容器、路由、防火墙与 `1panel-network` 保持不变。

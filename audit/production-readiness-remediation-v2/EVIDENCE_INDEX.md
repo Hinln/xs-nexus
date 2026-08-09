@@ -81,6 +81,19 @@ The deployed host firewall is an independent `inet xs_nexus_host_guard` table an
 
 Gate 14 remains `PARTIAL`, not `PASS`. Security updates, protected reboot, post-reboot regression, and bounded disk cleanup are complete; independent external disk-alert delivery and on-call acknowledgement remain outstanding.
 
+## Gate 13 Planned-Domain TLS Evidence
+
+| Evidence | Location | Status |
+|---|---|---|
+| Strict audit and OpenResty template implementation | Git commit `94ccae3e8b4bf0279336d01db8b1ab53abf15aae` | VERIFIED LOCALLY |
+| Complete origin/OpenResty/CDN/DNS read-only collection | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z` | FAIL, ROOT CAUSE VERIFIED |
+| Retained collector-wrapper failure | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094447Z` | RETAINED FAILED EVIDENCE |
+| Exact-commit external strict TLS tool rerun | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z` | FAIL AS EXPECTED, 8 FILES VERIFIED |
+| Repository regression and public-edge source validation | `scripts/test-audit-strict-tls.py`, `scripts/validate-public-edge.py` | PASS |
+| Production DNS/CDN/1Panel/certificate change | Owner-controlled external action | BLOCKED_EXTERNAL |
+
+The successful read-only root includes the current-domain control, direct-origin SNI failure, installed certificate metadata, current virtual-host routing, loopback Controller/Console/API/WebSocket checks, independent Windows probes, no-value secret scan, and final SHA-256 manifest. The exact-commit rerun independently records edge HTTP `525` for all four required paths and direct-origin TLS failure for the same paths. Neither directory contains a production mutation; Gate 13 remains `FAIL`.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.

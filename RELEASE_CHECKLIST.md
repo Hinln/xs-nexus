@@ -132,3 +132,14 @@
 - [ ] Merge to `main`, owner-controlled valid signed RC tag/bundle, and deployment of that exact formal RC.
 
 These unchecked items keep Gate 01 `FAIL`, Release Candidate unchecked, and the overall result `NO_GO`.
+
+## Planned-domain strict TLS remediation V2 (2026-08-09)
+
+- [x] Independent read-only DNS, edge TLS, direct-origin SNI, installed certificate, OpenResty routing, loopback health, and WebSocket diagnosis.
+- [x] Strict TLS/SNI/HTTP/WebSocket audit tool, negative regression tests, and placeholder-only Console OpenResty template at exact commit `94ccae3`.
+- [x] Failure evidence and exact-commit rerun secret-scanned, SHA-256 sealed, and indexed without production mutation.
+- [ ] Owner-approved planned-domain origin certificate and isolated 1Panel/OpenResty virtual host.
+- [ ] CDN HTTPS origin, planned Origin Host/SNI, full strict certificate and hostname verification; no Flexible/plaintext/ignored-error mode.
+- [ ] Independent direct-origin and CDN health/login/authenticated API/WebSocket/Console/unknown-route/browser E2E with unrelated-site and host-network invariants.
+
+The first three items are preparation and diagnosis only. The unchecked production items keep Gate 13 `FAIL`, Gate 19 `PARTIAL`, Release Candidate unchecked, and the overall result `NO_GO`.
