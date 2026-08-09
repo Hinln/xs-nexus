@@ -21,7 +21,8 @@ REVIEWED_NODE24_ACTIONS = {
 
 def validate_workflow(path: Path, text: str) -> list[str]:
     failures: list[str] = []
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    lines = text.splitlines()
+    for line_number, line in enumerate(lines, start=1):
         stripped = line.lstrip()
         if not (stripped.startswith("uses:") or stripped.startswith("- uses:")):
             continue
@@ -50,6 +51,21 @@ def validate_workflow(path: Path, text: str) -> list[str]:
             failures.append(
                 f"{path}:{line_number}: {action_name} must retain version label {expected_label}"
             )
+        if action_name == "actions/checkout":
+            step_indent = len(line) - len(line.lstrip())
+            checkout_block: list[str] = []
+            for following_line in lines[line_number:]:
+                following_indent = len(following_line) - len(following_line.lstrip())
+                if following_line.lstrip().startswith("- ") and following_indent <= step_indent:
+                    break
+                checkout_block.append(following_line)
+            if not any(
+                re.fullmatch(r"\s*persist-credentials:\s*false\s*", block_line)
+                for block_line in checkout_block
+            ):
+                failures.append(
+                    f"{path}:{line_number}: actions/checkout must set persist-credentials: false"
+                )
     return failures
 
 

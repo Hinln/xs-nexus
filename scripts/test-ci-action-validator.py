@@ -32,6 +32,8 @@ def main() -> int:
   test:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -57,6 +59,10 @@ def main() -> int:
     expect_failure(
         valid.replace("# v7.0.0", "# v6.0.0"),
         "must retain version label v7.0.0",
+    )
+    expect_failure(
+        valid.replace("          persist-credentials: false\n", "", 1),
+        "must set persist-credentials: false",
     )
     expect_failure(
         "jobs:\n  test:\n    steps:\n      - uses: malformed action reference\n",
