@@ -102,7 +102,13 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON SCHEMA :"schema" FROM :"app_role";
 GRANT USAGE ON SCHEMA :"schema" TO :"app_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA :"schema" TO :"app_role";
-REVOKE INSERT, UPDATE, DELETE ON TABLE :"schema"._sqlx_migrations FROM :"app_role";
+SELECT format(
+    'REVOKE INSERT, UPDATE, DELETE ON TABLE %I._sqlx_migrations FROM %I',
+    :'schema',
+    :'app_role'
+)
+WHERE to_regclass(format('%I._sqlx_migrations', :'schema')) IS NOT NULL
+\gexec
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA :"schema" TO :"app_role";
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA :"schema" TO :"app_role";
 

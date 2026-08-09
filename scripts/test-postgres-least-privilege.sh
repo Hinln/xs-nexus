@@ -128,6 +128,13 @@ docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
     psql -q -h 127.0.0.1 -U gate16_bootstrap -d gate16 \
         -c "DROP SCHEMA gate16_schema CASCADE"
 '
+run_role_hardening
+run_migration migrator-url gate16_owner
+docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
+    export PGPASSWORD=$(cat /run/test-secrets/bootstrap-password)
+    psql -q -h 127.0.0.1 -U gate16_bootstrap -d gate16 \
+        -c "DROP SCHEMA gate16_schema CASCADE"
+'
 run_migration migrator-url gate16_owner
 
 docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
