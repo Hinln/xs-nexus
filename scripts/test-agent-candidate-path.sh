@@ -449,6 +449,11 @@ cargo build -p xs-cli
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
     "$SCHEMA_RESET"
+database_expected_role=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.stdin.read()).username or "")' <<<"$XS_TEST_DATABASE_URL")
+[[ $database_expected_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+DATABASE_URL="$XS_TEST_DATABASE_URL" \
+DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+    "$CONTROLLER" migrate
 
 ip link add "$BRIDGE" type bridge
 ip addr add "$BRIDGE_IP/29" dev "$BRIDGE"
@@ -512,6 +517,7 @@ DISCOVERY_LISTEN="$BRIDGE_IP:$CONTROLLER_PORT" \
 DISCOVERY_PUBLIC_ENDPOINT="$BRIDGE_IP:$CONTROLLER_PORT" \
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+DATABASE_EXPECTED_ROLE="$database_expected_role" \
 CREDENTIAL_SIGNING_KEY_PATH="$credential_key" \
 CONFIG_SIGNING_KEY_PATH="$configuration_key" \
 NODE_CREDENTIAL_TTL_SECONDS=86400 \

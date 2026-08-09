@@ -111,13 +111,13 @@ CONSOLE_SESSION_TTL_SECONDS=28800
 ```
 
 - 密码只从进程环境读取并以 Argon2id PHC 哈希持久化，不得写入仓库或镜像；
-- 已存在控制台用户后，Bootstrap 变量不会覆盖用户或密码；
+- 已存在控制台用户后，Bootstrap 变量不会覆盖用户或密码；首次初始化完成后必须同时清空 `XS_CONSOLE_BOOTSTRAP_USERNAME` 和 `XS_CONSOLE_BOOTSTRAP_PASSWORD_FILE`、删除明文 Secret，并重新部署；
 - HTTPS 部署必须保持 `CONSOLE_COOKIE_SECURE=true`；仅本机无 TLS 自动化测试可显式设为 `false`；
 - `CONSOLE_SESSION_TTL_SECONDS` 允许 900–86400 秒，默认 28800 秒；
 - 浏览器使用 HttpOnly、SameSite=Strict Cookie，写操作还必须提供当前会话的 CSRF 令牌；
 - `ADMIN_API_TOKEN` 只用于服务端自动化，不得传递给浏览器或保存到 Web Storage。
 
-真实 Bootstrap 密码属于临时凭据，完成首个管理员登录和用户创建后应从部署环境移除并轮换。
+真实 Bootstrap 密码属于临时凭据，完成首个管理员登录和用户创建后必须从部署环境与 Secret 目录移除。Controller `serve` 使用 `xs_nexus_app`，只校验已应用迁移；一次性 `migrate` 使用独立 `xs_nexus_migrator` 凭据并 `SET ROLE xs_nexus_owner`。Bootstrap/superuser URL 不得挂载到长运行 Controller。
 
 ---
 

@@ -79,9 +79,12 @@ env \
     XS_CONSOLE_IMAGE=validation/console \
     XS_DB_TOOLS_IMAGE=validation/db-tools \
     XS_CONTROLLER_SECRETS_DIR=/nonexistent/controller \
+    XS_DATABASE_SECRETS_DIR=/nonexistent/database \
     XS_RELAY_SECRETS_DIR=/nonexistent/relay \
     XS_BACKUP_DIR=/nonexistent/backup \
     XS_DATABASE_SCHEMA=xs_nexus_validation \
+    XS_DATABASE_APP_ROLE=xs_nexus_app \
+    XS_DATABASE_OWNER_ROLE=xs_nexus_owner \
     XS_DISCOVERY_PUBLIC_ENDPOINT=127.0.0.1:42000 \
     XS_RELAY_ID_BASE64=AAAAAAAAAAAAAAAAAAAAAQ \
     docker compose --profile baseline -f deploy/docker/compose.yaml config \

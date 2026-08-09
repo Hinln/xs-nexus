@@ -12,7 +12,7 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
-use xs_controller::config::ControllerConfig;
+use xs_controller::config::{ControllerConfig, MigrationConfig};
 
 const ADMIN_TOKEN: &str = "scale-admin-token-with-at-least-32-characters";
 const CHECKPOINTS: [usize; 3] = [100, 500, 1000];
@@ -22,6 +22,13 @@ const CONCURRENCY: usize = 32;
 #[tokio::test]
 async fn controller_registers_and_queries_one_thousand_nodes() {
     let config = test_config();
+    xs_controller::db::migrate(&MigrationConfig {
+        database_url: config.database_url.clone(),
+        database_schema: config.database_schema.clone(),
+        database_owner_role: None,
+    })
+    .await
+    .expect("controller database migrates");
     let (router, state) = xs_controller::build(&config)
         .await
         .expect("controller database initializes");
@@ -191,6 +198,7 @@ fn test_config() -> ControllerConfig {
         discovery_public_endpoint: None,
         database_url,
         database_schema,
+        database_expected_role: None,
         admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
         console_bootstrap_username: None,
         console_bootstrap_password: None,

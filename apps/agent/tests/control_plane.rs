@@ -24,7 +24,7 @@ use xs_agent::{
     state::NodeState,
     storage::{Identity, read_json},
 };
-use xs_controller::config::ControllerConfig;
+use xs_controller::config::{ControllerConfig, MigrationConfig};
 use xs_core::{
     CandidateAdvertisement, EndpointCandidate, EndpointCandidateKind, SubnetRouteAdvertisement,
     SubnetRouteSuggestion,
@@ -36,6 +36,13 @@ const ADMIN_TOKEN: &str = "agent-integration-admin-token-32-characters";
 #[allow(clippy::too_many_lines)]
 async fn agent_enrolls_authenticates_and_applies_new_configuration() {
     let controller_config = controller_config();
+    xs_controller::db::migrate(&MigrationConfig {
+        database_url: controller_config.database_url.clone(),
+        database_schema: controller_config.database_schema.clone(),
+        database_owner_role: None,
+    })
+    .await
+    .expect("controller database migrates");
     let (router, controller_state) = xs_controller::build(&controller_config)
         .await
         .expect("controller database initializes");
@@ -267,6 +274,7 @@ fn controller_config() -> ControllerConfig {
             .expect("XS_TEST_DATABASE_URL is required"),
         database_schema: std::env::var("XS_TEST_AGENT_DATABASE_SCHEMA")
             .unwrap_or_else(|_| "xs_nexus_agent_test".to_owned()),
+        database_expected_role: None,
         admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
         console_bootstrap_username: None,
         console_bootstrap_password: None,

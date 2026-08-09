@@ -25,7 +25,7 @@ use tokio::{
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 use tower::ServiceExt;
 use uuid::Uuid;
-use xs_controller::config::ControllerConfig;
+use xs_controller::config::{ControllerConfig, MigrationConfig};
 use xs_core::{
     AgentPathKind, AgentPeerTelemetry, AgentRuntimeReport, AgentTelemetryReport, AgentUpdateState,
     CandidateAdvertisement, ConfigurationRelay, EndpointCandidate, EndpointCandidateKind,
@@ -55,6 +55,13 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
         .expect("bind discovery socket");
     let discovery_address = discovery_socket.local_addr().expect("discovery address");
     let config = test_config(discovery_address);
+    xs_controller::db::migrate(&MigrationConfig {
+        database_url: config.database_url.clone(),
+        database_schema: config.database_schema.clone(),
+        database_owner_role: None,
+    })
+    .await
+    .expect("controller database migrates");
     let (router, state) = xs_controller::build(&config)
         .await
         .expect("controller database initializes");
@@ -1301,6 +1308,7 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
         discovery_public_endpoint: Some(discovery_address),
         database_url,
         database_schema,
+        database_expected_role: None,
         admin_token_hash: Sha256::digest(ADMIN_TOKEN.as_bytes()).into(),
         console_bootstrap_username: Some("admin".to_owned()),
         console_bootstrap_password: Some(Zeroizing::new(CONSOLE_PASSWORD.to_owned())),

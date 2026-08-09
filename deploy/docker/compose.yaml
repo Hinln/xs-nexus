@@ -30,13 +30,14 @@ services:
     user: "65532:65532"
     restart: "no"
     environment:
-      DATABASE_URL_FILE: /run/secrets/xs-controller/database-url
+      DATABASE_URL_FILE: /run/secrets/xs-database/database-url
       DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
+      DATABASE_OWNER_ROLE: ${XS_DATABASE_OWNER_ROLE:?set XS_DATABASE_OWNER_ROLE}
       RUST_LOG: ${XS_RUST_LOG:-info}
     volumes:
       - type: bind
-        source: ${XS_CONTROLLER_SECRETS_DIR:?set XS_CONTROLLER_SECRETS_DIR}
-        target: /run/secrets/xs-controller
+        source: ${XS_DATABASE_SECRETS_DIR:?set XS_DATABASE_SECRETS_DIR}
+        target: /run/secrets/xs-database
         read_only: true
         bind:
           create_host_path: false
@@ -66,9 +67,10 @@ services:
       DISCOVERY_PUBLIC_ENDPOINT: ${XS_DISCOVERY_PUBLIC_ENDPOINT:?set XS_DISCOVERY_PUBLIC_ENDPOINT}
       DATABASE_URL_FILE: /run/secrets/xs-controller/database-url
       DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
+      DATABASE_EXPECTED_ROLE: ${XS_DATABASE_APP_ROLE:?set XS_DATABASE_APP_ROLE}
       ADMIN_API_TOKEN_FILE: /run/secrets/xs-controller/admin-api-token
-      CONSOLE_BOOTSTRAP_USERNAME: ${XS_CONSOLE_BOOTSTRAP_USERNAME:-admin}
-      CONSOLE_BOOTSTRAP_PASSWORD_FILE: /run/secrets/xs-controller/console-bootstrap-password
+      CONSOLE_BOOTSTRAP_USERNAME: ${XS_CONSOLE_BOOTSTRAP_USERNAME:-}
+      CONSOLE_BOOTSTRAP_PASSWORD_FILE: ${XS_CONSOLE_BOOTSTRAP_PASSWORD_FILE:-}
       CONSOLE_COOKIE_SECURE: ${XS_CONSOLE_COOKIE_SECURE:-true}
       CONSOLE_SESSION_TTL_SECONDS: ${XS_CONSOLE_SESSION_TTL_SECONDS:-28800}
       NODE_CREDENTIAL_TTL_SECONDS: ${XS_NODE_CREDENTIAL_TTL_SECONDS:-2592000}
@@ -231,7 +233,7 @@ services:
     user: "65532:65532"
     restart: "no"
     environment:
-      DATABASE_URL_FILE: /run/secrets/xs-controller/database-url
+      DATABASE_URL_FILE: /run/secrets/xs-database/database-url
       BACKUP_RECIPIENT_FILE: /run/secrets/xs-controller/backup-recipient
       DATABASE_SCHEMA: ${XS_DATABASE_SCHEMA:?set XS_DATABASE_SCHEMA}
       DEPLOYMENT_NAME: ${XS_DEPLOYMENT:?set XS_DEPLOYMENT}
@@ -241,6 +243,12 @@ services:
       REPLICA_RETENTION_DAYS: ${XS_BACKUP_REPLICA_RETENTION_DAYS:-180}
       MIN_RETAINED_BACKUPS: ${XS_BACKUP_MIN_RETAINED:-3}
     volumes:
+      - type: bind
+        source: ${XS_DATABASE_SECRETS_DIR:?set XS_DATABASE_SECRETS_DIR}
+        target: /run/secrets/xs-database
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ${XS_CONTROLLER_SECRETS_DIR:?set XS_CONTROLLER_SECRETS_DIR}
         target: /run/secrets/xs-controller

@@ -33,7 +33,7 @@ pub enum StartupError {
     Server(#[source] std::io::Error),
 }
 
-/// Builds the migrated controller application and shared state.
+/// Builds the controller application against an already migrated database.
 ///
 /// # Errors
 ///

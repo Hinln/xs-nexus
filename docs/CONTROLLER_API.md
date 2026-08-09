@@ -26,6 +26,7 @@
 | `CONTROLLER_LISTEN` | 监听地址，例如 `127.0.0.1:8080` |
 | `DATABASE_URL` | PostgreSQL URL，不得提交 Git |
 | `DATABASE_SCHEMA` | 小写字母或下划线开头，只允许小写字母、数字、下划线，最长 63 |
+| `DATABASE_EXPECTED_ROLE` | `serve` 必填；必须与数据库 `current_user` 精确一致，生产值为最小权限运行角色 |
 | `ADMIN_API_TOKEN` | 至少 32 字符；进程只保留 SHA-256 hash |
 | `CONSOLE_BOOTSTRAP_USERNAME` | 用户表为空时创建的初始管理员用户名；与密码成对配置 |
 | `CONSOLE_BOOTSTRAP_PASSWORD` | 初始管理员临时强密码；只读取后进行 Argon2id 哈希，不持久化明文 |
@@ -38,6 +39,8 @@
 | `NODE_CREDENTIAL_TTL_SECONDS` | `3600..31536000`，默认 30 天 |
 
 密钥文件和真实环境配置位于仓库外。Credential 与 Configuration key 复用会导致启动失败。
+
+`serve` 不创建 schema，也不执行迁移；它会校验 `_sqlx_migrations` 的版本、成功状态和 SHA-384 checksum，缺失、脏状态、额外版本或内容漂移均拒绝启动。`migrate` 使用独立 `DATABASE_URL`，可配置 `DATABASE_OWNER_ROLE` 后先 `SET ROLE`，不得复用长运行 Controller 的 app 凭据。
 
 ## 3. 健康检查
 

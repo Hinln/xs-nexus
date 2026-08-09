@@ -63,11 +63,13 @@ values["DATABASE_URL"] = urlunsplit(
     (parsed.scheme, f"{userinfo}127.0.0.1{port}", parsed.path, parsed.query, parsed.fragment)
 )
 values["DATABASE_SCHEMA"] = values.get("XS_TEST_DATABASE_SCHEMA", "xs_nexus_test")
+values["DATABASE_EXPECTED_ROLE"] = parsed.username or ""
 values["CONTROLLER_LISTEN"] = "127.0.0.1:18080"
 
 for name in (
     "DATABASE_URL",
     "DATABASE_SCHEMA",
+    "DATABASE_EXPECTED_ROLE",
     "CONTROLLER_LISTEN",
     "ADMIN_API_TOKEN",
     "CREDENTIAL_SIGNING_KEY_PATH",
@@ -85,6 +87,7 @@ for ((index = 0; index < ${#controller_settings[@]}; index += 2)); do
     export "${controller_settings[index]}"
 done
 
+target/debug/xs-controller migrate >"$EVIDENCE_DIR/controller-migrate.log" 2>&1
 target/debug/xs-controller >"$CONTROLLER_LOG" 2>&1 &
 CONTROLLER_PID=$!
 for _ in $(seq 1 50); do

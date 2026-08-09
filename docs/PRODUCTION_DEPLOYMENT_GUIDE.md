@@ -129,6 +129,7 @@ sudo install -m 0600 deploy/docker/rc.compose.env.example \
 
 sudo install -d -o 65532 -g 65532 -m 0700 \
   /etc/xs-nexus/deployments/rc/controller \
+  /etc/xs-nexus/deployments/rc/database \
   /etc/xs-nexus/deployments/rc/relay \
   /var/backups/xs-nexus/rc
 
@@ -180,12 +181,12 @@ XS_EDGE_HTTPS_PORT=443
 ```text
 /etc/xs-nexus/deployments/rc/controller/database-url
 /etc/xs-nexus/deployments/rc/controller/admin-api-token
-/etc/xs-nexus/deployments/rc/controller/console-bootstrap-password
 /etc/xs-nexus/deployments/rc/controller/credential-signing-key
 /etc/xs-nexus/deployments/rc/controller/configuration-signing-key
 /etc/xs-nexus/deployments/rc/controller/update-signing-public-key
 /etc/xs-nexus/deployments/rc/controller/relay-catalog.json
 /etc/xs-nexus/deployments/rc/controller/backup-recipient
+/etc/xs-nexus/deployments/rc/database/database-url
 /etc/xs-nexus/deployments/rc/relay/controller-credential-public-key
 /etc/xs-nexus/deployments/rc/relay/identity-key
 ```
@@ -199,18 +200,21 @@ sudo -i
 umask 077
 
 CONTROLLER=/etc/xs-nexus/deployments/rc/controller
+DATABASE=/etc/xs-nexus/deployments/rc/database
 RELAY=/etc/xs-nexus/deployments/rc/relay
 
-printf '%s' '<postgresql-uri-from-secure-source>' > "$CONTROLLER/database-url"
+printf '%s' '<postgresql-app-uri-from-secure-source>' > "$CONTROLLER/database-url"
+printf '%s' '<postgresql-migrator-uri-from-secure-source>' > "$DATABASE/database-url"
 openssl rand -hex 32 > "$CONTROLLER/admin-api-token"
-openssl rand -base64 36 | tr -d '\n' > "$CONTROLLER/console-bootstrap-password"
 openssl rand 32 > "$CONTROLLER/credential-signing-key"
 openssl rand 32 > "$CONTROLLER/configuration-signing-key"
 openssl rand 32 > "$RELAY/identity-key"
 
-chown 65532:65532 "$CONTROLLER"/* "$RELAY"/*
-chmod 0400 "$CONTROLLER"/* "$RELAY"/*
+chown 65532:65532 "$CONTROLLER"/* "$DATABASE"/* "$RELAY"/*
+chmod 0400 "$CONTROLLER"/* "$DATABASE"/* "$RELAY"/*
 ```
+
+`XS_CONTROLLER_SECRETS_DIR` 与 `XS_DATABASE_SECRETS_DIR` 必须是不同的 `0700` 目录。前者的 `database-url` 只含 `xs_nexus_app`，后者只含 `xs_nexus_migrator`。角色和对象授权由 `deploy/docker/postgres-role-hardening.sql` 建立，并用 `scripts/verify-postgres-least-privilege.sql` 与 `make test-postgres-least-privilege` 验证。Bootstrap/superuser URL 不写入这两个长期目录。
 
 数据库账号应只拥有目标项目 schema 所需权限，不应是 PostgreSQL 超级用户，也不应复用 1Panel 管理账号。
 
@@ -461,15 +465,11 @@ ss -lunp | grep -E ':(42000|42001)\b'
 
 ## 10. 初始登录和管理员处理
 
-默认 Bootstrap 用户名来自 `XS_CONSOLE_BOOTSTRAP_USERNAME`，未设置时为：
+正式 RC 默认禁用 Bootstrap。仅在全新、用户表为空的首次初始化窗口，同时设置：
 
 ```text
-admin
-```
-
-初始密码不是仓库默认值，而是 Secret 文件：
-
-```text
+XS_CONSOLE_BOOTSTRAP_USERNAME=admin
+XS_CONSOLE_BOOTSTRAP_PASSWORD_FILE=/run/secrets/xs-controller/console-bootstrap-password
 /etc/xs-nexus/deployments/rc/controller/console-bootstrap-password
 ```
 
@@ -478,7 +478,7 @@ Controller 只在用户表为空时创建 Bootstrap 管理员，并立即将密�
 1. 创建实名管理员账号；
 2. 创建 operator/auditor 的最小权限账号；
 3. 验证审计日志；
-4. 轮换 Bootstrap 密码文件和 `admin-api-token`；
+4. 清空两个 Bootstrap 环境变量、删除 Bootstrap 密码文件并重新部署；
 5. 不把 API Token 交给浏览器或普通用户；
 6. 在受控变更窗口内验证会话、CSRF、注销和权限边界。
 

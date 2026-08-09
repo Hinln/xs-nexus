@@ -1,7 +1,6 @@
-use sqlx::{
-    Connection, Executor, PgConnection, PgPool,
-    postgres::{PgPoolOptions, PgQueryResult},
-};
+use std::collections::HashMap;
+
+use sqlx::{Connection, Executor, PgConnection, PgPool, Row, postgres::PgPoolOptions};
 use thiserror::Error;
 
 use crate::config::{ControllerConfig, MigrationConfig};
@@ -16,15 +15,22 @@ pub enum DatabaseError {
     Schema(#[source] sqlx::Error),
     #[error("database migration failed")]
     Migration(#[source] sqlx::migrate::MigrateError),
+    #[error("database migrations are missing, dirty, or do not match this binary")]
+    MigrationState,
+    #[error("database runtime role is missing or does not match the configured role")]
+    RuntimeRole,
 }
 
-/// Connects to `PostgreSQL`, creates the project schema, and applies migrations.
+/// Connects to an already migrated `PostgreSQL` schema using the runtime role.
 ///
 /// # Errors
 ///
 /// Returns `DatabaseError` when connection, schema creation, or migration fails.
 pub async fn connect(config: &ControllerConfig) -> Result<PgPool, DatabaseError> {
-    connect_and_migrate(&config.database_url, &config.database_schema).await
+    let pool = connect_pool(&config.database_url, &config.database_schema, None).await?;
+    verify_runtime_role(&pool, config.database_expected_role.as_deref()).await?;
+    verify_migrations(&pool).await?;
+    Ok(pool)
 }
 
 /// Applies the embedded database migrations and closes the migration pool.
@@ -33,25 +39,44 @@ pub async fn connect(config: &ControllerConfig) -> Result<PgPool, DatabaseError>
 ///
 /// Returns [`DatabaseError`] when the database cannot be reached or migrated.
 pub async fn migrate(config: &MigrationConfig) -> Result<(), DatabaseError> {
-    let pool = connect_and_migrate(&config.database_url, &config.database_schema).await?;
+    create_schema(
+        &config.database_url,
+        &config.database_schema,
+        config.database_owner_role.as_deref(),
+    )
+    .await?;
+    let pool = connect_pool(
+        &config.database_url,
+        &config.database_schema,
+        config.database_owner_role.as_deref(),
+    )
+    .await?;
+    MIGRATOR
+        .run(&pool)
+        .await
+        .map_err(DatabaseError::Migration)?;
     pool.close().await;
     Ok(())
 }
 
-async fn connect_and_migrate(
+async fn connect_pool(
     database_url: &str,
     database_schema: &str,
+    database_role: Option<&str>,
 ) -> Result<PgPool, DatabaseError> {
-    create_schema(database_url, database_schema).await?;
-
     let search_path = format!("SET search_path TO \"{database_schema}\", public");
+    let set_role = database_role.map(|role| format!("SET ROLE \"{role}\""));
     let pool = PgPoolOptions::new()
         .min_connections(1)
         .max_connections(10)
         .acquire_timeout(std::time::Duration::from_secs(5))
         .after_connect(move |connection, _metadata| {
             let search_path = search_path.clone();
+            let set_role = set_role.clone();
             Box::pin(async move {
+                if let Some(set_role) = set_role {
+                    connection.execute(set_role.as_str()).await?;
+                }
                 connection.execute(search_path.as_str()).await?;
                 Ok(())
             })
@@ -60,19 +85,86 @@ async fn connect_and_migrate(
         .await
         .map_err(DatabaseError::Connect)?;
 
-    MIGRATOR
-        .run(&pool)
-        .await
-        .map_err(DatabaseError::Migration)?;
     Ok(pool)
 }
 
-async fn create_schema(database_url: &str, schema: &str) -> Result<PgQueryResult, DatabaseError> {
+async fn create_schema(
+    database_url: &str,
+    schema: &str,
+    owner_role: Option<&str>,
+) -> Result<(), DatabaseError> {
     let mut connection = PgConnection::connect(database_url)
         .await
         .map_err(DatabaseError::Connect)?;
+    if let Some(owner_role) = owner_role {
+        connection
+            .execute(format!("SET ROLE \"{owner_role}\"").as_str())
+            .await
+            .map_err(DatabaseError::Schema)?;
+    }
     connection
         .execute(format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\"").as_str())
         .await
-        .map_err(DatabaseError::Schema)
+        .map_err(DatabaseError::Schema)?;
+    Ok(())
+}
+
+async fn verify_runtime_role(
+    pool: &PgPool,
+    expected_role: Option<&str>,
+) -> Result<(), DatabaseError> {
+    let Some(expected_role) = expected_role else {
+        return Ok(());
+    };
+    let row = sqlx::query("SELECT current_user AS role_name")
+        .fetch_one(pool)
+        .await
+        .map_err(|_| DatabaseError::RuntimeRole)?;
+    let role_name: String = row
+        .try_get("role_name")
+        .map_err(|_| DatabaseError::RuntimeRole)?;
+    if role_name != expected_role {
+        return Err(DatabaseError::RuntimeRole);
+    }
+    Ok(())
+}
+
+async fn verify_migrations(pool: &PgPool) -> Result<(), DatabaseError> {
+    let rows = sqlx::query(
+        "SELECT version, checksum, success
+         FROM _sqlx_migrations
+         ORDER BY version",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|_| DatabaseError::MigrationState)?;
+    let mut applied = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let version = row
+            .try_get::<i64, _>("version")
+            .map_err(|_| DatabaseError::MigrationState)?;
+        let checksum = row
+            .try_get::<Vec<u8>, _>("checksum")
+            .map_err(|_| DatabaseError::MigrationState)?;
+        let success = row
+            .try_get::<bool, _>("success")
+            .map_err(|_| DatabaseError::MigrationState)?;
+        if !success || applied.insert(version, checksum).is_some() {
+            return Err(DatabaseError::MigrationState);
+        }
+    }
+    let expected = MIGRATOR
+        .iter()
+        .filter(|migration| !migration.migration_type.is_down_migration())
+        .collect::<Vec<_>>();
+    if applied.len() != expected.len()
+        || expected.iter().any(|migration| {
+            applied
+                .get(&migration.version)
+                .is_none_or(|checksum| checksum.as_slice() != migration.checksum.as_ref())
+        })
+    {
+        return Err(DatabaseError::MigrationState);
+    }
+    Ok(())
 }

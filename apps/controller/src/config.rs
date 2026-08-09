@@ -22,6 +22,7 @@ pub struct ControllerConfig {
     pub discovery_public_endpoint: Option<SocketAddr>,
     pub database_url: String,
     pub database_schema: String,
+    pub database_expected_role: Option<String>,
     pub admin_token_hash: [u8; 32],
     pub console_bootstrap_username: Option<String>,
     pub console_bootstrap_password: Option<Zeroizing<String>>,
@@ -39,6 +40,7 @@ pub struct ControllerConfig {
 pub struct MigrationConfig {
     pub database_url: String,
     pub database_schema: String,
+    pub database_owner_role: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +53,8 @@ pub enum ConfigError {
     Discovery,
     #[error("invalid DATABASE_SCHEMA")]
     Schema,
+    #[error("invalid database role identifier")]
+    DatabaseRole,
     #[error("ADMIN_API_TOKEN must contain at least 32 characters")]
     AdminToken,
     #[error("CONSOLE_BOOTSTRAP_USERNAME and CONSOLE_BOOTSTRAP_PASSWORD must form a valid pair")]
@@ -118,6 +122,7 @@ impl ControllerConfig {
         let database_url = required_secret("DATABASE_URL")?.to_string();
         let database_schema = env::var("DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus".to_owned());
         validate_schema(&database_schema)?;
+        let database_expected_role = required_database_role("DATABASE_EXPECTED_ROLE")?;
 
         let admin_token = required_secret("ADMIN_API_TOKEN")?;
         if admin_token.chars().count() < 32 {
@@ -127,7 +132,9 @@ impl ControllerConfig {
         drop(admin_token);
 
         let console_bootstrap_password = optional_secret("CONSOLE_BOOTSTRAP_PASSWORD")?;
-        let configured_console_username = env::var("CONSOLE_BOOTSTRAP_USERNAME").ok();
+        let configured_console_username = env::var("CONSOLE_BOOTSTRAP_USERNAME")
+            .ok()
+            .filter(|username| !username.is_empty());
         let console_bootstrap_username = match (
             configured_console_username,
             console_bootstrap_password.as_ref(),
@@ -188,6 +195,7 @@ impl ControllerConfig {
             discovery_public_endpoint,
             database_url,
             database_schema,
+            database_expected_role: Some(database_expected_role),
             admin_token_hash,
             console_bootstrap_username,
             console_bootstrap_password,
@@ -214,9 +222,14 @@ impl MigrationConfig {
         let database_url = required_secret("DATABASE_URL")?.to_string();
         let database_schema = env::var("DATABASE_SCHEMA").unwrap_or_else(|_| "xs_nexus".to_owned());
         validate_schema(&database_schema)?;
+        let database_owner_role = env::var("DATABASE_OWNER_ROLE").ok();
+        if let Some(role) = database_owner_role.as_deref() {
+            validate_database_role(role)?;
+        }
         Ok(Self {
             database_url,
             database_schema,
+            database_owner_role,
         })
     }
 }
@@ -238,6 +251,12 @@ fn required(name: &'static str) -> Result<String, ConfigError> {
     env::var(name).map_err(|_| ConfigError::Missing(name))
 }
 
+fn required_database_role(name: &'static str) -> Result<String, ConfigError> {
+    let role = required(name)?;
+    validate_database_role(&role)?;
+    Ok(role)
+}
+
 fn required_secret(name: &'static str) -> Result<Zeroizing<String>, ConfigError> {
     optional_secret(name)?.ok_or(ConfigError::Missing(name))
 }
@@ -245,7 +264,7 @@ fn required_secret(name: &'static str) -> Result<Zeroizing<String>, ConfigError>
 fn optional_secret(name: &'static str) -> Result<Option<Zeroizing<String>>, ConfigError> {
     let direct = env::var(name).ok();
     let file_variable = format!("{name}_FILE");
-    let file = env::var(file_variable).ok();
+    let file = env::var(file_variable).ok().filter(|path| !path.is_empty());
     match (direct, file) {
         (Some(_), Some(_)) => Err(ConfigError::SecretConflict(name)),
         (Some(value), None) => validate_secret_value(name, value).map(Some),
@@ -326,18 +345,30 @@ fn optional_windows_release_directory() -> Result<Option<PathBuf>, ConfigError> 
 ///
 /// Returns `ConfigError::Schema` for identifiers outside the accepted grammar.
 pub fn validate_schema(schema: &str) -> Result<(), ConfigError> {
-    let valid_length = !schema.is_empty() && schema.len() <= 63;
-    let mut characters = schema.bytes();
+    validate_identifier(schema).map_err(|()| ConfigError::Schema)
+}
+
+/// Validates a `PostgreSQL` role identifier before it is quoted into SQL.
+///
+/// # Errors
+///
+/// Returns `ConfigError::DatabaseRole` for identifiers outside the accepted grammar.
+pub fn validate_database_role(role: &str) -> Result<(), ConfigError> {
+    validate_identifier(role).map_err(|()| ConfigError::DatabaseRole)
+}
+
+fn validate_identifier(identifier: &str) -> Result<(), ()> {
+    let valid_length = !identifier.is_empty() && identifier.len() <= 63;
+    let mut characters = identifier.bytes();
     let valid_first = characters
         .next()
         .is_some_and(|byte| byte.is_ascii_lowercase() || byte == b'_');
     let valid_rest =
         characters.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
-
     if valid_length && valid_first && valid_rest {
         Ok(())
     } else {
-        Err(ConfigError::Schema)
+        Err(())
     }
 }
 
@@ -452,6 +483,15 @@ mod tests {
         assert!(validate_schema("XS_NEXUS").is_err());
         assert!(validate_schema("xs;drop schema public").is_err());
         assert!(validate_schema("").is_err());
+    }
+
+    #[test]
+    fn database_role_validation_rejects_sql_and_mixed_case() {
+        assert!(validate_database_role("xs_nexus_app").is_ok());
+        assert!(validate_database_role("_migration1").is_ok());
+        assert!(validate_database_role("XS_NEXUS_APP").is_err());
+        assert!(validate_database_role("app;set role root").is_err());
+        assert!(validate_database_role("").is_err());
     }
 
     #[test]

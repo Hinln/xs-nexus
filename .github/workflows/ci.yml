@@ -54,7 +54,7 @@ jobs:
       - run: make security-check
       - run: make dependency-check
       - run: make test-production-health
-      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh
+      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh
 
   console-real-e2e:
     runs-on: ubuntu-24.04

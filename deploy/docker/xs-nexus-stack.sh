@@ -161,7 +161,8 @@ validate_available_port() {
 
 preflight() {
     local deployment project schema http_bind udp_bind controller_port console_port discovery_port relay_port revision image variable
-    local controller_secrets linux_release_directory windows_release_directory relay_secrets backup_directory replica_directory state_directory
+    local controller_secrets database_secrets linux_release_directory windows_release_directory relay_secrets backup_directory replica_directory state_directory
+    local database_app_role database_owner_role console_bootstrap_username console_bootstrap_password_file
     local local_retention replica_retention minimum_retained network_definition config_json marker target_id
     local -a required_variables=(
         XS_DEPLOYMENT
@@ -173,6 +174,7 @@ preflight() {
         XS_CONSOLE_IMAGE
         XS_DB_TOOLS_IMAGE
         XS_CONTROLLER_SECRETS_DIR
+        XS_DATABASE_SECRETS_DIR
         XS_LINUX_RELEASE_DIR
         XS_WINDOWS_RELEASE_DIR
         XS_RELAY_SECRETS_DIR
@@ -183,6 +185,8 @@ preflight() {
         XS_BACKUP_MIN_RETAINED
         XS_STATE_DIR
         XS_DATABASE_SCHEMA
+        XS_DATABASE_APP_ROLE
+        XS_DATABASE_OWNER_ROLE
         XS_BIND_ADDRESS
         XS_UDP_BIND_ADDRESS
         XS_CONTROLLER_HTTP_PORT
@@ -236,6 +240,11 @@ preflight() {
     fi
 
     controller_secrets=$(environment_value XS_CONTROLLER_SECRETS_DIR)
+    database_secrets=$(environment_value XS_DATABASE_SECRETS_DIR)
+    database_app_role=$(environment_value XS_DATABASE_APP_ROLE)
+    database_owner_role=$(environment_value XS_DATABASE_OWNER_ROLE)
+    console_bootstrap_username=$(environment_value XS_CONSOLE_BOOTSTRAP_USERNAME)
+    console_bootstrap_password_file=$(environment_value XS_CONSOLE_BOOTSTRAP_PASSWORD_FILE)
     linux_release_directory=$(environment_value XS_LINUX_RELEASE_DIR)
     windows_release_directory=$(environment_value XS_WINDOWS_RELEASE_DIR)
     relay_secrets=$(environment_value XS_RELAY_SECRETS_DIR)
@@ -243,6 +252,12 @@ preflight() {
     replica_directory=$(environment_value XS_BACKUP_REPLICA_DIR)
     state_directory=$(environment_value XS_STATE_DIR)
     validate_private_directory "$controller_secrets" 65532
+    validate_private_directory "$database_secrets" 65532
+    [[ $(realpath "$controller_secrets") != "$(realpath "$database_secrets")" ]] \
+        || fail 'runtime and migration secret directories must be separate'
+    [[ $database_app_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'XS_DATABASE_APP_ROLE is invalid'
+    [[ $database_owner_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || fail 'XS_DATABASE_OWNER_ROLE is invalid'
+    [[ $database_app_role != "$database_owner_role" ]] || fail 'database app and owner roles must differ'
     validate_release_directory "$linux_release_directory"
     validate_windows_release_directory "$windows_release_directory"
     validate_private_directory "$relay_secrets" 65532
@@ -250,9 +265,17 @@ preflight() {
     validate_private_directory "$replica_directory" 65532
     [[ $(stat -c '%d' "$backup_directory") != "$(stat -c '%d' "$replica_directory")" ]] || fail 'backup replica must be a distinct mounted filesystem'
     validate_state_directory "$state_directory"
-    for file in database-url admin-api-token console-bootstrap-password credential-signing-key configuration-signing-key update-signing-public-key relay-catalog.json backup-recipient; do
+    for file in database-url admin-api-token credential-signing-key configuration-signing-key update-signing-public-key relay-catalog.json backup-recipient; do
         validate_private_file "$controller_secrets/$file" 65532
     done
+    validate_private_file "$database_secrets/database-url" 65532
+    if [[ -n $console_bootstrap_username || -n $console_bootstrap_password_file ]]; then
+        [[ $console_bootstrap_username =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]] \
+            || fail 'XS_CONSOLE_BOOTSTRAP_USERNAME is invalid'
+        [[ $console_bootstrap_password_file == /run/secrets/xs-controller/console-bootstrap-password ]] \
+            || fail 'XS_CONSOLE_BOOTSTRAP_PASSWORD_FILE is invalid'
+        validate_private_file "$controller_secrets/console-bootstrap-password" 65532
+    fi
     for file in controller-credential-public-key identity-key; do
         validate_private_file "$relay_secrets/$file" 65532
     done

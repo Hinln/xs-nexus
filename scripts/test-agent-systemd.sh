@@ -132,6 +132,11 @@ current_step=database_reset
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$schema" \
     "$ROOT_DIR/target/debug/examples/reset_test_schema"
+database_expected_role=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.stdin.read()).username or "")' <<<"$XS_TEST_DATABASE_URL")
+[[ $database_expected_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+DATABASE_URL="$XS_TEST_DATABASE_URL" \
+DATABASE_SCHEMA="$schema" \
+    "$ROOT_DIR/target/debug/xs-controller" migrate
 if [[ ! -d /usr/local/lib/xs-nexus/current/bin ]]; then
     mkdir -p /usr/local/lib/xs-nexus/current/bin
     install_directory_created=true
@@ -151,6 +156,7 @@ export "${auth_environment_name?}"
 CONTROLLER_LISTEN="127.0.0.1:$port" \
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$schema" \
+DATABASE_EXPECTED_ROLE="$database_expected_role" \
 CREDENTIAL_SIGNING_KEY_PATH="$credential_key" \
 CONFIG_SIGNING_KEY_PATH="$configuration_key" \
 NODE_CREDENTIAL_TTL_SECONDS=86400 \

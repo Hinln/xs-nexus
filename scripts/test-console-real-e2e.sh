@@ -50,10 +50,15 @@ cd "$ROOT_DIR"
 cargo build -p xs-controller --bin xs-controller --example reset_test_schema
 DATABASE_URL="$DATABASE_URL_VALUE" DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
     "$ROOT_DIR/target/debug/examples/reset_test_schema"
+database_expected_role=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.stdin.read()).username or "")' <<<"$DATABASE_URL_VALUE")
+[[ $database_expected_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]]
+DATABASE_URL_FILE="$TEMPORARY/database-url" DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+    "$ROOT_DIR/target/debug/xs-controller" migrate
 
 CONTROLLER_LISTEN=127.0.0.1:8080 \
 DATABASE_URL_FILE="$TEMPORARY/database-url" \
 DATABASE_SCHEMA="$TEST_DATABASE_SCHEMA" \
+DATABASE_EXPECTED_ROLE="$database_expected_role" \
 ADMIN_API_TOKEN_FILE="$TEMPORARY/admin-api-token" \
 CONSOLE_BOOTSTRAP_USERNAME="$CONSOLE_USERNAME" \
 CONSOLE_BOOTSTRAP_PASSWORD_FILE="$TEMPORARY/console-password" \
