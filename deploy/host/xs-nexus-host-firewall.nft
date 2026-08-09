@@ -1,0 +1,17 @@
+table inet xs_nexus_host_guard {
+    chain input {
+        type filter hook input priority -10; policy drop;
+
+        iifname "lo" counter accept comment "xs-allow-loopback"
+        ct state invalid counter drop comment "xs-drop-invalid"
+        ct state established,related counter accept comment "xs-allow-established"
+        meta nfproto ipv4 meta l4proto icmp counter accept comment "xs-allow-icmp4"
+        meta nfproto ipv6 meta l4proto ipv6-icmp counter accept comment "xs-allow-icmp6"
+        meta nfproto ipv4 udp sport 67 udp dport 68 counter accept comment "xs-allow-dhcp4"
+        meta nfproto ipv6 udp sport 547 udp dport 546 counter accept comment "xs-allow-dhcp6"
+        tcp dport 122 ct state new limit rate 20/minute burst 40 packets counter accept comment "xs-allow-ssh"
+        tcp dport { 80, 443 } counter accept comment "xs-allow-web-tcp"
+        udp dport 443 counter accept comment "xs-allow-quic"
+        counter drop comment "xs-drop-unapproved"
+    }
+}

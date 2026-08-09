@@ -1,0 +1,37 @@
+[Unit]
+Description=XS Nexus production host input firewall
+Documentation=file:/usr/share/doc/xs-nexus/PRODUCTION_HOST_HARDENING.md
+DefaultDependencies=no
+After=local-fs.target systemd-modules-load.service
+Before=network-pre.target shutdown.target
+Wants=network-pre.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/xs-nexus-host-firewall apply
+ExecReload=/usr/local/sbin/xs-nexus-host-firewall apply
+RemainAfterExit=yes
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+RuntimeDirectory=xs-nexus-host-firewall
+RuntimeDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target
