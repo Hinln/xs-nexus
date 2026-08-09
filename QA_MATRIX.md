@@ -433,7 +433,7 @@
 - [x] Docker/1Panel：部署测试、真实迁移、迁移前 age 备份、三服务健康、精确 OCI revision、活动部署记录和备份公开校验通过；部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
 - [x] 宿主恢复：`1panel-network` 成员名、Docker 网络集合、默认路由、按容器服务名规范化的 nftables 语义和失败服务前后相同，无 namespace/TUN；PostgreSQL 无 host binding。
 - [x] 公网：`vpn.qinwen.co` 健康、Linux/Windows 引导、10 个发布文件逐字节一致、未知文件 404；外部 TCP `3306`/`5432`/`6379`/`28080`/`28081` 关闭，控制探针 `122` 打开。
-- [ ] 外部门禁：`vpn.xiashikeji.cn` 功能路径 525、Windows 在线客户端、真实 NAS、正式密钥/异地恢复、凭据轮换和第三方审计未完成；生产防火墙已完成，主机补丁/磁盘/外部告警仍是内部未完成项。
+- [ ] 外部门禁：`vpn.xiashikeji.cn` 功能路径 525、Windows 在线客户端、真实 NAS、正式密钥/异地恢复、凭据轮换和第三方审计未完成；生产防火墙、主机补丁/reboot 和有界磁盘治理后续已完成，外部告警仍为 `BLOCKED_EXTERNAL`。
 
 ## 17. Gate 01 发布 provenance 回归（2026-08-09）
 
@@ -467,4 +467,9 @@
 - [x] `inet xs_nexus_host_guard` 默认 drop；不 flush/修改 Docker、1Panel 或其他 nftables 表。外部 TCP `80`/`122`/`443` 开放，TCP `188`、数据库、loopback 应用及 TCP discovery/relay 关闭或过滤。
 - [x] firewall service restart、默认 route、IP rule、非项目 nftables、protected container ID、OpenResty、四个项目容器、`1panel-network` 和 failed units 前后通过；回滚取消后再次验证。
 - [x] 最终证据 117 文件和应用证据 56 文件 SHA-256 通过；无值秘密扫描 0 findings；验证器工具缺陷单独 disposition。
-- [ ] Gate 14 残余：157 个升级加 9 个新依赖包（119 个 security 源操作）、必要 reboot、根分区 `83%` 和外部磁盘告警未闭环，因此当前状态为 `PARTIAL`。
+- [x] 受保护升级：新数据库备份、157 个旧包重打包/验签、关键配置备份、三 SSH 会话和 60 分钟自动降级先就绪；157 个升级和 9 个依赖全部安装，独立验证 0 pending upgrade、空 `dpkg --audit`。
+- [x] 受保护 reboot：新 `6.8.0-137-generic` one-shot、旧 `6.8.0-124-generic` saved fallback、内部健康和 Boot-ID 外部批准 watchdog 通过；最终移除临时 GRUB/unit，首个内核为新版本且无 reboot-required。
+- [x] 重启回归：SSH、host firewall、默认 route、IP rule、Docker 规则严格语义、published ports、受保护 container ID、OpenResty、四项目容器、`1panel-network`、外部端口、当前/旧/root/password 认证和受限 tunnel 全部通过。
+- [x] 有界清理：仅删除精确项目 build cache、157 个验签 rollback 包、临时配置归档、APT 下载和 `dpkg-repack`；不运行 global prune/autoremove；根分区由 `83%` 降至 `77%`，约 `14.15 GB` 可用。
+- [x] 维护证据 218 文件 SHA-256 复核和无值秘密扫描 0 findings；所有失败尝试与纠正 disposition 保留。
+- [ ] Gate 14 唯一残余：外部 warning/critical 磁盘告警未真实送达和 on-call 确认，状态 `BLOCKED_EXTERNAL`；Gate 14 仍为 `PARTIAL`。

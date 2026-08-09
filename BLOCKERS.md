@@ -109,7 +109,8 @@
 
 - 状态：阻塞 Release Candidate 和正式生产；最终审计 `NO_GO`。
 - 首次发现：2026-08-08 正式生产发布门禁审计。
-- 外部条件：生产所有者完成剩余全量凭据轮换和旧值拒绝、计划 DNS/CDN/strict origin TLS；SRE 配置外部通知/on-call；独立第三方完成安全审计和 retest。
-- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、真实 Console E2E、协议 fuzz、五镜像可复现、五分钟本地健康守卫、PostgreSQL 最小权限、仅密钥 SSH、最小 INPUT 防火墙和 1Panel 公网管理端口关闭。
-- 证据：`audit/production-readiness/GO_NO_GO_FINAL.md`、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`、Gate 16 生产证据和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。
+- 外部条件：生产所有者完成剩余全量凭据轮换和旧值拒绝、计划 DNS/CDN/strict origin TLS；SRE 提供独立通知 provider/destination/credential 和正式 on-call；独立第三方完成安全审计和 retest。
+- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、真实 Console E2E、协议 fuzz、五镜像可复现、五分钟本地健康守卫、PostgreSQL 最小权限、仅密钥 SSH、最小 INPUT 防火墙、1Panel 公网管理端口关闭、全部宿主安全更新、受自动 fallback 保护的新内核 reboot 和有界磁盘清理。当前根分区 `77%`，0 pending upgrade、0 failed unit、无 reboot-required。
+- 磁盘告警外部阻塞：没有批准的独立目的地和 on-call 时不能安全配置或证明真实送达；`external-disk-alert-status.txt` 明确为 `BLOCKED_EXTERNAL`，本机日志不计作通过。
+- 证据：`audit/production-readiness/GO_NO_GO_FINAL.md`、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`、Gate 16 生产证据、Gate 14 防火墙证据和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`。
 - 解除后验证：旧凭据全部被拒绝；SSH/端口/防火墙回归；正式域名 API/WS/Console/health/TLS 通过；应用角色非 superuser；外部告警真实送达；第三方 findings 修复并 retest；重新执行全部 Hard Gate。

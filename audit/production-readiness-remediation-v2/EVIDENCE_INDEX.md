@@ -66,12 +66,20 @@ The production rollout used an exact clean release checkout and five prebuilt im
 | Rollback protection and cancellation | `rollback-*.txt`, `finalization.txt`, `post-finalization-new-ssh.txt` | PASS |
 | Verification-tooling disposition | `apply.log`, `verification-tooling-disposition.txt` | REVIEWED |
 | Evidence secret scan | `evidence-secret-scan.json`, `evidence-secret-scan-summary.txt` | PASS, 0 FINDINGS |
-| Residual update/disk state | `residual-host-items.txt`, baseline apt/disk files | OPEN |
+| Initial update/disk state | `residual-host-items.txt`, baseline apt/disk files | SUPERSEDED BY PROTECTED MAINTENANCE |
 | Evidence integrity | `SHA256SUMS.final` in the Gate 14 root | 117 FILES VERIFIED |
+| Protected package-upgrade baseline and rollback set | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z/upgrade-20260809T082139Z` | PASS |
+| Independent post-upgrade and external verification | `post-upgrade-independent.txt`, `external-verification-after-upgrade.txt` | PASS |
+| One-shot new-kernel reboot and automatic fallback | `reboot-20260809T091342Z` under the maintenance root | PASS |
+| Post-reboot internal/external verification | `post-reboot-independent.txt`, `external-verification-after-reboot.txt`, `post-reboot-approved.txt` | PASS |
+| GRUB/watchdog finalization and correction disposition | `reboot-finalization.txt`, `reboot-finalization-independent-correction.txt` | PASS |
+| Bounded cache cleanup and final disk state | `disk-cleanup-after-reboot.txt`, `disk-after-final-cache-cleanup.txt`, `final-maintenance-state.txt` | PASS, ROOT 77% |
+| External disk-alert delivery | `external-disk-alert-status.txt` | BLOCKED_EXTERNAL |
+| Maintenance secret scan and integrity | `evidence-secret-scan.txt`, `SHA256SUMS.final` in the maintenance root | PASS, 0 FINDINGS, 218 FILES VERIFIED |
 
 The deployed host firewall is an independent `inet xs_nexus_host_guard` table and does not modify existing 1Panel/Docker tables. TCP `188` is no longer public and is reachable only through the key-only, destination-restricted SSH tunnel. The production application revision remains `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `1panel-network` remains ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`, subnet `172.18.0.0/16`.
 
-Gate 14 remains `PARTIAL`, not `PASS`, because host security updates/reboot and disk/external-alert closure remain outstanding.
+Gate 14 remains `PARTIAL`, not `PASS`. Security updates, protected reboot, post-reboot regression, and bounded disk cleanup are complete; independent external disk-alert delivery and on-call acknowledgement remain outstanding.
 
 ## V2 Evidence Rules
 
@@ -85,7 +93,7 @@ Gate 14 remains `PARTIAL`, not `PASS`, because host security updates/reboot and 
 
 - Gate 01 owner-controlled formal key ceremony, signed RC tag/bundle, authenticated public-key publication, and merge to `main`. Branch production deployment, runtime reverse verification, and rollback to `ff9551d3` are now evidenced.
 - Gate 02 no-value secret inventory, rotation receipts, old-value rejection checks, deep artifact/history/layer scan.
-- Gate 14 security-update/reboot regression, bounded project-owned disk cleanup, and independent disk-alert delivery. SSH/firewall/public-management exposure is now evidenced.
+- Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gates 04/06/08/09/15/18/19/20/21/22/23/24/25 current-revision regressions.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

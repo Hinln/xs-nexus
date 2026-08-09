@@ -979,4 +979,17 @@
 - 安全边界：脚本只增删该表，不调用全局 flush，不修改 Docker/1Panel/UFW/iptables compatibility、默认 route、IP rule、Docker network 或 1Panel 配置。Discovery/Relay UDP `42000`/`42001` 继续由 Docker DNAT/forward 路径承载。
 - 变更纪律：任何 SSH/firewall 更新都必须有冻结 baseline、两条保留会话、20 分钟自动回滚、候选语法验证、全新会话和外部端口/认证负向测试；只有 protected services、OpenResty、`1panel-network` 和非项目网络状态全部通过后才能取消回滚。
 - 证据：Git commit `ae74783cdf9f75fd90e496fe837e50b744990310`；CI run `31300939362`；生产证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。
-- 残余：该决策关闭 SSH/公网管理暴露和最小 INPUT 子项，不代表 Gate 14 全部通过。安全更新/重启、磁盘压力和外部告警仍需单独完成。
+- 残余：该决策关闭 SSH/公网管理暴露和最小 INPUT 子项，不代表 Gate 14 全部通过。安全更新/重启和磁盘压力已由 ADR-086 闭合；外部告警仍需单独完成。
+
+---
+
+## ADR-086：生产内核升级使用 one-shot GRUB、持久旧内核 fallback 与 Boot-ID 外部批准
+
+- 状态：接受
+- 日期：2026-08-09
+- 背景：主机有 157 个待升级包和新内核；普通远程 reboot 若新内核、SSH、Docker、防火墙或网络失败，可能永久失联。Docker daemon 重启还会重新分配内部地址和重排生成规则，不能以字节差异直接误判，也不能简单忽略。
+- 决策：包升级前重打包旧版本、验证备份并启用限时自动降级；用户态全部通过后才取消。内核阶段临时 `GRUB_DEFAULT=saved`，旧内核为持久 fallback，新内核仅 one-shot；开机 watchdog 先验证内部健康，再等待当前 Boot ID 的外部端口/认证批准，超时或回归自动 `grub-set-default` 旧内核并 reboot。批准后移除临时 unit/drop-in/env，恢复原始 `GRUB_DEFAULT=0`。
+- nftables 判定：容器 IP 只能映射到 Docker inspect 认证的稳定成员身份；完整 canonical item multiset 必须精确相同；非 allowlist 链顺序必须精确相同；allowlist Docker 链只允许被逐对证明为匹配谓词不相交的规则反转。任何无法证明的顺序变化失败关闭。
+- 清理边界：只删除已验证、路径固定、非 symlink/mount、无打开引用且可重建的项目/维护缓存；禁止 global Docker prune 和 apt autoremove。维护专用旧包和敏感配置归档只在新内核内外部回归通过后销毁。
+- 证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`，218 个最终 manifest 条目，无值秘密扫描 0 findings。
+- 残余：该决策关闭 Gate 14 的补丁、reboot 和磁盘压力内部项；没有外部通知目标时不得把本地状态或模拟阈值称为真实磁盘告警送达，Gate 14 仍为 `PARTIAL`。

@@ -38,3 +38,13 @@
 - External TCP `80`/`122`/`443` remain reachable; TCP `22`/`188`/database/loopback application/TCP discovery-relay probes are closed or filtered. Docker-published UDP `42000`/`42001` remain intact.
 - Final evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` contains 117 SHA-256 verified files and a zero-finding no-value secret scan.
 - Gate 14 moves from `FAIL` to `PARTIAL`. Security updates/reboot, root-disk pressure, and independent disk-alert delivery remain open and are not hidden by the firewall result.
+
+### Gate 14 protected package, reboot, and disk maintenance
+
+- Repacked and SHA-256 verified all 157 pre-upgrade package versions, captured critical configuration and a verified database backup, downloaded the candidate packages, and armed a 60-minute automatic package rollback before changing the host.
+- Installed all 157 upgrades and 9 required dependencies. Independent verification proved zero remaining upgrades, empty `dpkg --audit`, key-only SSH, minimal firewall, unchanged default route/IP rules/container identities/`1panel-network`, healthy production services, and strict external port/authentication policy before canceling package rollback.
+- Dispositioned Docker nftables regeneration without byte-level weakening: container IPs were mapped to stable identities, the complete canonical item multiset remained exact, non-allowlisted chain order remained exact, and every inverted pair in allowlisted Docker chains was proven predicate-disjoint.
+- Booted `6.8.0-137-generic` once with `6.8.0-124-generic` saved as fallback. A persistent watchdog required internal health plus Boot-ID-bound external approval within 15 minutes or automatically rebooted to the old kernel. New-kernel internal and external checks passed, then temporary GRUB/watchdog state was removed and the normal first GRUB entry was independently verified as the new kernel.
+- Removed only one exact project build cache, 157 verified rollback packages, the temporary critical-config archive, APT downloads, and maintenance-only `dpkg-repack`; no global Docker prune or autoremove ran. Root usage fell from `83%` to `77%` with about `14.15 GB` available.
+- Final evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z` contains 218 SHA-256 verified files and a zero-finding no-value secret scan. Failed verifier/cleanup attempts and the explicit `grub-editenv` correction are retained.
+- Gate 14 remains `PARTIAL`, not `PASS`, solely because no owner-approved independent external destination or on-call path exists for real warning/critical disk-alert delivery.

@@ -327,12 +327,12 @@
 
 ---
 
-## KI-024 生产主机补丁、磁盘压力和外部磁盘告警未闭合
+## KI-024 生产主机外部磁盘告警未闭合
 
 - 严重度：高
-- 状态：开放
+- 状态：外部阻塞（内部项已完成）
 - 首次发现：2026-08-09 Gate 14 生产基线。
-- 已完成：仅密钥 SSH、root/password/旧钥拒绝、最小 INPUT 默认拒绝、1Panel TCP `188` 公网关闭与受限 tunnel、路由/IP rule/非项目 nftables/`1panel-network` 不变量和回滚安全均已通过。证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z`。
-- 影响：模拟 dist-upgrade 仍包含 157 个升级和 9 个新依赖包，其中 119 个操作来自 security 源；根分区使用率 `83%`、约 `9.8G` 可用；本机健康守卫没有独立外部磁盘通知目标。OpenSSH、Docker、systemd、libc、nftables 等更新在应用和重启前不能视为已闭环。
-- 计划：冻结包/服务/route/rule/nft/Docker/1Panel 基线，验证备份和多 SSH 会话，安排自动回滚；执行受控升级和必要重启；只清理明确属于本项目且可重建的 QA/build/cache/旧镜像，禁止全局 prune；配置外部 warning/critical 告警并触发真实送达。
-- 解除条件：补丁安装与 reboot 后 SSH、Docker、OpenResty、四个项目容器、默认路由、IP rule、非项目 nftables、`1panel-network`、端口策略和 failed units 全部通过；磁盘阈值恢复到批准范围且外部告警真实送达。完成前 Gate 14 保持 `PARTIAL`。
+- 已完成：仅密钥 SSH、root/password/旧钥拒绝、最小 INPUT 默认拒绝、1Panel TCP `188` 公网关闭与受限 tunnel、路由/IP rule/nftables/`1panel-network` 不变量和回滚安全均已通过。全部 157 个升级和 9 个依赖已安装，新内核 `6.8.0-137-generic` 通过 one-shot/fallback/watchdog 和内外部回归；根分区从 `83%` 降至 `77%`，约 `14.15 GB` 可用。证据为 Gate 14 防火墙根和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`。
+- 影响：主机仍没有独立于被监控服务器的 warning/critical 磁盘通知目标、真实送达回执或 on-call acknowledgement。主机本地日志或静态状态不能证明通知路径可用，因此 Gate 14/20 不能因补丁和空间恢复而判定 `PASS`。
+- 计划：由所有者/SRE 提供并批准外部通知 provider、destination、凭据和 on-call；配置 warning/critical 阈值，分别触发真实告警，确认外部接收/确认，再清除条件并证明恢复通知。不得把模拟、本机 journal 或未送达事件计作通过。
+- 解除条件：warning 与 critical 事件均由独立目标真实收到并被记录的 on-call 确认，故障解除后 recovery/closure 也真实送达；证据无秘密且加入审计索引。完成前 Gate 14 保持 `PARTIAL`。

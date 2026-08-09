@@ -410,3 +410,13 @@ make clean
 - 防火墙 service restart、全新 SSH、回滚取消后全新 SSH、默认 route、IP rule、非项目 nftables 语义、受保护 container ID、`1panel-network` ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`/`172.18.0.0/16` 和 failed units 全部通过；随后移除回滚脚本/归档及保留会话。
 - 证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` 共 117 个文件，`SHA256SUMS.final` 通过；应用子目录 56 个文件独立校验，无值秘密扫描 0 findings。初次 apply 的 SSH `reloading` 瞬时状态和 verifier 日志 wrapper 缺陷如实 disposition，未当成产品失败或隐藏。
 - Gate 14 从 `FAIL` 降为 `PARTIAL`，不是 `PASS`：模拟 dist-upgrade 仍包含 157 个升级和 9 个新依赖包，其中 119 个操作来自 security 源；根分区 `83%`、约 `9.8G` 可用，磁盘告警仍没有外部送达。下一步先做受回滚保护的补丁/重启回归和仅项目可重建数据的磁盘治理，再进入 Gate 13。
+
+## 2026-08-09 Gate 14 受保护补丁、内核重启与磁盘治理
+
+- 当前文档工作起点为提交 `600e3c653f2c019a6fde36879ca9a53db68be8dc`；生产应用仍运行 revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，本阶段只维护宿主软件包/内核和已确认的可重建缓存，没有重新部署应用。
+- 维护前完成新数据库备份、157 个旧包重打包与 SHA-256 校验、关键配置归档、候选包下载、三条独立 SSH 会话和 60 分钟自动降级。全部 157 个升级和 9 个依赖安装成功；独立复核为 0 pending upgrade、空 `dpkg --audit`，用户态 SSH/防火墙/route/rule/nft/Docker/1Panel/应用健康与外部端口/认证全部通过后才取消包降级。
+- Docker daemon 重启改变容器内部 IP 和 Docker 规则排列。验证没有放宽为“忽略 Docker”：先把地址映射到稳定容器身份，要求完整 canonical item multiset 精确相同、非 allowlist 链顺序精确相同，并对 allowlist Docker 链中每一个反转规则对证明匹配谓词不相交。
+- GRUB 临时使用 `saved` 默认项，旧 `6.8.0-124-generic` 为持久 fallback，新 `6.8.0-137-generic` 为 one-shot。启动 watchdog 要求 5 分钟内内部健康并在随后 15 分钟内取得与当前 Boot ID 绑定的外部批准，否则自动回到旧内核。新内核、SSH、Docker、OpenResty、四项目容器、默认 route、`1panel-network`、包状态和全套外部端口/认证/tunnel 均通过；随后移除临时 watchdog/drop-in，恢复 `GRUB_DEFAULT=0`，独立确认首个内核仍是 `6.8.0-137-generic`。
+- 仅删除精确项目 build `target`、157 个已验签旧包、临时关键配置归档、APT 下载缓存和维护专用 `dpkg-repack`；没有运行 Docker global prune 或 apt autoremove。根分区从 `83%`/约 `9.8G` 可用改善到 `77%`/`14,152,945,664` bytes 可用。
+- 维护证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z` 共 218 个文件，`SHA256SUMS.final` 复核通过，无值秘密扫描 0 findings；全部 verifier/cleanup 失败尝试和显式 `grub-editenv` 纠正均保留。
+- Gate 14 仍为 `PARTIAL`：内部补丁、重启和磁盘压力已闭合，但没有所有者批准的独立外部通知目标/on-call，warning/critical 磁盘告警未真实送达，记录为 `BLOCKED_EXTERNAL`。下一步从 Gate 13 只读取证开始：复核 `vpn.xiashikeji.cn` DNS、SNI、源站证书链、CDN strict 模式、Host/WebSocket/health；任何 DNS/CDN/1Panel 站点修改仍需所有者授权。

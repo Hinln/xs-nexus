@@ -33,7 +33,7 @@ Move XS Nexus from the independently audited `NO_GO / CRITICAL` state to a state
 - Internal provenance implementation and exact-head CI are complete; formal signed RC/main chain remains open.
 - PostgreSQL least privilege and production deployment are complete: Gate 16 is `PASS` at running revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14`.
 - Credential rotation remains in progress; new app/migrator identities are active, but bootstrap and other disclosed credentials still require rotation and old-value rejection.
-- Gate 14 SSH/firewall exposure is complete, but the gate remains `PARTIAL` pending protected security updates/reboot and disk/external-alert closure. Continue those internal items, then Gate 13 strict origin TLS and remaining findings.
+- Gate 14 SSH/firewall, protected security updates, one-shot new-kernel reboot, full service/network regression, and bounded disk cleanup are complete. The gate remains `PARTIAL` only because external warning/critical disk-alert delivery and acknowledgement are unavailable; proceed to Gate 13 strict origin TLS and remaining internal findings without misreporting that external item.
 
 ## Safety Rules
 
