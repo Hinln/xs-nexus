@@ -483,3 +483,15 @@
 - [x] 模板源码门禁：HTTP 308、TLS 1.2/1.3、证书占位符、HSTS、Console-only loopback、WebSocket header 存在；TLS 1.0/1.1、Controller root upstream 和禁用验证标记被拒绝。
 - [x] 证据完整性：只读根和精确提交工具根均无生产变更；后者 8 文件 SHA-256 与秘密扫描通过，路径记录在 V2 `EVIDENCE_INDEX.md`。
 - [ ] 生产修复：所有者批准证书、计划域名 vhost、CDN Origin Host/SNI/strict mode，并完成 direct-origin、CDN、浏览器、登录、认证 API、WebSocket、Console 与未知路由 E2E。完成前 Gate 13 保持 `FAIL`。
+
+## 21. Gate 23 缺陷与供应链回归（2026-08-09）
+
+- [x] JSON 拒绝回归：畸形 JSON、未知字段、错误类型和超限 body 只返回精确通用 400 envelope；响应不含 parser category、字段名、line/column 或输入片段。
+- [x] PostgreSQL 日志回归：生产容器精确 `json-file`、`max-size=10m`、`max-file=5`；加密备份、回滚演练、独立复核、容器身份、路由、nftables 和 `1panel-network` 不变量通过。
+- [x] Rust/SQLx 回归：Rust `1.94`，SQLx `0.9.0`，动态 migration/schema SQL 使用显式 `AssertSqlSafe`；格式化、严格全 target/feature Clippy、workspace all-feature tests 和真实 PostgreSQL 最小权限测试通过。
+- [x] 依赖门禁：plain `cargo audit` 无 vulnerability 且 ignore 为空；`rsa` 不在 lock；`cargo deny --all-features check` 的 advisories/bans/licenses/sources 全通过。`paste` 未维护提示保持可见并由 `KI-026` 限时跟踪。
+- [x] 前端与 CI：npm clean install、lint、unit、build、high audit 通过；GitHub Actions run `31313868529` 的 baseline、Console real E2E、protocol fuzz 和 image reproducibility 四个 job 全通过。
+- [x] 全量证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 的全部 status 为 0，manifest 复核通过，源风险与仓库/历史秘密扫描为 PASS。
+- [x] 失败证据：九个失败 root（API 三个、全量/空间六个）保留原文件，新增 `FAILED_NON_AUTHORITATIVE` disposition 和非覆盖 manifest；独立校验根 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` 通过。
+- [x] 宿主恢复：生产健康、失败服务 0、临时 QA 容器/网络/namespace 0，默认网关 `10.3.0.1`/`eth0` 和 `1panel-network` ID/子网不变；运行 revision 仍为 `3d93656`。
+- [ ] 结论边界：这些测试只关闭四个可自行修复 finding，不关闭外部 Critical/High、正式 release、真实 Windows/NAS/WAN、异地恢复或第三方安全审计，Gate 23 保持 `FAIL`。

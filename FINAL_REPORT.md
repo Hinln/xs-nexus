@@ -1,7 +1,7 @@
 # XS Nexus 最终交付报告
 
 报告日期：2026-08-08  
-当前检查点：生产候选恢复、Windows Wintun 发布路径与剩余外部门禁（以本报告后续提交为准）
+当前检查点：生产门禁修复 V2，Gate 23 内部整改基线 `3bf8619`；生产运行基线 `3d93656`（以本报告后续提交为准）
 
 ## 1. 结论
 
@@ -46,7 +46,7 @@
 - Windows 签名边界已明确：首版只发布发行方签名的 Wintun 0.14.1；自研 xsnet 保持测试签名实验路径，不宣称正式签名或生产分发。
 - 真实 NAS 安装、升级、Direct/Relay、子网审批和离线撤销：`BLK-002`。
 - 当前生产候选数据库公网暴露已解除：项目 PostgreSQL 无 host binding，外部数据库端口不可达；临时凭据轮换仍是发布前独立要求。
-- DNS、生产防火墙、正式公网容量和第三方安全审计：人工/外部门禁。
+- DNS/源站 strict TLS、独立外部告警/on-call、正式公网容量和第三方安全审计：人工/外部门禁；最小生产 INPUT 防火墙已完成。
 - 正式离线发布签名、公钥认证分发/轮换和 RC 更新回滚：`BLK-006`。
 - 正式备份 identity、真实异地主机/对象存储挂载和生产恢复演练：`BLK-007`。
 
@@ -65,7 +65,7 @@
 - 当前生产候选服务器 Docker Compose 使用既有 external `1panel-network`，未重建或修改该网络。
 - 项目 PostgreSQL 使用仓库外 secret 文件、无宿主端口映射；外部 TCP `3306`、`5432`、`6379` 不可达，`KI-006`/`BLK-005` 已解除。
 - Controller/Relay/Console 非 root、健康检查、日志轮转，以及 age 加密/自动复制/取回/保留/恢复演练已通过。
-- Chrony/NTP 已恢复，系统时钟修正 86400.300154 秒后容器、网络、路由和 nftables 不变。当前 `vpn.qinwen.co` 公网下载通过；任务书计划域名 `vpn.xiashikeji.cn` 的 TLS/DNS/CDN 和生产防火墙仍为外部门禁。不记录任何密码或 token。
+- Chrony/NTP 已恢复，系统时钟修正 86400.300154 秒后容器、网络、路由和 nftables 不变。当前 `vpn.qinwen.co` 公网下载通过；任务书计划域名 `vpn.xiashikeji.cn` 的 TLS/DNS/CDN 仍为外部门禁。生产最小 INPUT 防火墙已完成，独立外部磁盘告警/on-call 仍阻塞。不记录任何密码或 token。
 
 ## 8. 测试
 
@@ -74,12 +74,12 @@
 - CLI/IPC 专项：`make test-windows-agent-ipc`、CLI/Core/Agent 测试和真实 `test-agent-candidate-path` 通过；Windows 结果仍只是交叉编译，不代表命名管道实机。
 - 性能：`/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`、`relay-throughput-20260731T211903Z`、`agent-rtt-20260731T221036Z`、Controller scale 和报告中列出的证据。
 - 稳定性：24 小时长样本与修正后的完整部署/重启回归已审计，详见 `docs/PERFORMANCE_REPORT.md`。
-- 未运行/无法运行：完整 Windows Agent/SCM/route/DAD/sleep、真实 NAS、公网跨地域 Relay、正式签名和生产防火墙验证。WDK/Windows xsnet VM/Verifier 已运行。
+- 未运行/无法运行：完整 Windows Agent/SCM/route/DAD/sleep、真实 NAS、公网跨地域 Relay、正式签名、外部告警送达和第三方安全审计。WDK/Windows xsnet VM/Verifier 与生产最小防火墙验证已运行。
 
 ## 9. 缺陷与风险
 
 - P0/P1：当前自动化回归无新增 P0/P1；这不替代第三方安全审计。
-- 高风险开放项：Windows 在线 Agent/service/network、真实 NAS、正式密钥/异地恢复、源站 TLS/防火墙和第三方协议/密码学审计。
+- 高风险开放项：Windows 在线 Agent/service/network、真实 NAS、正式密钥/异地恢复、源站 strict TLS、外部告警/on-call 和第三方协议/密码学审计。
 - 镜像漏洞 disposition 已有明确结论，但不等于漏洞修复或自动接受。
 
 ## 10. 安全结论
@@ -98,7 +98,7 @@
 
 - 个人隔离测试：适合。
 - 小规模可信设备：Linux 测试范围内可继续验证，但需接受未完成门禁。
-- 公网生产：不适合，需先完成源站 TLS/防火墙、Windows 在线 Agent/NAS、真实备份异地主机/密钥仪式、正式发布签名和第三方审计门禁。
+- 公网生产：不适合，需先完成源站 strict TLS、外部告警/on-call、Windows 在线 Agent/NAS、真实备份异地主机/密钥仪式、正式发布签名和第三方审计门禁。
 - 企业关键网络：不适合，另需第三方协议/密码学审计、真实故障演练和正式供应链复核。
 
 ## 13. 凭据轮换
@@ -107,7 +107,7 @@
 
 ## 14. 后续优先级
 
-1. 在当前 `vpn.qinwen.co` 入口完成 Windows 11 VM 在线安装、服务、数据面、卸载和重装；并由人工修复 `BLK-003` 的计划域名源站 TLS/SNI/反向代理与最小防火墙。
+1. 在当前 `vpn.qinwen.co` 入口完成 Windows 11 VM 在线安装、服务、数据面、卸载和重装；并由人工修复 `BLK-003` 的计划域名源站 TLS/SNI/反向代理，配置独立外部告警/on-call。
 2. 在已验证的 Windows 11 VM 使用一次性 Enrollment Token 执行真实在线安装、SCM/Named Pipe/存储、route/DAD/sleep、Agent crash、普通网络、卸载和重装门禁。
 3. 完成 `BLK-007` 的正式备份 identity、真实异地主机恢复演练，以及 `BLK-006` 的正式离线发布签名和最终 RC 供应链复核。
 
@@ -125,4 +125,13 @@
 - 同 revision 的 Controller、Relay、Console、db-tools 已构建；迁移前加密备份 `pre-migration-rc-20260808T104233-1345622` 可公开校验，常驻三服务健康，OCI revision 和活动部署记录一致。部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。
 - 发布后 Docker 网络集合、`1panel-network` 服务成员、默认路由、按服务名规范化的 nftables 语义和失败服务基线不变；没有 namespace/TUN 残留。外部工作站确认 SSH 探测有效且数据库/内部 HTTP 端口不公开。
 - `vpn.qinwen.co` 健康、双平台引导和 10 个公开发布文件逐字节一致；未知路由/文件 404。`vpn.xiashikeji.cn` 的功能路径仍为 CDN 525，根路径 404 不解除该门禁。
-- 该结果证明当前 Linux 生产候选部署可复现，不证明 Windows 在线客户端、真实 NAS、正式离线签名/备份密钥、真实异地恢复、生产防火墙最小开放、凭据轮换、跨地域容量或独立安全审计完成。最终结论仍是“部分完成、不适合生产、不得标记 Release Candidate”。
+- 该结果证明当时 Linux 生产候选部署可复现，不证明 Windows 在线客户端、真实 NAS、正式离线签名/备份密钥、真实异地恢复、凭据轮换、外部告警、跨地域容量或独立安全审计完成。最小生产防火墙已由后续 Gate 14 闭环；最终结论仍是“部分完成、不适合生产、不得标记 Release Candidate”。
+
+## 17. 2026-08-09 生产门禁修复 V2 最新结论
+
+- 当前生产 Controller、Relay、Console 运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；PostgreSQL 已完成 owner/app/migrator 分权，Gate 16 为 `PASS`。
+- Gate 14 已完成 key-only SSH、root/password/旧钥拒绝、最小 INPUT、防火墙回滚、全部安全更新、新内核 fallback/reboot 和有界磁盘清理；因外部磁盘告警/on-call 未送达仍为 `PARTIAL`。
+- Gate 13 的只读取证确认计划域名 edge TLS 可验证但功能路径均为 `525`，direct-origin SNI 在 HTTP 前失败；仓库工具和模板已准备，生产证书/CDN/1Panel vhost 为 `BLOCKED_EXTERNAL`。
+- Gate 23 可自行修复项已在 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` 关闭：通用 JSON 拒绝、PostgreSQL `10m`/`5` 日志、SQLx `0.9.0`/`rsa` 公告清除和完整 cargo-deny license policy。GitHub Actions run `31313868529` 与 clean-checkout evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 全通过。
+- 九个失败/非权威 Gate 23 根均保留并封存；独立复核 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` 通过，生产健康、临时 QA 资源为 0、`1panel-network` 和默认路由不变。
+- 生产未部署 `3bf8619`。全量凭据轮换、正式密钥仪式、第三方审计、计划域名、真实 Windows/NAS/WAN/子网路由、异地恢复、外部告警、当前 revision soak、main/signed RC 和正式部署演练仍开放。因此 Decision 仍为 `NO_GO`，不得标记 Release Candidate 或公网生产就绪。

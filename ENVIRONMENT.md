@@ -217,3 +217,10 @@ M5.2 使用以下固定边界：
 - 最终验证代码：`ff9551d322067c934d2ac7d55a62af8896660bb3`；证据 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z`。
 - 当前生产环境文件仍位于仓库外 `/etc/xs-nexus/deployments/rc.compose.env`，权限 `0600 root:root`；活动状态目录 `/var/lib/xs-nexus-deploy/rc`。常驻项目容器为 Controller、Relay、Console、PostgreSQL，全部连接既有外部 `1panel-network`，没有创建项目网络。
 - 最终部署证据 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`；外部端口证据 `/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z`。不得把 repo 外 QA 镜像、缓存、临时数据库环境文件或测试签名材料当作生产运行依赖或提交到 Git。
+
+## 13. Gate 23 精确 QA 工具链与当前宿主状态（2026-08-09）
+
+- 当前源码工具链为 Rust/Cargo/rustfmt/Clippy `1.94`；仓库外 QA 镜像为 `xs-nexus/qa-rust:1.94.0`，本地 image ID `sha256:9c5046e1f7fd8e27c3185aa09fdf4dcceb383c72fec68a524b6d9c32b58718f9`。Controller/Relay builder 固定 `rust:1.94.0-bookworm@sha256:365468470075493dc4583f47387001854321c5a8583ea9604b297e67f01c5a4f`。
+- 旧任务自有 `xs-nexus/qa-rust:1.93.0` 和 `rust:1.93.0-bookworm` 镜像已在确认无容器引用后精确删除；另只删除三个可证明属于 XS Nexus 的 BuildKit cache record，未运行全局 Docker prune。
+- 精确提交 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` 的 clean-checkout 验证根为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`。验证后临时 worktree、target、QA 容器、QA 网络和 namespace 已清理。
+- 当前生产应用仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；四个项目容器健康，失败 systemd unit 为 0，根分区 `79%`，默认网关 `10.3.0.1`/`eth0`，`1panel-network` ID/子网不变。该 QA 工具链不是生产运行依赖。

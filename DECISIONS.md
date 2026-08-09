@@ -903,7 +903,7 @@
 ## ADR-078: Production host uses a repository-external containerized QA toolchain
 
 - Status: Accepted, 2026-08-08.
-- Decision: Keep Rust, Node build dependencies and cross headers out of the production host package set. Use a repository-external `xs-nexus/qa-rust:1.93.0` image and narrow wrappers for Cargo, rustc, npm and ShellCheck; mount only the isolated QA worktree, bounded caches and `/tmp`. Privileged namespace tests compile first and execute the resulting host binary directly.
+- Decision: Keep Rust, Node build dependencies and cross headers out of the production host package set. Use a repository-external QA image that exactly matches `rust-toolchain.toml` (initially `xs-nexus/qa-rust:1.93.0`, currently `xs-nexus/qa-rust:1.94.0` under ADR-088) and narrow wrappers for Cargo, rustc, npm and ShellCheck; mount only the isolated QA worktree, bounded caches and `/tmp`. Privileged namespace tests compile first and execute the resulting host binary directly.
 - Rationale: This preserves the production host baseline while still running the exact compiler, Clippy, rust-src, AArch64 GCC/libc and ShellCheck gates required by the task book. Direct host execution prevents Docker networking from replacing the network namespace under test.
 - Consequence: The QA image and wrappers are operational evidence, not product dependencies or Git artifacts. Any image rebuild must record tool versions and rerun cross-package and full M5.2 validation.
 
@@ -1006,3 +1006,16 @@
 - 所有权边界：仓库只提供 `scripts/audit-strict-tls.py` 和 `deploy/host/openresty-xs-nexus-vhost.conf.example`。DNS/CDN、证书私钥和 1Panel/OpenResty 站点属于所有者控制面，未经批准不得应用；任何批准后的变更必须保留现有站点、`1panel-network`、防火墙、路由和容器不变量及回滚。
 - 证据：Git commit `94ccae3e8b4bf0279336d01db8b1ab53abf15aae`；`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z`；`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z`。
 - 残余：当前生产没有应用该模板或计划域名证书/CDN 设置，Gate 13 仍为 `FAIL`，Gate 19 仍为 `PARTIAL`，正式修复为 `BLOCKED_EXTERNAL`。
+
+---
+
+## ADR-088：可消除的依赖公告不得豁免，信息类公告采用有期限拓扑复核
+
+- 状态：接受
+- 日期：2026-08-09
+- 背景：SQLx `0.8.6` 的不可达功能仍把 `rsa` 带入锁文件并触发 `RUSTSEC-2023-0071`；现有脚本对其设置 ignore，且 `cargo-deny` 没有完整许可证策略。不可达不等于依赖不存在，长期 ignore 会掩盖未来 feature 或拓扑漂移。
+- 决策：升级 Rust `1.94` 和 SQLx `0.9.0`，从锁文件消除 `rsa` 并删除公告 ignore；动态 SQL 只能通过显式 `sqlx::AssertSqlSafe` 进入执行边界。`cargo audit` 必须以空 ignore 运行，`cargo deny --all-features check` 必须完整执行 advisories、bans、licenses、sources；许可证使用显式 allowlist，不使用通配跳过。
+- 信息类边界：`RUSTSEC-2024-0436` 仅声明 transitive `paste 1.0.15` 未维护、没有漏洞 CVSS 或可用 patched version；它通过 `rtnetlink` 路径进入。保持告警可见，最迟 `2026-08-31` 复核，且 lock、上游依赖、feature、公告或生产 revision 任一变化立即提前复核；由 `KI-026` 跟踪替换或正式 disposition。
+- 供应链边界：Rust builder 和 CI toolchain 固定到 `1.94` 精确镜像 digest；SBOM 预期计数随真实 lock 更新，不删除组件以制造旧计数。镜像 glibc Critical/High 仍由 `KI-021` 独立跟踪，本决策不把 API 不可达 disposition 伪装成修复。
+- 证据：Git commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`；GitHub Actions run `31313868529`；clean-checkout 根 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`；失败证据封存复核根 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`。
+- 残余：`3bf8619` 未部署、未合并 main、不是正式签名 RC。全局 Critical/High 与外部门禁仍开放，因此 Gate 23 为 `FAIL`、Gate 24 为 `PARTIAL`、总体为 `NO_GO`。

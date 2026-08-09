@@ -94,6 +94,32 @@ Gate 14 remains `PARTIAL`, not `PASS`. Security updates, protected reboot, post-
 
 The successful read-only root includes the current-domain control, direct-origin SNI failure, installed certificate metadata, current virtual-host routing, loopback Controller/Console/API/WebSocket checks, independent Windows probes, no-value secret scan, and final SHA-256 manifest. The exact-commit rerun independently records edge HTTP `525` for all four required paths and direct-origin TLS failure for the same paths. Neither directory contains a production mutation; Gate 13 remains `FAIL`.
 
+## Gate 23 Defect and Dependency Evidence
+
+| Evidence | Location | Status |
+|---|---|---|
+| Generic unauthenticated JSON rejection implementation | Git commit `03c7557` | VERIFIED |
+| JSON rejection targeted validation | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-api-json-20260809T103535Z` | PASS, PRODUCTION UNCHANGED |
+| Retained JSON validation/harness failures | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-api-json-20260809T101603Z`, `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-api-json-20260809T102237Z`, `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-api-json-20260809T102250Z` | FAILED NON-AUTHORITATIVE, 33 FILES EACH SEALED |
+| Bounded PostgreSQL log policy implementation | Git commit `9764d58` | VERIFIED |
+| Protected production PostgreSQL log-policy rollout | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-postgres-logging-20260809T105634Z` | PASS, `10m`/`5`, ROLLBACK EXERCISED |
+| Retained PostgreSQL rollout failure and rollback | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-postgres-logging-20260809T105152Z` | RETAINED FAILED EVIDENCE |
+| SQLx/Rust/advisory/license remediation | Git commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` | VERIFIED |
+| Exact-head GitHub Actions | GitHub Actions run [`31313868529`](https://github.com/Hinln/xs-nexus/actions/runs/31313868529) | PASS, 4 JOBS, 3 EVIDENCE ARTIFACTS |
+| Clean-checkout full Gate 23 validation | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` | PASS, SHA-256 VERIFIED |
+| Retained malformed-CI-input run | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T111531Z` | FAILED NON-AUTHORITATIVE, 16 FILES SEALED |
+| Retained invalid-toolchain-command run | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T111735Z` | FAILED NON-AUTHORITATIVE, 19 FILES SEALED |
+| Retained disk-pressure termination | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T111856Z` | FAILED NON-AUTHORITATIVE, 36 FILES SEALED |
+| Retained pre-fix dependency/harness failure | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T112518Z` | FAILED NON-AUTHORITATIVE, 64 FILES SEALED |
+| Retained all-product-pass/disk-health failure | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T130155Z` | FAILED NON-AUTHORITATIVE, 59 FILES SEALED |
+| Retained insufficient-headroom cleanup run | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-disk-headroom-20260809T133002Z` | FAILED NON-AUTHORITATIVE, 17 FILES SEALED |
+| Exact XS Nexus BuildKit cache cleanup | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-build-cache-cleanup-20260809T133939Z` | PASS, NO GLOBAL PRUNE |
+| Independent failed/successful evidence verification | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` | PASS, SHA-256 VERIFIED |
+
+The full run records successful formatting, strict all-target/all-feature Clippy, all-feature workspace tests, real PostgreSQL and namespace network tests, frontend lint/unit/build/high-severity audit, real Console E2E, executable protocol fuzz, double no-cache image reproducibility, source-risk review, repository/history secret scanning, and full `cargo-audit`/`cargo-deny`. `rsa` is absent from `Cargo.lock`; no advisory ignore remains. The only Rust advisory output is informational `RUSTSEC-2024-0436` for unmaintained transitive `paste 1.0.15`, with a bounded review recorded in `KI-026`.
+
+The evidence-seal verification rechecked every failed-root manifest and disposition, the successful-root manifest and summary, the production health guard, zero failed systemd units, zero temporary QA containers/networks/namespaces, `1panel-network` ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`, subnet `172.18.0.0/16`, and default gateway `10.3.0.1` on `eth0`. Production Controller/Relay/Console continue to run `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `3bf8619` was not deployed.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.
@@ -108,5 +134,5 @@ The successful read-only root includes the current-domain control, direct-origin
 - Gate 02 no-value secret inventory, rotation receipts, old-value rejection checks, deep artifact/history/layer scan.
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
-- Gates 04/06/08/09/15/18/19/20/21/22/23/24/25 current-revision regressions.
+- Gates 04/06/08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 still requires formal release and bounded vulnerability disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

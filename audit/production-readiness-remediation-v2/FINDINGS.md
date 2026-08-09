@@ -14,7 +14,13 @@
 | PRV2-010 | High | 20 | Local health guard lacks independent external delivery, formal on-call, TLS-expiry and full metrics closure | OPEN |
 | PRV2-011 | High | 22 | Current remediation revision has no mandatory 24-hour soak evidence | OPEN |
 | PRV2-012 | High | 01/25 | Revision `3d93656` is built, deployed, reverse-verified and repeatedly rolled back to `ff9551d3`, but is not merged to `main` or covered by an owner-controlled signed RC tag/bundle | OPEN |
+| PRV2-013 | High | 23/24 | SQLx `0.8.6` pulled unreachable `rsa` code affected by `RUSTSEC-2023-0071`; the advisory was previously ignored | CLOSED at `3bf8619`: SQLx `0.9.0`, `rsa` absent, ignore removed, plain audit PASS |
+| PRV2-014 | Medium | 20/23 | Production PostgreSQL Docker logs had no bounded rotation policy | CLOSED at `9764d58`: `10m`/`5` policy applied with rollback and production invariants |
+| PRV2-015 | Medium | 19/23 | Framework JSON extraction errors exposed detailed parser rejection text to unauthenticated clients | CLOSED at `03c7557`: exact generic 400 envelope and negative regressions |
+| PRV2-016 | High | 24 | `cargo-deny` did not enforce a complete workspace license policy | CLOSED at `3bf8619`: explicit allowlist and full all-feature check PASS |
 
 Findings remain open until the associated raw evidence is linked from `EVIDENCE_INDEX.md`.
 
 `PRV2-005` repository-side preparation is complete at commit `94ccae3`: a strict TLS/SNI/HTTP/WebSocket auditor, negative tests, and a placeholder-only OpenResty template route the approved future origin to Console. The production finding is not closed. DNS/CDN/1Panel ownership and certificate material require explicit owner authorization; current raw evidence remains a functional failure.
+
+The four closed Gate 23 findings were independently revalidated at exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`. GitHub Actions run `31313868529` passed all four jobs, and the clean-checkout evidence root `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` passed every recorded status. These closures do not close the remaining global Critical/High findings, do not deploy `3bf8619`, and do not change the overall `NO_GO` decision.

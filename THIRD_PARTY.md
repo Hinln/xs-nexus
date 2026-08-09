@@ -77,7 +77,7 @@ Windows release `0.1.0` distributes the official Wintun `0.14.1` x64 prebuilt `w
 | PostgreSQL Alpine | `18-alpine3.22` | `pg_dump`/`pg_restore`/`psql` 与 age 加密备份运维镜像 | PostgreSQL License、Alpine 包及固定 age 源码许可证闭包 |
 | Alpine | `3.22` | 外部网络只读配置探针和错误镜像测试 | Alpine 包各自许可证 |
 
-Controller/Relay 的 Rust `1.93.0-bookworm`、Console 的 Node `24-bookworm-slim` 和 db-tools 的 digest-pinned Go builder 只作为构建阶段，不进入最终运行镜像。db-tools 从 age `v1.3.1` 精确提交构建并强制 `golang.org/x/crypto v0.52.0`，只复制静态 CLI 和上游许可证。当前镜像 SBOM、113/113 许可证闭包、provenance、Grype 报告和有界 disposition 已验证；结果为 Critical 2、High 4、Medium 16、Negligible 24、当前可修复项 0。剩余 glibc 风险由 `KI-021` 跟踪，不能因无当前修复版本而隐藏或自动接受。
+Controller/Relay 的 Rust `1.94.0-bookworm`（固定 digest `sha256:365468470075493dc4583f47387001854321c5a8583ea9604b297e67f01c5a4f`）、Console 的 Node `24-bookworm-slim` 和 db-tools 的 digest-pinned Go builder 只作为构建阶段，不进入最终运行镜像。db-tools 从 age `v1.3.1` 精确提交构建并强制 `golang.org/x/crypto v0.52.0`，只复制静态 CLI 和上游许可证。当前镜像 SBOM、113/113 许可证闭包、provenance、Grype 报告和有界 disposition 已验证；结果为 Critical 2、High 4、Medium 16、Negligible 24、当前可修复项 0。剩余 glibc 风险由 `KI-021` 跟踪，不能因无当前修复版本而隐藏或自动接受。
 
 ## 3. 工具与 CI
 

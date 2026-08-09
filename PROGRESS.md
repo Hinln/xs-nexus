@@ -1,10 +1,10 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-08-09
-当前 Git 提交：以包含本记录的提交为准；Gate 16 实现基线为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`
+当前 Git 提交：以包含本记录的提交为准；Gate 23 实现基线为 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
-当前总状态：`NO_GO`（Gate 16 已通过，Gate 02/13/14/23/25 及外部门禁仍未闭合）
-当前里程碑：`生产门禁修复 V2：Gate 16 完成，继续 Gate 02/14`
+当前总状态：`NO_GO`（Gate 16 已通过；Gate 23 可自行修复项已清零，但 Gate 02/13/14/23/25 及外部门禁仍未闭合）
+当前里程碑：`生产门禁修复 V2：Gate 23 内部整改完成，继续下一未闭合内部 Gate`
 
 ---
 
@@ -428,3 +428,16 @@ make clean
 - 提交 `94ccae3e8b4bf0279336d01db8b1ab53abf15aae` 增加 `scripts/audit-strict-tls.py`、完整负向回归、Makefile 门禁和只代理 Console 的 OpenResty 占位符模板；本地 py_compile、回归、public-edge validator、真实公网 smoke、秘密扫描和 diff check 通过。Windows 环境缺少可执行 `python3`，因此未把该环境的 `validate-m02.py` 启动失败伪报为产品通过；Linux CI/复核仍需执行。
 - 原始只读证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z`；精确提交工具证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z` 为 root-only 只读、8 文件且 manifest/秘密扫描通过。失败 collector 证据保留，未隐藏。
 - 没有修改 DNS、CDN、证书、1Panel/OpenResty、Docker、网络、防火墙或运行服务。Gate 13 保持 `FAIL`、`PRV2-005`/`KI-025` 为 `BLOCKED_EXTERNAL`；下一步进入 Gate 23 可自行修复的 P0/P1/Critical/High 清零，同时等待所有者授权计划域名生产变更。
+
+## 2026-08-09 Gate 23 内部缺陷与依赖整改
+
+- API 解析拒绝统一为精确通用 400 JSON，不再向未认证客户端返回 serde/Axum 字段、行列或语法细节；定向测试、Controller 单测、严格 Clippy、格式化和秘密扫描通过，证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-api-json-20260809T103535Z`。
+- 生产 PostgreSQL 日志轮转固定为 `10m`/`5`；变更经过加密备份、20 分钟自动回滚、独立 SSH 验证和最终封存，`1panel-network`、默认路由、非项目容器/nftables 与应用容器 ID 保持，证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-postgres-logging-20260809T105634Z`。
+- Rust `1.94`、SQLx `0.9.0` 和显式 `AssertSqlSafe` 迁移完成；`Cargo.lock` 不含 `rsa`，`RUSTSEC-2023-0071` ignore 已删除；完整许可证 allowlist 和 `cargo deny --all-features check` 通过。
+- 仓库外 QA 镜像已同步为 `xs-nexus/qa-rust:1.94.0`；旧任务自有 1.93 镜像在无容器引用后精确删除，生产宿主仍不安装 Rust/Node 编译器。
+- 精确提交 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` 的 GitHub Actions run `31313868529` 四个 job 全通过；Console real E2E、protocol fuzz 与双无缓存镜像复现 artifact 存在。
+- Clean checkout 全量验证通过：格式化、严格全 target/feature Clippy、workspace all-feature 测试、真实 PostgreSQL/namespace、前端 lint/unit/build/audit、源风险扫描、仓库与历史秘密扫描、`cargo audit`、完整 `cargo deny` 和生产不变量全部 PASS；证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`。
+- 九个失败/非权威 evidence root（API 三个、全量/空间六个）均新增非覆盖 disposition 和独立 `SHA256SUMS.GATE23`；独立复核 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` 通过。
+- 磁盘压力 run 在全部产品测试通过后被健康守卫以根分区 `91%` 正确拒绝；只删除三个精确 XS Nexus BuildKit cache record，未运行 global prune。最终根分区 `79%`、约 `12.65 GB` 可用，生产健康、失败服务 0、临时 QA 容器/网络/namespace 0。
+- Gate 23 仍为 `FAIL`：全局 Critical/High、P0/P1 必须全部为零，外部 Gate 不得由内部测试代替。Gate 24 仍为 `PARTIAL`：`paste 1.0.15` 仅为未维护信息告警且有 `2026-08-31` 复核期限，`KI-021` glibc 风险、正式签名发布和部署仍未关闭。
+- 下一步：按 `GATE_STATUS.md` 选择最高风险、可自行解决的未闭合内部 Gate；生产继续运行 `3d93656`，不得把 `3bf8619` 描述为已部署或正式 RC。

@@ -317,3 +317,13 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0026`：HTTP 版本端点输出 JSON，但二进制 `--version` 按既有契约输出文本；生产验证器错误把四者统一按 JSON 解析。修正为分别验证 JSON 字段与文本 `commit=/protocol=`，第三次已健康部署仍因验证器失败而自动回滚，没有人工取消保护。
 - `XS-2026-0027`：Compose 重建会更新 Docker nftables handle、规则顺序和项目容器 IP，字节级比较错误拒绝预期规则刷新。修正为保留原始快照，删除 counter/handle，仅允许由前后 Docker inspect 认证的 XS Nexus 地址和实际发布端口对应规则变化，并要求所有非项目规则精确相等。旧/新真实快照预演通过后才重试。
 - 最终第五次尝试通过即时验证、全新 SSH 会话、回滚取消后只读复核和 81 文件 SHA-256；四次失败、四次自动回滚及根因均保留在 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`，未删除或弱化任何门禁。
+
+## Gate 23 缺陷与验证器闭环（2026-08-09）
+
+- `XS-2026-0028`：Axum JSON extractor 将 serde 字段、类型、行列和语法错误直接写入未认证 400 响应。修复为固定通用 envelope，并以畸形 JSON、未知字段、错误类型和超限 body 证明不再泄露 parser detail；保留业务错误类型，不把所有失败吞成 400。
+- `XS-2026-0029`：生产 PostgreSQL 容器没有 Docker log rotation 上限。首次受保护 rollout 的验证器失败后按计划回滚并保留证据；修正验证链后以加密备份、20 分钟自动回滚、独立 SSH 和宿主/1Panel 不变量部署 `10m`/`5`，未重建数据库卷或修改 `1panel-network`。
+- `XS-2026-0030`：SQLx `0.8.6` 把未启用路径的 `rsa` 留在 lock，脚本通过 ignore 处理 `RUSTSEC-2023-0071`；`cargo-deny` 又缺少许可证 allowlist。升级 SQLx `0.9.0`/Rust `1.94`、显式标注动态 SQL 安全边界、删除 `rsa` 和 ignore，并让完整 cargo-deny 四类检查通过，没有用 feature 裁剪、skip 或弱化门禁。
+- 全量验证的前三个 harness run 分别因 CI JSON BOM、无效 toolchain 命令和磁盘压力提前终止；第四个 run 正确暴露测试 harness、RSA 和 license policy 缺陷。修复后一个 run 的所有产品检查通过，但生产磁盘健康守卫在根分区 `91%` 时按设计拒绝最终 baseline。
+- 仅删除两个旧任务镜像和三个可证明属于 XS Nexus 的精确 BuildKit cache record；首轮镜像清理后仍不足 12 GiB 的 run 继续保持失败。禁止且未运行 global Docker prune。最终验证从约 12.96 GB headroom 开始并全部通过。
+- 九个失败/non-authoritative root（API 三个、全量/空间六个）均保留原始文件并新增不可覆盖 disposition/manifest；成功根为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`，封存复核根为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`。
+- 结果边界：四个可自行修复 finding 关闭，但生产仍运行 `3d93656`，全局 Critical/High 与外部门禁未关闭；Gate 23 仍为 `FAIL`，没有把内部回归写成生产 GO。

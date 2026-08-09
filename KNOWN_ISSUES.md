@@ -309,7 +309,7 @@
 
 ## 2026-08-09 生产审计补充
 
-- `KI-019` 的当前源 SBOM 计数更新为 Cargo 325、npm 110、总计 435。新增四项为启用 Ed25519 PEM/PKCS#8 支持后进入锁文件的 `der 0.8.1`、`pem-rfc7468 1.0.0`、`pkcs8 0.11.0`、`spki 0.8.0`；许可证与哈希继续 fail-closed，最终 baseline 通过。
+- `KI-019` 在 Gate 01 revision 的源 SBOM 为 Cargo 325、npm 110、总计 435；Gate 23 升级 SQLx `0.9.0` 并删除 `rsa` 拓扑后，精确 revision `3bf8619` 的预期计数为 Cargo 296、npm 110、总计 406。许可证、哈希和计数漂移继续 fail-closed，完整 CI 与 clean-checkout baseline 通过。
 - `KI-021` 仍开放：修复分支五镜像逐字节可复现且 `3d93656` 已部署，但生产运行的 glibc Critical/High 仍只有限时、精确 API 可达性 disposition，未被上游修复，也未获得正式风险接受。
 - 新增生产级残余问题统一由 `audit/production-readiness/OPEN_FINDINGS.md` 和 `BLK-008` 跟踪；修复分支 CI PASS 不表示 Release Candidate。
 
@@ -349,3 +349,15 @@
 - 已完成缓解：提交 `94ccae3` 增加失败关闭的严格 TLS/SNI/HTTP/WebSocket 审计器及负向测试，并提供只含占位符、TLS 1.2/1.3、HTTP 308、Console loopback 和 WebSocket 透传的 OpenResty 模板。证据已秘密扫描和 SHA-256 封存；未修改生产配置。
 - 计划：所有者按 `audit/production-readiness-remediation-v2/CDN_TLS.md` 批准并执行证书、计划域名 vhost、CDN Origin Host/SNI 和 strict 验证变更，以完整基线和自动/手工回滚保护；随后从独立外部客户端和真实浏览器复验。
 - 解除条件：源站和 CDN 严格证书/主机名验证、根/health/install、登录、认证 API、WebSocket、Console E2E 和未知路由全部通过；无关 1Panel 站点、容器、路由、防火墙与 `1panel-network` 保持不变。
+
+---
+
+## KI-026 transitive `paste` 未维护公告需要限时复核
+
+- 严重度：低（信息类/P2；不是已知漏洞）
+- 状态：开放、有限期 disposition
+- 首次发现：2026-08-09 Gate 23 plain `cargo audit`。
+- 影响：`paste 1.0.15` 通过 `rtnetlink` 依赖拓扑进入锁文件；`RUSTSEC-2024-0436` 表示上游已停止维护，没有 CVSS、漏洞利用结论或 patched version。当前 `cargo audit` 因零 vulnerability 返回成功，但仍输出该 informational warning。
+- 已完成缓解：告警没有加入 ignore；`cargo deny --all-features check` 和 plain `cargo audit` 均保留完整输出。exact-head CI、workspace tests、namespace networking、协议 fuzz、镜像复现和源风险扫描通过，证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`。
+- 复核期限：`2026-08-31`，或 `Cargo.lock`、`rtnetlink` 路径、feature、公告内容、Rust/SQLx 版本、正式 RC revision 任一变化时立即复核。
+- 解除条件：上游依赖移除/替换 `paste` 且全量回归通过，或在期限内完成有原始证据的正式风险 disposition。不得静默 ignore；该条目不关闭 `KI-021`、Gate 24、正式发布或第三方审计。

@@ -143,3 +143,16 @@ These unchecked items keep Gate 01 `FAIL`, Release Candidate unchecked, and the 
 - [ ] Independent direct-origin and CDN health/login/authenticated API/WebSocket/Console/unknown-route/browser E2E with unrelated-site and host-network invariants.
 
 The first three items are preparation and diagnosis only. The unchecked production items keep Gate 13 `FAIL`, Gate 19 `PARTIAL`, Release Candidate unchecked, and the overall result `NO_GO`.
+
+## Gate 23 internal remediation checkpoint (2026-08-09)
+
+- [x] Generic unauthenticated JSON rejection envelope with parser-detail negative tests.
+- [x] Production PostgreSQL Docker log rotation bounded to `10m`/`5`, protected by backup, rollback, and independent verification.
+- [x] Rust `1.94` and SQLx `0.9.0`; `rsa`/`RUSTSEC-2023-0071` removed without an advisory ignore.
+- [x] Full `cargo-deny` advisories, bans, licenses, and sources policy; plain `cargo audit` reports zero vulnerabilities.
+- [x] Exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` passed GitHub Actions run `31313868529` and clean-checkout evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`.
+- [x] Nine failed/non-authoritative Gate 23 roots retained, dispositioned, independently checksummed, and reverified at `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`.
+- [ ] `paste 1.0.15` informational unmaintained warning reviewed or replaced before `2026-08-31`; `KI-021` glibc disposition closed or formally accepted.
+- [ ] All global P0/P1/Critical/High findings, external hard gates, formal signed RC/main provenance, and deployment of the exact release revision complete.
+
+The checked items close four self-fixable findings only. Production still runs `3d93656`, Gate 23 remains `FAIL`, Gate 24 remains `PARTIAL`, Release Candidate remains unchecked, and the overall result remains `NO_GO`.

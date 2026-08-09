@@ -197,6 +197,8 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [x] MUST：无未解释日志持续增长。
 - [x] MUST：故障恢复测试通过。
 
+Gate 23 当前精确回归基线为 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`：JSON parser detail、PostgreSQL 无界 Docker 日志、`rsa`/`RUSTSEC-2023-0071` 和缺失 license policy 四项可自行修复 finding 已关闭；源 SBOM 预期计数为 Cargo 296、npm 110、总计 406。GitHub Actions run `31313868529` 与 clean-checkout 证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 通过。上述勾选是项目内部验收，不代表生产 Hard Gate 23 已 PASS；全局 Critical/High、外部门禁、正式签名发布和当前 revision soak 未关闭，Gate 23 仍为 `FAIL`、Gate 24 为 `PARTIAL`、总体为 `NO_GO`。
+
 ---
 
 ## M. 最终文档

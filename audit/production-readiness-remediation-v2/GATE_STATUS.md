@@ -26,8 +26,8 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 20 | Production observability | PARTIAL | PARTIAL | External alert delivery, on-call, certificate and backup monitoring |
 | 21 | Performance and capacity | PARTIAL | PARTIAL | WAN/concurrency evidence and documented safe operating envelope |
 | 22 | Current-revision soak | UNKNOWN | UNKNOWN | At least 24 hours with sampling and fault injection |
-| 23 | Defects and security findings | FAIL | FAIL | P0/P1/Critical/High all zero; P2 disposition complete |
-| 24 | Dependencies and image supply chain | PARTIAL | PARTIAL | Signed/deployed release evidence and current vulnerability closure |
+| 23 | Defects and security findings | FAIL | FAIL | Exact-head self-fixable checks pass at `3bf8619`; all remaining P0/P1/Critical/High findings, including external findings, must reach zero and P2 dispositions must remain current |
+| 24 | Dependencies and image supply chain | PARTIAL | PARTIAL | Formal signed/deployed release, bounded glibc disposition closure, and the dated `paste` topology review |
 | 25 | Clean deployment rehearsal | FAIL | FAIL | Independent clean checkout/full lifecycle and production upgrade rollback |
 
 ## Initial Counts
@@ -55,3 +55,7 @@ Gate 16 changed to `PASS` after exact revision `3d93656cc9ec3ea35d58e453118154b2
 Gate 14 changed from `FAIL` to `PARTIAL` after exact source `ae74783cdf9f75fd90e496fe837e50b744990310` passed CI and production evidence proved key-only SSH, old-key/root/password rejection, a minimal independent nftables INPUT table, public TCP `188` closure, restricted 1Panel tunneling, preserved routes/rules/non-project nftables/`1panel-network`, healthy protected services, timed rollback, and independent post-finalization sessions. Protected maintenance subsequently installed all 157 pending upgrades and 9 required dependencies, booted `6.8.0-137-generic` through a one-shot GRUB entry with automatic old-kernel fallback, repeated internal and external regression, and reduced root usage from `83%` to `77%` without global prune or autoremove. It is not `PASS`: independent external warning/critical disk-alert delivery and on-call acknowledgement remain absent.
 
 Gate 13 remains `FAIL`. Read-only evidence proves client-to-edge TLS succeeds but all required routes return `525`; direct-origin planned-domain SNI fails before HTTP, no planned-domain origin virtual host/certificate exists, and the current public virtual host routes root to Controller instead of Console. Commit `94ccae3` adds strict audit tooling and a safe placeholder template only. DNS/CDN/1Panel changes remain owner-controlled and were not applied.
+
+Gate 23 repository-side remediation is complete at exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`. Generic JSON rejection handling, bounded PostgreSQL Docker logs, SQLx `0.9.0`, removal of `rsa` and `RUSTSEC-2023-0071`, and a complete `cargo-deny` license policy all passed clean-checkout validation and GitHub Actions run `31313868529`. The gate remains `FAIL`: open Critical/High findings in Gates 01/02/03/05/11/12/13/14/17/20/22/25 are not converted to PASS by an internal regression run.
+
+Gate 24 remains `PARTIAL`. Plain `cargo audit` reports zero vulnerabilities and no ignored advisories; `cargo deny --all-features check` passes advisories, bans, licenses, and sources. `RUSTSEC-2024-0436` for transitive `paste 1.0.15` remains an informational unmaintained warning with a review deadline of `2026-08-31`, and the production glibc findings remain under the bounded `KI-021` disposition. The validated branch commit is not the deployed revision or a formal signed release.

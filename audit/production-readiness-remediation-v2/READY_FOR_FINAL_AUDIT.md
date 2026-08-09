@@ -9,6 +9,7 @@ Current value: `NO`
 - [ ] Gates 03 and 18 formal key lifecycle and signed RC are `PASS`.
 - [ ] Gate 05 independent security audit and retest are `PASS`.
 - [x] PostgreSQL Gate 16 is `PASS` with production reverse verification and retained rollback evidence.
+- [x] Gate 23 self-fixable findings pass exact-head CI and clean-checkout validation at `3bf8619`; failed evidence is dispositioned and sealed.
 - [ ] Host, planned-domain TLS, observability, defects, dependency, and deployment gates are `PASS`.
 - [ ] Linux recovery, Relay, ACL, 1Panel coexistence, Console, and performance gates are `PASS`.
 - [ ] Real WAN, Windows, NAS, subnet router, and offsite restore gates are `PASS`.
@@ -18,3 +19,5 @@ Current value: `NO`
 - [ ] Raw evidence for every hard gate is indexed and secret-scanned.
 
 When all items are checked, create `audit/production-readiness-final/` and independently re-run every hard gate. Do not copy PASS states from this remediation directory.
+
+The checked Gate 23 internal item does not make Gate 23 `PASS`: global Critical/High findings and external hard gates remain open. Production still runs `3d93656`, not `3bf8619`; current value remains `NO`.
