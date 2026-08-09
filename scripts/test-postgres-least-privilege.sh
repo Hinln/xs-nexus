@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 POSTGRES_IMAGE=${XS_TEST_POSTGRES_IMAGE:-postgres@sha256:774521500f4c22761b25a6bdb772a0a3c2e8dd32468210bdad9231c5752ea398}
-RUST_IMAGE=${XS_TEST_RUST_IMAGE:-xs-nexus/qa-rust:1.93.0}
+RUST_IMAGE=${XS_TEST_RUST_IMAGE:-xs-nexus/qa-rust:1.94.0}
 SUFFIX=$(openssl rand -hex 4)
 POSTGRES_CONTAINER="xs-gate16-postgres-$SUFFIX"
 CONTROLLER_CONTAINER="xs-gate16-controller-$SUFFIX"

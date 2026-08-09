@@ -1,6 +1,6 @@
 use std::env;
 
-use sqlx::{Executor, postgres::PgPoolOptions};
+use sqlx::postgres::PgPoolOptions;
 
 const ALLOWED_TEST_SCHEMAS: &[&str] = &[
     "xs_nexus_agent_systemd_test",
@@ -23,7 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_connections(1)
         .connect(&database_url)
         .await?;
-    pool.execute(format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE").as_str())
+    let statement = format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+        .execute(&pool)
         .await?;
     pool.close().await;
     Ok(())

@@ -2,7 +2,7 @@ ARG SOURCE_DATE_EPOCH=0
 ARG VCS_REF=unknown
 ARG XS_VERSION=0.1.0
 ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
-ARG RUST_IMAGE=rust:1.93.0-bookworm@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382
+ARG RUST_IMAGE=rust:1.94.0-bookworm@sha256:365468470075493dc4583f47387001854321c5a8583ea9604b297e67f01c5a4f
 ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e
 
 FROM ${RUST_IMAGE} AS builder

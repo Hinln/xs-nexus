@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "scripts" / "generate-source-sbom.py"
 SNAPSHOT = ROOT / "supply-chain" / "npm-licenses.json"
-EXPECTED_COUNTS = {"cargo": 325, "npm": 110, "total": 435}
+EXPECTED_COUNTS = {"cargo": 296, "npm": 110, "total": 406}
 OUTPUT_FILES = (
     "manifest.json",
     "xs-nexus-source.cdx.json",

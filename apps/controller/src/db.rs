@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sqlx::{Connection, Executor, PgConnection, PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{Connection, PgConnection, PgPool, Row, postgres::PgPoolOptions};
 use thiserror::Error;
 
 use crate::config::{ControllerConfig, MigrationConfig};
@@ -79,9 +79,13 @@ async fn connect_pool(
             let set_role = set_role.clone();
             Box::pin(async move {
                 if let Some(set_role) = set_role {
-                    connection.execute(set_role.as_str()).await?;
+                    sqlx::raw_sql(sqlx::AssertSqlSafe(set_role))
+                        .execute(&mut *connection)
+                        .await?;
                 }
-                connection.execute(search_path.as_str()).await?;
+                sqlx::raw_sql(sqlx::AssertSqlSafe(search_path))
+                    .execute(&mut *connection)
+                    .await?;
                 Ok(())
             })
         })
@@ -102,18 +106,21 @@ async fn create_schema(
         .await
         .map_err(DatabaseError::Connect)?;
     if let Some(owner_role) = owner_role {
-        connection
-            .execute(format!("SET ROLE \"{owner_role}\"").as_str())
+        let statement = format!("SET ROLE \"{owner_role}\"");
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+            .execute(&mut connection)
             .await
             .map_err(DatabaseError::Schema)?;
     }
-    connection
-        .execute(format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\"").as_str())
+    let statement = format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\"");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+        .execute(&mut connection)
         .await
         .map_err(DatabaseError::Schema)?;
     if let Some(app_role) = app_role {
-        connection
-            .execute(format!("GRANT USAGE ON SCHEMA \"{schema}\" TO \"{app_role}\"").as_str())
+        let statement = format!("GRANT USAGE ON SCHEMA \"{schema}\" TO \"{app_role}\"");
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+            .execute(&mut connection)
             .await
             .map_err(DatabaseError::Schema)?;
     }
@@ -168,7 +175,8 @@ async fn grant_runtime_privileges(
         ),
     ];
     for statement in statements {
-        pool.execute(statement.as_str())
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+            .execute(pool)
             .await
             .map_err(DatabaseError::Schema)?;
     }

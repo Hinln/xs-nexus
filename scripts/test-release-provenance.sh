@@ -40,7 +40,7 @@ inventory = {
     "source_date_epoch": 0,
     "protocol_version": "XSP/1",
     "build_inputs": [
-        {"name": "rust-toolchain", "value": "1.93.0"},
+        {"name": "rust-toolchain", "value": "1.94.0"},
         {"name": "source-date-epoch", "value": "0"},
     ],
     "sbom_spdx": "SBOM.spdx.json",
