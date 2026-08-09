@@ -4,7 +4,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 
 | Gate | Scope | Initial V2 Status | Current Status | Next Proof Required |
 |---|---|---:|---:|---|
-| 01 | Code and deployment provenance | FAIL | FAIL | Formal signed RC tag/bundle, main merge, clean deployment, runtime reverse verification, and old-production upgrade/rollback |
+| 01 | Code and deployment provenance | FAIL | FAIL | Owner-controlled signed RC tag/bundle, authenticated release key, and merge to `main`; branch deployment/reverse verification and `ff9551d3` rollback are complete |
 | 02 | Secrets and credential rotation | FAIL | FAIL | Full rotation plus proof that every old credential is rejected |
 | 03 | Formal key lifecycle | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Human-controlled offline ceremony, backup, revoke, and recovery |
 | 04 | XSP/1 internal security | PARTIAL | PARTIAL | Extended fuzz/sanitizer/state-machine evidence on current revision |
@@ -19,7 +19,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 13 | Planned domain/CDN/TLS | FAIL | FAIL | Strict origin TLS plus API, WebSocket, Console and browser evidence |
 | 14 | Production host hardening | FAIL | FAIL | Key-only SSH, minimal firewall, patch/listener/disk closure |
 | 15 | 1Panel coexistence | PARTIAL | PARTIAL | Restart/upgrade/rollback and safe reboot evidence |
-| 16 | PostgreSQL least privilege | FAIL | FAIL | Owner/app/migrator separation and negative permission tests |
+| 16 | PostgreSQL least privilege | FAIL | PASS | Continue drift monitoring; bootstrap credential rotation remains a separate Gate 02 requirement |
 | 17 | Offsite backup and recovery | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Independent failure domain and clean-server restore |
 | 18 | Update and release supply chain | PARTIAL | PARTIAL | Formal keys, revocation, signed RC and platform failure matrix |
 | 19 | Web Console | PARTIAL | PARTIAL | Real public strict-TLS runtime and complete E2E matrix |
@@ -40,3 +40,14 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 - UNKNOWN: 1
 
 Counts change only after raw evidence has been indexed and independently checked.
+
+## Current Counts
+
+- PASS: 1
+- FAIL: 6
+- BLOCKED_EXTERNAL: 5
+- PARTIAL: 10
+- SIMULATED_ONLY: 2
+- UNKNOWN: 1
+
+Gate 16 changed to `PASS` after exact revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` passed full CI, isolated PostgreSQL and Docker lifecycle validation, production role migration, negative permissions, deployment, independent SSH reverse verification, and post-finalization checks. Gate 02 remains `FAIL` because the platform bootstrap credential and other disclosed credentials have not all been rotated and independently rejected.

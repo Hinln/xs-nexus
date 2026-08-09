@@ -309,3 +309,11 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0022`：仓库外 QA 镜像只有 AArch64 GCC，没有目标 libc 头文件，`ring` 交叉 C 编译失败。镜像补充 `libc6-dev-arm64-cross` 后实际生成 AArch64 Agent/CLI 签名包并通过 ELF 校验；产品运行镜像不受影响。
 - `XS-2026-0023`：部署测试把随机 32 字节当作 Ed25519 公钥，部分随机值不是有效验证键。测试改为从确定性签名私钥推导真实公钥；部署生命周期通过，未放宽 Controller 公钥校验。
 - 最终结果：精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的 M5.2 全量为 `validation_status=0`，随后同 revision 生产部署与宿主基线复核通过。外部门禁继续记录在 `BLOCKERS.md`，没有把失败测试删除、跳过、ignore 或改为 Mock。
+
+## Gate 16 生产部署验证器缺陷闭环（2026-08-09）
+
+- `XS-2026-0024`：生产 PostgreSQL `/tmp` 是容器 tmpfs，Docker archive API 的 `docker cp` 无法以该路径为目标；改为以目标用户通过 `docker exec -i` 流式写入。首次尝试在数据库变更前失败，20 分钟回滚仍按计划执行并恢复旧镜像。
+- `XS-2026-0025`：数据库容器删除了 `CAP_CHOWN`，即使容器内 UID 0 也不能改变 tmpfs 文件 owner；改为从目录创建、流式写入、权限设置到清理全部使用 `postgres` 用户。第二次尝试同样在角色变更前失败并自动回滚。
+- `XS-2026-0026`：HTTP 版本端点输出 JSON，但二进制 `--version` 按既有契约输出文本；生产验证器错误把四者统一按 JSON 解析。修正为分别验证 JSON 字段与文本 `commit=/protocol=`，第三次已健康部署仍因验证器失败而自动回滚，没有人工取消保护。
+- `XS-2026-0027`：Compose 重建会更新 Docker nftables handle、规则顺序和项目容器 IP，字节级比较错误拒绝预期规则刷新。修正为保留原始快照，删除 counter/handle，仅允许由前后 Docker inspect 认证的 XS Nexus 地址和实际发布端口对应规则变化，并要求所有非项目规则精确相等。旧/新真实快照预演通过后才重试。
+- 最终第五次尝试通过即时验证、全新 SSH 会话、回滚取消后只读复核和 81 文件 SHA-256；四次失败、四次自动回滚及根因均保留在 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`，未删除或弱化任何门禁。

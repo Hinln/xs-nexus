@@ -108,7 +108,7 @@
 
 必须三选一，并在 `FINAL_REPORT.md` 给出证据。
 
-生产候选代码 revision 为 `ff9551d322067c934d2ac7d55a62af8896660bb3`；全量和部署证据分别为 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z` 与 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。未完成的 Windows 在线、NAS、计划域名/防火墙、正式密钥/异地恢复、凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
+当前生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；Gate 16 隔离和生产证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`。未完成的 Windows 在线、NAS、计划域名/防火墙、正式密钥/异地恢复、全量凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
 
 ## Runtime image license closure checkpoint (2026-07-31)
 
@@ -125,6 +125,7 @@
 - [x] Exact revision `fea456b3d6feff36856b1f2066ace8a22b650bce` passed GitHub Actions run `31289641228`, including double no-cache image reproducibility.
 - [ ] Human-controlled offline release key ceremony, authenticated public-key publication, rotation/revocation and recovery.
 - [ ] Valid formal signed RC tag and signed production release bundle.
-- [ ] Merge to `main`, clean production deployment, runtime reverse verification, and `ff9551d3 -> RC -> rollback` rehearsal.
+- [x] Remediation revision `3d93656` clean production deployment, runtime reverse verification, and repeated `ff9551d3 -> 3d93656 -> ff9551d3` rollback rehearsal.
+- [ ] Merge to `main`, owner-controlled valid signed RC tag/bundle, and deployment of that exact formal RC.
 
 These unchecked items keep Gate 01 `FAIL`, Release Candidate unchecked, and the overall result `NO_GO`.

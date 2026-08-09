@@ -310,5 +310,17 @@
 ## 2026-08-09 生产审计补充
 
 - `KI-019` 的当前源 SBOM 计数更新为 Cargo 325、npm 110、总计 435。新增四项为启用 Ed25519 PEM/PKCS#8 支持后进入锁文件的 `der 0.8.1`、`pem-rfc7468 1.0.0`、`pkcs8 0.11.0`、`spki 0.8.0`；许可证与哈希继续 fail-closed，最终 baseline 通过。
-- `KI-021` 仍开放：修复分支实现五镜像逐字节可复现，但没有把生产运行的 glibc Critical/High 限时 disposition 改写为已修复，也没有部署新镜像。
+- `KI-021` 仍开放：修复分支五镜像逐字节可复现且 `3d93656` 已部署，但生产运行的 glibc Critical/High 仍只有限时、精确 API 可达性 disposition，未被上游修复，也未获得正式风险接受。
 - 新增生产级残余问题统一由 `audit/production-readiness/OPEN_FINDINGS.md` 和 `BLK-008` 跟踪；修复分支 CI PASS 不表示 Release Candidate。
+
+---
+
+## KI-023 生产 bootstrap 与全量凭据轮换尚未闭合
+
+- 严重度：严重
+- 状态：开放
+- 首次发现：2026-08-08 正式生产审计；2026-08-09 Gate 16 后重新定界。
+- 影响：生产 Controller 已不再使用 PostgreSQL bootstrap 超级用户，运行/迁移/所有者角色分离和负向权限通过；但 bootstrap 本身及 SSH、Console、Controller session/enrollment/node、历史 Redis/MySQL、TLS、备份/更新/恢复和 CI 类凭据尚无完整“新值激活 + 旧值拒绝”证据。Gate 02 继续 `FAIL`。
+- 已完成缓解：runtime 与 migrator 使用新建独立角色和仓库外 Secret；bootstrap 不在长驻 Controller secret 目录；临时明文 staging 已删除；证据中不记录新值。
+- 计划：按 `audit/production-readiness-remediation-v2/CREDENTIAL_ROTATION.md` 逐项轮换，使用不回显渠道激活新值，从独立会话验证旧值拒绝，并扫描当前树、Git 历史、CI、镜像层、日志、截图和 QA 证据。
+- 解除条件：所有非外部条目 `rotated=yes` 且 `old rejected=yes`（新建、无旧值的身份允许有原始创建证据）；外部所有者条目完成后 Gate 02 才可 `PASS`。

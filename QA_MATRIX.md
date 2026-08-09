@@ -442,4 +442,18 @@
 - [x] OCI/Console：Edge、Console、Controller、Relay、db-tools 双无缓存构建稳定；revision/version/source labels 与 Console `version.json` 精确匹配构建输入。
 - [x] GitHub Actions run `31289641228` 对 exact head `fea456b3d6feff36856b1f2066ace8a22b650bce` 全部通过：baseline、protocol fuzz、image reproducibility、real Console E2E。
 - [x] 失败证据未隐藏：run `31289302264` 因 `Cargo.lock --locked` 拒绝失败，artifact `9030926588` 保留；修正 lock 后复跑相同门禁通过。
-- [ ] 生产证据：正式签名 tag/bundle、main 合并、clean deployment、runtime reverse verification、从 `ff9551d3` 升级和回滚均未执行，Gate 01 保持 `FAIL`。
+- [x] 分支生产证据：精确 `3d93656` clean release checkout/image、runtime reverse verification、四次 `ff9551d3` 自动回滚和最终升级通过。
+- [ ] 正式发布证据：所有者离线密钥仪式、signed RC tag/bundle、main 合并和该正式 RC 的部署仍未执行，Gate 01 保持 `FAIL`。
+
+## 18. Gate 16 PostgreSQL 最小权限与生产部署（2026-08-09）
+
+- [x] 精确 revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` 的 GitHub Actions run `31294988591`：baseline、真实 PostgreSQL/Controller Console E2E、协议 fuzz、五镜像双无缓存复现全通过。
+- [x] 隔离全量验证：格式化、Clippy、Controller 测试、ShellCheck、真实 PostgreSQL 最小权限、完整 Docker 备份/恢复/迁移/失败激活/清理生命周期通过；证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z`。
+- [x] 生产角色：`xs_nexus_owner` 不可登录；`xs_nexus_app` 和 `xs_nexus_migrator` 均非 superuser、createdb、createrole、replication、bypassrls；运行时存在 app 活动连接。
+- [x] 生产负向权限：应用角色建库、建角色、建 schema、改表和写 `_sqlx_migrations` 全部真实拒绝；Controller 启动不迁移并核对精确迁移状态。
+- [x] 生产安全部署：变更前基线、正常加密备份、临时加密 rollback 备份和隔离 restore 通过；每次变更前均存在 20 分钟 systemd 自动回滚。
+- [x] 失败证据保留：tmpfs `docker cp`、缺少 `CAP_CHOWN`、二进制版本文本/JSON 假设、Docker 规则字节级比较四次失败；四次自动回滚均恢复 `ff9551d3` 健康服务，未删除或放宽验证。
+- [x] 最终部署：第五次即时验证通过；全新 SSH 会话复核健康、版本、DB 活动角色、`1panel-network`、OpenResty、route/rule/nft；随后才取消回滚并删除临时明文 staging。
+- [x] 最终不变量：`1panel-network` ID/subnet、无关 OpenResty、默认路由、IP rule 和非项目 nftables 规则不变；PostgreSQL 无 host binding；失败 systemd unit 为 0。
+- [x] 证据完整性：生产证据目录 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z` 共 81 个文件，`SHA256SUMS` 复核通过；通用秘密扫描的三项路径型误报逐行固定复核，任何额外发现仍失败关闭。
+- [ ] Gate 02 独立残余：bootstrap 及其他已披露凭据轮换、旧值拒绝尚未完成，不因 Gate 16 通过而勾选。

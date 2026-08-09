@@ -7,9 +7,9 @@ No credential values are permitted in this file.
 | CRED-SSH-ROOT | Server root/password authentication | no | no | pending | OPEN |
 | CRED-SSH-ADMIN | Deployment administrator key/account | no | no | pending | OPEN |
 | CRED-NAS | NAS login | no | no | external owner action required | BLOCKED_EXTERNAL |
-| CRED-PG-BOOTSTRAP | PostgreSQL bootstrap/superuser | no | no | pending | OPEN |
-| CRED-PG-APP | PostgreSQL runtime application role | no | no | pending | OPEN |
-| CRED-PG-MIGRATOR | PostgreSQL migration role | no | no | pending | OPEN |
+| CRED-PG-BOOTSTRAP | PostgreSQL bootstrap/superuser | no | no | removed from runtime; authorized rotation still pending | OPEN |
+| CRED-PG-APP | PostgreSQL runtime application role | yes (new role) | n/a (no prior role credential) | Gate 16 production evidence | COMPLETE |
+| CRED-PG-MIGRATOR | PostgreSQL migration role | yes (new role) | n/a (no prior role credential) | Gate 16 production evidence | COMPLETE |
 | CRED-REDIS | Redis authentication | no | no | service not currently used; historical values still require owner review | OPEN |
 | CRED-MYSQL | MySQL authentication | no | no | service not currently used; historical values still require owner review | OPEN |
 | CRED-CONSOLE-ADMIN | Console administrator | no | no | pending | OPEN |

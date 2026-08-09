@@ -953,3 +953,17 @@
 - 失败策略：未知或非 40 位 commit、脏工作树、lightweight/无效签名标签、标签不指向 `HEAD`、source/epoch 漂移、额外或缺失文件、symlink/path traversal、摘要/subjects/签名漂移全部失败关闭；安装器在激活前再次核对运行时二进制身份。
 - 证据：失败 run `31289302264` 保留了 `Cargo.lock --locked` 拒绝；修正 lock 元数据后，精确 revision `fea456b3d6feff36856b1f2066ace8a22b650bce` 的 GitHub Actions run `31289641228` 全部通过。
 - 边界：CI 使用测试签名材料验证机制，不创建正式密钥、不完成正式 tag/bundle，不替代人工离线密钥仪式、main 合并、生产部署、运行时反向核验或从 `ff9551d3` 的升级/回滚。Gate 01 继续为 `FAIL`。
+
+---
+
+## ADR-084：PostgreSQL 运行、迁移和对象所有权必须分离
+
+- 状态：接受
+- 日期：2026-08-09
+- 背景：旧生产 Controller 长期使用 bootstrap 超级用户，且 `serve` 会隐式创建 schema/执行迁移。应用漏洞或配置错误因此可获得建库、建角色和 DDL 能力；恢复后的对象 owner/grant 也可能漂移。
+- 决策：生产数据库固定为不可登录 `xs_nexus_owner`、长驻 `xs_nexus_app` 和部署专用 `xs_nexus_migrator` 三类角色。`serve` 只验证当前角色和精确迁移状态，永不迁移；迁移以 migrator 登录并在事务内显式 `SET ROLE owner`。建表、首次 schema 创建和 restore 后均重放显式/default grants；应用角色不得写 `_sqlx_migrations`。
+- 原因：把网络暴露应用、部署变更和对象所有权隔离，让 Controller compromise 不能直接扩大到集群管理或任意 DDL，同时仍允许可审计、可回滚的迁移和恢复。
+- 失败策略：runtime/migration URL 相同、owner 可登录、角色属性不符、迁移 drift、无效 owner 标识、授权修复失败或 app 负向权限意外成功均失败关闭。数据库恢复必须以 owner 身份执行，并在服务激活前重新迁移/核对 grants。
+- 生产变更：每次尝试先验证加密备份和隔离 restore，保留独立 SSH 会话并启用 20 分钟 systemd 回滚。Docker 重建只允许经 container inspect 认证的项目地址/端口规则变化；所有非项目 nftables 规则、默认路由、IP rule、`1panel-network` 和无关 1Panel 容器必须不变。
+- 证据：Git commits `02fc54e`、`3e2caed`、`e0fd15d`、`0533727`、`3d93656`；CI run `31294988591`；隔离证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z`；生产证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`。
+- 边界：该决策关闭 Gate 16，不关闭 Gate 02。bootstrap 仍作为受控平台管理身份存在，必须单独轮换并验证旧值拒绝；正式 release、主机防火墙、TLS、真实设备和第三方审计结论均不由此推导。

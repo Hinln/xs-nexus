@@ -1,13 +1,20 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-08
-当前 Git 提交：以包含本记录的提交为准；当前生产候选部署应与该干净提交的精确镜像标签一致
-当前总状态：`BLOCKED_EXTERNAL`
-当前里程碑：`生产候选环境复核与 Windows 在线接入门禁`
+最后更新时间：2026-08-09
+当前 Git 提交：以包含本记录的提交为准；Gate 16 实现基线为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`
+当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
+当前总状态：`NO_GO`（Gate 16 已通过，Gate 02/13/14/23/25 及外部门禁仍未闭合）
+当前里程碑：`生产门禁修复 V2：Gate 16 完成，继续 Gate 02/14`
 
 ---
 
 ## 当前结论
+
+- Gate 16 PostgreSQL 最小权限已在生产闭环：运行 Controller 使用 `xs_nexus_app`，迁移使用 `xs_nexus_migrator`，对象由不可登录 `xs_nexus_owner` 持有；应用角色真实拒绝建库、建角色、建 schema、改表和写迁移元数据；
+- 精确提交 `3d93656cc9ec3ea35d58e453118154b25bcc4e14` 的 GitHub Actions run `31294988591` 全通过；隔离证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z`；
+- 生产证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z` 保留四次验证器失败和四次自动回滚，第五次部署通过全新 SSH 会话反向核验后才取消回滚；81 个证据文件 SHA-256 校验通过；
+- 当前 Controller、Relay、Console 精确运行 `3d93656`，四个项目容器健康；`1panel-network` ID/子网、无关 OpenResty、默认路由、IP rule 和非项目 nftables 规则保持；临时明文密码 staging 和回滚定时器均已删除；
+- Gate 02 仍为 `FAIL`：bootstrap 超级用户虽已退出长驻应用路径，但其自身和其他曾披露凭据仍需轮换并验证旧值拒绝。Gate 01 也仍为 `FAIL`：尚无所有者控制的正式离线密钥仪式、signed RC tag/bundle 和 main 合并；
 
 - Linux、Controller、Relay、Console、XSP/1、NAT/Relay、ACL/子网、安装更新、1Panel 隔离部署、认证遥测、加密备份/复制、镜像供应链、三轮回归、性能与 24 小时稳定性均有正式证据；
 - Linux 一键引导已实现固定 `https://vpn.qinwen.co/`、隐藏交互 Token、双架构离线签名发布和 Controller 精确下载路由；隔离 Docker 构建、安装器安全测试、ShellCheck、下载 smoke、生产部署和公网逐文件复验均通过；

@@ -28,6 +28,13 @@ Move XS Nexus from the independently audited `NO_GO / CRITICAL` state to a state
 11. Merge only after review, create a signed RC tag, build from a clean checkout, rehearse deployment, upgrade from `ff9551d3`, and prove rollback.
 12. Re-run every hard gate in `audit/production-readiness-final/`.
 
+## Current Progress
+
+- Internal provenance implementation and exact-head CI are complete; formal signed RC/main chain remains open.
+- PostgreSQL least privilege and production deployment are complete: Gate 16 is `PASS` at running revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14`.
+- Credential rotation remains in progress; new app/migrator identities are active, but bootstrap and other disclosed credentials still require rotation and old-value rejection.
+- The next highest-risk internal work is Gate 14 host/SSH hardening, followed by Gate 13 strict origin TLS and remaining internal findings.
+
 ## Safety Rules
 
 - Never delete, recreate, rename, or modify `1panel-network` or unrelated 1Panel resources.

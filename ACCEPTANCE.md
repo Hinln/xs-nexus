@@ -166,7 +166,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [x] MUST：开发和 RC 隔离。
 - [x] MUST：不影响 1Panel 现有服务。
 
-证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及生产主机精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的全量 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z` 和部署 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z` 证明项目 PostgreSQL 没有 host binding，外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达，四个项目容器健康且 `1panel-network`、默认路由和规范化 nftables 语义未变。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
+证据：M5.2 `/srv/xs-nexus/artifacts/qa/m5.2-20260731T001922Z`，以及生产主机精确提交 `ff9551d322067c934d2ac7d55a62af8896660bb3` 的全量 `/srv/xs-nexus-qa/worktrees/653452d-docker-lifecycle/repo/artifacts/qa/m5.2-20260808T100655Z` 和初始部署 `/srv/xs-nexus-qa/artifacts/deployment-ff9551d322067c934d2ac7d55a62af8896660bb3-20260808T103213Z`。Gate 16 又以精确提交 `3d93656cc9ec3ea35d58e453118154b25bcc4e14` 完成运行/迁移/所有者数据库角色分离、生产升级、四次自动回滚和独立 SSH 反向核验；证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`。`/srv/xs-nexus-qa/artifacts/database-exposure-20260808T063400Z` 证明项目 PostgreSQL 没有 host binding，外部 TCP `3306`、`5432`、`6379`、`28080`、`28081` 均不可达；当前四个项目容器健康且 `1panel-network`、默认路由、IP rule 和非项目 nftables 规则未变。正式离线 identity 和真实异地主机仍由 `BLK-007` 阻塞生产灾难恢复验收。
 
 ---
 
