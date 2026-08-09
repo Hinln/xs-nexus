@@ -13,6 +13,6 @@
 | PRV2-009 | High | 17 | Backup replica remains in the same failure domain and no clean-server restore exists | BLOCKED_EXTERNAL |
 | PRV2-010 | High | 20 | Local health guard lacks independent external delivery, formal on-call, TLS-expiry and full metrics closure | OPEN |
 | PRV2-011 | High | 22 | Current remediation revision has no mandatory 24-hour soak evidence | OPEN |
-| PRV2-012 | High | 01/25 | Remediation code is not merged, signed, tagged, deployed, reverse-verified, or upgrade/rollback rehearsed from `ff9551d3` | OPEN |
+| PRV2-012 | High | 01/25 | Internal provenance tooling and CI pass at `fea456b`, but the revision is not merged, formally signed/tagged, deployed, reverse-verified, or upgrade/rollback rehearsed from `ff9551d3` | OPEN |
 
 Findings remain open until the associated raw evidence is linked from `EVIDENCE_INDEX.md`.

@@ -434,3 +434,12 @@
 - [x] 宿主恢复：`1panel-network` 成员名、Docker 网络集合、默认路由、按容器服务名规范化的 nftables 语义和失败服务前后相同，无 namespace/TUN；PostgreSQL 无 host binding。
 - [x] 公网：`vpn.qinwen.co` 健康、Linux/Windows 引导、10 个发布文件逐字节一致、未知文件 404；外部 TCP `3306`/`5432`/`6379`/`28080`/`28081` 关闭，控制探针 `122` 打开。
 - [ ] 外部门禁：`vpn.xiashikeji.cn` 功能路径 525、Windows 在线客户端、真实 NAS、正式密钥/异地恢复、生产防火墙、凭据轮换和第三方审计未完成。
+
+## 17. Gate 01 发布 provenance 回归（2026-08-09）
+
+- [x] `scripts/test-release-provenance.sh`：clean source、annotated signed tag、规范 source/epoch、完整 release 文件集、SHA-256、SBOM、in-toto/SLSA subjects、Ed25519 manifest/SHA256SUMS 签名正向通过；脏 source、错误 tag/commit/source/epoch、额外/缺失文件、symlink/path、摘要、subject、签名与篡改负向拒绝。
+- [x] Linux installer/one-click：schema 2 绑定 platform/arch/archive/source commit/build epoch/XSP/1；签名正确但 commit 伪造的清单在激活前被运行时身份核对拒绝。
+- [x] OCI/Console：Edge、Console、Controller、Relay、db-tools 双无缓存构建稳定；revision/version/source labels 与 Console `version.json` 精确匹配构建输入。
+- [x] GitHub Actions run `31289641228` 对 exact head `fea456b3d6feff36856b1f2066ace8a22b650bce` 全部通过：baseline、protocol fuzz、image reproducibility、real Console E2E。
+- [x] 失败证据未隐藏：run `31289302264` 因 `Cargo.lock --locked` 拒绝失败，artifact `9030926588` 保留；修正 lock 后复跑相同门禁通过。
+- [ ] 生产证据：正式签名 tag/bundle、main 合并、clean deployment、runtime reverse verification、从 `ff9551d3` 升级和回滚均未执行，Gate 01 保持 `FAIL`。

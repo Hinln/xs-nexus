@@ -4,7 +4,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 
 | Gate | Scope | Initial V2 Status | Current Status | Next Proof Required |
 |---|---|---:|---:|---|
-| 01 | Code and deployment provenance | FAIL | FAIL | Signed release chain and runtime reverse verification |
+| 01 | Code and deployment provenance | FAIL | FAIL | Formal signed RC tag/bundle, main merge, clean deployment, runtime reverse verification, and old-production upgrade/rollback |
 | 02 | Secrets and credential rotation | FAIL | FAIL | Full rotation plus proof that every old credential is rejected |
 | 03 | Formal key lifecycle | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Human-controlled offline ceremony, backup, revoke, and recovery |
 | 04 | XSP/1 internal security | PARTIAL | PARTIAL | Extended fuzz/sanitizer/state-machine evidence on current revision |

@@ -941,3 +941,15 @@
 - 决策：生产审计修复必须在独立分支通过固定版本 baseline、真实 Controller/DB Console E2E、可执行协议 fuzz 和五镜像双无缓存复现；每个失败保留原始日志并修复根因。CI PASS 只证明该 revision 的工程门禁，不得替代 main 合并、签名 tag、正式部署、生产 provenance、真实平台、凭据/密钥、DR 和第三方审计。
 - 实现：Console E2E 禁止 `page.route` 并使用临时 PostgreSQL/Controller；镜像复现记录 manifest/config/layer inventory，Edge 删除易变 `apk.log`，Console 使用固定 slim runtime 与隔离许可证阶段；生产健康守卫只读运行且不修改 1Panel 资源。
 - 结果：revision `8532eb6` 的 run `31270487478` 全部通过，但 GitHub main、生产源码和运行镜像仍是旧 revision，最终发布结论保持 `NO_GO`。
+
+---
+
+## ADR-083 发布身份使用单一编译来源，正式产物只接受有效签名标签
+
+- 状态：接受
+- 日期：2026-08-09
+- 决策：Rust 二进制、HTTP 版本端点、Console `version.json`、OCI 标签、Linux 包、SBOM、release manifest 和 in-toto/SLSA provenance 必须绑定同一个完整 40 位 Git commit、语义版本、XSP/1 版本与源码 epoch。正式 `make release` 只接受指向当前干净 `HEAD` 的有效加密签名 annotated tag、规范源码仓库和精确提交时间；release manifest 与 SHA256SUMS 使用独立 Ed25519 detached signature，并由离线 verifier 对完整文件集合和 subjects 做等值验证。
+- 原因：过去镜像标签和运行时只能给出不完整、分散或不一致的 revision 线索，无法从已部署实例反向证明源码和构建输入。单一身份源与严格标签门禁把“代码声称的版本”和“签名发布的版本”统一为可复现断言。
+- 失败策略：未知或非 40 位 commit、脏工作树、lightweight/无效签名标签、标签不指向 `HEAD`、source/epoch 漂移、额外或缺失文件、symlink/path traversal、摘要/subjects/签名漂移全部失败关闭；安装器在激活前再次核对运行时二进制身份。
+- 证据：失败 run `31289302264` 保留了 `Cargo.lock --locked` 拒绝；修正 lock 元数据后，精确 revision `fea456b3d6feff36856b1f2066ace8a22b650bce` 的 GitHub Actions run `31289641228` 全部通过。
+- 边界：CI 使用测试签名材料验证机制，不创建正式密钥、不完成正式 tag/bundle，不替代人工离线密钥仪式、main 合并、生产部署、运行时反向核验或从 `ff9551d3` 的升级/回滚。Gate 01 继续为 `FAIL`。

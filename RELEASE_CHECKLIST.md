@@ -116,3 +116,15 @@
 - [x] Referenced license materials are path/size/SHA-256 bound and independently rehashed.
 - [x] Missing SPDX text, unsafe rootfs paths and package identity drift fail closed.
 - [x] Clean-commit full image build, deterministic regeneration, vulnerability scan and disposition evidence completed at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`.
+
+## Production provenance remediation V2 (2026-08-09)
+
+- [x] Unified version/commit/protocol/build identity for Controller, Relay, Console, Agent, CLI, OCI images and Linux packages.
+- [x] Deterministic release manifest, SHA256SUMS, SBOM, in-toto/SLSA provenance and strict detached Ed25519 verification tooling.
+- [x] Runtime/package identity mismatch and signed forged-commit manifest rejection.
+- [x] Exact revision `fea456b3d6feff36856b1f2066ace8a22b650bce` passed GitHub Actions run `31289641228`, including double no-cache image reproducibility.
+- [ ] Human-controlled offline release key ceremony, authenticated public-key publication, rotation/revocation and recovery.
+- [ ] Valid formal signed RC tag and signed production release bundle.
+- [ ] Merge to `main`, clean production deployment, runtime reverse verification, and `ff9551d3 -> RC -> rollback` rehearsal.
+
+These unchecked items keep Gate 01 `FAIL`, Release Candidate unchecked, and the overall result `NO_GO`.

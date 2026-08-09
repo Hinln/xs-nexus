@@ -385,3 +385,11 @@ make clean
 - 最终 run `31270487478` 的 baseline、真实 PostgreSQL/Controller Console E2E、protocol fuzz、Edge/Console/Controller/Relay/db-tools 双无缓存 OCI 复现全部通过；证据 artifacts 已秘密扫描并复制到 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z/ci-final-8532eb6`。
 - 生产主机安装五分钟只读健康守卫并完成正常/失败注入；最终 2026-08-08T18:12:05Z 复核四容器健康、备份年龄正常、磁盘 87% warning、`1panel-network` 和默认路由不变，无 failed systemd unit。
 - 修复版本未合并、签名、tag 或部署；凭据轮换、SSH/防火墙/DNS、正式密钥、DB 非 bootstrap 角色、真实 Windows/NAS/WAN、异地恢复、第三方审计和当前版本 24h soak 仍未闭环。最终 `GO_NO_GO_FINAL.md` 保持 `NO_GO`，残余风险 `CRITICAL`。
+
+## 2026-08-09 Gate 01 正式发布 provenance 内部实现
+
+- 分支 `production-readiness-remediation-v2` 在 `8256661` 完成统一 build identity、Controller/Relay version endpoint、Console `version.json`、OCI label、Linux 包/安装器身份绑定、确定性 release bundle、SBOM、SHA256SUMS、Ed25519 detached signature 和 in-toto/SLSA provenance。
+- 第一轮 GitHub Actions `31289302264` 的 image reproducibility 在 Controller `cargo build --locked` 真实失败；保留 artifact `9030926588`，根因为 Relay 新测试依赖未写入 `Cargo.lock`，未删除或放宽测试。
+- `fea456b3d6feff36856b1f2066ace8a22b650bce` 修正 lock 元数据后，run `31289641228` 的 baseline、protocol fuzz、real Console E2E 和五镜像双无缓存复现全部通过；artifacts 为 `9031132937`、`9031005160`、`9030990379`。
+- 生产主机只读复核仍显示 checkout `8745b5804312587534c1e91980dfb11720952ed1`、运行 OCI revision `ff9551d322067c934d2ac7d55a62af8896660bb3`；本阶段没有部署或修改 1Panel、Docker 网络、数据库、凭据、防火墙、SSH 或运行服务。
+- Gate 01 仍为 `FAIL`：下一步需要正式离线密钥仪式、有效签名 RC tag/bundle、main 合并、clean deployment、运行时反向核验和 `ff9551d3 -> RC -> rollback` 演练。当前开始 Gate 02 的无值凭据清单、全历史/CI/镜像/日志扫描和安全轮换设计。

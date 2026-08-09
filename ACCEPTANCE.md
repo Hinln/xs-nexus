@@ -149,7 +149,7 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 - [ ] MUST：驱动和 Agent 版本兼容。
 - [x] MUST：正式签名状态如实说明。
 
-证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。已验证测试密钥签名、首次公钥固定、错误密钥/签名/哈希/包内篡改拒绝；正式离线发布密钥和签名仪式未完成，不以测试签名冒充生产签名。Windows 项保持未完成。
+证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。已验证测试密钥签名、首次公钥固定、错误密钥/签名/哈希/包内篡改拒绝；Gate 01 V2 又在 exact revision `fea456b3d6feff36856b1f2066ace8a22b650bce` 的 GitHub Actions run `31289641228` 验证统一 build identity、确定性 release bundle、OCI/Console identity、in-toto/SLSA subjects、严格 Ed25519 verifier 和 signed-forged-commit 安装拒绝。正式离线发布密钥、签名仪式、正式 signed tag/bundle、生产反向核验仍未完成，不以测试签名冒充生产签名。Windows 项保持未完成。
 
 ---
 
