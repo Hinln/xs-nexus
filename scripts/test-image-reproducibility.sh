@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 readonly EVIDENCE_DIR="${1:?usage: test-image-reproducibility.sh EVIDENCE_DIR}"
 readonly SERVICES=(edge console controller relay db-tools)
+readonly VERSION=0.1.0
+readonly SOURCE_URL=https://github.com/Hinln/xs-nexus
 
 declare -A dockerfiles=(
     [controller]=deploy/docker/controller.Dockerfile
@@ -31,14 +33,14 @@ mkdir -p "${EVIDENCE_DIR}/first" "${EVIDENCE_DIR}/second"
 } >"${EVIDENCE_DIR}/environment.txt" 2>&1
 
 record_oci_metadata() {
-    python3 - "$1" "$2" <<'PY'
+    python3 - "$1" "$2" "$3" "$4" "$5" "$6" "$7" <<'PY'
 import json
 import hashlib
 import sys
 import tarfile
 from pathlib import Path
 
-archive_path, output_path = sys.argv[1:]
+archive_path, output_path, service, revision, version, source_url, source_date_epoch = sys.argv[1:]
 with tarfile.open(archive_path) as archive:
     index = json.load(archive.extractfile("index.json"))
     descriptor = index["manifests"][0]
@@ -46,6 +48,39 @@ with tarfile.open(archive_path) as archive:
     manifest = json.load(archive.extractfile(f"blobs/sha256/{manifest_digest}"))
     config_digest = manifest["config"]["digest"].removeprefix("sha256:")
     config = json.load(archive.extractfile(f"blobs/sha256/{config_digest}"))
+    labels = config.get("config", {}).get("Labels", {})
+    expected_labels = {
+        "org.opencontainers.image.revision": revision,
+        "org.opencontainers.image.version": version,
+        "org.opencontainers.image.source": source_url,
+    }
+    for name, expected in expected_labels.items():
+        if labels.get(name) != expected:
+            raise SystemExit(f"{service} OCI label mismatch for {name}")
+    console_version = None
+    if service == "console":
+        for layer in manifest["layers"]:
+            layer_digest = layer["digest"].removeprefix("sha256:")
+            with tarfile.open(
+                fileobj=archive.extractfile(f"blobs/sha256/{layer_digest}"), mode="r|*"
+            ) as layer_archive:
+                for member in layer_archive:
+                    name = member.name.removeprefix("./")
+                    if name == "usr/share/nginx/html/version.json" and member.isfile():
+                        console_version = json.load(layer_archive.extractfile(member))
+        expected_console_version = {
+            "product": "xs-nexus",
+            "component": "xs-console",
+            "version": version,
+            "commit": revision,
+            "protocol_version": "XSP/1",
+            "build_date_epoch": source_date_epoch,
+            "source": source_url,
+        }
+        if console_version is None:
+            raise SystemExit("console version.json is missing")
+        if console_version != expected_console_version:
+            raise SystemExit("console version.json identity is invalid")
     last_layer = manifest["layers"][-1]
     last_layer_digest = last_layer["digest"].removeprefix("sha256:")
     entries = []
@@ -79,6 +114,8 @@ Path(output_path).write_text(
             "index_descriptor": descriptor,
             "manifest": manifest,
             "config": config,
+            "validated_labels": expected_labels,
+            "console_version": console_version,
             "last_layer_entries": entries,
         },
         indent=2,
@@ -101,13 +138,20 @@ for service in "${SERVICES[@]}"; do
             --sbom=false \
             --build-arg "VCS_REF=${revision}" \
             --build-arg "SOURCE_DATE_EPOCH=${source_date_epoch}" \
+            --build-arg "XS_VERSION=${VERSION}" \
+            --build-arg "XS_SOURCE_URL=${SOURCE_URL}" \
             --file "${dockerfiles[${service}]}" \
             --output "type=oci,dest=${output},rewrite-timestamp=true,compatibility-version=20" \
             . >"${EVIDENCE_DIR}/${pass}/${service}.build.log" 2>&1
         sha256sum "${output}" >"${EVIDENCE_DIR}/${pass}/${service}.sha256"
         record_oci_metadata \
             "${output}" \
-            "${EVIDENCE_DIR}/${pass}/${service}.metadata.json"
+            "${EVIDENCE_DIR}/${pass}/${service}.metadata.json" \
+            "${service}" \
+            "${revision}" \
+            "${VERSION}" \
+            "${SOURCE_URL}" \
+            "${source_date_epoch}"
         rm -f -- "${output}"
     done
     first_hash="$(cut -d ' ' -f 1 "${EVIDENCE_DIR}/first/${service}.sha256")"

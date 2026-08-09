@@ -1,4 +1,7 @@
 ARG SOURCE_DATE_EPOCH=0
+ARG VCS_REF=unknown
+ARG XS_VERSION=0.1.0
+ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
 FROM golang:1.25.5-alpine3.22@sha256:3587db7cc96576822c606d119729370dbf581931c5f43ac6d3fa03ab4ed85a10 AS age-builder
 ARG AGE_COMMIT=b8564adb6d58329b8a3e267360ca2b0abc4efe1d
 ARG AGE_VERSION=v1.3.1
@@ -22,9 +25,12 @@ RUN git init \
 
 FROM postgres:18-alpine3.22@sha256:774521500f4c22761b25a6bdb772a0a3c2e8dd32468210bdad9231c5752ea398
 ARG VCS_REF=unknown
+ARG XS_VERSION=0.1.0
+ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
 LABEL org.opencontainers.image.title="XS Nexus PostgreSQL Operations" \
       org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.source="XS Nexus clean-room repository"
+      org.opencontainers.image.version="${XS_VERSION}" \
+      org.opencontainers.image.source="${XS_SOURCE_URL}"
 RUN apk add --no-cache bash coreutils spdx-licenses-text \
     && install -d /tmp/xs-spdx /usr/share/licenses/spdx \
     && cp -a /usr/share/spdx/text/. /tmp/xs-spdx/ \

@@ -1,4 +1,7 @@
 ARG SOURCE_DATE_EPOCH=0
+ARG VCS_REF=unknown
+ARG XS_VERSION=0.1.0
+ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
 FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS caddy-builder
 
 ARG CADDY_REVISION=e2eee6a7fce366321294c9c2a79f3146891dcbdf
@@ -43,6 +46,8 @@ RUN apk add --no-cache ca-certificates tzdata libcap spdx-licenses-text \
 
 FROM scratch
 ARG VCS_REF=unknown
+ARG XS_VERSION=0.1.0
+ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
 COPY --from=runtime-rootfs / /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -50,7 +55,8 @@ USER 65532:65532
 
 LABEL org.opencontainers.image.title="XS Nexus HTTPS Edge" \
       org.opencontainers.image.revision="$VCS_REF" \
-      org.opencontainers.image.source="XS Nexus clean-room repository"
+      org.opencontainers.image.version="$XS_VERSION" \
+      org.opencontainers.image.source="$XS_SOURCE_URL"
 
 ENTRYPOINT []
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

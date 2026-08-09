@@ -55,7 +55,10 @@ async fn main() -> ExitCode {
 async fn entrypoint() -> Result<(), ()> {
     let options = parse_options()?;
     if matches!(options.command, Command::Version) {
-        println!("xs {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "{}",
+            xs_core::BuildIdentity::current(xs_core::Component::Cli)
+        );
         return Ok(());
     }
     let request = match options.command {

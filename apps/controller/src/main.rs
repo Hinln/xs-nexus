@@ -22,7 +22,10 @@ async fn main() -> ExitCode {
         }
     };
     if command == Command::Version {
-        println!("xs-controller {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "{}",
+            xs_core::BuildIdentity::current(xs_core::Component::Controller)
+        );
         return ExitCode::SUCCESS;
     }
     if command == Command::Healthcheck {
@@ -86,6 +89,9 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         event = "controller_started",
         address = %listen,
+        version = env!("CARGO_PKG_VERSION"),
+        source_commit = xs_core::BUILD_GIT_COMMIT,
+        protocol_version = xs_core::XSP_PROTOCOL_VERSION,
         credential_key_id = xs_protocol::controller_key_id(
             &state.credential_signing_key.verifying_key()
         ),

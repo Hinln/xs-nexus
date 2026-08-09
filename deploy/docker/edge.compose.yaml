@@ -7,6 +7,8 @@ services:
       args:
         VCS_REF: ${XS_RELEASE_REVISION:?set XS_RELEASE_REVISION}
         SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:-0}
+        XS_VERSION: ${XS_RELEASE_VERSION:-0.1.0}
+        XS_SOURCE_URL: ${XS_SOURCE_URL:-https://github.com/Hinln/xs-nexus}
     user: "65532:65532"
     restart: unless-stopped
     init: true

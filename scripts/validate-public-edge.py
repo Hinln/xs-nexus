@@ -63,7 +63,8 @@ def main() -> int:
             "spdx-licenses-text",
             "USER 65532:65532",
             'org.opencontainers.image.revision="$VCS_REF"',
-            'org.opencontainers.image.source="XS Nexus clean-room repository"',
+            'org.opencontainers.image.version="$XS_VERSION"',
+            'org.opencontainers.image.source="$XS_SOURCE_URL"',
         ),
     )
     if "latest" in dockerfile:

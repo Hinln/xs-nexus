@@ -365,7 +365,7 @@ verify_complete_cli() {
         python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; assert r["healthy"] and r["direct_peer_count"] == 1'
     "$CLI" diagnostics --socket "$socket" --json |
         python3 -c 'import json,sys; assert json.load(sys.stdin)["diagnostics"]["configuration_sha256"]'
-    [[ $("$CLI" version) == "xs 0.1.0" ]]
+    [[ $("$CLI" version) =~ ^xs-cli\ version=0\.1\.0\ commit=(unknown|[0-9a-f]{40})\ protocol=XSP/1$ ]]
     "$CLI" reconnect --socket "$socket" --json |
         python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["accepted"] and r["error_code"] is None'
     wait_controller_connected "$socket"

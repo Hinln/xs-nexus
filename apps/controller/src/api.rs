@@ -27,6 +27,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
+        .route("/v1/version", get(version))
         .route("/install", get(downloads::install_script))
         .route("/install/windows", get(downloads::windows_install_script))
         .route(
@@ -106,6 +107,12 @@ async fn live() -> Json<HealthResponse> {
         status: "ok",
         database: "unchecked",
     })
+}
+
+async fn version() -> Json<xs_core::BuildIdentity> {
+    Json(xs_core::BuildIdentity::current(
+        xs_core::Component::Controller,
+    ))
 }
 
 async fn ready(State(state): State<AppState>) -> Result<Json<HealthResponse>, ApiError> {

@@ -21,7 +21,10 @@ async fn main() -> ExitCode {
         }
     };
     if command == Command::Version {
-        println!("xs-relay {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "{}",
+            xs_core::BuildIdentity::current(xs_core::Component::Relay)
+        );
         return ExitCode::SUCCESS;
     }
     if command == Command::Healthcheck {
@@ -90,6 +93,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         event = "relay_started",
         address = %listen,
         health_address = %health_listen,
+        version = env!("CARGO_PKG_VERSION"),
+        source_commit = xs_core::BUILD_GIT_COMMIT,
+        protocol_version = xs_core::XSP_PROTOCOL_VERSION,
         relay_id = %hexadecimal(&relay_id),
         relay_key_id = xs_protocol::controller_key_id(&relay_public_key),
     );

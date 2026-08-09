@@ -51,6 +51,8 @@ exec > >(tee "$LOG_FILE") 2>&1
 revision=$(git rev-parse HEAD)
 short_revision=${revision:0:12}
 source_date_epoch=$(git show -s --format=%ct HEAD)
+version=0.1.0
+source_url=https://github.com/Hinln/xs-nexus
 docker_before=$(docker ps --format '{{.ID}} {{.Names}} {{.Image}} {{.Ports}}' | sort)
 docker_networks_before=$(docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort)
 network_members_before=$(docker network inspect 1panel-network --format '{{json .Containers}}')
@@ -61,19 +63,19 @@ printf 'Image supply-chain validation started at %s\n' "$(date -u --iso-8601=sec
 printf 'git_head=%s\n' "$revision"
 
 make test-image-sbom
-docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" --build-arg "XS_VERSION=$version" --build-arg "XS_SOURCE_URL=$source_url" \
     --tag "xs-nexus/controller:sbom-$short_revision" \
     --file deploy/docker/controller.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" --build-arg "XS_VERSION=$version" --build-arg "XS_SOURCE_URL=$source_url" \
     --tag "xs-nexus/relay:sbom-$short_revision" \
     --file deploy/docker/relay.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" --build-arg "XS_VERSION=$version" --build-arg "XS_SOURCE_URL=$source_url" \
     --tag "xs-nexus/console:sbom-$short_revision" \
     --file deploy/docker/console.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" --build-arg "XS_VERSION=$version" --build-arg "XS_SOURCE_URL=$source_url" \
     --tag "xs-nexus/db-tools:sbom-$short_revision" \
     --file deploy/docker/db-tools.Dockerfile .
-docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
+docker build --pull=false --build-arg "VCS_REF=$revision" --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" --build-arg "XS_VERSION=$version" --build-arg "XS_SOURCE_URL=$source_url" \
     --tag "xs-nexus/edge:sbom-$short_revision" \
     --file deploy/docker/edge.Dockerfile .
 
@@ -111,6 +113,11 @@ assert manifest["revision"] == revision
 assert manifest["network_required"] is False
 assert set(manifest["images"]) == {"controller", "relay", "console", "db-tools", "edge"}
 assert all(value["package_count"] > 0 for value in manifest["images"].values())
+assert all(value["version"] == "0.1.0" for value in manifest["images"].values())
+assert all(
+    value["source"] == "https://github.com/Hinln/xs-nexus"
+    for value in manifest["images"].values()
+)
 assert all(value["license_materials"] for value in manifest["images"].values())
 assert all(
     value["license_closure_count"] == value["package_count"]

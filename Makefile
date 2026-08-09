@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .RECIPEPREFIX := >
 
-.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-controller-scale test-protocol-throughput test-relay-throughput test-agent-rtt test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-linux-one-click test-docker-deployment test-runtime-stability test-production-health test-console-real-e2e test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-windows-xsnet-compatibility test-windows-xsnet-transport test-windows-agent-ipc test-windows-agent-storage test-windows-agent-routing test-windows-agent-service test-independent-implementation test-source-sbom test-image-sbom test-image-reproducibility source-sbom validate-image-supply-chain scan-image-vulnerabilities verify-image-vulnerability-disposition test-protocol-vectors test-protocol-fuzz test-spec test-network test-e2e test-visual security-check dependency-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 validate-m61-agent-session release clean
+.PHONY: setup fmt fmt-check lint build test test-unit test-integration test-controller-db test-controller-scale test-protocol-throughput test-relay-throughput test-agent-rtt test-agent-control test-agent-systemd test-agent-data-plane test-agent-candidate-fallback test-agent-candidate-path test-agent-candidates test-agent-proactive-punch test-agent-nat-matrix test-agent-nat test-agent-relay test-agent-acl test-agent-subnet-route test-linux-installer test-linux-one-click test-docker-deployment test-runtime-stability test-production-health test-console-real-e2e test-windows-xsnet-abi test-windows-xsnet-source test-windows-xsnet-installer test-windows-xsnet-vm-scripts test-windows-xsnet-compatibility test-windows-xsnet-transport test-windows-agent-ipc test-windows-agent-storage test-windows-agent-routing test-windows-agent-service test-independent-implementation test-source-sbom test-image-sbom test-image-reproducibility test-release-provenance source-sbom validate-image-supply-chain scan-image-vulnerabilities verify-image-vulnerability-disposition test-protocol-vectors test-protocol-fuzz test-spec test-network test-e2e test-visual security-check dependency-check linux-package-x86_64 linux-package-aarch64 linux-packages validate-m21 validate-m22 validate-m23 validate-m31 validate-m32 validate-m42 validate-m51 validate-m52 validate-m61-agent-session release clean
 
 setup:
 >npm ci
@@ -20,7 +20,7 @@ build:
 >cargo build --workspace
 >npm run build
 
-test: test-unit test-integration test-controller-db test-agent-control test-protocol-vectors test-spec
+test: test-unit test-integration test-controller-db test-agent-control test-protocol-vectors test-release-provenance test-spec
 
 test-unit:
 >cargo test --workspace --lib --bins
@@ -141,6 +141,9 @@ test-image-reproducibility:
 >test -n "$(EVIDENCE_DIR)"
 >./scripts/test-image-reproducibility.sh "$(EVIDENCE_DIR)"
 
+test-release-provenance:
+>./scripts/test-release-provenance.sh
+
 validate-image-supply-chain:
 >./scripts/validate-image-supply-chain.sh
 
@@ -225,8 +228,12 @@ validate-m61-agent-session:
 >./scripts/validate-m61-agent-session.sh
 
 release:
->@printf 'Release packaging is not implemented before M9.1\n' >&2
->@exit 2
+>test -n "$(RELEASE_INVENTORY)"
+>test -n "$(RELEASE_SIGNING_KEY)"
+>test -n "$(RELEASE_OUTPUT)"
+>./scripts/verify-release-source.py --inventory "$(RELEASE_INVENTORY)" --repository .
+>./scripts/generate-release-provenance.py --inventory "$(RELEASE_INVENTORY)" --output-dir "$(RELEASE_OUTPUT)"
+>./scripts/sign-release-provenance.sh --bundle "$(RELEASE_OUTPUT)" --signing-key "$(RELEASE_SIGNING_KEY)"
 
 clean:
 >cargo clean

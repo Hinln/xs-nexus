@@ -14,6 +14,8 @@ case "$(uname -m)" in
     aarch64|arm64) target=aarch64-unknown-linux-gnu ;;
     *) printf 'unsupported test architecture\n' >&2; exit 2 ;;
 esac
+release_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)
+release_epoch=$(git -C "$ROOT_DIR" show -s --format=%ct HEAD)
 
 temporary=$(mktemp -d)
 server_pid=
@@ -72,13 +74,13 @@ printf 'fixture installer completed\n'
 EOF
 chmod 0755 "$package_root/share/xs-nexus/xs-nexus-installer.sh"
 
-cat >"$package_root/bin/xs-agent" <<'EOF'
+cat >"$package_root/bin/xs-agent" <<EOF
 #!/usr/bin/env bash
-printf 'xs-agent 0.1.0\n'
+printf 'xs-agent version=0.1.0 commit=$release_commit protocol=XSP/1\n'
 EOF
-cat >"$package_root/bin/xs" <<'EOF'
+cat >"$package_root/bin/xs" <<EOF
 #!/usr/bin/env bash
-printf 'xs 0.1.0\n'
+printf 'xs-cli version=0.1.0 commit=$release_commit protocol=XSP/1\n'
 EOF
 chmod 0755 "$package_root/bin/xs-agent" "$package_root/bin/xs"
 printf '%s\n' '[Unit]' >"$package_root/lib/systemd/system/xs-agent.service"
@@ -100,9 +102,12 @@ archive_size=$(stat -c '%s' "$archive")
 archive_sha256=$(sha256sum "$archive" | awk '{print $1}')
 manifest="$release_directory/$package_name.manifest"
 cat >"$manifest" <<EOF
-schema_version=1
+schema_version=2
 product=xs-nexus
 version=0.1.0
+source_commit=$release_commit
+source_date_epoch=$release_epoch
+protocol_version=XSP/1
 platform=linux
 architecture=${target%%-*}
 target=$target

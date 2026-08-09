@@ -201,19 +201,22 @@ openssl pkeyutl -verify -rawin -pubin -inkey "$public_key" -in "$manifest" -sigf
     >/dev/null 2>&1 || fail 'release signature verification failed'
 
 mapfile -t manifest_lines <"$manifest"
-[[ ${#manifest_lines[@]} -eq 9 ]] || fail 'release manifest field count is invalid'
-[[ ${manifest_lines[0]} == 'schema_version=1' ]] || fail 'release manifest schema is unsupported'
+[[ ${#manifest_lines[@]} -eq 12 ]] || fail 'release manifest field count is invalid'
+[[ ${manifest_lines[0]} == 'schema_version=2' ]] || fail 'release manifest schema is unsupported'
 [[ ${manifest_lines[1]} == 'product=xs-nexus' ]] || fail 'release manifest product is invalid'
 [[ ${manifest_lines[2]} == "version=$RELEASE_VERSION" ]] || fail 'release manifest version is invalid'
-[[ ${manifest_lines[3]} == 'platform=linux' ]] || fail 'release manifest platform is invalid'
-[[ ${manifest_lines[4]} == "architecture=$architecture" ]] || fail 'release manifest architecture is invalid'
-[[ ${manifest_lines[5]} == "target=$target" ]] || fail 'release manifest target is invalid'
+[[ ${manifest_lines[3]} =~ ^source_commit=[0-9a-f]{40}$ ]] || fail 'release manifest source commit is invalid'
+[[ ${manifest_lines[4]} =~ ^source_date_epoch=[0-9]+$ ]] || fail 'release manifest source date epoch is invalid'
+[[ ${manifest_lines[5]} == 'protocol_version=XSP/1' ]] || fail 'release manifest protocol version is invalid'
+[[ ${manifest_lines[6]} == 'platform=linux' ]] || fail 'release manifest platform is invalid'
+[[ ${manifest_lines[7]} == "architecture=$architecture" ]] || fail 'release manifest architecture is invalid'
+[[ ${manifest_lines[8]} == "target=$target" ]] || fail 'release manifest target is invalid'
 archive_name="xs-nexus-$RELEASE_VERSION-$target.tar.gz"
-[[ ${manifest_lines[6]} == "archive=$archive_name" ]] || fail 'release manifest archive name is invalid'
-[[ ${manifest_lines[7]} =~ ^archive_size=([1-9][0-9]{0,9})$ ]] || fail 'release archive size is invalid'
+[[ ${manifest_lines[9]} == "archive=$archive_name" ]] || fail 'release manifest archive name is invalid'
+[[ ${manifest_lines[10]} =~ ^archive_size=([1-9][0-9]{0,9})$ ]] || fail 'release archive size is invalid'
 archive_size=${BASH_REMATCH[1]}
 ((10#$archive_size <= MAX_ARCHIVE_BYTES)) || fail 'release archive exceeds the maximum size'
-[[ ${manifest_lines[8]} =~ ^archive_sha256=([0-9a-f]{64})$ ]] || fail 'release archive hash is invalid'
+[[ ${manifest_lines[11]} =~ ^archive_sha256=([0-9a-f]{64})$ ]] || fail 'release archive hash is invalid'
 archive_sha256=${BASH_REMATCH[1]}
 
 archive="$temporary_directory/$archive_name"

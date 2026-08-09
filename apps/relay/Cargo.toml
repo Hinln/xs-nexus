@@ -24,5 +24,9 @@ xs-core = { path = "../../crates/core" }
 xs-protocol = { path = "../../crates/protocol" }
 zeroize.workspace = true
 
+[dev-dependencies]
+http-body-util.workspace = true
+tower.workspace = true
+
 [lints]
 workspace = true

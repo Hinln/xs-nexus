@@ -53,7 +53,8 @@ def main():
         ["controller=deploy/docker/controller.Dockerfile"], {"controller": "image"}
     )
     assert dockerfiles["controller"]["declared_base_images"] == [
-        "rust:1.93.0-bookworm",
+        "rust:1.93.0-bookworm@sha256:"
+        "d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382",
         "gcr.io/distroless/cc-debian12:nonroot@sha256:"
         "fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e",
     ]
@@ -67,6 +68,32 @@ def main():
             pass
         else:
             raise AssertionError("invalid Dockerfile mapping was accepted")
+
+    inspected = [
+        {
+            "Id": "sha256:" + "1" * 64,
+            "Config": {
+                "Labels": {
+                    "org.opencontainers.image.revision": "2" * 40,
+                    "org.opencontainers.image.source": "https://github.com/Hinln/xs-nexus",
+                    "org.opencontainers.image.title": "XS Nexus Controller",
+                    "org.opencontainers.image.version": "0.1.0",
+                }
+            },
+        }
+    ]
+    with mock.patch.object(module, "run", return_value=mock.Mock(stdout=json.dumps(inspected))):
+        identity = module.inspect_image("example/controller:test", "2" * 40)
+    assert identity["version"] == "0.1.0"
+    assert identity["source"] == "https://github.com/Hinln/xs-nexus"
+    inspected[0]["Config"]["Labels"]["org.opencontainers.image.version"] = "latest"
+    with mock.patch.object(module, "run", return_value=mock.Mock(stdout=json.dumps(inspected))):
+        try:
+            module.inspect_image("example/controller:test", "2" * 40)
+        except module.ValidationError:
+            pass
+        else:
+            raise AssertionError("invalid OCI version label was accepted")
 
     debian_status = b"""Package: ca-certificates\nStatus: install ok installed\nArchitecture: all\nVersion: 20250419\n\n"""
     debian_status_fragment = b"""Package: libc6\nArchitecture: amd64\nVersion: 2.36-9+deb12u14\nDescription: runtime library\n"""

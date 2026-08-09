@@ -157,13 +157,24 @@ def inspect_image(reference, revision):
         raise ValidationError(f"image revision label mismatch: {reference}")
     source = labels.get("org.opencontainers.image.source")
     title = labels.get("org.opencontainers.image.title")
-    if not isinstance(source, str) or not source or not isinstance(title, str) or not title:
-        raise ValidationError(f"image OCI source/title labels are missing: {reference}")
+    version = labels.get("org.opencontainers.image.version")
+    if (
+        not isinstance(source, str)
+        or not source.startswith("https://")
+        or not isinstance(title, str)
+        or not title
+        or not isinstance(version, str)
+        or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version)
+    ):
+        raise ValidationError(
+            f"image OCI source/title/version labels are missing or invalid: {reference}"
+        )
     return {
         "reference": reference,
         "image_id": image_id,
         "title": title,
         "source": source,
+        "version": version,
     }
 
 

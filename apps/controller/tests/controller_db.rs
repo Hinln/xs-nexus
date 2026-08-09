@@ -70,6 +70,13 @@ async fn controller_registration_ipam_configuration_and_control_flow() {
     let (status, ready) = request_json(&router, Method::GET, "/health/ready", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(ready["database"], "ok");
+    let (status, version) = request_json(&router, Method::GET, "/v1/version", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(version["product"], "xs-nexus");
+    assert_eq!(version["component"], "xs-controller");
+    assert_eq!(version["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(version["commit"], xs_core::BUILD_GIT_COMMIT);
+    assert_eq!(version["protocol_version"], "XSP/1");
     assert_relay_telemetry(&router, &state.pool).await;
 
     let network_request = json!({

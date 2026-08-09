@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BUILDER="$ROOT_DIR/installers/linux/build-package.sh"
 INSTALLER="$ROOT_DIR/installers/linux/xs-nexus-installer.sh"
+build_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)
 
 for command in bash gcc gzip openssl sha256sum stat systemd-analyze tar; do
     command -v "$command" >/dev/null || { printf 'required command is unavailable: %s\n' "$command" >&2; exit 2; }
@@ -81,7 +82,7 @@ make_binaries() {
 
 int main(int argument_count, char **arguments) {
     if (argument_count == 2 && strcmp(arguments[1], "--version") == 0) {
-        puts("xs-agent $version");
+        puts("xs-agent version=$version commit=$build_commit protocol=XSP/1");
         return 0;
     }
     if (argument_count >= 2 && strcmp(arguments[1], "cleanup") == 0) {
@@ -116,7 +117,7 @@ EOF
 
 int main(int argument_count, char **arguments) {
     if (argument_count == 2 && strcmp(arguments[1], "--version") == 0) {
-        puts("xs $version");
+        puts("xs-cli version=$version commit=$build_commit protocol=XSP/1");
         return 0;
     }
     return 2;
@@ -213,7 +214,7 @@ install_package 1.0.0 >/dev/null
 [[ $(current_release) == 1.0.0-x86_64-unknown-linux-gnu ]]
 assert_active
 [[ -L "$test_root/usr/local/bin/xs" ]]
-[[ $("$test_root/usr/local/bin/xs" --version) == 'xs 1.0.0' ]]
+[[ $("$test_root/usr/local/bin/xs" --version) == "xs-cli version=1.0.0 commit=$build_commit protocol=XSP/1" ]]
 [[ -f "$test_root/etc/systemd/system/xs-agent-update.service" ]]
 [[ -f "$test_root/etc/systemd/system/xs-agent-update.path" ]]
 [[ -x "$test_root/usr/local/lib/xs-nexus/current/share/xs-nexus/xs-nexus-installer.sh" ]]
@@ -254,6 +255,19 @@ assert_fails "$INSTALLER" install \
     --signature "$(package_path 1.1.0 .manifest.sig)" \
     --public-key "$other_public_key" --root "$test_root" --service-manager "$fake_service_manager"
 
+mismatched_identity_manifest="$temporary/mismatched-identity.manifest"
+mismatched_identity_signature="$temporary/mismatched-identity.manifest.sig"
+sed 's/^source_commit=.*/source_commit=0000000000000000000000000000000000000000/' \
+    "$(package_path 1.1.0 .manifest)" >"$mismatched_identity_manifest"
+openssl pkeyutl -sign -rawin -inkey "$private_key" \
+    -in "$mismatched_identity_manifest" -out "$mismatched_identity_signature"
+assert_fails "$INSTALLER" install \
+    --archive "$(package_path 1.1.0 .tar.gz)" \
+    --manifest "$mismatched_identity_manifest" \
+    --signature "$mismatched_identity_signature" \
+    --public-key "$public_key" --root "$test_root" --service-manager "$fake_service_manager"
+[[ $(current_release) == 1.0.0-x86_64-unknown-linux-gnu ]]
+
 trusted_tamper="$temporary/trusted-tamper"
 mkdir -p "$trusted_tamper/unpack" "$trusted_tamper/output"
 tar -xzf "$(package_path 1.1.0 .tar.gz)" -C "$trusted_tamper/unpack"
@@ -264,7 +278,7 @@ printf '# trusted-signer payload tamper\n' >>"$trusted_tamper/unpack/xs-nexus-1.
 )
 trusted_archive="$trusted_tamper/output/xs-nexus-1.1.0-x86_64-unknown-linux-gnu.tar.gz"
 trusted_manifest="$trusted_tamper/output/xs-nexus-1.1.0-x86_64-unknown-linux-gnu.manifest"
-head -n 7 "$(package_path 1.1.0 .manifest)" >"$trusted_manifest"
+head -n 10 "$(package_path 1.1.0 .manifest)" >"$trusted_manifest"
 printf 'archive_size=%s\narchive_sha256=%s\n' \
     "$(stat -c '%s' "$trusted_archive")" \
     "$(sha256sum "$trusted_archive" | awk '{print $1}')" >>"$trusted_manifest"

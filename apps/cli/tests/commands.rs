@@ -177,7 +177,11 @@ fn version_aliases_and_failure_status_are_stable() {
         assert!(output.status.success());
         assert_eq!(
             String::from_utf8(output.stdout).expect("version output"),
-            format!("xs {}\n", env!("CARGO_PKG_VERSION"))
+            format!(
+                "xs-cli version={} commit={} protocol=XSP/1\n",
+                env!("CARGO_PKG_VERSION"),
+                xs_core::BUILD_GIT_COMMIT
+            )
         );
     }
 

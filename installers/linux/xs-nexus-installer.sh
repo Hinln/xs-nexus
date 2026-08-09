@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALLER_SCHEMA=1
+INSTALLER_SCHEMA=2
 UNIT_NAME=xs-agent.service
 UPDATE_PATH_NAME=xs-agent-update.path
 install_root=/
@@ -145,23 +145,43 @@ validate_regular_file() {
 }
 
 parse_manifest() {
-    local manifest_path=$1
+    local manifest_path=$1 platform_index
     mapfile -t release_lines <"$manifest_path"
-    [[ ${#release_lines[@]} -eq 9 ]] || fail 'release manifest field count is invalid'
-    [[ ${release_lines[0]} == "schema_version=$INSTALLER_SCHEMA" ]] || fail 'release manifest schema is unsupported'
+    case ${release_lines[0]-} in
+        schema_version=1)
+            [[ ${#release_lines[@]} -eq 9 ]] || fail 'legacy release manifest field count is invalid'
+            release_manifest_schema=1
+            release_source_commit=unknown
+            release_source_date_epoch=0
+            release_protocol_version=XSP/1
+            platform_index=3
+            ;;
+        "schema_version=$INSTALLER_SCHEMA")
+            [[ ${#release_lines[@]} -eq 12 ]] || fail 'release manifest field count is invalid'
+            release_manifest_schema=$INSTALLER_SCHEMA
+            [[ ${release_lines[3]} =~ ^source_commit=([0-9a-f]{40})$ ]] || fail 'release source commit is invalid'
+            release_source_commit=${BASH_REMATCH[1]}
+            [[ ${release_lines[4]} =~ ^source_date_epoch=([0-9]+)$ ]] || fail 'release source date epoch is invalid'
+            release_source_date_epoch=${BASH_REMATCH[1]}
+            [[ ${release_lines[5]} == 'protocol_version=XSP/1' ]] || fail 'release protocol version is invalid'
+            release_protocol_version=XSP/1
+            platform_index=6
+            ;;
+        *) fail 'release manifest schema is unsupported' ;;
+    esac
     [[ ${release_lines[1]} == 'product=xs-nexus' ]] || fail 'release manifest product is invalid'
     [[ ${release_lines[2]} =~ ^version=([0-9]+\.[0-9]+\.[0-9]+)$ ]] || fail 'release version is invalid'
     release_version=${BASH_REMATCH[1]}
-    [[ ${release_lines[3]} == 'platform=linux' ]] || fail 'release platform is invalid'
-    [[ ${release_lines[4]} =~ ^architecture=(x86_64|aarch64)$ ]] || fail 'release architecture is invalid'
+    [[ ${release_lines[$platform_index]} == 'platform=linux' ]] || fail 'release platform is invalid'
+    [[ ${release_lines[$((platform_index + 1))]} =~ ^architecture=(x86_64|aarch64)$ ]] || fail 'release architecture is invalid'
     release_architecture=${BASH_REMATCH[1]}
-    [[ ${release_lines[5]} =~ ^target=(x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu)$ ]] || fail 'release target is invalid'
+    [[ ${release_lines[$((platform_index + 2))]} =~ ^target=(x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu)$ ]] || fail 'release target is invalid'
     release_target=${BASH_REMATCH[1]}
-    [[ ${release_lines[6]} =~ ^archive=(xs-nexus-[0-9]+\.[0-9]+\.[0-9]+-(x86_64|aarch64)-unknown-linux-gnu\.tar\.gz)$ ]] || fail 'release archive name is invalid'
+    [[ ${release_lines[$((platform_index + 3))]} =~ ^archive=(xs-nexus-[0-9]+\.[0-9]+\.[0-9]+-(x86_64|aarch64)-unknown-linux-gnu\.tar\.gz)$ ]] || fail 'release archive name is invalid'
     release_archive=${BASH_REMATCH[1]}
-    [[ ${release_lines[7]} =~ ^archive_size=([1-9][0-9]*)$ ]] || fail 'release archive size is invalid'
+    [[ ${release_lines[$((platform_index + 4))]} =~ ^archive_size=([1-9][0-9]*)$ ]] || fail 'release archive size is invalid'
     release_archive_size=${BASH_REMATCH[1]}
-    [[ ${release_lines[8]} =~ ^archive_sha256=([0-9a-f]{64})$ ]] || fail 'release archive hash is invalid'
+    [[ ${release_lines[$((platform_index + 5))]} =~ ^archive_sha256=([0-9a-f]{64})$ ]] || fail 'release archive hash is invalid'
     release_archive_sha256=${BASH_REMATCH[1]}
     [[ "$release_archive" == "xs-nexus-$release_version-$release_target.tar.gz" ]] || fail 'release archive fields disagree'
     case "$(uname -m)" in
@@ -170,6 +190,21 @@ parse_manifest() {
         *) fail 'host architecture is unsupported' ;;
     esac
     [[ "$release_architecture" == "$host_architecture" && "$release_target" == "$host_target" ]] || fail 'release does not match this host'
+}
+
+verify_release_binary_identity() {
+    local release_root=$1 agent_output cli_output
+    agent_output=$("$release_root/bin/xs-agent" --version) || fail 'Agent binary version command failed'
+    cli_output=$("$release_root/bin/xs" --version) || fail 'CLI binary version command failed'
+    if [[ $release_manifest_schema -eq 1 ]]; then
+        [[ $agent_output == "xs-agent $release_version" ]] || fail 'legacy Agent binary version is invalid'
+        [[ $cli_output == "xs $release_version" ]] || fail 'legacy CLI binary version is invalid'
+        return
+    fi
+    [[ $agent_output == "xs-agent version=$release_version commit=$release_source_commit protocol=$release_protocol_version" ]] \
+        || fail 'Agent binary identity does not match release provenance'
+    [[ $cli_output == "xs-cli version=$release_version commit=$release_source_commit protocol=$release_protocol_version" ]] \
+        || fail 'CLI binary identity does not match release provenance'
 }
 
 verify_manifest_signature() {
@@ -235,8 +270,7 @@ verify_archive() {
     tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$extraction_directory" || fail 'release archive extraction failed'
     extracted_package="$extraction_directory/$package_name"
     verify_payload_manifest "$extracted_package"
-    [[ $("$extracted_package/bin/xs-agent" --version) == "xs-agent $release_version" ]] || fail 'Agent binary version does not match release'
-    [[ $("$extracted_package/bin/xs" --version) == "xs $release_version" ]] || fail 'CLI binary version does not match release'
+    verify_release_binary_identity "$extracted_package"
 }
 
 version_less_than() {
@@ -331,6 +365,10 @@ verify_installed_release() {
     local release_signature="$metadata_directory/$release.manifest.sig"
     local release_root="$versions_directory/$release"
     local saved_release_version=${release_version-}
+    local saved_release_manifest_schema=${release_manifest_schema-}
+    local saved_release_source_commit=${release_source_commit-}
+    local saved_release_source_date_epoch=${release_source_date_epoch-}
+    local saved_release_protocol_version=${release_protocol_version-}
     local saved_release_architecture=${release_architecture-}
     local saved_release_target=${release_target-}
     local saved_release_archive=${release_archive-}
@@ -343,9 +381,12 @@ verify_installed_release() {
     [[ "$release" == "$release_version-$release_target" ]] || fail 'installed release metadata does not match directory'
     [[ -d "$release_root" && ! -L "$release_root" ]] || fail 'installed release directory is invalid'
     verify_payload_manifest "$release_root"
-    [[ $("$release_root/bin/xs-agent" --version) == "xs-agent $release_version" ]] || fail 'installed Agent version is invalid'
-    [[ $("$release_root/bin/xs" --version) == "xs $release_version" ]] || fail 'installed CLI version is invalid'
+    verify_release_binary_identity "$release_root"
     release_version=$saved_release_version
+    release_manifest_schema=$saved_release_manifest_schema
+    release_source_commit=$saved_release_source_commit
+    release_source_date_epoch=$saved_release_source_date_epoch
+    release_protocol_version=$saved_release_protocol_version
     release_architecture=$saved_release_architecture
     release_target=$saved_release_target
     release_archive=$saved_release_archive
@@ -394,6 +435,7 @@ install_release() {
     trap cleanup_install_temporary EXIT INT TERM
     verify_manifest_signature "$manifest" "$signature" "$public_key"
     parse_manifest "$manifest"
+    [[ $release_manifest_schema -eq $INSTALLER_SCHEMA ]] || fail 'external release manifest schema is obsolete'
     verify_archive
     if [[ -e "$cli_link" && ! -L "$cli_link" ]]; then
         fail 'CLI destination exists and is not a symlink'

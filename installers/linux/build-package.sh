@@ -72,6 +72,25 @@ fi
     exit 2
 }
 
+build_commit=${XS_BUILD_GIT_COMMIT:-}
+source_date_epoch=${SOURCE_DATE_EPOCH:-}
+if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    repository_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)
+    if [[ -n "$build_commit" && "$build_commit" != "$repository_commit" ]]; then
+        printf 'XS_BUILD_GIT_COMMIT differs from the repository HEAD\n' >&2
+        exit 2
+    fi
+    build_commit=$repository_commit
+    if [[ -z "$source_date_epoch" ]]; then
+        source_date_epoch=$(git -C "$ROOT_DIR" show -s --format=%ct HEAD)
+    fi
+fi
+[[ "$build_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    printf 'XS_BUILD_GIT_COMMIT must identify an exact lowercase Git commit\n' >&2
+    exit 2
+}
+[[ "$source_date_epoch" =~ ^[0-9]+$ ]] || { printf 'SOURCE_DATE_EPOCH must be an integer\n' >&2; exit 2; }
+
 if [[ -z "$binary_directory" ]]; then
     command -v cargo >/dev/null || { printf 'required command is unavailable: cargo\n' >&2; exit 2; }
     if [[ "$target" == aarch64-unknown-linux-gnu ]]; then
@@ -86,13 +105,20 @@ if [[ -z "$binary_directory" ]]; then
         }
         (
             cd "$ROOT_DIR"
+            XS_BUILD_GIT_COMMIT="$build_commit" \
+            XS_BUILD_DATE_EPOCH="$source_date_epoch" \
             RUSTC_BOOTSTRAP=1 \
             CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
                 cargo build --locked --release --target "$target" \
                     -Z build-std=std,panic_abort -p xs-agent -p xs-cli
         )
     else
-        (cd "$ROOT_DIR" && cargo build --locked --release --target "$target" -p xs-agent -p xs-cli)
+        (
+            cd "$ROOT_DIR"
+            XS_BUILD_GIT_COMMIT="$build_commit" \
+            XS_BUILD_DATE_EPOCH="$source_date_epoch" \
+                cargo build --locked --release --target "$target" -p xs-agent -p xs-cli
+        )
     fi
     binary_directory="$ROOT_DIR/target/$target/release"
 fi
@@ -114,8 +140,6 @@ for binary in xs-agent xs; do
     }
 done
 
-source_date_epoch=${SOURCE_DATE_EPOCH:-0}
-[[ "$source_date_epoch" =~ ^[0-9]+$ ]] || { printf 'SOURCE_DATE_EPOCH must be an integer\n' >&2; exit 2; }
 mkdir -p "$output_directory"
 output_directory=$(cd "$output_directory" && pwd -P)
 temporary=$(mktemp -d)
@@ -159,9 +183,12 @@ signature="$manifest.sig"
 archive_size=$(stat -c '%s' "$archive")
 archive_sha256=$(sha256sum "$archive" | awk '{print $1}')
 cat >"$manifest" <<EOF
-schema_version=1
+schema_version=2
 product=xs-nexus
 version=$version
+source_commit=$build_commit
+source_date_epoch=$source_date_epoch
+protocol_version=XSP/1
 platform=linux
 architecture=$architecture
 target=$target

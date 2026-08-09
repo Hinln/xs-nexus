@@ -96,7 +96,10 @@ async fn entrypoint() -> Result<()> {
             Ok(())
         }
         Command::Version => {
-            println!("xs-agent {}", env!("CARGO_PKG_VERSION"));
+            println!(
+                "{}",
+                xs_core::BuildIdentity::current(xs_core::Component::Agent)
+            );
             Ok(())
         }
     }

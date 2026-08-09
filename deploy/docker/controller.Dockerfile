@@ -1,20 +1,29 @@
 ARG SOURCE_DATE_EPOCH=0
+ARG VCS_REF=unknown
+ARG XS_VERSION=0.1.0
+ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
 ARG RUST_IMAGE=rust:1.93.0-bookworm@sha256:d0a4aa3ca2e1088ac0c81690914a0d810f2eee188197034edf366ed010a2b382
 ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e
 
 FROM ${RUST_IMAGE} AS builder
+ARG SOURCE_DATE_EPOCH
+ARG VCS_REF
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY apps ./apps
 COPY crates ./crates
 COPY installers ./installers
-RUN cargo build --locked --release -p xs-controller
+RUN XS_BUILD_GIT_COMMIT="${VCS_REF}" XS_BUILD_DATE_EPOCH="${SOURCE_DATE_EPOCH}" \
+    cargo build --locked --release -p xs-controller
 
 FROM ${RUNTIME_IMAGE}
 ARG VCS_REF=unknown
+ARG XS_VERSION=0.1.0
+ARG XS_SOURCE_URL=https://github.com/Hinln/xs-nexus
 LABEL org.opencontainers.image.title="XS Nexus Controller" \
       org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.source="XS Nexus clean-room repository"
+      org.opencontainers.image.version="${XS_VERSION}" \
+      org.opencontainers.image.source="${XS_SOURCE_URL}"
 COPY --from=builder --chown=65532:65532 /src/target/release/xs-controller /usr/local/bin/xs-controller
 USER 65532:65532
 EXPOSE 8080/tcp 42000/udp

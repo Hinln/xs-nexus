@@ -4,6 +4,11 @@ XS Nexus Linux releases are distributed as a target-specific archive, a signed r
 and a detached Ed25519 signature. The signing private key is an offline release input and must not
 be copied to a Controller, Relay, Agent, package, or source checkout.
 
+Manifest schema 2 binds the semantic version to the exact lowercase Git commit, source-date epoch,
+`XSP/1` protocol version, target architecture, archive size, and archive SHA-256. The installer also
+requires `xs-agent --version` and `xs --version` to report the same version, commit, and protocol
+before activating the release.
+
 ## Requirements
 
 - Linux with systemd, `/dev/net/tun`, nftables, and an available `CAP_NET_ADMIN` capability;
@@ -34,7 +39,8 @@ Before executing any downloaded installer, the bootstrap:
 1. selects the exact x86_64 or aarch64 release;
 2. verifies the downloaded Ed25519 public key against the fingerprint embedded in the bootstrap;
 3. verifies the detached manifest signature;
-4. enforces the exact version, platform, architecture, target, archive name, size, and SHA-256;
+4. enforces the exact version, source commit, source-date epoch, protocol, platform, architecture,
+   target, archive name, size, and SHA-256;
 5. checks the archive member allowlist, member types, and every payload hash;
 6. writes the token only to a mode `0600` temporary file and removes the entire private staging
    directory on success, failure, signal, or enrollment rejection.
@@ -49,6 +55,10 @@ match the current host. It verifies the detached manifest signature before parsi
 then verifies archive name, size, SHA-256, member allowlist, member types, and every payload hash.
 The first installation pins the release public key at `/etc/xs-nexus/release-public-key.pem`;
 later upgrades reject a different key.
+
+New external installs require manifest schema 2. The lifecycle verifier can still validate an
+already-installed schema 1 release during rollback, but it will not accept schema 1 as a new
+external package.
 
 Release maintainers build both packages with an offline signing-key path:
 

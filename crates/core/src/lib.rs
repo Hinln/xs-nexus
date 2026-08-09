@@ -41,6 +41,45 @@ pub enum Component {
     Relay,
 }
 
+pub const PRODUCT_NAME: &str = "xs-nexus";
+pub const XSP_PROTOCOL_VERSION: &str = "XSP/1";
+pub const BUILD_GIT_COMMIT: &str = env!("XS_BUILD_GIT_COMMIT");
+pub const BUILD_DATE_EPOCH: &str = env!("XS_BUILD_DATE_EPOCH");
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct BuildIdentity {
+    pub product: &'static str,
+    pub component: &'static str,
+    pub version: &'static str,
+    pub commit: &'static str,
+    pub protocol_version: &'static str,
+    pub build_date_epoch: &'static str,
+}
+
+impl BuildIdentity {
+    #[must_use]
+    pub const fn current(component: Component) -> Self {
+        Self {
+            product: PRODUCT_NAME,
+            component: component.as_str(),
+            version: env!("CARGO_PKG_VERSION"),
+            commit: BUILD_GIT_COMMIT,
+            protocol_version: XSP_PROTOCOL_VERSION,
+            build_date_epoch: BUILD_DATE_EPOCH,
+        }
+    }
+}
+
+impl fmt::Display for BuildIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{} version={} commit={} protocol={}",
+            self.component, self.version, self.commit, self.protocol_version
+        )
+    }
+}
+
 impl Component {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -459,7 +498,7 @@ pub enum ControlServerMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::{BaselineReport, Component, LocalAgentRequest};
+    use super::{BaselineReport, BuildIdentity, Component, LocalAgentRequest};
 
     #[test]
     fn report_is_stable_and_component_specific() {
@@ -483,6 +522,38 @@ mod tests {
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
             4
+        );
+    }
+
+    #[test]
+    fn build_identity_is_stable_and_contains_provenance() {
+        let identity = BuildIdentity::current(Component::Agent);
+        assert_eq!(identity.product, "xs-nexus");
+        assert_eq!(identity.component, "xs-agent");
+        assert_eq!(identity.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(identity.protocol_version, "XSP/1");
+        assert!(
+            identity.commit == "unknown"
+                || (identity.commit.len() == 40
+                    && identity
+                        .commit
+                        .bytes()
+                        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')))
+        );
+        assert!(
+            !identity.build_date_epoch.is_empty()
+                && identity
+                    .build_date_epoch
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit())
+        );
+        assert_eq!(
+            identity.to_string(),
+            format!(
+                "xs-agent version={} commit={} protocol=XSP/1",
+                env!("CARGO_PKG_VERSION"),
+                identity.commit
+            )
         );
     }
 
