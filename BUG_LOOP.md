@@ -327,3 +327,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 仅删除两个旧任务镜像和三个可证明属于 XS Nexus 的精确 BuildKit cache record；首轮镜像清理后仍不足 12 GiB 的 run 继续保持失败。禁止且未运行 global Docker prune。最终验证从约 12.96 GB headroom 开始并全部通过。
 - 九个失败/non-authoritative root（API 三个、全量/空间六个）均保留原始文件并新增不可覆盖 disposition/manifest；成功根为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`，封存复核根为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`。
 - 结果边界：四个可自行修复 finding 关闭，但生产仍运行 `3d93656`，全局 Critical/High 与外部门禁未关闭；Gate 23 仍为 `FAIL`，没有把内部回归写成生产 GO。
+
+## Gate 24 依赖与 CI 供应链闭环（2026-08-10）
+
+- `XS-2026-0031`：精确提交 `45dbc196` 的四项 GitHub Actions job 全部通过，但运行记录明确警告 checkout、setup-node 和 upload-artifact 仍以 Node 20 action metadata 运行并被平台强制到 Node 24。未把绿色退出码当作无问题。
+- 修复：从官方仓库解析最新 Node 24 release 到验证有效的精确 commit，分别升级到 checkout `v7.0.1`、setup-node `v7.0.0`、upload-artifact `v7.0.1`；所有 checkout 禁止 credential persistence。
+- 防回退：新增无第三方 YAML 依赖的静态验证器和负向测试，拒绝 mutable tag、旧 Node 20 SHA、版本标签漂移、畸形 `uses`、非 40 位 SHA 和令牌持久化；纳入 `security-check`。没有把 warning 隐藏或降低级别。
+- `KI-026` 同轮完成 exact lock 与上游拓扑复核；当前上游仍依赖 `paste`，因此采用可见、自动到期的 P2 disposition，而非维护私有 netlink fork。

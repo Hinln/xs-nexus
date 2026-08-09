@@ -94,9 +94,11 @@ Controller/Relay 的 Rust `1.94.0-bookworm`（固定 digest `sha256:365468470075
 | Docker Compose | 服务编排 | 运行环境工具 |
 | Alpine `3.22` | 基线 profile 的网络配置探针 | 当前只解析配置，尚未发布 |
 | Chromium for Testing 151.0.7922.34 | Playwright 固定浏览器渲染 | 仅测试缓存，不进入应用产物 |
-| `actions/checkout@v4` | CI 源码检出 | GitHub Actions |
-| `actions/setup-node@v4` | CI Node 工具链 | GitHub Actions |
-| `dtolnay/rust-toolchain@stable` | CI Rust 工具链 | GitHub Actions |
+| `actions/checkout@v7.0.1`（固定 commit） | CI 源码检出；禁止 credential persistence | GitHub Actions |
+| `actions/setup-node@v7.0.0`（固定 commit） | CI Node 24 工具链 | GitHub Actions |
+| `actions/upload-artifact@v7.0.1`（固定 commit） | CI 证据上传 | GitHub Actions |
+| `docker/setup-buildx-action@v4.2.0`（固定 commit） | CI Buildx 准备 | GitHub Actions |
+| `dtolnay/rust-toolchain`（固定 commit） | CI Rust 工具链 | GitHub Actions |
 
 ## 4. 传递依赖
 

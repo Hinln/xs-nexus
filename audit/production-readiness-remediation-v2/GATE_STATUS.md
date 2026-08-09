@@ -27,7 +27,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 21 | Performance and capacity | PARTIAL | PARTIAL | WAN/concurrency evidence and documented safe operating envelope |
 | 22 | Current-revision soak | UNKNOWN | UNKNOWN | At least 24 hours with sampling and fault injection |
 | 23 | Defects and security findings | FAIL | FAIL | Exact-head self-fixable checks pass at `3bf8619`; all remaining P0/P1/Critical/High findings, including external findings, must reach zero and P2 dispositions must remain current |
-| 24 | Dependencies and image supply chain | PARTIAL | PARTIAL | Formal signed/deployed release, bounded glibc disposition closure, and the dated `paste` topology review |
+| 24 | Dependencies and image supply chain | PARTIAL | PARTIAL | Formal signed/deployed release and bounded glibc disposition closure; dated `paste` topology review completed |
 | 25 | Clean deployment rehearsal | FAIL | FAIL | Independent clean checkout/full lifecycle and production upgrade rollback |
 
 ## Initial Counts
@@ -58,4 +58,4 @@ Gate 13 remains `FAIL`. Read-only evidence proves client-to-edge TLS succeeds bu
 
 Gate 23 repository-side remediation is complete at exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`. Generic JSON rejection handling, bounded PostgreSQL Docker logs, SQLx `0.9.0`, removal of `rsa` and `RUSTSEC-2023-0071`, and a complete `cargo-deny` license policy all passed clean-checkout validation and GitHub Actions run `31313868529`. The gate remains `FAIL`: open Critical/High findings in Gates 01/02/03/05/11/12/13/14/17/20/22/25 are not converted to PASS by an internal regression run.
 
-Gate 24 remains `PARTIAL`. Plain `cargo audit` reports zero vulnerabilities and no ignored advisories; `cargo deny --all-features check` passes advisories, bans, licenses, and sources. `RUSTSEC-2024-0436` for transitive `paste 1.0.15` remains an informational unmaintained warning with a review deadline of `2026-08-31`, and the production glibc findings remain under the bounded `KI-021` disposition. The validated branch commit is not the deployed revision or a formal signed release.
+Gate 24 remains `PARTIAL`. Exact-head evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z` proves zero Rust vulnerabilities, an empty cargo-audit ignore list, complete cargo-deny checks, the exact `paste` topology, and that current upstream still has no release/main replacement removing it. `KI-026` is closed through ADR-089's visible, automatically expiring `2026-08-31` P2 disposition. Node 20 CI action annotations from passing run `31324714609` are corrected at `e63c59b`/`98ca145`; exact-head run `31325753985` passed with SHA-pinned Node 24 actions, disabled checkout credential persistence, and zero annotations. The production glibc findings remain under `KI-021`, and the validated branch is neither the deployed revision nor a formal signed release.

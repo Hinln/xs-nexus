@@ -441,3 +441,13 @@ make clean
 - 磁盘压力 run 在全部产品测试通过后被健康守卫以根分区 `91%` 正确拒绝；只删除三个精确 XS Nexus BuildKit cache record，未运行 global prune。最终根分区 `79%`、约 `12.65 GB` 可用，生产健康、失败服务 0、临时 QA 容器/网络/namespace 0。
 - Gate 23 仍为 `FAIL`：全局 Critical/High、P0/P1 必须全部为零，外部 Gate 不得由内部测试代替。Gate 24 仍为 `PARTIAL`：`paste 1.0.15` 仅为未维护信息告警且有 `2026-08-31` 复核期限，`KI-021` glibc 风险、正式签名发布和部署仍未关闭。
 - 下一步：按 `GATE_STATUS.md` 选择最高风险、可自行解决的未闭合内部 Gate；生产继续运行 `3d93656`，不得把 `3bf8619` 描述为已部署或正式 RC。
+
+## 2026-08-10 Gate 24 依赖拓扑有界处置
+
+- 精确提交 `45dbc19690f6f738a43cabf2c344118d0b8bc055` 的生产只读审计证明 `cargo audit` vulnerability 为 0、`settings.ignore=[]`，`cargo deny --all-features check` 全部通过；唯一公告是信息类 `RUSTSEC-2024-0436`。
+- 锁定路径为 `xs-agent -> rtnetlink 0.21.0 -> netlink-packet-core 0.8.2 -> paste 1.0.15`。复核时 `rtnetlink` 与 `netlink-packet-core` 上游 `main` 仍分别保持 `0.21.0` 和 `paste = "1"`，没有可直接升级且移除该依赖的上游版本。
+- `KI-026` 已按 ADR-089 完成有原始证据的期限处置：不承担私有 netlink fork，仅保留可见告警和 `2026-08-31` 自动失效门禁；任何 lock、路径、feature、上游、公告、工具链或 RC revision 变化会立即重开。
+- 证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z` 已 root-only 封存并通过 SHA-256 复核。审计前后容器、网络、`1panel-network`、默认路由、IP rule、nftables 和 failed units 不变，临时 QA 资源为 0。
+- Gate 24 保持 `PARTIAL`：`KI-021` glibc 处置、正式密钥/签名 RC、部署及第三方供应链审计仍未完成。生产仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，总体仍为 `NO_GO`。
+- GitHub Actions run `31324714609` 的四个 job 全通过，但保留了三项 Node 20 action 弃用 annotation。提交 `e63c59b`/`98ca145` 已把 checkout/setup-node/upload-artifact 更新为官方 Node 24 精确 commit、关闭 checkout credential persistence，并新增 SHA/版本/runtime 防回退门禁；exact-head run `31325753985` 四项 job 全通过，四个 check-run annotation 数均为 0。
+- 下一步：进入 Gate 04 当前 revision 的协议状态机、长时 fuzz 与 sanitizer 证据补强，不把模拟或短时 CI 结果扩张为独立安全审计。

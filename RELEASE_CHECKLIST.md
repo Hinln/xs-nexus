@@ -152,7 +152,9 @@ The first three items are preparation and diagnosis only. The unchecked producti
 - [x] Full `cargo-deny` advisories, bans, licenses, and sources policy; plain `cargo audit` reports zero vulnerabilities.
 - [x] Exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` passed GitHub Actions run `31313868529` and clean-checkout evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`.
 - [x] Nine failed/non-authoritative Gate 23 roots retained, dispositioned, independently checksummed, and reverified at `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`.
-- [ ] `paste 1.0.15` informational unmaintained warning reviewed or replaced before `2026-08-31`; `KI-021` glibc disposition closed or formally accepted.
+- [x] `paste 1.0.15` informational warning formally reviewed with exact locked/upstream topology, visible output, and an automatically expiring `2026-08-31` disposition; evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z`.
+- [x] Exact head `98ca145c197b1d2af20d7cf5df28008820a25e50` uses reviewed SHA-pinned Node 24 actions, disables checkout credential persistence, and passes all four jobs in run `31325753985` with zero check-run annotations.
+- [ ] `KI-021` glibc disposition closed through fixed images or formally accepted by the owner after a fresh exact-image scan.
 - [ ] All global P0/P1/Critical/High findings, external hard gates, formal signed RC/main provenance, and deployment of the exact release revision complete.
 
-The checked items close four self-fixable findings only. Production still runs `3d93656`, Gate 23 remains `FAIL`, Gate 24 remains `PARTIAL`, Release Candidate remains unchecked, and the overall result remains `NO_GO`.
+The checked items close four self-fixable findings and one bounded P2 dependency review only. Production still runs `3d93656`, Gate 23 remains `FAIL`, Gate 24 remains `PARTIAL`, Release Candidate remains unchecked, and the overall result remains `NO_GO`.

@@ -355,9 +355,11 @@
 ## KI-026 transitive `paste` 未维护公告需要限时复核
 
 - 严重度：低（信息类/P2；不是已知漏洞）
-- 状态：开放、有限期 disposition
+- 状态：已解除（2026-08-10，有界 disposition 有效至 `2026-08-31`）
 - 首次发现：2026-08-09 Gate 23 plain `cargo audit`。
 - 影响：`paste 1.0.15` 通过 `rtnetlink` 依赖拓扑进入锁文件；`RUSTSEC-2024-0436` 表示上游已停止维护，没有 CVSS、漏洞利用结论或 patched version。当前 `cargo audit` 因零 vulnerability 返回成功，但仍输出该 informational warning。
-- 已完成缓解：告警没有加入 ignore；`cargo deny --all-features check` 和 plain `cargo audit` 均保留完整输出。exact-head CI、workspace tests、namespace networking、协议 fuzz、镜像复现和源风险扫描通过，证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`。
-- 复核期限：`2026-08-31`，或 `Cargo.lock`、`rtnetlink` 路径、feature、公告内容、Rust/SQLx 版本、正式 RC revision 任一变化时立即复核。
-- 解除条件：上游依赖移除/替换 `paste` 且全量回归通过，或在期限内完成有原始证据的正式风险 disposition。不得静默 ignore；该条目不关闭 `KI-021`、Gate 24、正式发布或第三方审计。
+- 已完成处置：plain `cargo audit` 原始 JSON 证明 vulnerability 为 0 且 `settings.ignore=[]`；`cargo-deny` 仅保留带原因和 `2026-08-31` 截止日期的显式 exception。精确锁定路径为 `xs-agent -> rtnetlink 0.21.0 -> netlink-packet-core 0.8.2 -> paste 1.0.15`。
+- 上游复核：`rtnetlink` `main` 精确提交 `e7799b6ee24267586e6aadc0e3fb415b4d921dd4` 仍为 `0.21.0`；`netlink-packet-core` `main` 精确提交 `571d8bb5fa1dbaa875e8aede3f214c87f70b955b` 仍声明 `paste = "1"`。当前没有可直接升级且移除该依赖的上游版本；仅为消除信息告警而 fork/vendor 网络栈会引入更大的长期维护面，因此不采用。
+- 解除证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z`；专项报告 `audit/production-readiness-remediation-v2/DEPENDENCY_TOPOLOGY.md`。
+- 自动重开：到达 `2026-08-31`，或 `Cargo.lock`、`rtnetlink` 路径/feature、上游 manifest、公告分类、Rust/SQLx、正式 RC revision 任一变化时立即重新审计。不得静默 ignore。
+- 边界：该 P2 处置不关闭 `KI-021`、Gate 24、正式签名发布、生产部署或第三方审计。

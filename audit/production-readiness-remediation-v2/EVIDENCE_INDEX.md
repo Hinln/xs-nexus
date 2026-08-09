@@ -116,9 +116,21 @@ The successful read-only root includes the current-domain control, direct-origin
 | Exact XS Nexus BuildKit cache cleanup | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-build-cache-cleanup-20260809T133939Z` | PASS, NO GLOBAL PRUNE |
 | Independent failed/successful evidence verification | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` | PASS, SHA-256 VERIFIED |
 
-The full run records successful formatting, strict all-target/all-feature Clippy, all-feature workspace tests, real PostgreSQL and namespace network tests, frontend lint/unit/build/high-severity audit, real Console E2E, executable protocol fuzz, double no-cache image reproducibility, source-risk review, repository/history secret scanning, and full `cargo-audit`/`cargo-deny`. `rsa` is absent from `Cargo.lock`; no advisory ignore remains. The only Rust advisory output is informational `RUSTSEC-2024-0436` for unmaintained transitive `paste 1.0.15`, with a bounded review recorded in `KI-026`.
+The full run records successful formatting, strict all-target/all-feature Clippy, all-feature workspace tests, real PostgreSQL and namespace network tests, frontend lint/unit/build/high-severity audit, real Console E2E, executable protocol fuzz, double no-cache image reproducibility, source-risk review, repository/history secret scanning, and full `cargo-audit`/`cargo-deny`. `rsa` is absent from `Cargo.lock`; no vulnerability advisory ignore remains. Plain `cargo audit` has an empty ignore list. The sole `cargo-deny` exception is informational `RUSTSEC-2024-0436` for unmaintained transitive `paste 1.0.15`, with a bounded review recorded in `KI-026`.
 
 The evidence-seal verification rechecked every failed-root manifest and disposition, the successful-root manifest and summary, the production health guard, zero failed systemd units, zero temporary QA containers/networks/namespaces, `1panel-network` ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`, subnet `172.18.0.0/16`, and default gateway `10.3.0.1` on `eth0`. Production Controller/Relay/Console continue to run `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `3bf8619` was not deployed.
+
+## Gate 24 Dependency Topology Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Exact-head dependency and upstream topology review | `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z` | PASS, BOUNDED P2 DISPOSITION |
+| Pre-fix exact-head CI | GitHub Actions run [`31324714609`](https://github.com/Hinln/xs-nexus/actions/runs/31324714609), head `45dbc19690f6f738a43cabf2c344118d0b8bc055` | PASS WITH NODE 20 DEPRECATION ANNOTATIONS |
+| Node 24 action migration | Commits `e63c59bc7c54b78de94b01885fa9af1b54a31746`, `98ca145c197b1d2af20d7cf5df28008820a25e50`; GitHub Actions run [`31325753985`](https://github.com/Hinln/xs-nexus/actions/runs/31325753985) | PASS, 4 JOBS, 0 ANNOTATIONS |
+
+The root binds source revision `45dbc19690f6f738a43cabf2c344118d0b8bc055`, the source-bundle hash, QA image, lock/policy files, the exact audit script, raw cargo-audit/cargo-deny/advisory-policy output, target-all dependency tree, upstream ref and manifest bytes, host/Docker/1Panel baselines, status ledger, and verified SHA-256 manifest. Raw cargo-audit JSON records zero vulnerabilities and an empty ignore list. Upstream still retains the `paste` dependency, so ADR-089 rejects a private netlink fork and keeps a fail-closed `2026-08-31` review deadline.
+
+Production Controller/Relay/Console remained healthy at `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `1panel-network` ID/subnet, default route, IP rules, canonical nftables, containers, Docker networks, and failed units were unchanged, and temporary QA resources were absent. This evidence closes only `KI-026`; Gate 24 remains `PARTIAL`.
 
 ## V2 Evidence Rules
 
@@ -134,5 +146,5 @@ The evidence-seal verification rechecked every failed-root manifest and disposit
 - Gate 02 no-value secret inventory, rotation receipts, old-value rejection checks, deep artifact/history/layer scan.
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
-- Gates 04/06/08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 still requires formal release and bounded vulnerability disposition closure.
+- Gates 04/06/08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

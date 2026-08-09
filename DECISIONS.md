@@ -1019,3 +1019,28 @@
 - 供应链边界：Rust builder 和 CI toolchain 固定到 `1.94` 精确镜像 digest；SBOM 预期计数随真实 lock 更新，不删除组件以制造旧计数。镜像 glibc Critical/High 仍由 `KI-021` 独立跟踪，本决策不把 API 不可达 disposition 伪装成修复。
 - 证据：Git commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`；GitHub Actions run `31313868529`；clean-checkout 根 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z`；失败证据封存复核根 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`。
 - 残余：`3bf8619` 未部署、未合并 main、不是正式签名 RC。全局 Critical/High 与外部门禁仍开放，因此 Gate 23 为 `FAIL`、Gate 24 为 `PARTIAL`、总体为 `NO_GO`。
+
+---
+
+## ADR-089：不为消除 `paste` 信息告警而维护私有 netlink fork
+
+- 状态：接受；到期自动复核
+- 日期：2026-08-10
+- 背景：Gate 24 对 `RUSTSEC-2024-0436` 进行了精确依赖与上游复核。锁文件路径是 `xs-agent -> rtnetlink 0.21.0 -> netlink-packet-core 0.8.2 -> paste 1.0.15`；公告为 unmaintained informational，没有 CVSS、已知利用或 patched version。
+- 决策：当前继续使用上游 `rtnetlink 0.21.0`，不为隐藏信息告警而 fork/vendor `rtnetlink` 或 `netlink-packet-core`。plain `cargo audit` 保持空 ignore 和原始告警；`cargo-deny` 只保留带原因、于 `2026-08-31` 失效的单一例外。
+- 原因：复核时 `rtnetlink` `main` `e7799b6ee24267586e6aadc0e3fb415b4d921dd4` 仍为 `0.21.0`，`netlink-packet-core` `main` `571d8bb5fa1dbaa875e8aede3f214c87f70b955b` 仍直接依赖 `paste = "1"`。私有 fork 会把关键 Linux 网络依赖的维护与安全更新责任转移给项目，却没有修复已证明的漏洞。
+- 失败策略：`scripts/check-rust-advisories.sh` 在截止日期后失败关闭；锁文件、路径、feature、公告、上游 manifest、工具链或候选 RC 变化均要求提前重审。上游正常版本移除 `paste` 后优先升级并删除例外，再重跑完整网络与供应链回归。
+- 证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z`；`audit/production-readiness-remediation-v2/DEPENDENCY_TOPOLOGY.md`。
+- 边界：该决策只完成 `KI-026` 的 P2 有界处置。`KI-021` glibc、正式签名发布、精确 revision 部署、第三方审计和整体 `NO_GO` 均不改变。
+
+---
+
+## ADR-090：CI 第三方 Action 固定到已复核的 Node 24 提交且不持久化令牌
+
+- 状态：接受
+- 日期：2026-08-10
+- 背景：精确提交 `45dbc196` 的 CI 全部通过，但 GitHub 对 checkout、setup-node 和 upload-artifact 发出 Node 20 弃用告警并强制使用 Node 24。成功退出码不能消除未来 runner 停止兼容旧 action runtime 的风险；checkout 默认持久化 `GITHUB_TOKEN` 也超出只读构建所需权限。
+- 决策：三项官方 Action 分别固定到验证有效的 `v7.0.1`/`v7.0.0`/`v7.0.1` 精确提交，保留可审计版本注释；全部 checkout 显式 `persist-credentials: false`。Docker Buildx 继续使用已固定且为 Node 24 的 `v4.2.0` 提交。
+- 门禁：所有远程 `uses:` 必须为小写 40 位 commit SHA；四项已复核 Node 24 Action 必须精确匹配 commit 与版本标签；checkout 缺少 `persist-credentials: false` 即失败。正向和五类负向 fixture 在 `security-check` 中执行。
+- 证据：预修复 run `31324714609` 保留 Node 20 annotation；实现提交 `e63c59bc7c54b78de94b01885fa9af1b54a31746`、`98ca145c197b1d2af20d7cf5df28008820a25e50`；最终 GitHub Actions run `31325753985` 四项 job 全通过且 annotation 数均为 0。
+- 边界：Action 运行时和 token 最小化只加固 CI，不构成正式 release key、签名 RC、部署 provenance 或第三方供应链审计。

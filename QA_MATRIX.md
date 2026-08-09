@@ -495,3 +495,16 @@
 - [x] 失败证据：九个失败 root（API 三个、全量/空间六个）保留原文件，新增 `FAILED_NON_AUTHORITATIVE` disposition 和非覆盖 manifest；独立校验根 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` 通过。
 - [x] 宿主恢复：生产健康、失败服务 0、临时 QA 容器/网络/namespace 0，默认网关 `10.3.0.1`/`eth0` 和 `1panel-network` ID/子网不变；运行 revision 仍为 `3d93656`。
 - [ ] 结论边界：这些测试只关闭四个可自行修复 finding，不关闭外部 Critical/High、正式 release、真实 Windows/NAS/WAN、异地恢复或第三方安全审计，Gate 23 保持 `FAIL`。
+
+## 22. Gate 24 依赖拓扑复核（2026-08-10）
+
+- [x] 精确源码：从完整 Git bundle 分离 checkout `45dbc19690f6f738a43cabf2c344118d0b8bc055`，工作树干净且 source bundle SHA-256 已记录。
+- [x] 原始工具：`cargo audit --json` 为 0 vulnerability、空 ignore；`cargo deny --all-features check` 的 advisories/bans/licenses/sources 全通过；期限策略脚本通过。
+- [x] 拓扑：精确证明 `paste 1.0.15 <- netlink-packet-core 0.8.2 <- rtnetlink 0.21.0 <- xs-agent`，没有用 feature 裁剪隐藏路径。
+- [x] 上游：保存 `rtnetlink` 与 `netlink-packet-core` `main` 的精确 commit、原始 manifest 和摘要；当前上游仍未移除 `paste`。
+- [x] 处置：`KI-026`/ADR-089 保持告警可见、禁止 cargo-audit ignore、固定 `2026-08-31` 自动失效和变化触发重审，不引入私有网络栈 fork。
+- [x] 宿主保护：容器、Docker 网络、`1panel-network`、默认路由、IP rule、规范化 nftables、failed units 前后不变；临时 QA 容器与工作树清零。
+- [x] 证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z` root-only 封存，`SHA256SUMS` 独立复核通过。
+- [x] CI Action 回归：全部远程 action 使用 40 位 commit SHA；checkout/setup-node/upload-artifact/Buildx 固定为已复核 Node 24 commit 与版本标签；checkout 全部关闭 credential persistence。负向 fixture 覆盖 mutable/旧 SHA/错误标签/畸形引用/缺失 credential hardening。
+- [x] 最新实现提交 `98ca145c197b1d2af20d7cf5df28008820a25e50` 的 GitHub Actions run `31325753985` 四项 job 全通过，四个 check-run annotation 数均为 0。
+- [ ] 结论边界：`KI-021`、正式签名发布、精确 revision 部署和第三方审计仍开放，因此 Gate 24 为 `PARTIAL`、总体为 `NO_GO`。
