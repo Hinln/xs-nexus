@@ -340,6 +340,12 @@ fn authenticated_header_and_virtual_source_are_enforced() {
     let encrypted = sender
         .seal_ipv4(DataFlags::NONE, 3, &packet)
         .expect("valid packet");
+    let mut forged_source_node = encrypted.clone();
+    forged_source_node[28] ^= 1;
+    assert!(receiver.open(&forged_source_node).is_err());
+    let mut forged_destination_node = encrypted.clone();
+    forged_destination_node[44] ^= 1;
+    assert!(receiver.open(&forged_destination_node).is_err());
     let mut header_tamper = encrypted.clone();
     header_tamper[88] ^= 1;
     assert!(receiver.open(&header_tamper).is_err());

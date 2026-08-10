@@ -150,7 +150,8 @@ cleanup() {
     ip link del "$BRIDGE" >/dev/null 2>&1
     if (( status != 0 )); then
         for log in controller.log relay-1.log relay-1-restarted.log relay-2.log agent-a.log agent-b.log \
-            proxy-a.log proxy-b.log relay-capture.log collector.log
+            proxy-a.log proxy-b.log relay-capture.log collector.log \
+            relay-acl-denied-capture.log relay-acl-denied-collector.log
         do
             if [[ -s $TEMPORARY/$log ]]; then
                 printf '\n--- %s ---\n' "$log" >&2
@@ -350,15 +351,26 @@ install_test_acl() {
         --data '{
             "expected_policy_version": 1,
             "groups": [],
-            "rules": [{
-                "id": "allow-test-traffic",
-                "priority": 100,
-                "action": "allow",
-                "sources": [{"type": "any"}],
-                "destinations": [{"type": "any"}],
-                "protocol": "any",
-                "destination_ports": []
-            }]
+            "rules": [
+                {
+                    "id": "deny-relay-acl-bypass",
+                    "priority": 200,
+                    "action": "deny",
+                    "sources": [{"type": "any"}],
+                    "destinations": [{"type": "any"}],
+                    "protocol": "udp",
+                    "destination_ports": [{"start": 43232, "end": 43232}]
+                },
+                {
+                    "id": "allow-test-traffic",
+                    "priority": 100,
+                    "action": "allow",
+                    "sources": [{"type": "any"}],
+                    "destinations": [{"type": "any"}],
+                    "protocol": "any",
+                    "destination_ports": []
+                }
+            ]
         }')
     ACL_CONFIGURATION_VERSION=$(python3 -c \
         'import json,sys; print(json.load(sys.stdin)["configuration_version"])' \
@@ -804,6 +816,34 @@ fi
 
 virtual_ip_a=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-a/state/node-state.json")
 virtual_ip_b=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["virtual_ip"])' "$TEMPORARY/node-b/state/node-state.json")
+denied_marker=xs-gate09-relay-acl-denied
+ip netns exec "$NETNS_B" "$PROBE" collect-udp \
+    --bind "$virtual_ip_b" \
+    --port 43232 \
+    --expected "$denied_marker" \
+    --count 0 \
+    --timeout 2 >"$TEMPORARY/relay-acl-denied-collector.log" 2>&1 &
+COLLECT_PID=$!
+"$PROBE" assert-no-relay \
+    --interface "$BRIDGE" \
+    --source "$CONTROL_IP_A" \
+    --destination "$BRIDGE_IP" \
+    --destination-port "$RELAY_PORT_1" \
+    --inner-packet-type data \
+    --timeout 2 >"$TEMPORARY/relay-acl-denied-capture.log" 2>&1 &
+CAPTURE_PID=$!
+sleep 0.2
+ip netns exec "$NETNS_A" "$PROBE" send-virtual \
+    --source "$virtual_ip_a" \
+    --destination "$virtual_ip_b" \
+    --source-port 43230 \
+    --destination-port 43232 \
+    --payload "$denied_marker" \
+    --packet-id 232
+wait "$CAPTURE_PID"
+CAPTURE_PID=
+wait "$COLLECT_PID"
+COLLECT_PID=
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     ip netns exec "$NETNS_A" "$PROBE" icmp \
         --destination "$virtual_ip_b" \

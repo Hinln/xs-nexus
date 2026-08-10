@@ -534,6 +534,20 @@ def command_assert_no_xsp(arguments: argparse.Namespace) -> None:
     print("no-xsp-observed")
 
 
+def command_assert_no_relay(arguments: argparse.Namespace) -> None:
+    deadline = time.monotonic() + arguments.timeout
+    with open_packet_socket(arguments.interface, arguments.timeout) as sock:
+        while time.monotonic() < deadline:
+            try:
+                frame = sock.recv(65535)
+            except TimeoutError:
+                continue
+            record = parse_relay_frame(frame)
+            if record is not None and relay_frame_matches(record, arguments):
+                raise SystemExit("unexpected XSR datagram observed")
+    print("no-xsr-observed")
+
+
 def add_udp_endpoint_filters(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", type=ipv4)
     parser.add_argument("--destination", type=ipv4)
@@ -656,6 +670,17 @@ def build_parser() -> argparse.ArgumentParser:
     assert_no_xsp.add_argument("--timeout", type=float, default=1.0)
     add_endpoint_filters(assert_no_xsp)
     assert_no_xsp.set_defaults(handler=command_assert_no_xsp)
+
+    assert_no_relay = subcommands.add_parser("assert-no-relay")
+    assert_no_relay.add_argument("--interface", required=True)
+    assert_no_relay.add_argument("--timeout", type=float, default=1.0)
+    assert_no_relay.add_argument(
+        "--inner-packet-type",
+        choices=sorted(XSP_PACKET_TYPES),
+        default="data",
+    )
+    add_udp_endpoint_filters(assert_no_relay)
+    assert_no_relay.set_defaults(handler=command_assert_no_relay)
 
     return parser
 

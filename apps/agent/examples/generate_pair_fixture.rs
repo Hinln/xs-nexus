@@ -42,8 +42,12 @@ struct FixtureAgentConfig {
 struct FixtureManifest {
     a_config: PathBuf,
     b_config: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    c_config: Option<PathBuf>,
     a_virtual_ip: Ipv4Addr,
     b_virtual_ip: Ipv4Addr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    c_virtual_ip: Option<Ipv4Addr>,
 }
 
 struct NodeFixture<'a> {
@@ -61,6 +65,7 @@ struct NodeFixture<'a> {
 enum FixturePolicyMode {
     AllowAll,
     AclMatrix,
+    AclGate,
     SubnetNone,
     SubnetRouted,
     SubnetNat,
@@ -78,6 +83,13 @@ struct FixtureConfigurationContext<'a> {
     credential_not_after: chrono::DateTime<Utc>,
     candidate_not_after: chrono::DateTime<Utc>,
     signing_key: &'a SigningKey,
+}
+
+struct FixturePersistenceContext<'a> {
+    network_id: Uuid,
+    credential_not_after: chrono::DateTime<Utc>,
+    credential_key: &'a SigningKey,
+    configuration_key: &'a SigningKey,
 }
 
 type FixtureArguments = (
@@ -109,6 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         preferred_b,
         2,
     )?;
+    let node_c = create_acl_node_c(&root, policy_mode, endpoint_a, endpoint_b)?;
     let credential_key = signing_key()?;
     let configuration_key = signing_key()?;
     let network_id = Uuid::new_v4();
@@ -122,65 +135,166 @@ fn main() -> Result<(), Box<dyn Error>> {
         candidate_not_after,
         signing_key: &configuration_key,
     };
-    let configuration_a = signed_configuration(
-        &configuration_context,
+    let mut nodes = vec![&node_a, &node_b];
+    if let Some(node_c) = &node_c {
+        nodes.push(node_c);
+    }
+    let (configuration_a, configuration_b) =
+        signed_fixture_configurations(&configuration_context, &nodes, &node_b, policy_mode)?;
+    let persistence = FixturePersistenceContext {
+        network_id,
+        credential_not_after: not_after,
+        credential_key: &credential_key,
+        configuration_key: &configuration_key,
+    };
+    persist_fixture_nodes(
+        &persistence,
         &node_a,
         &node_b,
+        node_c.as_ref(),
+        &configuration_a,
+        &configuration_b,
+    )?;
+    let manifest = fixture_manifest(&node_a, &node_b, node_c.as_ref());
+    serde_json::to_writer(std::io::stdout().lock(), &manifest)?;
+    Ok(())
+}
+
+fn create_acl_node_c(
+    root: &Path,
+    policy_mode: FixturePolicyMode,
+    endpoint_a: SocketAddrV4,
+    endpoint_b: SocketAddrV4,
+) -> Result<Option<NodeFixture<'static>>, Box<dyn Error>> {
+    acl_node_c_endpoint(policy_mode, endpoint_a, endpoint_b)?
+        .map(|endpoint| {
+            create_node(
+                root,
+                "node-c",
+                "xsc0",
+                Ipv4Addr::new(100, 127, 253, 3),
+                endpoint,
+                None,
+                3,
+            )
+        })
+        .transpose()
+}
+
+fn signed_fixture_configurations(
+    context: &FixtureConfigurationContext<'_>,
+    nodes: &[&NodeFixture<'_>],
+    gateway: &NodeFixture<'_>,
+    mode: FixturePolicyMode,
+) -> Result<(SignedConfiguration, SignedConfiguration), Box<dyn Error>> {
+    let configuration_a = signed_configuration(
+        context,
+        nodes,
+        gateway,
         FixturePolicyView {
-            mode: policy_mode,
+            mode,
             receiver_view: false,
         },
     )?;
-    let configuration_b = if policy_mode == FixturePolicyMode::AclMatrix {
+    let configuration_b = if matches!(
+        mode,
+        FixturePolicyMode::AclMatrix | FixturePolicyMode::AclGate
+    ) {
         signed_configuration(
-            &configuration_context,
-            &node_a,
-            &node_b,
+            context,
+            nodes,
+            gateway,
             FixturePolicyView {
-                mode: policy_mode,
+                mode,
                 receiver_view: true,
             },
         )?
     } else {
         configuration_a.clone()
     };
+    Ok((configuration_a, configuration_b))
+}
 
+fn persist_fixture_nodes(
+    context: &FixturePersistenceContext<'_>,
+    node_a: &NodeFixture<'_>,
+    node_b: &NodeFixture<'_>,
+    node_c: Option<&NodeFixture<'_>>,
+    configuration_a: &SignedConfiguration,
+    configuration_b: &SignedConfiguration,
+) -> Result<(), Box<dyn Error>> {
     persist_node(
-        &node_a,
-        network_id,
-        not_after,
-        &credential_key,
-        &configuration_key,
-        &configuration_a,
+        node_a,
+        context.network_id,
+        context.credential_not_after,
+        context.credential_key,
+        context.configuration_key,
+        configuration_a,
     )?;
     persist_node(
-        &node_b,
-        network_id,
-        not_after,
-        &credential_key,
-        &configuration_key,
-        &configuration_b,
+        node_b,
+        context.network_id,
+        context.credential_not_after,
+        context.credential_key,
+        context.configuration_key,
+        configuration_b,
     )?;
+    if let Some(node_c) = node_c {
+        persist_node(
+            node_c,
+            context.network_id,
+            context.credential_not_after,
+            context.credential_key,
+            context.configuration_key,
+            configuration_a,
+        )?;
+    }
+    Ok(())
+}
 
-    let manifest = FixtureManifest {
+fn fixture_manifest(
+    node_a: &NodeFixture<'_>,
+    node_b: &NodeFixture<'_>,
+    node_c: Option<&NodeFixture<'_>>,
+) -> FixtureManifest {
+    FixtureManifest {
         a_config: node_a.root.join("agent.json"),
         b_config: node_b.root.join("agent.json"),
+        c_config: node_c.map(|node| node.root.join("agent.json")),
         a_virtual_ip: node_a.virtual_ip,
         b_virtual_ip: node_b.virtual_ip,
-    };
-    serde_json::to_writer(std::io::stdout().lock(), &manifest)?;
-    Ok(())
+        c_virtual_ip: node_c.map(|node| node.virtual_ip),
+    }
 }
 
 fn policy_mode() -> Result<FixturePolicyMode, Box<dyn Error>> {
     match env::var("XS_FIXTURE_ACL_MODE").as_deref() {
         Err(env::VarError::NotPresent) | Ok("allow_all") => Ok(FixturePolicyMode::AllowAll),
         Ok("acl_matrix") => Ok(FixturePolicyMode::AclMatrix),
+        Ok("acl_gate") => Ok(FixturePolicyMode::AclGate),
         Ok("subnet_none") => Ok(FixturePolicyMode::SubnetNone),
         Ok("subnet_routed") => Ok(FixturePolicyMode::SubnetRouted),
         Ok("subnet_nat") => Ok(FixturePolicyMode::SubnetNat),
         _ => Err("invalid XS_FIXTURE_ACL_MODE".into()),
     }
+}
+
+fn acl_node_c_endpoint(
+    policy_mode: FixturePolicyMode,
+    endpoint_a: SocketAddrV4,
+    endpoint_b: SocketAddrV4,
+) -> Result<Option<SocketAddrV4>, Box<dyn Error>> {
+    if policy_mode != FixturePolicyMode::AclGate {
+        if env::var_os("XS_FIXTURE_NODE_C_ENDPOINT").is_some() {
+            return Err("XS_FIXTURE_NODE_C_ENDPOINT requires acl_gate mode".into());
+        }
+        return Ok(None);
+    }
+    let endpoint = env::var("XS_FIXTURE_NODE_C_ENDPOINT")?.parse::<SocketAddrV4>()?;
+    if endpoint.port() == 0 || endpoint == endpoint_a || endpoint == endpoint_b {
+        return Err("invalid node C endpoint".into());
+    }
+    Ok(Some(endpoint))
 }
 
 fn candidate_not_after(
@@ -278,12 +392,13 @@ fn create_node(
 
 fn signed_configuration(
     context: &FixtureConfigurationContext<'_>,
-    node_a: &NodeFixture<'_>,
-    node_b: &NodeFixture<'_>,
+    nodes: &[&NodeFixture<'_>],
+    gateway: &NodeFixture<'_>,
     policy_view: FixturePolicyView,
 ) -> Result<SignedConfiguration, Box<dyn Error>> {
-    let nodes = [node_a, node_b]
-        .into_iter()
+    let nodes = nodes
+        .iter()
+        .copied()
         .map(|node| {
             let groups = match policy_view.mode {
                 FixturePolicyMode::AllowAll => vec!["test-nodes".to_owned()],
@@ -296,6 +411,13 @@ fn signed_configuration(
                     vec!["clients".to_owned()]
                 }
                 FixturePolicyMode::AclMatrix => vec!["servers".to_owned()],
+                FixturePolicyMode::AclGate if node.name == "node-a" => {
+                    vec!["acl-clients".to_owned()]
+                }
+                FixturePolicyMode::AclGate if node.name == "node-b" => {
+                    vec!["acl-servers".to_owned()]
+                }
+                FixturePolicyMode::AclGate => vec!["acl-denied".to_owned()],
                 FixturePolicyMode::SubnetNone
                 | FixturePolicyMode::SubnetRouted
                 | FixturePolicyMode::SubnetNat => vec!["gateways".to_owned()],
@@ -346,7 +468,7 @@ fn signed_configuration(
         nodes,
         relays: Vec::new(),
         policies: fixture_policies(policy_view),
-        subnet_routes: fixture_subnet_routes(policy_view, node_b),
+        subnet_routes: fixture_subnet_routes(policy_view, gateway),
     };
     let payload_bytes = serde_json::to_vec(&payload)?;
     let mut signing_input = Vec::with_capacity(CONFIGURATION_DOMAIN.len() + payload_bytes.len());
@@ -377,11 +499,12 @@ fn fixture_policies(policy_view: FixturePolicyView) -> Vec<AclRule> {
             rules.extend(acl_allow_rules());
             rules
         }
+        FixturePolicyMode::AclGate => acl_gate_rules(policy_view.receiver_view),
         FixturePolicyMode::SubnetNone => Vec::new(),
         FixturePolicyMode::SubnetRouted | FixturePolicyMode::SubnetNat => vec![
             AclRule {
-                id: "allow-client-subnet".to_owned(),
-                priority: 200,
+                id: "allow-client-subnet-icmp".to_owned(),
+                priority: 230,
                 action: AclAction::Allow,
                 sources: vec![AclSelector::Group {
                     name: "clients".to_owned(),
@@ -389,12 +512,34 @@ fn fixture_policies(policy_view: FixturePolicyView) -> Vec<AclRule> {
                 destinations: vec![AclSelector::Subnet {
                     cidr: "192.168.232.0/24".to_owned(),
                 }],
-                protocol: AclProtocol::Any,
+                protocol: AclProtocol::Icmp,
                 destination_ports: Vec::new(),
             },
             AclRule {
-                id: "allow-subnet-client".to_owned(),
-                priority: 190,
+                id: "allow-client-subnet-tcp".to_owned(),
+                priority: 220,
+                action: AclAction::Allow,
+                sources: vec![AclSelector::Group {
+                    name: "clients".to_owned(),
+                }],
+                destinations: vec![AclSelector::Subnet {
+                    cidr: "192.168.232.0/24".to_owned(),
+                }],
+                protocol: AclProtocol::Tcp,
+                destination_ports: vec![
+                    PortRange {
+                        start: 43221,
+                        end: 43221,
+                    },
+                    PortRange {
+                        start: 43223,
+                        end: 43223,
+                    },
+                ],
+            },
+            AclRule {
+                id: "allow-subnet-client-icmp".to_owned(),
+                priority: 210,
                 action: AclAction::Allow,
                 sources: vec![AclSelector::Subnet {
                     cidr: "192.168.232.0/24".to_owned(),
@@ -402,7 +547,20 @@ fn fixture_policies(policy_view: FixturePolicyView) -> Vec<AclRule> {
                 destinations: vec![AclSelector::Group {
                     name: "clients".to_owned(),
                 }],
-                protocol: AclProtocol::Any,
+                protocol: AclProtocol::Icmp,
+                destination_ports: Vec::new(),
+            },
+            AclRule {
+                id: "allow-subnet-client-tcp".to_owned(),
+                priority: 200,
+                action: AclAction::Allow,
+                sources: vec![AclSelector::Subnet {
+                    cidr: "192.168.232.0/24".to_owned(),
+                }],
+                destinations: vec![AclSelector::Group {
+                    name: "clients".to_owned(),
+                }],
+                protocol: AclProtocol::Tcp,
                 destination_ports: Vec::new(),
             },
         ],
@@ -418,6 +576,7 @@ fn fixture_subnet_routes(
         FixturePolicyMode::SubnetNat => SubnetRouteMode::Nat,
         FixturePolicyMode::AllowAll
         | FixturePolicyMode::AclMatrix
+        | FixturePolicyMode::AclGate
         | FixturePolicyMode::SubnetNone => return Vec::new(),
     };
     vec![ConfigurationSubnetRoute {
@@ -428,6 +587,152 @@ fn fixture_subnet_routes(
         interface_name: "xsm32lanb".to_owned(),
         priority: 100,
     }]
+}
+
+fn acl_gate_rules(receiver_view: bool) -> Vec<AclRule> {
+    let mut rules = acl_gate_receiver_denies(receiver_view);
+    rules.extend(acl_gate_direction_denies());
+    rules.extend(acl_gate_client_allows());
+    rules.extend(acl_gate_server_allows());
+    rules
+}
+
+fn acl_gate_receiver_denies(receiver_view: bool) -> Vec<AclRule> {
+    if receiver_view {
+        vec![
+            rule(
+                "deny-receiver-only-tcp",
+                900,
+                AclAction::Deny,
+                "acl-clients",
+                "acl-servers",
+                AclProtocol::Tcp,
+                vec![PortRange {
+                    start: 43315,
+                    end: 43315,
+                }],
+            ),
+            rule(
+                "deny-receiver-only-udp",
+                890,
+                AclAction::Deny,
+                "acl-clients",
+                "acl-servers",
+                AclProtocol::Udp,
+                vec![PortRange {
+                    start: 43316,
+                    end: 43316,
+                }],
+            ),
+        ]
+    } else {
+        Vec::new()
+    }
+}
+
+fn acl_gate_direction_denies() -> Vec<AclRule> {
+    vec![
+        rule(
+            "deny-client-c",
+            800,
+            AclAction::Deny,
+            "acl-clients",
+            "acl-denied",
+            AclProtocol::Any,
+            Vec::new(),
+        ),
+        rule(
+            "deny-c-server",
+            790,
+            AclAction::Deny,
+            "acl-denied",
+            "acl-servers",
+            AclProtocol::Any,
+            Vec::new(),
+        ),
+    ]
+}
+
+fn acl_gate_client_allows() -> Vec<AclRule> {
+    vec![
+        rule(
+            "allow-client-server-icmp",
+            700,
+            AclAction::Allow,
+            "acl-clients",
+            "acl-servers",
+            AclProtocol::Icmp,
+            Vec::new(),
+        ),
+        rule(
+            "allow-client-server-tcp",
+            600,
+            AclAction::Allow,
+            "acl-clients",
+            "acl-servers",
+            AclProtocol::Tcp,
+            vec![
+                PortRange {
+                    start: 43311,
+                    end: 43311,
+                },
+                PortRange {
+                    start: 43315,
+                    end: 43315,
+                },
+            ],
+        ),
+        rule(
+            "allow-client-server-udp",
+            590,
+            AclAction::Allow,
+            "acl-clients",
+            "acl-servers",
+            AclProtocol::Udp,
+            vec![
+                PortRange {
+                    start: 43313,
+                    end: 43313,
+                },
+                PortRange {
+                    start: 43316,
+                    end: 43316,
+                },
+            ],
+        ),
+    ]
+}
+
+fn acl_gate_server_allows() -> Vec<AclRule> {
+    vec![
+        rule(
+            "allow-server-client-icmp",
+            500,
+            AclAction::Allow,
+            "acl-servers",
+            "acl-clients",
+            AclProtocol::Icmp,
+            Vec::new(),
+        ),
+        rule(
+            "allow-server-client-tcp",
+            490,
+            AclAction::Allow,
+            "acl-servers",
+            "acl-clients",
+            AclProtocol::Tcp,
+            Vec::new(),
+        ),
+        rule(
+            "allow-server-client-udp",
+            480,
+            AclAction::Allow,
+            "acl-servers",
+            "acl-clients",
+            AclProtocol::Udp,
+            Vec::new(),
+        ),
+    ]
 }
 
 fn acl_deny_rules(receiver_view: bool) -> Vec<AclRule> {

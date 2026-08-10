@@ -268,6 +268,65 @@ if ! ip netns exec "$NETNS_A" "$PROBE" icmp \
 fi
 run_tcp_probe xs-m32-routed 43221
 
+ip netns exec "$NETNS_LAN" "$PROBE" tcp-server \
+    --bind 192.168.232.2 \
+    --port 43222 \
+    --request xs-gate09-subnet-tcp-denied-request \
+    --response xs-gate09-subnet-tcp-denied-response \
+    --timeout 1.5 >"$FIXTURE_ROOT/subnet-tcp-denied-server.log" 2>&1 &
+subnet_tcp_denied_pid=$!
+ip netns exec "$NETNS_A" "$PROBE" assert-no-xsp \
+    --interface "$UNDERLAY_A" \
+    --source 10.232.0.1 \
+    --destination 10.232.0.2 \
+    --source-port 42001 \
+    --destination-port 42001 \
+    --packet-type data \
+    --timeout 1.5 >"$FIXTURE_ROOT/subnet-tcp-denied-capture.log" 2>&1 &
+subnet_tcp_denied_capture_pid=$!
+sleep 0.2
+if ip netns exec "$NETNS_A" "$PROBE" tcp-client \
+    --destination 192.168.232.2 \
+    --port 43222 \
+    --request xs-gate09-subnet-tcp-denied-request \
+    --response xs-gate09-subnet-tcp-denied-response \
+    --timeout 1 >"$FIXTURE_ROOT/subnet-tcp-denied-client.log" 2>&1; then
+    printf 'subnet route bypassed the TCP ACL\n' >&2
+    exit 1
+fi
+wait "$subnet_tcp_denied_capture_pid"
+if wait "$subnet_tcp_denied_pid"; then
+    printf 'ACL-denied TCP reached the routed subnet\n' >&2
+    exit 1
+fi
+
+ip netns exec "$NETNS_LAN" "$PROBE" collect-udp \
+    --bind 192.168.232.2 \
+    --port 43224 \
+    --expected xs-gate09-subnet-udp-denied \
+    --count 0 \
+    --timeout 1.5 >"$FIXTURE_ROOT/subnet-udp-denied-server.log" 2>&1 &
+subnet_udp_denied_pid=$!
+ip netns exec "$NETNS_A" "$PROBE" assert-no-xsp \
+    --interface "$UNDERLAY_A" \
+    --source 10.232.0.1 \
+    --destination 10.232.0.2 \
+    --source-port 42001 \
+    --destination-port 42001 \
+    --packet-type data \
+    --timeout 1.5 >"$FIXTURE_ROOT/subnet-udp-denied-capture.log" 2>&1 &
+subnet_udp_denied_capture_pid=$!
+sleep 0.2
+ip netns exec "$NETNS_A" "$PROBE" send-virtual \
+    --source 100.127.253.1 \
+    --destination 192.168.232.2 \
+    --source-port 53224 \
+    --destination-port 43224 \
+    --payload xs-gate09-subnet-udp-denied \
+    --packet-id 324
+wait "$subnet_udp_denied_capture_pid"
+wait "$subnet_udp_denied_pid"
+
 ip netns exec "$NETNS_A" "$PROBE" assert-no-xsp \
     --interface "$UNDERLAY_A" \
     --source 10.232.0.1 \
