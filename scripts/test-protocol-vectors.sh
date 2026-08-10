@@ -32,6 +32,12 @@ import sys
 from pathlib import Path
 
 vector = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_retry_semantics = {
+    "encrypted_control": "same-payload-fresh-sequence",
+    "finish": "exact-frame",
+}
+if vector.get("retry_semantics") != expected_retry_semantics:
+    raise SystemExit("Session vector retry semantics mismatch")
 
 def changed(original, index, *, value=None):
     malformed = bytearray(original)

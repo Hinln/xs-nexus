@@ -14,7 +14,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 TARGETS = ("credential", "data", "discovery", "handshake", "relay", "session_state")
-SESSION_SOURCE = "\n".join(MODULE.SESSION_STATE_TOKENS)
+SESSION_SOURCE = "\n".join((*MODULE.SESSION_STATE_TOKENS, *MODULE.SESSION_RETRY_TOKENS))
 
 
 def write_fixture(root: Path) -> None:
@@ -146,6 +146,14 @@ def main() -> int:
             ".retire_epoch",
         ),
         "missing lifecycle operation",
+    )
+    validate_mutation(
+        lambda root: replace(
+            root / "fuzz" / "fuzz_targets" / "session_state.rs",
+            "assert_ne!(client_update_retry_frame, client_update_frame)",
+            "assert_eq!(client_update_retry_frame, client_update_frame)",
+        ),
+        "missing fresh-sequence retry invariant",
     )
     validate_mutation(
         lambda root: replace(

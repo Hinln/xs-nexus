@@ -29,6 +29,12 @@ SESSION_STATE_TOKENS = (
     "key_update_payload",
     "verify_key_update_payload",
 )
+SESSION_RETRY_TOKENS = (
+    "assert_ne!(client_update_retry_frame, client_update_frame)",
+    "assert_ne!(server_update_retry_frame, server_update_frame)",
+    "open(&client_update_retry_frame)",
+    "open(&server_update_retry_frame)",
+)
 
 
 def read_text(path: Path, failures: list[str]) -> str:
@@ -97,6 +103,12 @@ def validate_repository(root: Path) -> list[str]:
             failures.append(
                 "fuzz/fuzz_targets/session_state.rs: "
                 f"missing lifecycle operation {token}"
+            )
+    for token in SESSION_RETRY_TOKENS:
+        if token not in session_source:
+            failures.append(
+                "fuzz/fuzz_targets/session_state.rs: "
+                f"missing fresh-sequence retry invariant {token}"
             )
     if "unsafe" in session_source:
         failures.append("fuzz/fuzz_targets/session_state.rs: unsafe is forbidden")
