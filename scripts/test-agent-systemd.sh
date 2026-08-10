@@ -315,7 +315,9 @@ for _ in {1..50}; do
     ! systemctl is-active --quiet "$unit.service" && break
     sleep 0.1
 done
-! systemctl is-active --quiet "$unit.service"
+if systemctl is-active --quiet "$unit.service"; then
+    exit 1
+fi
 
 current_step=crash_cleanup
 "$ROOT_DIR/target/debug/xs-agent" cleanup --config "$config_path" >/dev/null
