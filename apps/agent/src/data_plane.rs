@@ -224,11 +224,7 @@ impl RetryState {
     fn handshake(encoded: Vec<u8>, now: Instant) -> Self {
         Self {
             encoded,
-            schedule: RetrySchedule::new(
-                now,
-                HANDSHAKE_RETRY_INTERVAL,
-                HANDSHAKE_MAX_ATTEMPTS,
-            ),
+            schedule: RetrySchedule::new(now, HANDSHAKE_RETRY_INTERVAL, HANDSHAKE_MAX_ATTEMPTS),
         }
     }
 
@@ -1920,10 +1916,7 @@ fn handle_key_update_ack(established: &mut EstablishedPeer, opened: &xs_protocol
     established.outbound_key_update = None;
 }
 
-fn maintain_established(
-    established: &mut EstablishedPeer,
-    now: Instant,
-) -> EstablishedMaintenance {
+fn maintain_established(established: &mut EstablishedPeer, now: Instant) -> EstablishedMaintenance {
     if established
         .previous_epoch_installed_at
         .is_some_and(|installed| now.duration_since(installed) >= PREVIOUS_EPOCH_RETENTION)
@@ -1961,9 +1954,10 @@ fn maintain_established(
         else {
             return EstablishedMaintenance::Rehandshake;
         };
-        let Ok(encoded) = established
-            .sender
-            .seal_control(PacketType::KeyUpdate, DataFlags::CONTROL, 0, &payload)
+        let Ok(encoded) =
+            established
+                .sender
+                .seal_control(PacketType::KeyUpdate, DataFlags::CONTROL, 0, &payload)
         else {
             return EstablishedMaintenance::Rehandshake;
         };
@@ -1976,9 +1970,10 @@ fn maintain_established(
     }
 
     if now.duration_since(established.last_keepalive_at) >= KEEPALIVE_INTERVAL {
-        let Ok(encoded) = established
-            .sender
-            .seal_control(PacketType::Keepalive, DataFlags::NONE, 0, &[])
+        let Ok(encoded) =
+            established
+                .sender
+                .seal_control(PacketType::Keepalive, DataFlags::NONE, 0, &[])
         else {
             return EstablishedMaintenance::Rehandshake;
         };
@@ -2273,11 +2268,8 @@ mod tests {
 
     fn established_test_peers(now: Instant) -> (Peer, Peer, SocketAddr, SocketAddr) {
         let fixture = protocol_fixture();
-        let client = ClientHelloSent::start(
-            client_parameters(&fixture),
-            &fixture.client_identity,
-        )
-        .expect("client hello");
+        let client = ClientHelloSent::start(client_parameters(&fixture), &fixture.client_identity)
+            .expect("client hello");
         let server = ServerHelloSent::accept(
             client.encoded(),
             server_parameters(&fixture),
@@ -2478,13 +2470,7 @@ mod tests {
         let EstablishedMaintenance::Send(first) = maintain_established(client, now) else {
             panic!("initial key update must be sent");
         };
-        let first_response = handle_data(
-            &mut server_peer,
-            client_endpoint,
-            &first,
-            now,
-            false,
-        );
+        let first_response = handle_data(&mut server_peer, client_endpoint, &first, now, false);
         assert_eq!(first_response.outbound.len(), 1);
 
         let retry_time = now + KEY_UPDATE_RETRY_INTERVAL;
@@ -2495,13 +2481,8 @@ mod tests {
             panic!("key update retry must be sent");
         };
         assert_ne!(first, retry, "AEAD retries require a fresh sequence");
-        let retry_response = handle_data(
-            &mut server_peer,
-            client_endpoint,
-            &retry,
-            retry_time,
-            false,
-        );
+        let retry_response =
+            handle_data(&mut server_peer, client_endpoint, &retry, retry_time, false);
         assert_eq!(retry_response.outbound.len(), 1);
         let _ = handle_data(
             &mut client_peer,
@@ -2524,13 +2505,7 @@ mod tests {
             established_test_peers(now);
         let first = create_path_probe(&mut client_peer, server_endpoint, now)
             .expect("initial path challenge");
-        let first_response = handle_data(
-            &mut server_peer,
-            client_endpoint,
-            &first,
-            now,
-            false,
-        );
+        let first_response = handle_data(&mut server_peer, client_endpoint, &first, now, false);
         assert_eq!(first_response.outbound.len(), 1);
 
         let retry_time = now + PATH_PROBE_RETRY_INTERVAL;
@@ -2539,13 +2514,8 @@ mod tests {
             .expect("path challenge retry");
         assert_eq!(retry_endpoint, server_endpoint);
         assert_ne!(first, retry, "AEAD retries require a fresh sequence");
-        let retry_response = handle_data(
-            &mut server_peer,
-            client_endpoint,
-            &retry,
-            retry_time,
-            false,
-        );
+        let retry_response =
+            handle_data(&mut server_peer, client_endpoint, &retry, retry_time, false);
         assert_eq!(retry_response.outbound.len(), 1);
         let _ = handle_data(
             &mut client_peer,
@@ -2561,11 +2531,8 @@ mod tests {
     fn duplicate_client_finish_retransmits_cached_server_finish() {
         let now = Instant::now();
         let fixture = protocol_fixture();
-        let client = ClientHelloSent::start(
-            client_parameters(&fixture),
-            &fixture.client_identity,
-        )
-        .expect("client hello");
+        let client = ClientHelloSent::start(client_parameters(&fixture), &fixture.client_identity)
+            .expect("client hello");
         let request_hash = Sha256::digest(client.encoded()).into();
         let server = ServerHelloSent::accept(
             client.encoded(),
@@ -2621,8 +2588,7 @@ mod tests {
             EstablishedMaintenance::Send(_)
         ));
         for attempt in 2..=KEY_UPDATE_MAX_ATTEMPTS {
-            let retry_time =
-                now + KEY_UPDATE_RETRY_INTERVAL * u32::from(attempt.saturating_sub(1));
+            let retry_time = now + KEY_UPDATE_RETRY_INTERVAL * u32::from(attempt.saturating_sub(1));
             assert!(matches!(
                 maintain_established(client, retry_time),
                 EstablishedMaintenance::Send(_)

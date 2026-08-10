@@ -384,16 +384,8 @@ fuzz_target!(|input: &[u8]| {
     );
     assert!(server_receiver.open(&client_update_frame).is_err());
     assert!(client_receiver.open(&server_update_frame).is_err());
-    assert!(
-        server_receiver
-            .open(&client_update_retry_frame)
-            .is_err()
-    );
-    assert!(
-        client_receiver
-            .open(&server_update_retry_frame)
-            .is_err()
-    );
+    assert!(server_receiver.open(&client_update_retry_frame).is_err());
+    assert!(client_receiver.open(&server_update_retry_frame).is_err());
 
     assert!(client_sender.rotate_epoch(0).is_err());
     assert!(client_sender.rotate_epoch(2).is_err());
