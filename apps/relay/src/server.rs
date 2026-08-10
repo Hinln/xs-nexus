@@ -992,15 +992,13 @@ mod tests {
         assert_eq!(snapshot.packets_dropped, 0);
         assert_eq!(snapshot.queued_packets, 0);
         assert_eq!(snapshot.queued_bytes, 0);
-        let total_bytes = u64::from(packets)
-            .checked_mul(u64::from(frame_bytes))
-            .expect("byte count fits u64");
+        let total_mib = f64::from(packets) * f64::from(frame_bytes) / 1_048_576.0;
         let report = serde_json::json!({
             "packets": packets,
             "frame_bytes": frame_bytes,
             "elapsed_ms": elapsed.as_secs_f64() * 1000.0,
             "packets_per_second": f64::from(packets) / elapsed.as_secs_f64(),
-            "mib_per_second": f64::from(total_bytes) / elapsed.as_secs_f64() / 1_048_576.0,
+            "mib_per_second": total_mib / elapsed.as_secs_f64(),
             "forwarding_latency_microseconds_average": snapshot.forwarding_latency_microseconds_average,
             "forwarding_latency_microseconds_max": snapshot.forwarding_latency_microseconds_max,
         });
