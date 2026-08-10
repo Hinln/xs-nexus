@@ -1370,7 +1370,7 @@ mod tests {
                 client_time: now,
                 credential,
             },
-            &identity_key,
+            identity_key,
         );
         socket
             .send_to(&request, context.relay_endpoint)
