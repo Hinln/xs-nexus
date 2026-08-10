@@ -6,8 +6,7 @@ use ed25519_dalek::SigningKey;
 use libfuzzer_sys::fuzz_target;
 use xs_protocol::{
     ClientHandshakeParameters, ClientHelloSent, CredentialClaims, EphemeralPrivateKey,
-    HandshakeContext, ServerHandshakeParameters, ServerHelloSent, role_set_digest,
-    sign_credential,
+    HandshakeContext, ServerHandshakeParameters, ServerHelloSent, role_set_digest, sign_credential,
 };
 
 const NOW: u64 = 1_700_000_100;
@@ -110,7 +109,9 @@ fn server_parameters(fixture: &Fixture) -> ServerHandshakeParameters {
 
 fuzz_target!(|input: &[u8]| {
     let fixture = fixture();
-    let (mode, message) = input.split_first().map_or((0, &[][..]), |(mode, rest)| (*mode, rest));
+    let (mode, message) = input
+        .split_first()
+        .map_or((0, &[][..]), |(mode, rest)| (*mode, rest));
 
     match mode % 4 {
         0 => {
@@ -152,11 +153,7 @@ fuzz_target!(|input: &[u8]| {
             )
             .expect("fixed server hello");
             let client_finish = client
-                .accept_server_hello(
-                    server.encoded(),
-                    &fixture.controller.verifying_key(),
-                    NOW,
-                )
+                .accept_server_hello(server.encoded(), &fixture.controller.verifying_key(), NOW)
                 .expect("fixed client finish");
             let _ = client_finish.accept_server_finish(message);
         }

@@ -5,8 +5,8 @@ use std::net::Ipv4Addr;
 use ed25519_dalek::SigningKey;
 use libfuzzer_sys::fuzz_target;
 use xs_protocol::{
-    CredentialClaims, DiscoveryRequest, role_set_digest, sign_credential,
-    verify_discovery_request, verify_discovery_response,
+    CredentialClaims, DiscoveryRequest, role_set_digest, sign_credential, verify_discovery_request,
+    verify_discovery_response,
 };
 
 const NOW: u64 = 1_700_000_100;
@@ -29,15 +29,9 @@ fuzz_target!(|input: &[u8]| {
         },
         &controller,
     );
-    let request = DiscoveryRequest::new(
-        network_id,
-        node_id,
-        [51_u8; 16],
-        NOW,
-        credential,
-        &identity,
-    )
-    .expect("fixed discovery request");
+    let request =
+        DiscoveryRequest::new(network_id, node_id, [51_u8; 16], NOW, credential, &identity)
+            .expect("fixed discovery request");
 
     let _ = verify_discovery_request(input, &controller.verifying_key(), NOW);
     let _ = verify_discovery_response(input, &request, &controller.verifying_key(), NOW);

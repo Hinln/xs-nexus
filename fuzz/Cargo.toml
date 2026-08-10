@@ -47,4 +47,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "session_state"
+path = "fuzz_targets/session_state.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
