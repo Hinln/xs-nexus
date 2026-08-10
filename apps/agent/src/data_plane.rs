@@ -902,23 +902,10 @@ impl UdpDataPlane {
                     }
                 }
             }
-            let established_maintenance = match &mut peer.state {
-                PeerState::Established(established) => maintain_established(established, now),
-                _ => EstablishedMaintenance::Wait,
-            };
-            match established_maintenance {
-                EstablishedMaintenance::Wait => {}
-                EstablishedMaintenance::Send(encoded) => {
-                    if let Some(endpoint) = peer.active_endpoint {
-                        retransmissions.push((endpoint, peer.node_id, encoded));
-                    }
-                }
-                EstablishedMaintenance::Rehandshake => {
-                    peer.state = PeerState::Idle;
-                    peer.pending_path_probe = None;
-                    peer.handshake_candidate_attempts = 0;
-                    peer.next_proactive_handshake_at = now;
-                }
+            if let Some(encoded) = maintain_peer_session(peer, now)
+                && let Some(endpoint) = peer.active_endpoint
+            {
+                retransmissions.push((endpoint, peer.node_id, encoded));
             }
             if let Some((endpoint, encoded)) = maintain_path_probe(peer, now)? {
                 retransmissions.push((endpoint, peer.node_id, encoded));
@@ -1914,6 +1901,24 @@ fn handle_key_update_ack(established: &mut EstablishedPeer, opened: &xs_protocol
     established.sent_packets_in_epoch = 0;
     established.epoch_started_at = Instant::now();
     established.outbound_key_update = None;
+}
+
+fn maintain_peer_session(peer: &mut Peer, now: Instant) -> Option<Vec<u8>> {
+    let maintenance = match &mut peer.state {
+        PeerState::Established(established) => maintain_established(established, now),
+        _ => EstablishedMaintenance::Wait,
+    };
+    match maintenance {
+        EstablishedMaintenance::Wait => None,
+        EstablishedMaintenance::Send(encoded) => Some(encoded),
+        EstablishedMaintenance::Rehandshake => {
+            peer.state = PeerState::Idle;
+            peer.pending_path_probe = None;
+            peer.handshake_candidate_attempts = 0;
+            peer.next_proactive_handshake_at = now;
+            None
+        }
+    }
 }
 
 fn maintain_established(established: &mut EstablishedPeer, now: Instant) -> EstablishedMaintenance {
