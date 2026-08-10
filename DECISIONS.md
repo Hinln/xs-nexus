@@ -1044,3 +1044,14 @@
 - 门禁：所有远程 `uses:` 必须为小写 40 位 commit SHA；四项已复核 Node 24 Action 必须精确匹配 commit 与版本标签；checkout 缺少 `persist-credentials: false` 即失败。正向和五类负向 fixture 在 `security-check` 中执行。
 - 证据：预修复 run `31324714609` 保留 Node 20 annotation；实现提交 `e63c59bc7c54b78de94b01885fa9af1b54a31746`、`98ca145c197b1d2af20d7cf5df28008820a25e50`；最终 GitHub Actions run `31325753985` 四项 job 全通过且 annotation 数均为 0。
 - 边界：Action 运行时和 token 最小化只加固 CI，不构成正式 release key、签名 RC、部署 provenance 或第三方供应链审计。
+
+---
+
+## ADR-091：握手 Finish 精确重传，加密控制重试使用新序列
+
+- 状态：接受
+- 日期：2026-08-10
+- 背景：Finish 的固定 nonce 要求网络重传逐字节相同；但已建立数据面的 PathChallenge 和 KeyUpdate 受序列重放窗口保护，逐字节重发会在首次请求已处理而响应丢失时被拒绝，导致路径探测或轮换无法恢复。Server 若发送 ServerFinish 后立即丢弃编码，也无法恢复最终响应丢包。
+- 决策：Server 在有界握手重试窗口内按 ClientFinish 摘要缓存精确 ServerFinish，匹配重复请求只返回缓存帧且不授权路径迁移。PathChallenge 和 KeyUpdate 保持逻辑 Path ID/token 或 payload/Epoch 不变，但每次重试通过当前发送器生成新的单调序列与 AEAD 密文。KeyUpdate 重试耗尽、序列耗尽或状态不确定时丢弃会话并完整重握手。
+- 兼容性：XSP/1 版本、字段、长度、密钥派生和首个请求编码均不变；旧实现仍可处理新序列重试。测试向量新增 `retry_semantics` 元数据，不改变既有字节向量；Fuzz 状态机和 corpus 覆盖同 payload 的新序列重试与旧密文重放拒绝。
+- 验证边界：内部回归只能证明实现行为，不替代独立密码学审计、真实 WAN 丢包矩阵或正式发布门禁；这些 Gate 状态保持原结论，直至各自原始证据完成。

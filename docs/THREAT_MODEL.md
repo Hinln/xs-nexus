@@ -103,6 +103,7 @@ flowchart LR
 | T23 | 伪造路径迁移 | 会话流量被引向攻击者或黑洞 | 新端点完成握手或 AEAD PathChallenge/PathResponse，来源端点、Path ID、token、序列和重放窗口全绑定 | 攻击者仍可丢弃或延迟探测报文 |
 | T24 | 伪造、重放或污染遥测 | 隐藏故障、误导运维或放大数据库 | Agent/Relay 独立身份签名、boot/sequence、时间窗、同 boot 累计单调性、精确 Peer/Relay 目录校验、报告/样本上限和 25 小时保留 | 被攻陷的合法 Agent/Relay 可谎报自身运行状况，但不能伪造其他主体；Console 指标不是授权依据 |
 | T25 | 备份介质泄露、篡改或与主机同故障域丢失 | 数据泄露、不可恢复或恢复污染 | age X25519 流式加密、认证 manifest、密文 hash、不同文件系统 marker、自动复制、离线 identity 深度校验、最小保留和销毁墓碑 | 数据库主机 root 可破坏新备份可用性；正式 identity 托管、真实异地主机和恢复演练仍需 `BLK-007` |
+| T26 | 丢失最终握手响应或加密控制确认 | 握手、路径迁移或密钥轮换永久停滞 | 精确缓存 ServerFinish；PathChallenge/KeyUpdate 重试保持逻辑 payload 但使用新序列重新加密；重试耗尽强制完整重握手 | 持续丢包仍可造成可用性下降，需外部网络缓解和告警 |
 
 ## 7. 关键滥用场景
 
@@ -134,7 +135,7 @@ Controller 只接受固定 334 字节、包含有效节点凭证和节点身份�
 
 ### 7.7 攻击者伪造端点变化
 
-未认证 UDP 源地址变化不会修改活动路径。已建立会话只对更高优先级候选发送 AEAD PathChallenge，并要求同一来源端点返回匹配 Path ID 和 8 字节 token 的 AEAD PathResponse；重放或来自其他端点的响应不能晋升路径。
+未认证 UDP 源地址变化不会修改活动路径。已建立会话只对更高优先级候选发送 AEAD PathChallenge，并要求同一来源端点返回匹配 Path ID 和 8 字节 token 的 AEAD PathResponse；丢失响应后的重试必须使用新序列重新加密，逐字节重放或来自其他端点的响应不能晋升路径。
 
 ## 8. 测试映射
 

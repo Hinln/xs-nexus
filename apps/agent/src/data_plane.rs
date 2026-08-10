@@ -38,6 +38,7 @@ const MAX_RECENT_CLIENT_HELLOS: usize = 64;
 const CLIENT_HELLO_CACHE_LIFETIME: Duration = Duration::from_mins(5);
 const HANDSHAKE_RETRY_INTERVAL: Duration = Duration::from_millis(300);
 const HANDSHAKE_MAX_ATTEMPTS: u8 = 6;
+const SERVER_FINISH_CACHE_LIFETIME: Duration = Duration::from_secs(5);
 const MAX_CONCURRENT_PROACTIVE_HANDSHAKES: usize = 32;
 const MAX_PROACTIVE_HANDSHAKES_PER_TICK: usize = 8;
 const MAX_HANDSHAKE_CANDIDATES_PER_CYCLE: usize = 8;
@@ -100,6 +101,7 @@ struct Peer {
     queued_packets: VecDeque<QueuedPacket>,
     queued_bytes: usize,
     recent_client_hellos: VecDeque<([u8; 32], Instant)>,
+    cached_server_finish: Option<CachedServerFinish>,
     pending_path_probe: Option<PendingPathProbe>,
     path_probe_retry_after: Instant,
     next_latency_probe_at: Instant,
@@ -188,7 +190,8 @@ struct EstablishedPeer {
 
 struct PendingKeyUpdate {
     next_epoch: u32,
-    retry: RetryState,
+    payload: [u8; 36],
+    retry: RetrySchedule,
 }
 
 struct PendingPathProbe {
@@ -196,11 +199,21 @@ struct PendingPathProbe {
     path_id: u32,
     token: [u8; 8],
     promotes_path: bool,
-    retry: RetryState,
+    retry: RetrySchedule,
+}
+
+struct CachedServerFinish {
+    client_finish_hash: [u8; 32],
+    encoded: Vec<u8>,
+    expires_at: Instant,
 }
 
 struct RetryState {
     encoded: Vec<u8>,
+    schedule: RetrySchedule,
+}
+
+struct RetrySchedule {
     last_sent: Instant,
     attempts: u8,
     interval: Duration,
@@ -209,35 +222,36 @@ struct RetryState {
 
 impl RetryState {
     fn handshake(encoded: Vec<u8>, now: Instant) -> Self {
-        Self::new(
-            encoded,
-            now,
-            HANDSHAKE_RETRY_INTERVAL,
-            HANDSHAKE_MAX_ATTEMPTS,
-        )
-    }
-
-    fn key_update(encoded: Vec<u8>, now: Instant) -> Self {
-        Self::new(
-            encoded,
-            now,
-            KEY_UPDATE_RETRY_INTERVAL,
-            KEY_UPDATE_MAX_ATTEMPTS,
-        )
-    }
-
-    fn path_probe(encoded: Vec<u8>, now: Instant) -> Self {
-        Self::new(
-            encoded,
-            now,
-            PATH_PROBE_RETRY_INTERVAL,
-            PATH_PROBE_MAX_ATTEMPTS,
-        )
-    }
-
-    fn new(encoded: Vec<u8>, now: Instant, interval: Duration, max_attempts: u8) -> Self {
         Self {
             encoded,
+            schedule: RetrySchedule::new(
+                now,
+                HANDSHAKE_RETRY_INTERVAL,
+                HANDSHAKE_MAX_ATTEMPTS,
+            ),
+        }
+    }
+
+    fn poll(&mut self, now: Instant) -> RetryAction {
+        match self.schedule.poll(now) {
+            RetryDecision::Wait => RetryAction::Wait,
+            RetryDecision::Retry => RetryAction::Send(self.encoded.clone()),
+            RetryDecision::Expired => RetryAction::Expired,
+        }
+    }
+}
+
+impl RetrySchedule {
+    fn key_update(now: Instant) -> Self {
+        Self::new(now, KEY_UPDATE_RETRY_INTERVAL, KEY_UPDATE_MAX_ATTEMPTS)
+    }
+
+    fn path_probe(now: Instant) -> Self {
+        Self::new(now, PATH_PROBE_RETRY_INTERVAL, PATH_PROBE_MAX_ATTEMPTS)
+    }
+
+    fn new(now: Instant, interval: Duration, max_attempts: u8) -> Self {
+        Self {
             last_sent: now,
             attempts: 1,
             interval,
@@ -245,16 +259,16 @@ impl RetryState {
         }
     }
 
-    fn poll(&mut self, now: Instant) -> RetryAction {
+    fn poll(&mut self, now: Instant) -> RetryDecision {
         if now.duration_since(self.last_sent) < self.interval {
-            return RetryAction::Wait;
+            return RetryDecision::Wait;
         }
         if self.attempts >= self.max_attempts {
-            return RetryAction::Expired;
+            return RetryDecision::Expired;
         }
         self.attempts = self.attempts.saturating_add(1);
         self.last_sent = now;
-        RetryAction::Send(self.encoded.clone())
+        RetryDecision::Retry
     }
 }
 
@@ -262,6 +276,18 @@ enum RetryAction {
     Wait,
     Send(Vec<u8>),
     Expired,
+}
+
+enum RetryDecision {
+    Wait,
+    Retry,
+    Expired,
+}
+
+enum EstablishedMaintenance {
+    Wait,
+    Send(Vec<u8>),
+    Rehandshake,
 }
 
 struct ProcessResult {
@@ -860,6 +886,7 @@ impl UdpDataPlane {
         let mut proactive_started = 0_usize;
         for peer in self.peers_by_virtual_ip.values_mut() {
             prune_client_hello_cache(peer, now);
+            prune_server_finish_cache(peer, now);
             match poll_peer_retry(peer, now) {
                 RetryAction::Wait => {}
                 RetryAction::Send(encoded) => {
@@ -879,11 +906,23 @@ impl UdpDataPlane {
                     }
                 }
             }
-            if let PeerState::Established(established) = &mut peer.state
-                && let Some(encoded) = maintain_established(established, now)?
-                && let Some(endpoint) = peer.active_endpoint
-            {
-                retransmissions.push((endpoint, peer.node_id, encoded));
+            let established_maintenance = match &mut peer.state {
+                PeerState::Established(established) => maintain_established(established, now),
+                _ => EstablishedMaintenance::Wait,
+            };
+            match established_maintenance {
+                EstablishedMaintenance::Wait => {}
+                EstablishedMaintenance::Send(encoded) => {
+                    if let Some(endpoint) = peer.active_endpoint {
+                        retransmissions.push((endpoint, peer.node_id, encoded));
+                    }
+                }
+                EstablishedMaintenance::Rehandshake => {
+                    peer.state = PeerState::Idle;
+                    peer.pending_path_probe = None;
+                    peer.handshake_candidate_attempts = 0;
+                    peer.next_proactive_handshake_at = now;
+                }
             }
             if let Some((endpoint, encoded)) = maintain_path_probe(peer, now)? {
                 retransmissions.push((endpoint, peer.node_id, encoded));
@@ -1092,6 +1131,7 @@ fn build_peer_directory(
                 queued_packets: VecDeque::new(),
                 queued_bytes: 0,
                 recent_client_hellos: VecDeque::new(),
+                cached_server_finish: None,
                 pending_path_probe: None,
                 path_probe_retry_after: now,
                 next_latency_probe_at: now,
@@ -1365,11 +1405,37 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
         peer.pending_path_probe = None;
         return Ok(None);
     }
-    if let Some(pending) = &mut peer.pending_path_probe {
-        return match pending.retry.poll(now) {
-            RetryAction::Wait => Ok(None),
-            RetryAction::Send(encoded) => Ok(Some((pending.endpoint, encoded))),
-            RetryAction::Expired => {
+    if peer.pending_path_probe.is_some() {
+        let decision = peer
+            .pending_path_probe
+            .as_mut()
+            .map(|pending| pending.retry.poll(now))
+            .ok_or(AgentError::DataPlane)?;
+        return match decision {
+            RetryDecision::Wait => Ok(None),
+            RetryDecision::Retry => {
+                let pending = peer
+                    .pending_path_probe
+                    .as_ref()
+                    .ok_or(AgentError::DataPlane)?;
+                let endpoint = pending.endpoint;
+                let path_id = pending.path_id;
+                let token = pending.token;
+                let PeerState::Established(established) = &mut peer.state else {
+                    return Err(AgentError::DataPlane);
+                };
+                let encoded = established
+                    .sender
+                    .seal_control(
+                        PacketType::PathChallenge,
+                        DataFlags::PATH_PROBE,
+                        path_id,
+                        &token,
+                    )
+                    .map_err(|_| AgentError::DataPlane)?;
+                Ok(Some((endpoint, encoded)))
+            }
+            RetryDecision::Expired => {
                 peer.pending_path_probe = None;
                 peer.path_probe_retry_after = now + PATH_PROBE_COOLDOWN;
                 peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
@@ -1414,7 +1480,7 @@ fn create_path_probe(peer: &mut Peer, endpoint: SocketAddr, now: Instant) -> Res
         path_id,
         token,
         promotes_path: peer.active_endpoint != Some(endpoint),
-        retry: RetryState::path_probe(encoded.clone(), now),
+        retry: RetrySchedule::path_probe(now),
     });
     peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
     Ok(encoded)
@@ -1493,7 +1559,7 @@ fn process_datagram(
     match datagram.get(5).copied() {
         Some(CLIENT_HELLO_TYPE) => handle_client_hello(material, peer, datagram, now),
         Some(SERVER_HELLO_TYPE) => handle_server_hello(material, peer, datagram, now),
-        Some(CLIENT_FINISH_TYPE) => handle_client_finish(peer, datagram),
+        Some(CLIENT_FINISH_TYPE) => handle_client_finish(peer, datagram, now),
         Some(SERVER_FINISH_TYPE) => handle_server_finish(peer, datagram),
         Some(value) if PacketType::try_from(value).is_ok() => {
             handle_data(peer, source, datagram, now, allow_routed_data)
@@ -1621,7 +1687,18 @@ fn handle_server_hello(
     }
 }
 
-fn handle_client_finish(peer: &mut Peer, datagram: &[u8]) -> ProcessResult {
+fn handle_client_finish(peer: &mut Peer, datagram: &[u8], now: Instant) -> ProcessResult {
+    prune_server_finish_cache(peer, now);
+    let client_finish_hash: [u8; 32] = Sha256::digest(datagram).into();
+    if let Some(cached) = &peer.cached_server_finish
+        && cached.client_finish_hash == client_finish_hash
+    {
+        return ProcessResult {
+            outbound: vec![cached.encoded.clone()],
+            plaintext: None,
+            path_authenticated: false,
+        };
+    }
     let state = std::mem::replace(&mut peer.state, PeerState::Idle);
     let PeerState::ServerHello(pending) = state else {
         peer.state = state;
@@ -1631,8 +1708,15 @@ fn handle_client_finish(peer: &mut Peer, datagram: &[u8]) -> ProcessResult {
         clear_queue(peer);
         return ProcessResult::empty();
     };
-    let mut outbound = vec![server_finish];
+    let mut outbound = vec![server_finish.clone()];
     outbound.extend(install_session(peer, session));
+    if matches!(peer.state, PeerState::Established(_)) {
+        peer.cached_server_finish = Some(CachedServerFinish {
+            client_finish_hash,
+            encoded: server_finish,
+            expires_at: now + SERVER_FINISH_CACHE_LIFETIME,
+        });
+    }
     ProcessResult {
         outbound,
         plaintext: None,
@@ -1839,7 +1923,7 @@ fn handle_key_update_ack(established: &mut EstablishedPeer, opened: &xs_protocol
 fn maintain_established(
     established: &mut EstablishedPeer,
     now: Instant,
-) -> Result<Option<Vec<u8>>> {
+) -> EstablishedMaintenance {
     if established
         .previous_epoch_installed_at
         .is_some_and(|installed| now.duration_since(installed) >= PREVIOUS_EPOCH_RETENTION)
@@ -1850,11 +1934,19 @@ fn maintain_established(
 
     if let Some(pending) = &mut established.outbound_key_update {
         return match pending.retry.poll(now) {
-            RetryAction::Wait => Ok(None),
-            RetryAction::Send(encoded) => Ok(Some(encoded)),
-            RetryAction::Expired => {
+            RetryDecision::Wait => EstablishedMaintenance::Wait,
+            RetryDecision::Retry => match established.sender.seal_control(
+                PacketType::KeyUpdate,
+                DataFlags::CONTROL,
+                0,
+                &pending.payload,
+            ) {
+                Ok(encoded) => EstablishedMaintenance::Send(encoded),
+                Err(_) => EstablishedMaintenance::Rehandshake,
+            },
+            RetryDecision::Expired => {
                 established.outbound_key_update = None;
-                Ok(None)
+                EstablishedMaintenance::Rehandshake
             }
         };
     }
@@ -1862,29 +1954,38 @@ fn maintain_established(
         || now.duration_since(established.epoch_started_at) >= KEY_UPDATE_INTERVAL
     {
         let current_epoch = established.sender.current_epoch();
-        let next_epoch = current_epoch.checked_add(1).ok_or(AgentError::DataPlane)?;
-        let payload = key_update_payload(established.session_id, current_epoch, next_epoch)
-            .map_err(|_| AgentError::DataPlane)?;
-        let encoded = established
+        let Some(next_epoch) = current_epoch.checked_add(1) else {
+            return EstablishedMaintenance::Rehandshake;
+        };
+        let Ok(payload) = key_update_payload(established.session_id, current_epoch, next_epoch)
+        else {
+            return EstablishedMaintenance::Rehandshake;
+        };
+        let Ok(encoded) = established
             .sender
             .seal_control(PacketType::KeyUpdate, DataFlags::CONTROL, 0, &payload)
-            .map_err(|_| AgentError::DataPlane)?;
+        else {
+            return EstablishedMaintenance::Rehandshake;
+        };
         established.outbound_key_update = Some(PendingKeyUpdate {
             next_epoch,
-            retry: RetryState::key_update(encoded.clone(), now),
+            payload,
+            retry: RetrySchedule::key_update(now),
         });
-        return Ok(Some(encoded));
+        return EstablishedMaintenance::Send(encoded);
     }
 
     if now.duration_since(established.last_keepalive_at) >= KEEPALIVE_INTERVAL {
-        let encoded = established
+        let Ok(encoded) = established
             .sender
             .seal_control(PacketType::Keepalive, DataFlags::NONE, 0, &[])
-            .map_err(|_| AgentError::DataPlane)?;
+        else {
+            return EstablishedMaintenance::Rehandshake;
+        };
         established.last_keepalive_at = now;
-        return Ok(Some(encoded));
+        return EstablishedMaintenance::Send(encoded);
     }
-    Ok(None)
+    EstablishedMaintenance::Wait
 }
 
 fn poll_peer_retry(peer: &mut Peer, now: Instant) -> RetryAction {
@@ -1938,6 +2039,16 @@ fn prune_client_hello_cache(peer: &mut Peer, now: Instant) {
         .is_some_and(|(_, seen)| now.duration_since(*seen) >= CLIENT_HELLO_CACHE_LIFETIME)
     {
         peer.recent_client_hellos.pop_front();
+    }
+}
+
+fn prune_server_finish_cache(peer: &mut Peer, now: Instant) {
+    if peer
+        .cached_server_finish
+        .as_ref()
+        .is_some_and(|cached| now >= cached.expires_at)
+    {
+        peer.cached_server_finish = None;
     }
 }
 
@@ -2028,6 +2139,184 @@ fn udp_send_succeeded(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::SigningKey;
+    use xs_protocol::{CredentialClaims, role_set_digest, sign_credential};
+
+    const TEST_UNIX_TIME: u64 = 1_700_000_100;
+
+    struct ProtocolFixture {
+        controller: SigningKey,
+        client_identity: SigningKey,
+        server_identity: SigningKey,
+        client_credential: [u8; CREDENTIAL_LENGTH],
+        server_credential: [u8; CREDENTIAL_LENGTH],
+        client_context: HandshakeContext,
+        server_context: HandshakeContext,
+    }
+
+    fn protocol_fixture() -> ProtocolFixture {
+        let controller = SigningKey::from_bytes(&[11_u8; 32]);
+        let client_identity = SigningKey::from_bytes(&[21_u8; 32]);
+        let server_identity = SigningKey::from_bytes(&[31_u8; 32]);
+        let network_id = [41_u8; 16];
+        let client_ip = Ipv4Addr::new(100, 88, 0, 21);
+        let server_ip = Ipv4Addr::new(100, 88, 0, 31);
+        let tags = vec!["linux".to_owned()];
+        let client_credential = sign_credential(
+            CredentialClaims {
+                network_id,
+                identity_public_key: client_identity.verifying_key().to_bytes(),
+                virtual_ipv4: client_ip,
+                serial: 21,
+                not_before: TEST_UNIX_TIME - 60,
+                not_after: TEST_UNIX_TIME + 3_600,
+                role_bitmap: 1,
+                role_set_digest: role_set_digest(1, &tags).expect("valid role set"),
+            },
+            &controller,
+        );
+        let server_credential = sign_credential(
+            CredentialClaims {
+                network_id,
+                identity_public_key: server_identity.verifying_key().to_bytes(),
+                virtual_ipv4: server_ip,
+                serial: 31,
+                not_before: TEST_UNIX_TIME - 60,
+                not_after: TEST_UNIX_TIME + 3_600,
+                role_bitmap: 1,
+                role_set_digest: role_set_digest(1, &tags).expect("valid role set"),
+            },
+            &controller,
+        );
+        let client_node_id = xs_protocol::node_id(client_identity.verifying_key().as_bytes());
+        let server_node_id = xs_protocol::node_id(server_identity.verifying_key().as_bytes());
+        ProtocolFixture {
+            controller,
+            client_identity,
+            server_identity,
+            client_credential,
+            server_credential,
+            client_context: HandshakeContext {
+                network_id,
+                local_node_id: client_node_id,
+                local_virtual_ip: client_ip,
+                peer_node_id: server_node_id,
+                peer_virtual_ip: server_ip,
+            },
+            server_context: HandshakeContext {
+                network_id,
+                local_node_id: server_node_id,
+                local_virtual_ip: server_ip,
+                peer_node_id: client_node_id,
+                peer_virtual_ip: client_ip,
+            },
+        }
+    }
+
+    fn client_parameters(fixture: &ProtocolFixture) -> ClientHandshakeParameters {
+        ClientHandshakeParameters {
+            context: fixture.client_context,
+            credential: fixture.client_credential,
+            ephemeral_private_key: EphemeralPrivateKey::from_bytes([51_u8; 32]),
+            client_nonce: [61_u8; 32],
+            message_id: 0x1020_3040,
+            client_time: TEST_UNIX_TIME,
+        }
+    }
+
+    fn server_parameters(fixture: &ProtocolFixture) -> ServerHandshakeParameters {
+        ServerHandshakeParameters {
+            context: fixture.server_context,
+            credential: fixture.server_credential,
+            ephemeral_private_key: EphemeralPrivateKey::from_bytes([71_u8; 32]),
+            server_nonce: [81_u8; 32],
+            session_id: [91_u8; 16],
+            server_time: TEST_UNIX_TIME,
+        }
+    }
+
+    fn empty_test_peer(
+        node_id: [u8; 16],
+        virtual_ip: Ipv4Addr,
+        active_endpoint: SocketAddr,
+        now: Instant,
+    ) -> Peer {
+        Peer {
+            node_id,
+            node_id_base64: "test-peer".to_owned(),
+            virtual_ip,
+            candidates: Vec::new(),
+            active_endpoint: Some(active_endpoint),
+            path_reason: Some(PathSelectionReason::HighestPriority),
+            state: PeerState::Idle,
+            queued_packets: VecDeque::new(),
+            queued_bytes: 0,
+            recent_client_hellos: VecDeque::new(),
+            cached_server_finish: None,
+            pending_path_probe: None,
+            path_probe_retry_after: now,
+            next_latency_probe_at: now,
+            next_proactive_handshake_at: now,
+            handshake_failures: 0,
+            handshake_candidate_attempts: 0,
+            tx_packets_total: 0,
+            tx_bytes_total: 0,
+            rx_packets_total: 0,
+            rx_bytes_total: 0,
+            handshake_attempts_total: 0,
+            handshake_successes_total: 0,
+            latency_samples_total: 0,
+            latency_microseconds_total: 0,
+            last_latency_microseconds: None,
+        }
+    }
+
+    fn established_test_peers(now: Instant) -> (Peer, Peer, SocketAddr, SocketAddr) {
+        let fixture = protocol_fixture();
+        let client = ClientHelloSent::start(
+            client_parameters(&fixture),
+            &fixture.client_identity,
+        )
+        .expect("client hello");
+        let server = ServerHelloSent::accept(
+            client.encoded(),
+            server_parameters(&fixture),
+            &fixture.server_identity,
+            &fixture.controller.verifying_key(),
+            TEST_UNIX_TIME,
+        )
+        .expect("server hello");
+        let client = client
+            .accept_server_hello(
+                server.encoded(),
+                &fixture.controller.verifying_key(),
+                TEST_UNIX_TIME,
+            )
+            .expect("client finish");
+        let (server_session, server_finish) = server
+            .accept_client_finish(client.encoded())
+            .expect("server finish");
+        let client_session = client
+            .accept_server_finish(&server_finish)
+            .expect("client session");
+        let client_endpoint = "192.0.2.10:42001".parse().expect("client endpoint");
+        let server_endpoint = "192.0.2.20:42001".parse().expect("server endpoint");
+        let mut client_peer = empty_test_peer(
+            fixture.client_context.peer_node_id,
+            fixture.client_context.peer_virtual_ip,
+            server_endpoint,
+            now,
+        );
+        let mut server_peer = empty_test_peer(
+            fixture.server_context.peer_node_id,
+            fixture.server_context.peer_virtual_ip,
+            client_endpoint,
+            now,
+        );
+        assert!(install_session(&mut client_peer, client_session).is_empty());
+        assert!(install_session(&mut server_peer, server_session).is_empty());
+        (client_peer, server_peer, client_endpoint, server_endpoint)
+    }
 
     #[test]
     fn ipv4_flow_requires_a_complete_unfragmented_packet() {
@@ -2126,6 +2415,7 @@ mod tests {
             queued_packets: VecDeque::new(),
             queued_bytes: 0,
             recent_client_hellos: VecDeque::new(),
+            cached_server_finish: None,
             pending_path_probe: None,
             path_probe_retry_after: now,
             next_latency_probe_at: now,
@@ -2174,5 +2464,175 @@ mod tests {
             ),
             PathSelectionReason::RelayFallback
         );
+    }
+
+    #[test]
+    fn key_update_retry_uses_fresh_sequence_and_recovers_a_lost_ack() {
+        let now = Instant::now();
+        let (mut client_peer, mut server_peer, client_endpoint, server_endpoint) =
+            established_test_peers(now);
+        let PeerState::Established(client) = &mut client_peer.state else {
+            panic!("client session must be established");
+        };
+        client.sent_packets_in_epoch = KEY_UPDATE_PACKET_LIMIT;
+        let EstablishedMaintenance::Send(first) = maintain_established(client, now) else {
+            panic!("initial key update must be sent");
+        };
+        let first_response = handle_data(
+            &mut server_peer,
+            client_endpoint,
+            &first,
+            now,
+            false,
+        );
+        assert_eq!(first_response.outbound.len(), 1);
+
+        let retry_time = now + KEY_UPDATE_RETRY_INTERVAL;
+        let PeerState::Established(client) = &mut client_peer.state else {
+            panic!("client session must remain established");
+        };
+        let EstablishedMaintenance::Send(retry) = maintain_established(client, retry_time) else {
+            panic!("key update retry must be sent");
+        };
+        assert_ne!(first, retry, "AEAD retries require a fresh sequence");
+        let retry_response = handle_data(
+            &mut server_peer,
+            client_endpoint,
+            &retry,
+            retry_time,
+            false,
+        );
+        assert_eq!(retry_response.outbound.len(), 1);
+        let _ = handle_data(
+            &mut client_peer,
+            server_endpoint,
+            &retry_response.outbound[0],
+            retry_time,
+            false,
+        );
+        let PeerState::Established(client) = &client_peer.state else {
+            panic!("client session must remain established");
+        };
+        assert_eq!(client.sender.current_epoch(), 1);
+        assert!(client.outbound_key_update.is_none());
+    }
+
+    #[test]
+    fn path_probe_retry_uses_fresh_sequence_and_recovers_a_lost_response() {
+        let now = Instant::now();
+        let (mut client_peer, mut server_peer, client_endpoint, server_endpoint) =
+            established_test_peers(now);
+        let first = create_path_probe(&mut client_peer, server_endpoint, now)
+            .expect("initial path challenge");
+        let first_response = handle_data(
+            &mut server_peer,
+            client_endpoint,
+            &first,
+            now,
+            false,
+        );
+        assert_eq!(first_response.outbound.len(), 1);
+
+        let retry_time = now + PATH_PROBE_RETRY_INTERVAL;
+        let (retry_endpoint, retry) = maintain_path_probe(&mut client_peer, retry_time)
+            .expect("path probe retry maintenance")
+            .expect("path challenge retry");
+        assert_eq!(retry_endpoint, server_endpoint);
+        assert_ne!(first, retry, "AEAD retries require a fresh sequence");
+        let retry_response = handle_data(
+            &mut server_peer,
+            client_endpoint,
+            &retry,
+            retry_time,
+            false,
+        );
+        assert_eq!(retry_response.outbound.len(), 1);
+        let _ = handle_data(
+            &mut client_peer,
+            server_endpoint,
+            &retry_response.outbound[0],
+            retry_time,
+            false,
+        );
+        assert!(client_peer.pending_path_probe.is_none());
+    }
+
+    #[test]
+    fn duplicate_client_finish_retransmits_cached_server_finish() {
+        let now = Instant::now();
+        let fixture = protocol_fixture();
+        let client = ClientHelloSent::start(
+            client_parameters(&fixture),
+            &fixture.client_identity,
+        )
+        .expect("client hello");
+        let request_hash = Sha256::digest(client.encoded()).into();
+        let server = ServerHelloSent::accept(
+            client.encoded(),
+            server_parameters(&fixture),
+            &fixture.server_identity,
+            &fixture.controller.verifying_key(),
+            TEST_UNIX_TIME,
+        )
+        .expect("server hello");
+        let server_hello = server.encoded().to_vec();
+        let client = client
+            .accept_server_hello(
+                &server_hello,
+                &fixture.controller.verifying_key(),
+                TEST_UNIX_TIME,
+            )
+            .expect("client finish");
+        let endpoint = "192.0.2.20:42001".parse().expect("server endpoint");
+        let mut server_peer = empty_test_peer(
+            fixture.server_context.peer_node_id,
+            fixture.server_context.peer_virtual_ip,
+            endpoint,
+            now,
+        );
+        server_peer.state = PeerState::ServerHello(Box::new(ServerHelloPending {
+            machine: server,
+            request_hash,
+            retry: RetryState::handshake(server_hello, now),
+        }));
+
+        let first = handle_client_finish(&mut server_peer, client.encoded(), now);
+        assert_eq!(first.outbound.len(), 1);
+        let retry = handle_client_finish(
+            &mut server_peer,
+            client.encoded(),
+            now + HANDSHAKE_RETRY_INTERVAL,
+        );
+        assert_eq!(retry.outbound, first.outbound);
+        assert!(client.accept_server_finish(&retry.outbound[0]).is_ok());
+        assert!(matches!(server_peer.state, PeerState::Established(_)));
+    }
+
+    #[test]
+    fn exhausted_key_update_retries_require_a_full_rehandshake() {
+        let now = Instant::now();
+        let (mut client_peer, _, _, _) = established_test_peers(now);
+        let PeerState::Established(client) = &mut client_peer.state else {
+            panic!("client session must be established");
+        };
+        client.sent_packets_in_epoch = KEY_UPDATE_PACKET_LIMIT;
+        assert!(matches!(
+            maintain_established(client, now),
+            EstablishedMaintenance::Send(_)
+        ));
+        for attempt in 2..=KEY_UPDATE_MAX_ATTEMPTS {
+            let retry_time =
+                now + KEY_UPDATE_RETRY_INTERVAL * u32::from(attempt.saturating_sub(1));
+            assert!(matches!(
+                maintain_established(client, retry_time),
+                EstablishedMaintenance::Send(_)
+            ));
+        }
+        let expired = now + KEY_UPDATE_RETRY_INTERVAL * u32::from(KEY_UPDATE_MAX_ATTEMPTS);
+        assert!(matches!(
+            maintain_established(client, expired),
+            EstablishedMaintenance::Rehandshake
+        ));
+        assert!(client.outbound_key_update.is_none());
     }
 }

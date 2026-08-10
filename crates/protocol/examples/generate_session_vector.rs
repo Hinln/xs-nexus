@@ -108,6 +108,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         "schema": "xsp1-session-v1",
         "suite_id": 1,
         "now": NOW,
+        "retry_semantics": {
+            "encrypted_control": "same-payload-fresh-sequence",
+            "finish": "exact-frame",
+        },
         "message_id": message_id,
         "network_id_hex": hexadecimal(&network_id),
         "controller_seed_hex": hexadecimal(&controller_seed),

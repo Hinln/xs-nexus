@@ -217,7 +217,7 @@ ClientFinish 使用 `client_handshake_key` 加密 `hello_transcript_hash`，Serv
 nonce = direction_handshake_nonce_salt || uint64_be(confirm_sequence)
 ```
 
-v1 的每个方向只允许一个 Finish，`confirm_sequence = 0`。Finish 重复只可作为幂等网络重传处理，不能生成第二个 nonce 使用不同明文。
+v1 的每个方向只允许一个 Finish，`confirm_sequence = 0`。Finish 重复只可作为幂等网络重传处理，不能生成第二个 nonce 使用不同明文。Server 进入 Established 后在有界重试窗口内保留 ClientFinish 摘要和精确 ServerFinish 密文，匹配重传只返回该缓存密文，不重建握手状态，也不授权路径迁移。
 
 ## 6. 应用密钥
 
@@ -264,16 +264,16 @@ AAD = exact_96_byte_data_header
 - 崩溃后不得从持久化会话恢复旧密钥并重置序列，必须完整重握手；
 - 序列接近上限、计数状态不确定或可能回绕时立即停止发送并重握手。
 
-PathChallenge 和 PathResponse 不派生独立弱密钥，也不接受明文 token。它们使用当前方向 traffic key、标准数据头 AAD、独立序列和重放窗口；Path ID 与 Packet Type 位于 AAD 中，8 字节 challenge token 位于密文中。只有来源端点、Path ID、token 和 AEAD 全部匹配时才可迁移活动路径。
+PathChallenge 和 PathResponse 不派生独立弱密钥，也不接受明文 token。它们使用当前方向 traffic key、标准数据头 AAD、独立序列和重放窗口；Path ID 与 Packet Type 位于 AAD 中，8 字节 challenge token 位于密文中。只有来源端点、Path ID、token 和 AEAD 全部匹配时才可迁移活动路径。丢包重试保持 Path ID/token 不变，但每次使用新的单调发送序列重新加密；旧密文的逐字节重放仍由重放窗口拒绝。
 
 ## 8. Epoch 与完整重握手
 
 - Epoch 为 `uint32`，初始值 0；
 - 每个 Epoch 具有独立方向密钥、nonce salt 和重放窗口；
 - 单个 Epoch 在 `2^32` 个包、1 小时或实现配置的更低安全阈值首先到达时轮换；
-- Key Update 在当前有效会话内加密和认证，接收方先安装单方向接收 Epoch，发起方收到匹配确认后再切换对应发送 Epoch；
+- Key Update 在当前有效会话内加密和认证，接收方先安装单方向接收 Epoch，发起方收到匹配确认后再切换对应发送 Epoch；确认丢失时保持 payload 和旧 Epoch 不变、使用新序列重新加密，接收方通过保留的旧 Epoch 幂等确认；
 - 旧 Epoch 最多保留 30 秒且最多接收 1024 个乱序包；
-- 每 24 小时、节点凭证变化、吊销事件、路径身份异常或状态不确定时执行完整 X25519 重握手；
+- 每 24 小时、节点凭证变化、吊销事件、路径身份异常、Key Update 重试耗尽、序列耗尽或状态不确定时执行完整 X25519 重握手；
 - 仅通过 HKDF 链轮换不能恢复已泄露会话的前向安全，因此不能无限替代完整重握手。
 
 Linux Agent 的生产阈值为每发送方向 `2^20` 个数据包或 1 小时，以先到者为准。`privileged-network-tests` 构建仅为自动化验证把阈值缩短为 4 个数据包或 2 秒，并把旧 Epoch 保留期缩短为 5 秒；这些测试参数不进入默认构建。

@@ -350,8 +350,50 @@ fuzz_target!(|input: &[u8]| {
         verify_key_update_payload(&opened_server_update.plaintext, session_id, 0),
         Ok(1)
     );
+    let client_update_retry_frame = client_sender
+        .seal_control(
+            PacketType::KeyUpdate,
+            DataFlags::CONTROL,
+            path_id,
+            &client_update,
+        )
+        .expect("fresh client key update retry");
+    let server_update_retry_frame = server_sender
+        .seal_control(
+            PacketType::KeyUpdate,
+            DataFlags::CONTROL,
+            path_id,
+            &server_update,
+        )
+        .expect("fresh server key update retry");
+    assert_ne!(client_update_retry_frame, client_update_frame);
+    assert_ne!(server_update_retry_frame, server_update_frame);
+    let opened_client_retry = server_receiver
+        .open(&client_update_retry_frame)
+        .expect("fresh client key update retry accepted");
+    let opened_server_retry = client_receiver
+        .open(&server_update_retry_frame)
+        .expect("fresh server key update retry accepted");
+    assert_eq!(
+        verify_key_update_payload(&opened_client_retry.plaintext, session_id, 0),
+        Ok(1)
+    );
+    assert_eq!(
+        verify_key_update_payload(&opened_server_retry.plaintext, session_id, 0),
+        Ok(1)
+    );
     assert!(server_receiver.open(&client_update_frame).is_err());
     assert!(client_receiver.open(&server_update_frame).is_err());
+    assert!(
+        server_receiver
+            .open(&client_update_retry_frame)
+            .is_err()
+    );
+    assert!(
+        client_receiver
+            .open(&server_update_retry_frame)
+            .is_err()
+    );
 
     assert!(client_sender.rotate_epoch(0).is_err());
     assert!(client_sender.rotate_epoch(2).is_err());

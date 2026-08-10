@@ -195,7 +195,7 @@ SHA-256(
 )
 ```
 
-同一 Finish 的网络重传必须逐字节相同，不能在相同 key/nonce 下重新加密不同明文。
+同一 Finish 的网络重传必须逐字节相同，不能在相同 key/nonce 下重新加密不同明文。Server 在进入 Established 后必须至少覆盖 ClientFinish 的有界重试窗口，缓存 ClientFinish 摘要和精确 ServerFinish 编码；收到匹配的重复 ClientFinish 时只重发缓存帧，不重新派生密钥，也不把该重复报文作为路径迁移证明。
 
 ## 6. 握手状态机
 
@@ -400,7 +400,7 @@ Controller 验证控制连接身份、签名、Network/Node 绑定、generation�
 
 初始握手按候选优先级选择端点；当前候选在有界重传后仍未建立会话时才转向下一候选，并记录 `handshake_fallback`。配置更新可替换候选列表，但不得无条件丢弃已建立会话。
 
-PathChallenge 和 PathResponse 始终在已认证 XSP 会话内加密，使用当前方向 traffic key、序列、重放窗口和完整 96 字节 AAD。Challenge payload 为 8 字节 CSPRNG token，并设置非零 Path ID 与 Path Probe flag。新 UDP 五元组只有在同一端点返回 AEAD 有效、Path ID 和 token 均匹配的 PathResponse 后才可晋升为活动路径。Agent 只探测优先级高于当前活动路径的候选，使用有界重传和冷却时间；成功时记录 `authenticated_path_probe`。经认证握手或普通 Peer 流量也可证明其来源端点，但未认证源地址变化永远不改变节点身份或活动路径。
+PathChallenge 和 PathResponse 始终在已认证 XSP 会话内加密，使用当前方向 traffic key、序列、重放窗口和完整 96 字节 AAD。Challenge payload 为 8 字节 CSPRNG token，并设置非零 Path ID 与 Path Probe flag。新 UDP 五元组只有在同一端点返回 AEAD 有效、Path ID 和 token 均匹配的 PathResponse 后才可晋升为活动路径。Agent 只探测优先级高于当前活动路径的候选，使用有界重传和冷却时间；每次重试保持逻辑 Path ID/token 不变，但必须用新的发送序列重新加密，使已经处理过 Challenge 而丢失 Response 的接收方可以再次响应。逐字节重放的旧 AEAD 帧必须继续被重放窗口拒绝。成功时记录 `authenticated_path_probe`。经认证握手或普通 Peer 流量也可证明其来源端点，但未认证源地址变化永远不改变节点身份或活动路径。
 
 ## 14. Key Epoch
 
@@ -411,7 +411,7 @@ KeyUpdate payload：
 | 4 | Next Epoch，必须等于 Current + 1 |
 | 32 | `SHA-256("XSP/1 key update v1" || Session ID || Current Epoch || Next Epoch)` |
 
-KeyUpdate 使用当前发送 Epoch 加密。接收方验证后只安装该方向的下一个接收 Epoch，并使用自身当前发送 Epoch 返回 KeyUpdateAck；发起方收到匹配确认后才切换该方向的发送 Epoch。相反方向独立轮换。生产 Agent 在单方向发送 `2^20` 个数据包或运行 1 小时后触发轮换，旧接收 Epoch 最多保留 30 秒和 1024 个乱序包。状态冲突、跳跃 Epoch、确认重试耗尽后的持续异常或计数不确定触发完整重握手。
+KeyUpdate 使用当前发送 Epoch 加密。接收方验证后只安装该方向的下一个接收 Epoch，并使用自身当前发送 Epoch 返回 KeyUpdateAck；发起方收到匹配确认后才切换该方向的发送 Epoch。确认丢失时，发起方保持同一 KeyUpdate payload 和旧发送 Epoch，但每次重试必须使用新的发送序列重新加密；接收方可通过保留的旧接收 Epoch 接受该新帧并返回新的 KeyUpdateAck。逐字节重放旧 KeyUpdate 仍必须被拒绝。相反方向独立轮换。生产 Agent 在单方向发送 `2^20` 个数据包或运行 1 小时后触发轮换，旧接收 Epoch 最多保留 30 秒和 1024 个乱序包。状态冲突、跳跃 Epoch、确认重试耗尽、序列耗尽或计数不确定必须丢弃会话状态并触发完整重握手，不得静默开始另一轮同 Epoch 更新。
 
 ## 15. 关闭
 
