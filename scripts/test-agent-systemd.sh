@@ -50,10 +50,11 @@ fi
 temporary=$(mktemp -d)
 unit="xs-agent-m12-$RANDOM-$$"
 controller_pid=
-install_link_created=false
 install_directory_created=false
 current_step=initialization
 schema="xs_nexus_agent_systemd_test"
+test_install_root="/usr/local/lib/xs-nexus-tests/$unit"
+test_agent_binary="$test_install_root/bin/xs-agent"
 
 report_failure() {
     status=$?
@@ -81,13 +82,11 @@ cleanup() {
             "$ROOT_DIR/target/debug/examples/reset_test_schema" \
             >/dev/null 2>&1
     fi
-    if [[ "$install_link_created" == true ]]; then
-        rm -f /usr/local/lib/xs-nexus/current/bin/xs-agent
-    fi
     if [[ "$install_directory_created" == true ]]; then
-        rmdir /usr/local/lib/xs-nexus/current/bin >/dev/null 2>&1
-        rmdir /usr/local/lib/xs-nexus/current >/dev/null 2>&1
-        rmdir /usr/local/lib/xs-nexus >/dev/null 2>&1
+        rm -f "$test_agent_binary"
+        rmdir "$test_install_root/bin" >/dev/null 2>&1
+        rmdir "$test_install_root" >/dev/null 2>&1
+        rmdir /usr/local/lib/xs-nexus-tests >/dev/null 2>&1
     fi
     rm -rf "$temporary"
     if [[ -e "/sys/class/net/$TEST_INTERFACE" ]]; then
@@ -137,17 +136,13 @@ database_expected_role=$(python3 -c 'import sys; from urllib.parse import urlspl
 DATABASE_URL="$XS_TEST_DATABASE_URL" \
 DATABASE_SCHEMA="$schema" \
     "$ROOT_DIR/target/debug/xs-controller" migrate
-if [[ ! -d /usr/local/lib/xs-nexus/current/bin ]]; then
-    mkdir -p /usr/local/lib/xs-nexus/current/bin
-    install_directory_created=true
-fi
-if [[ ! -e /usr/local/lib/xs-nexus/current/bin/xs-agent ]]; then
-    ln -s "$ROOT_DIR/target/debug/xs-agent" /usr/local/lib/xs-nexus/current/bin/xs-agent
-    install_link_created=true
-elif [[ ! -x /usr/local/lib/xs-nexus/current/bin/xs-agent ]]; then
-    printf 'existing Agent install path is not executable\n' >&2
+if [[ -e "$test_install_root" ]]; then
+    printf 'refusing to reuse test install path: %s\n' "$test_install_root" >&2
     exit 2
 fi
+mkdir -p "$test_install_root/bin"
+install_directory_created=true
+install -m 0755 "$ROOT_DIR/target/debug/xs-agent" "$test_agent_binary"
 current_step=controller_start
 auth_environment_name="ADMIN_API_"
 auth_environment_name+="TOKEN"
@@ -247,7 +242,7 @@ systemd-run \
     --property="ReadWritePaths=$state_directory $runtime_directory" \
     --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' \
     --property=RuntimeMaxSec=120s \
-    "$ROOT_DIR/target/debug/xs-agent" run --config "$config_path"
+    "$test_agent_binary" run --config "$config_path"
 
 current_step=socket_wait
 socket_path="$runtime_directory/agent.sock"
