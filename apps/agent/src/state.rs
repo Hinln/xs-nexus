@@ -194,7 +194,8 @@ impl NodeState {
             self.credential_serial,
         )?;
 
-        if configuration.version < self.configuration.version
+        if payload.policy_version < self.configuration_payload.policy_version
+            || configuration.version < self.configuration.version
             || (configuration.version == self.configuration.version
                 && (configuration != self.configuration || hash != self.configuration_sha256))
         {
@@ -652,6 +653,33 @@ mod tests {
         let snapshot = state_snapshot(&state);
 
         assert!(state.apply_configuration(equivocation, &identity).is_err());
+        assert_eq!(state_snapshot(&state), snapshot);
+    }
+
+    #[test]
+    fn configuration_update_rejects_policy_rollback_without_mutating_state() {
+        let (response, identity) = enrollment_fixture();
+        let mut state =
+            NodeState::from_enrollment(response, &identity, "https://controller.example/")
+                .expect("trusted enrollment");
+        let policy_update = signed_configuration(&state.configuration, 2, |payload| {
+            payload.policy_version = 2;
+        });
+        assert!(
+            state
+                .apply_configuration(policy_update, &identity)
+                .expect("newer policy configuration")
+        );
+        let snapshot = state_snapshot(&state);
+        let policy_rollback = signed_configuration(&state.configuration, 3, |payload| {
+            payload.policy_version = 1;
+        });
+
+        assert!(
+            state
+                .apply_configuration(policy_rollback, &identity)
+                .is_err()
+        );
         assert_eq!(state_snapshot(&state), snapshot);
     }
 
