@@ -844,6 +844,9 @@ wait "$CAPTURE_PID"
 CAPTURE_PID=
 wait "$COLLECT_PID"
 COLLECT_PID=
+cat "$TEMPORARY/relay-acl-denied-capture.log"
+cat "$TEMPORARY/relay-acl-denied-collector.log"
+printf 'acl-relay-bypass-denied-ok\n'
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     ip netns exec "$NETNS_A" "$PROBE" icmp \
         --destination "$virtual_ip_b" \

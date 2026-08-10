@@ -299,6 +299,8 @@ if wait "$subnet_tcp_denied_pid"; then
     printf 'ACL-denied TCP reached the routed subnet\n' >&2
     exit 1
 fi
+cat "$FIXTURE_ROOT/subnet-tcp-denied-capture.log"
+printf 'acl-subnet-bypass-denied-ok protocol=tcp\n'
 
 ip netns exec "$NETNS_LAN" "$PROBE" collect-udp \
     --bind 192.168.232.2 \
@@ -326,6 +328,9 @@ ip netns exec "$NETNS_A" "$PROBE" send-virtual \
     --packet-id 324
 wait "$subnet_udp_denied_capture_pid"
 wait "$subnet_udp_denied_pid"
+cat "$FIXTURE_ROOT/subnet-udp-denied-capture.log"
+cat "$FIXTURE_ROOT/subnet-udp-denied-server.log"
+printf 'acl-subnet-bypass-denied-ok protocol=udp\n'
 
 ip netns exec "$NETNS_A" "$PROBE" assert-no-xsp \
     --interface "$UNDERLAY_A" \

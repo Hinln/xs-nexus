@@ -28,6 +28,7 @@ AGENT_A_PID=
 AGENT_B_PID=
 AGENT_C_PID=
 CAPTURE_PID=
+CAPTURE_LOG=
 
 report_failure() {
     local status=$?
@@ -98,6 +99,7 @@ assert status["network_active"] is True
 assert status["controller_connected"] is False
 assert status["configuration_version"] == 1
 PY
+    printf 'offline-configuration-ok socket=%s version=1\n' "$socket"
 }
 
 start_no_xsp_capture() {
@@ -106,6 +108,7 @@ start_no_xsp_capture() {
     local underlay_source=$3
     local underlay_destination=$4
     local label=$5
+    CAPTURE_LOG="$FIXTURE_ROOT/$label-capture.log"
     ip netns exec "$namespace" "$PROBE" assert-no-xsp \
         --interface "$interface" \
         --source "$underlay_source" \
@@ -113,7 +116,7 @@ start_no_xsp_capture() {
         --source-port 42001 \
         --destination-port 42001 \
         --packet-type data \
-        --timeout 1.5 >"$FIXTURE_ROOT/$label-capture.log" 2>&1 &
+        --timeout 1.5 >"$CAPTURE_LOG" 2>&1 &
     CAPTURE_PID=$!
     sleep 0.2
 }
@@ -121,6 +124,8 @@ start_no_xsp_capture() {
 finish_no_xsp_capture() {
     wait "$CAPTURE_PID"
     CAPTURE_PID=
+    cat "$CAPTURE_LOG"
+    CAPTURE_LOG=
 }
 
 assert_icmp_denied() {
@@ -142,6 +147,7 @@ assert_icmp_denied() {
         exit 1
     fi
     finish_no_xsp_capture
+    printf 'acl-sender-deny-ok protocol=icmp label=%s\n' "$label"
 }
 
 assert_tcp_denied() {
@@ -176,6 +182,7 @@ assert_tcp_denied() {
         printf 'denied TCP server unexpectedly received a connection: %s\n' "$label" >&2
         exit 1
     fi
+    printf 'acl-sender-deny-ok protocol=tcp label=%s\n' "$label"
 }
 
 assert_udp_denied() {
@@ -206,6 +213,7 @@ assert_udp_denied() {
         --packet-id "$port" >"$FIXTURE_ROOT/$label-client.log"
     finish_no_xsp_capture
     wait "$server_pid"
+    printf 'acl-sender-deny-ok protocol=udp label=%s\n' "$label"
 }
 
 assert_receiver_tcp_denied() {
@@ -243,6 +251,7 @@ assert_receiver_tcp_denied() {
         printf 'receiver-denied TCP server unexpectedly received a connection\n' >&2
         exit 1
     fi
+    printf 'acl-receiver-deny-ok protocol=tcp label=%s\n' "$label"
 }
 
 assert_receiver_udp_denied() {
@@ -276,6 +285,7 @@ assert_receiver_udp_denied() {
     wait "$CAPTURE_PID"
     CAPTURE_PID=
     wait "$server_pid"
+    printf 'acl-receiver-deny-ok protocol=udp label=%s\n' "$label"
 }
 
 if [[ $(id -u) -ne 0 || ! -c /dev/net/tun ]]; then
