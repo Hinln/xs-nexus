@@ -469,3 +469,12 @@ make clean
 - 精确 revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` 的 GitHub Actions run `31352258781` 五个 job 全通过；专项 job `93345151258` 和 artifact `9049384061` 通过。artifact 归档 SHA-256、两项内部证据哈希和无值秘密扫描均复核通过。
 - Gate 06 保持 `PARTIAL`：当前证据是 hosted x86_64 的真实 systemd/TUN 子矩阵，不是普通部署主机的整机 reboot、disk-full、DHCP/address churn、竞争 VPN 路由或 arm64/NAS 实测。生产未部署本分支，也未运行宿主 Agent，总体保持 `NO_GO`。
 - 下一步进入 Gate 08 Relay 的可自行完成安全与韧性项；Gate 06 剩余项写入 `PRV2-017`、`KI-027` 和 `audit/production-readiness-remediation-v2/LINUX_AGENT_RECOVERY.md`，等待可回滚的独立 Linux/arm64 环境。
+
+## 2026-08-10 Gate 08 Relay 资源、安全与恢复子矩阵
+
+- Relay 新增验签前全局注册预算、每节点与全局 packet/byte 队列硬上限、跨上限配置校验和精确队列 gauge；来源喷洒、共享包/字节上限、拒绝事务性及 cleanup 释放均有单测。默认生产值未因测试而放宽。
+- `scripts/test-agent-relay.sh` 现在证明主 Relay 停止、备用接管、主 Relay 重启后两端重新注册、备用停止后经重启主 Relay 恢复，以及最终认证 Direct 回切；继续验证端到端密文、重放/伪造拒绝、Agent 存活和清理。
+- 专项 release 测试在同身份/端点短期 Lease 周期续租下转发 5,000,000 个 216 字节帧，结果 71,212.14 包/s、14.67 MiB/s、70.213 秒、内部延迟平均 5 µs/最大 150 µs；断言零 Relay 丢弃和零最终队列。证据脚本使用绝对输出目录和可下载后直接验证的相对 SHA-256 清单。
+- 失败链完整保留：Relay 原因分类、rustfmt、数值转换、报告路径、Lease idle timeout、测试身份传参和严格 Clippy 均在独立 runs/artifacts 中可复核；没有 suppress、skip、降低包数/吞吐阈值或允许丢包。
+- 精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 的 GitHub Actions run `31358498444` 全部六个 job 通过：baseline、protocol-fuzz、console-real-e2e、image-reproducibility、linux-agent-recovery 和 relay-resilience；Relay job `93362562136` 与 artifact `9051561308` 的归档 digest、两层 SHA-256 和无值秘密扫描通过。
+- Gate 08 保持 `PARTIAL`：当前是 hosted 单进程 loopback/namespace 与受控进程重启，不是公网对抗、分布式有效凭据、云侧 DDoS、多地域/多实例或小时/天级容量。剩余项记录为 `PRV2-018`/`KI-028`；生产继续运行旧 revision，本分支未部署，总体保持 `NO_GO`。

@@ -95,11 +95,11 @@
 
 - `XSR/1` 注册使用活动 Controller 凭证和节点 Ed25519 身份签名，Relay Lease 绑定 Network、Node、Relay、UDP 来源端点和短期过期时间；
 - Relay Data envelope 只携带有限路由元数据和端到端 XSP/1 密文，Relay 不持有 traffic key，也不能生成目标节点可接受的业务包；
-- 匿名、错误来源端点、过期 Lease、重放、无目标 Lease、空 payload 和超限报文静默丢弃；每来源注册和每 Lease 包/字节/队列资源均有硬上限；
+- 匿名、错误来源端点、过期 Lease、重放、无目标 Lease、空 payload 和超限报文静默丢弃；每来源与全局注册验签、每 Lease 与全局包/字节队列及每 Lease 包/字节速率均有硬上限；
 - 隔离 namespace 已验证 Relay 抓包不包含原始虚拟 IP 包或业务明文标记、伪造来源被拒绝、主备 Relay 切换和 Direct 恢复后的 AEAD 回切；
 - UDP 单次发送失败仅作为路径不可达，不再终止 Agent；候选仅刷新过期时间不会重置正在进行的握手和回退状态；
 - 全量证据：`/srv/xs-nexus/artifacts/qa/m2.3-20260730T113304Z`；
-- 第三方协议审计、真实公网容量、延迟/丢包指标和运营商网络实测仍未完成。
+- 内部 Relay 指标、5,000,000 帧持续容量和停止/重启恢复已在当前分支重新验证；第三方协议审计、真实公网恶意流量、多地域/多实例容量和运营商网络实测仍未完成。
 
 ---
 
@@ -490,3 +490,12 @@ Current clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-202
 - The isolated link down/up assertion proves process survival for a bounded local network-change event; service stop proves unit/TUN cleanup and no host-interface leak. Exact run `31352258781` and artifact `9049384061` passed digest, inner-checksum, and no-value secret verification.
 - Three failed runs remain visible and identify real harness defects: ShellCheck failure, `ProtectHome` blocking a home-directory executable, and unit verification depending on the formal host path. Each was fixed at the root cause without disabling a warning or sandbox property.
 - Residual risk remains High for ordinary-host reboot, disk exhaustion, DHCP/address/default-route churn, competing VPN routes, repeated failure/start-limit, and arm64 hardware. These destructive scenarios require a disposable approved host and must not run on production. Gate 06 remains `PARTIAL`; overall status remains `NO_GO`.
+
+## 28. Gate 08 Relay security and resilience review (2026-08-10)
+
+- Per-source registration and per-Lease traffic limits were insufficient aggregate controls: distributed source identities could grow verification work, and many valid leases could independently fill per-node queues. Relay now spends a global registration token before source-state growth or signature verification and enforces exact global packet and byte queue limits in addition to the existing per-node limits.
+- Queue admission is transactional. A rejected frame does not consume replay or traffic-budget state; enqueue, dequeue, lease replacement, expiry, and cleanup update the same packet/byte counters and low-cardinality gauges. Configuration fails closed when a global limit cannot contain one complete per-node queue.
+- The dedicated capacity regression forwards 5,000,000 authenticated 216-byte frames while renewing both short-lived leases with the same identity and endpoint. It preserves the 5,000,000-frame count, 10,000 packet/s minimum, zero Relay drops, and zero final queue gauges; the exact-head result is 71,212.14 packet/s and 14.67 MiB/s.
+- The two-Agent/two-Relay namespace regression now kills the primary Relay, proves authenticated traffic through the secondary, restarts the primary and proves both Agents re-register, kills the secondary, proves recovery through the restarted primary, then restores authenticated Direct. Relay still sees only the XSR/1 envelope and XSP/1 ciphertext.
+- Exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` passed all six jobs in GitHub Actions run `31358498444`, including baseline, AddressSanitizer protocol fuzzing, real Console E2E, image reproducibility, Linux Agent recovery, and Relay resilience. Relay job `93362562136`, artifact `9051561308`, archive digest `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`, portable inner checksums, and a no-value scan pass.
+- This evidence is authoritative only for hosted loopback/namespace, bounded resource accounting, sustained single-process forwarding, and controlled Relay restart. Distributed valid-node abuse, public Internet packet loss/reordering, volumetric DDoS, multi-region/multi-instance capacity, and long-duration production load remain external. Gate 08 stays `PARTIAL`; overall status stays `NO_GO`.

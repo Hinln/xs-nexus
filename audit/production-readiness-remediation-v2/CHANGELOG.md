@@ -84,3 +84,11 @@
 - Retained three failed/superseded runs exposing ShellCheck, protected-home execution, and formal-path verification defects. No assertion, warning, or sandbox property was suppressed.
 - Exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` passed all five jobs in run `31352258781`. Dedicated job `93345151258` and artifact `9049384061` passed archive/inner SHA-256 and no-value secret verification.
 - Gate 06 remains `PARTIAL`: ordinary-host reboot, disk-full, DHCP/address churn, competing VPN routes, repeated failure/start-limit, and arm64 hardware require a disposable approved host. Production was not changed and remains on `3d93656`.
+
+### Gate 08 hosted Relay security and resilience submatrix
+
+- Added a verification-before-state global registration budget, exact global packet/byte queue caps, cross-limit configuration validation, transactional rejection, cleanup accounting, and low-cardinality queue gauges without weakening per-source, per-Lease, replay, endpoint, or ciphertext checks.
+- Added a dedicated `relay-resilience` CI job covering all Relay targets, 5,000,000 release-profile authenticated frames with real short-Lease renewal, and two-Agent/two-Relay stop/failover/restart/re-registration/restored-primary/Direct recovery in namespaces.
+- Retained the complete diagnostic chain for path-reason assertion, formatting, numeric conversion, evidence path, idle Lease, fixture identity, and strict Clippy failures. Packet count, minimum throughput, zero-drop, queue, authentication, restart, and cleanup assertions were not reduced or skipped.
+- Exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` passed Relay job `93362562136` in run `31358498444`. Artifact `9051561308` has archive digest `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`; both manifest layers verify directly after download and the no-value scan has zero findings.
+- The measured hosted baseline is 5,000,000 × 216-byte frames in 70.213 seconds, 71,212.14 packet/s, 14.67 MiB/s, internal delay average 5 µs/max 150 µs, zero Relay drops and zero final queue. Gate 08 remains `PARTIAL` because public-WAN, distributed-abuse, cloud-DDoS, multi-region/multi-instance and long-duration evidence remains external; production was not changed.

@@ -348,3 +348,12 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0037`：首次 CI 加固版从 runner home 直接执行 Agent，而 unit 保持 `ProtectHome=yes`，真实失败为 `203/EXEC`。没有关闭 `ProtectHome`；改为把精确构建产物复制到唯一的 `/usr/local/lib/xs-nexus-tests/<unit>` 测试路径，并只清理该路径。
 - `XS-2026-0038`：运行路径修复后，`systemd-analyze verify` 仍检查正式 `/usr/local/lib/xs-nexus/current` 可执行文件，导致 `unit_verify` 失败。改为在临时 root 中复制正式 unit 和测试二进制，再以 `--root` 验证；主机正式安装路径不再触碰。
 - 失败 runs `31351583134`、`31351658402`、`31352027606` 与失败 artifact `9049311530` 均保留。最终 exact-head run `31352258781` 五项 job 全通过，专项 artifact `9049384061` 的归档/内部哈希和无值秘密扫描通过。
+
+## Gate 08 Relay 资源与恢复闭环（2026-08-10）
+
+- `XS-2026-0039`：原 Relay 只有每来源注册和每 Lease 速率/队列限制；来源地址喷洒可在昂贵验签前增长状态，多个合法 Lease 可把总队列扩大到每节点上限之和。修复为验签前全局注册预算、共享 packet/byte 队列上限、交叉配置校验和 enqueue/dequeue/cleanup 精确计数；拒绝不提交 replay 或 traffic state。
+- `XS-2026-0040`：首次双 Relay 重启回归在重启主 Relay 已成为实际认证活动端点时仍只接受字符串 `relay_failover`，把合法 `relay_fallback` 状态命名误报为失败。断言现只对该已认证重启端点接受协议已有的两种 Relay 原因，仍强制端点、建立会话、双向流量和后续 Direct 回切；失败 run `31354320136` 与 artifact `9050139049` 保留。
+- `XS-2026-0041`：容量脚本创建相对 evidence 目录后，Cargo 从 crate 目录运行测试，报告写入路径失效。脚本先把目录解析为绝对路径；后续独立复核又发现内部 `SHA256SUMS` 保存 runner 绝对路径，下载后需改写才能校验，最终改为在 evidence 目录内生成原始相对清单。runs `31355385268`、`31358498444` 分别保留失败与可移植通过证据。
+- `XS-2026-0042`：5,000,000 帧测试在约 60 秒后超时，根因不是 UDP 窗口丢包，而是只接收流量的目标 Lease 达到 idle timeout。测试没有延长 TTL 或关闭过期检查；两个节点现每 400,000 帧以同身份/端点和唯一签名请求真实续租，并为新 Lease 重置独立 sequence。失败 run `31355663342` 与 artifact `9050582896` 保留。
+- `XS-2026-0043`：严格 CI 依次暴露报告数值转换、测试身份种子传递和 `needless_borrow`；对应 runs `31355195399`、`31356055876`、`31356167042` 及 Relay artifacts `9050386927`、`9050672375`、`9050798784` 保留。没有添加 allow/ignore、降低 5,000,000 帧、降低 10,000 包/s、允许丢包或跳过重启。
+- 最终精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 的 run `31358498444` Relay job `93362562136` 通过；artifact `9051561308` 可下载后直接复核两层 SHA-256，秘密扫描 0 findings。真实公网、多地域、多实例和长时矩阵由 `KI-028` 保持开放，Gate 08 不提升为 `PASS`。

@@ -112,7 +112,7 @@ Gate 04 补充证据：revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 修�
 - [x] MUST：监控字节、延迟、丢包和错误。
 - [x] MUST：不记录业务内容。
 
-证据：Relay `/metrics` 提供接收/转发字节、分类与总丢弃、I/O 错误、队列转发延迟样本/平均/最大值；真实双 Relay fallback、密文、failover 和 Direct 恢复聚合证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`。这里的“丢包”仅指 Relay 可观测的协议、认证、重放、限速、队列、目的地和发送丢弃，不伪称测得公网链路中不可观测的 UDP 丢失。
+证据：Relay `/metrics` 提供接收/转发字节、分类与总丢弃、I/O 错误、队列转发延迟样本/平均/最大值；真实双 Relay fallback、密文、failover 和 Direct 恢复聚合证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`。Gate 08 又在精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 增加全局注册验签预算、每节点及全局包/字节队列硬上限和精确释放计数；GitHub Actions run `31358498444` 的专项 job `93362562136` 完成 5,000,000 帧持续转发、零产品丢弃/零残留队列、同身份短期 Lease 续租、双 Relay 停止/重启/重新注册/恢复和 Direct 回切，artifact `9051561308` 通过。这里的“丢包”仅指 Relay 可观测的协议、认证、重放、限速、队列、目的地和发送丢弃，不伪称测得公网链路中不可观测的 UDP 丢失；真实公网恶意流量、多地域和长时多实例容量仍属于生产 Gate 08 外部证据。
 
 ---
 

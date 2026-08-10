@@ -1066,3 +1066,16 @@
 - 决策：每次恢复测试创建唯一 `/usr/local/lib/xs-nexus-tests/<unit>` 根并复制精确构建产物，保持 `ProtectHome`、设备、capability、namespace 和文件系统限制。正式 unit 复制到临时 root，并通过 `systemd-analyze verify --root` 离线验证；测试永不创建、替换或删除正式 `current` 路径。
 - 验证：transient unit 必须以 `Restart=on-failure` 运行，`SIGKILL` 后恰好自动重启一次且 PID 改变；签名状态保留、TUN 只在私有 namespace 重建、隔离链路变化后进程存活，最终 unit/TUN/test root 全部清理。run `31352258781` 和 artifact `9049384061` 通过。
 - 边界：GitHub hosted x86_64 的真实 systemd/TUN 证据不替代普通主机 reboot、disk-full、DHCP/VPN 冲突、arm64/NAS 或生产 Agent 部署。Gate 06 保持 `PARTIAL`。
+
+---
+
+## ADR-093：Relay 验签与队列必须同时受每主体和全局硬上限约束
+
+- 状态：接受
+- 日期：2026-08-10
+- 背景：每来源注册限制只能约束单一来源地址，每 Lease 队列只能约束单一目标。来源地址喷洒仍可在验签前扩展状态和消耗公钥运算，多个合法 Lease 仍可把总队列内存放大到 `lease_count × per_node_limit`。短时 10,000 帧基线也不能证明跨 Lease、重启和短期 Lease 续租行为。
+- 决策：Relay 在创建来源预算状态和执行注册签名验证前先消耗一秒窗口的全局注册预算；数据面同时执行每目标 Lease 与全局 packet/byte 队列上限。拒绝必须发生在 replay 和 traffic budget 提交前；enqueue、dequeue、Lease 替换、过期与 cleanup 共同维护精确全局计数和低基数 gauge。全局上限小于一个完整每节点队列时配置失败关闭。
+- 容量验证：专项 release-profile 测试固定 5,000,000 个 216 字节认证帧、至少 10,000 包/s、零 Relay 丢弃和零最终队列。两个节点每 400,000 帧使用相同身份与 UDP 端点、唯一签名请求重新注册，取得新 Lease 后重置该 Lease 的独立 sequence；不延长生产 TTL、不关闭过期检查，也不增加注册速率豁免。
+- 故障验证：双 Agent/双 Relay namespace 必须证明主 Relay 停止、备用接管、主 Relay 重启、双方重新注册、备用停止后经重启主 Relay 恢复，以及最终认证 Direct 回切；断言依据实际认证端点，不把合法 `relay_fallback`/`relay_failover` 状态命名差异伪报为链路失败。
+- 证据：精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e`；GitHub Actions run `31358498444`；Relay job `93362562136`；artifact `9051561308`，归档 digest `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`，下载后原始相对 SHA-256 清单和无值秘密扫描均通过。
+- 边界：该决策只闭合 hosted 单进程资源边界、持续 loopback 转发和受控 Relay 重启。真实公网恶意流量、分布式有效凭据、云侧链路饱和、多地域/多实例容量和小时/天级负载仍需外部环境；Gate 08 保持 `PARTIAL`，总体保持 `NO_GO`。

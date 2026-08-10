@@ -19,6 +19,7 @@
 | PRV2-015 | Medium | 19/23 | Framework JSON extraction errors exposed detailed parser rejection text to unauthenticated clients | CLOSED at `03c7557`: exact generic 400 envelope and negative regressions |
 | PRV2-016 | High | 24 | `cargo-deny` did not enforce a complete workspace license policy | CLOSED at `3bf8619`: explicit allowlist and full all-feature check PASS |
 | PRV2-017 | High | 06 | Hosted real-systemd crash/restart and isolated link-change pass, but no approved ordinary host has completed reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 recovery | BLOCKED_EXTERNAL |
+| PRV2-018 | High | 08/21 | Hosted Relay resource bounds, 5M-frame sustained forwarding, and controlled two-Relay restart pass, but public-WAN adversarial, multi-region/multi-instance, volumetric and long-duration capacity evidence is absent | BLOCKED_EXTERNAL |
 
 Findings remain open until the associated raw evidence is linked from `EVIDENCE_INDEX.md`.
 
@@ -27,3 +28,5 @@ Findings remain open until the associated raw evidence is linked from `EVIDENCE_
 The four closed Gate 23 findings were independently revalidated at exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`. GitHub Actions run `31313868529` passed all four jobs, and the clean-checkout evidence root `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` passed every recorded status. These closures do not close the remaining global Critical/High findings, do not deploy `3bf8619`, and do not change the overall `NO_GO` decision.
 
 `PRV2-017` has complete automated evidence for its safely reproducible submatrix at exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02`, GitHub Actions run `31352258781`, job `93345151258`, and artifact `9049384061`. It remains blocked because destructive host failure modes must not be exercised on the production server and no disposable approved Linux/arm64 host is currently available.
+
+`PRV2-018` has complete automated evidence for bounded single-process Relay admission/queue accounting, authenticated 5,000,000-frame forwarding with short-Lease renewal, and controlled two-Relay stop/restart recovery at exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e`, run `31358498444`, job `93362562136`, and artifact `9051561308`. It remains blocked because hosted loopback/namespace evidence cannot prove Internet-scale abuse resistance, cloud-edge saturation controls, multi-region/multi-instance behavior, or an hours/days production operating envelope.

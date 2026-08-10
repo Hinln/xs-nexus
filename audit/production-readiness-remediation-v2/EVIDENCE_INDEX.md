@@ -156,6 +156,28 @@ The passing job uses a unique test-only binary below `/usr/local/lib/xs-nexus-te
 
 This is authoritative automated evidence for the crash/restart and isolated link-change submatrix only. It is not evidence of an ordinary deployed-host reboot, disk-full behavior, DHCP lease/address churn, coexistence with another VPN and competing routes, real arm64 hardware, or NAS operation. Those items require a disposable approved Linux host and remain open; Gate 06 stays `PARTIAL`.
 
+## Gate 08 Relay Security and Resilience Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Global admission/queue implementation and dedicated regression | Git revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` | VERIFIED |
+| Exact-head GitHub Actions | GitHub Actions run [`31358498444`](https://github.com/Hinln/xs-nexus/actions/runs/31358498444), exact head `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` | PASS, ALL 6 JOBS |
+| Relay resilience job | GitHub Actions job [`93362562136`](https://github.com/Hinln/xs-nexus/actions/runs/31358498444/job/93362562136) | PASS |
+| Relay resilience artifact | GitHub artifact `9051561308`; verified copy `C:\Users\panyo\Documents\Codex\2026-07-29\yue\relay-pass-bad114e-artifact` | PASS, PORTABLE SHA-256 VERIFIED |
+| Artifact archive digest | `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67` | VERIFIED AGAINST GITHUB METADATA |
+| Capacity report | 5,000,000 × 216-byte frames; 70.213 seconds; 71,212.14 packet/s; 14.67 MiB/s; internal latency average 5 µs/max 150 µs | PASS, ZERO RELAY DROPS, ZERO FINAL QUEUE |
+| Downloaded artifact no-value scan | Same verified copy | PASS, 0 FINDINGS |
+| Retained restart-classification failure | GitHub Actions run [`31354320136`](https://github.com/Hinln/xs-nexus/actions/runs/31354320136), Relay artifact `9050139049` | FAILED ASSERTION RETAINED; SUPERSEDED RUN CANCELLED |
+| Retained report-number compilation failure | GitHub Actions run [`31355195399`](https://github.com/Hinln/xs-nexus/actions/runs/31355195399), Relay artifact `9050386927` | FAILED COMPILATION RETAINED; SUPERSEDED RUN CANCELLED |
+| Retained relative report-path failure | GitHub Actions run [`31355385268`](https://github.com/Hinln/xs-nexus/actions/runs/31355385268), Relay artifact `9050465451` | FAILED REPORT WRITE RETAINED; SUPERSEDED RUN CANCELLED |
+| Retained idle-Lease capacity failure | GitHub Actions run [`31355663342`](https://github.com/Hinln/xs-nexus/actions/runs/31355663342), Relay artifact `9050582896` | FAILED AT REAL IDLE EXPIRY; SUPERSEDED RUN CANCELLED |
+| Retained fixture-identity compilation failure | GitHub Actions run [`31356055876`](https://github.com/Hinln/xs-nexus/actions/runs/31356055876), Relay artifact `9050672375` | FAILED COMPILATION RETAINED; SUPERSEDED RUN CANCELLED |
+| Retained strict-Clippy failure | GitHub Actions run [`31356167042`](https://github.com/Hinln/xs-nexus/actions/runs/31356167042), passing Relay artifact `9050798784` | RELAY PASS, BASELINE LINT FAIL RETAINED |
+
+The artifact's outer manifest verifies `test.log`, `unit-tests.log`, the capacity manifest, environment, report, revision, test output, and summary. The capacity manifest now records relative names and verifies directly after download without runner-path rewriting. Unit coverage includes global source spray, shared packet/byte capacity, rejection without replay/rate-state consumption, and cleanup release. The integration log ends with authenticated fallback, ciphertext, failover, restart recovery, and Direct restoration passing.
+
+This evidence closes only the safely reproducible hosted submatrix. Public-WAN packet loss/reordering, distributed valid credentials, volumetric DDoS, cloud mitigation, multi-region/multi-instance behavior, and hours/days capacity remain `PRV2-018`/`KI-028`; Gate 08 stays `PARTIAL`.
+
 ## Gate 24 Dependency Topology Evidence
 
 | Evidence | Path | Result |
@@ -183,5 +205,5 @@ Production Controller/Relay/Console remained healthy at `3d93656cc9ec3ea35d58e45
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
-- Gates 08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gates 09/15/18/19/20/21/22/25 current-revision regressions. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

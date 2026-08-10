@@ -363,12 +363,15 @@
 - Clean-commit `make validate-image-supply-chain`, digest-bound Grype scan and vulnerability disposition passed at `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T091605Z`: 113/113 installed OS packages have closure records; Critical 2, High 4, Medium 16, Negligible 24; no currently advertised fix and no fixable finding.
 - Backup dependency negative-to-positive regression: `/srv/xs-nexus/artifacts/qa/image-supply-chain-20260802T090303Z` was correctly rejected for `GHSA-w879-237q-wc7r` in the packaged age binary; rebuilding fixed age `v1.3.1` source with `x/crypto v0.52.0`, rerunning the full Docker lifecycle, and rescanning at the current evidence path passed without a waiver.
 - `make verify-image-vulnerability-disposition EVIDENCE_DIR=/srv/xs-nexus/artifacts/qa/image-supply-chain-20260731T190639Z`：通过；严格匹配剩余三个 glibc CVE，拒绝 fixable/集合漂移，并验证 Controller/Relay 精确镜像二进制不导入受影响 API。
-## 10. Relay 可观测性回归（2026-07-31）
+## 10. Relay 可观测性与资源韧性回归（2026-07-31；2026-08-10 复核）
 
 - 单元测试验证接收/转发字节、分类与总丢弃、发送 I/O 错误、延迟样本/平均/最大值的稳定快照。
 - 真实 UDP Relay 测试验证认证注册、逐字节密文转发、重放和端点伪造拒绝后，指标与实际事件一致。
 - `test-agent-relay.sh` 在双 Relay fallback、主 Relay 故障切换和 Direct 恢复场景中从真实 `/metrics` 断言 `packets_received`、`bytes_received`、`packets_forwarded`、`bytes_forwarded`、`forwarding_latency_samples` 和 `packets_dropped`。
 - 完整命令：`make validate-m23`；结果通过；证据 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z`。
+- Gate 08 资源单测在分配来源状态和执行公钥验签前施加全局注册预算，并覆盖来源地址喷洒、共享全局包队列、共享全局字节队列、拒绝不消耗重放/速率状态、cleanup 释放计数后可重试；配置同时拒绝小于单节点完整队列的全局上限。
+- 专项 `relay-resilience` job 使用真实 PostgreSQL、两个 Agent、两个 Relay、TUN 和 namespace：主 Relay 停止后切换备用 Relay，主 Relay 重启后双方重新注册，再停止备用 Relay并通过重启后的主 Relay 恢复，最后恢复认证 Direct；同时验证密文不可见、重放/伪造拒绝、进程存活和清理。
+- 精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 的 GitHub Actions run `31358498444` 全部六个 job 通过；Relay 专项 job `93362562136` 和 artifact `9051561308` 通过，归档 digest 为 `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`。
 
 ## 11. M7.1 三轮聚合回归（2026-07-31）
 
@@ -389,6 +392,7 @@
 - `cargo clippy -p xs-core -p xs-controller -p xs-agent --all-targets -- -D warnings` 通过。
 - `make test-protocol-throughput` 在 release profile 对 50,000 个 1200 字节 IPv4 包执行完整 XSP/1 seal/open，结果 161,314 往返/s、184.61 MiB/s；证据 `/srv/xs-nexus/artifacts/qa/protocol-throughput-20260731T211232Z`。该结果覆盖 AEAD 与协议校验，但不包含 TUN、UDP socket、Relay 或公网路径开销。
 - `make test-relay-throughput` 使用真实 UDP Relay、认证注册和两节点 Lease 转发 10,000 个帧，64 帧窗口下为 87,822 包/s、18.09 MiB/s，内部转发延迟平均 4 µs、最大 161 µs，指标断言零协议丢弃；证据 `/srv/xs-nexus/artifacts/qa/relay-throughput-20260731T211903Z`。首次无限突发因测试接收 socket 缓冲区丢包失败，未作为产品结论；有界窗口保留真实 Relay 全路径。
+- Gate 08 专项把同一路径扩展到 5,000,000 个 216 字节帧，并按真实协议以同端点、同身份和唯一签名请求周期续租，而不是延长服务端 Lease；70.213 秒内达到 71,212.14 包/s、14.67 MiB/s，内部延迟平均 5 µs、最大 150 µs，断言 5,000,000 个转发、零 Relay 丢弃和零残留包/字节队列。证据为 run `31358498444` artifact `9051561308`；它仍是 hosted loopback 基线，不是公网或多实例容量承诺。
 - Controller 配置事务提交后通过有界 Tokio broadcast 通道按 network ID 通知控制连接；集成测试使用同一凭据建立两条真实 WebSocket，在候选广告生成版本 5 后断言第二条连接自动收到相同签名配置，同时保持唯一节点 presence 语义和连接引用计数。`make test-controller-db` 通过。
 - `make test-agent-rtt` 在同一真实双 Agent/namespace/TUN 环境中先强制 Relay fallback，再恢复认证 Direct 路径；每条路径采样 30 次业务 ICMP。脚本强制 release profile，并断言实际 Agent 进程指向配置的 release 二进制。Direct 平均/p95 为 0.91/1.13 ms，Relay 为 1.16/1.45 ms，平均增量 0.25 ms；两个 Agent 的 10 秒空闲基线平均为 0.55% 单核 CPU、7.95 MiB RSS、9 线程、15 FD；证据 `/srv/xs-nexus/artifacts/qa/agent-rtt-20260731T221036Z`。debug profile 的约 8.5% CPU 不作为性能结论。
 - `make test-windows-agent-routing` 通过：16 个 `xs-windows-route-manager` 事务/DAD/manifest/恢复单元测试、Windows 路由源码门禁、x86_64-pc-windows-msvc target check 和交叉 Clippy；新增 IP Helper `SitePrefixLength` 精确所有权约束。证据日志为服务器临时 `/tmp/xs-windows-routing-2.log`；该证据不代表 WDK 编译或 Windows 实机验收，runtime 仍保持隔离。
