@@ -1129,14 +1129,8 @@ mod tests {
         let metrics = RelayMetrics::default();
         let mut server = RelayServer::new(config, metrics.clone());
         let now = Instant::now();
-        for index in 0..nodes.len() {
-            insert_test_lease(
-                &mut server,
-                nodes[index],
-                leases[index],
-                endpoints[index],
-                now,
-            );
+        for ((node, lease_id), endpoint) in nodes.into_iter().zip(leases).zip(endpoints) {
+            insert_test_lease(&mut server, node, lease_id, endpoint, now);
         }
         GlobalQueueScenario {
             server,
