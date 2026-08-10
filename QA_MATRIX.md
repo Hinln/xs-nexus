@@ -533,3 +533,16 @@
 - [x] 精确证据：revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` 的 run `31352258781` 五 job 全通过；artifact `9049384061` 归档/内部 SHA-256 与无值秘密扫描通过。
 - [x] 失败链：runs `31351583134`、`31351658402`、`31352027606` 分别保留 ShellCheck、受保护 home 执行和 host-path unit verify 缺陷，没有跳过或弱化测试。
 - [ ] 实机边界：普通部署主机整机重启、disk-full、DHCP/address churn、竞争 VPN 路由、重复失败/start-limit 与 arm64 硬件仍未验证；Gate 06 为 `PARTIAL`，不得判定生产通过。
+
+## 25. Gate 09 ACL 强制执行矩阵（2026-08-10）
+
+- [x] 三节点拓扑：三个真实 Linux Agent、TUN 和 namespace 在 Controller 不可用时保持 `network_active` 并使用相同最近签名版本；测试前后均确认离线状态和版本未漂移。
+- [x] 允许矩阵：A→B 的 ICMP、指定 TCP 和指定 UDP 双向业务成功。
+- [x] 拒绝矩阵：A→C 与 C→B 的 ICMP/TCP/UDP、A→B 异常 TCP/UDP 端口、C 伪造 A 虚拟源、C 经允许 A 身份路由均在发送端失败，抓包无匹配 XSP/1 数据帧。
+- [x] 双端执行：两个 B-only deny 端口由发送方产生认证 XSP/1 密文，但 B 的 TUN 不产生对应 TCP/UDP 明文。
+- [x] 身份边界：协议测试分别篡改认证帧的源 Node ID、目标 Node ID、路径头和虚拟源地址，全部拒绝；随后原有效帧仍可接受。
+- [x] 版本边界：低外层版本、同版本异内容、无效签名、无效 ACL、较高外层版本包裹较低 `policy_version` 全部拒绝且当前状态不变。
+- [x] Relay 绕过：认证 Relay 活动时，被拒绝 UDP 不产生匹配 XSR/1 Data 且不抵达 B；既有允许流量、故障切换、重启、重新注册和 Direct 回切继续通过。
+- [x] 子网绕过：审批路由存在时，被拒绝 TCP/UDP 不产生匹配 XSP/1 帧且不抵达 LAN 服务；允许 ICMP/TCP、NAT、伪造拒绝、网关离线和 route/nftables cleanup 继续通过。
+- [x] 精确证据：revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b`，run `31360862865` 全七 job，ACL job `93369332314`，artifact `9052383034`；归档 digest、七个下载文件 SHA-256 和无值秘密扫描通过。
+- [x] 结论边界：Gate 09 为 `PASS`；真实 WAN、真实 NAS/subnet router 与独立安全审计由其他 Gate 保持原状态，总体仍为 `NO_GO`。

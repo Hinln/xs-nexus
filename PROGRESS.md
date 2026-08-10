@@ -478,3 +478,12 @@ make clean
 - 失败链完整保留：Relay 原因分类、rustfmt、数值转换、报告路径、Lease idle timeout、测试身份传参和严格 Clippy 均在独立 runs/artifacts 中可复核；没有 suppress、skip、降低包数/吞吐阈值或允许丢包。
 - 精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 的 GitHub Actions run `31358498444` 全部六个 job 通过：baseline、protocol-fuzz、console-real-e2e、image-reproducibility、linux-agent-recovery 和 relay-resilience；Relay job `93362562136` 与 artifact `9051561308` 的归档 digest、两层 SHA-256 和无值秘密扫描通过。
 - Gate 08 保持 `PARTIAL`：当前是 hosted 单进程 loopback/namespace 与受控进程重启，不是公网对抗、分布式有效凭据、云侧 DDoS、多地域/多实例或小时/天级容量。剩余项记录为 `PRV2-018`/`KI-028`；生产继续运行旧 revision，本分支未部署，总体保持 `NO_GO`。
+
+## 2026-08-10 Gate 09 ACL 强制执行闭环
+
+- 复核发现外层配置版本递增时仍可携带下降的 ACL `policy_version`。提交 `3f27ed9` 增加独立策略版本单调门禁和“拒绝后不变更状态”回归，原有低版本、同版本异内容、无效签名和无效策略测试保持不变。
+- 新增三节点真实 Agent/TUN/namespace 矩阵：Controller 全程不可用且三节点继续使用最近签名配置；A→B 的 ICMP/指定 TCP/UDP 通过，A→C 与 C→B 的 ICMP/TCP/UDP、异常端口、伪造虚拟源和经允许节点路由均在发送端拒绝并且不产生匹配 XSP 帧。
+- B 的接收端独立拒绝端口证明发送方会产生认证 XSP 密文，但接收 TUN 不产生明文；协议测试篡改源/目标 Node ID 和虚拟源，并证明非法帧不会消耗有效帧重放状态。
+- Relay 活动路径的拒绝 UDP 不产生匹配 XSR 数据帧且不抵达 B；已审批子网路径的拒绝 TCP/UDP 不产生 XSP 帧且不抵达 LAN 服务。所有测试使用真实项目进程与内核网络对象，没有替换为 Mock。
+- 最终 exact-head revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` 的 GitHub Actions run `31360862865` 七个 job 全通过；ACL job `93369332314`、artifact `9052383034`、archive digest `fd5cbc219591264ae6f1376db2d5c4aa9949c33be4684196887a3703a9ef8e23`、内部 SHA-256 与无值秘密扫描通过。
+- Gate 09 从 `PARTIAL` 提升为 `PASS`。生产没有部署本分支，真实 WAN、NAS、Windows、计划域名、正式密钥、凭据轮换、异地恢复、外部告警和第三方审计均未因此关闭；总体保持 `NO_GO`。下一步按整改顺序进入 Gate 15 1Panel 共存复核。

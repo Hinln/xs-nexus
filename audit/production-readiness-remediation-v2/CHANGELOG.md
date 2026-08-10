@@ -92,3 +92,13 @@
 - Retained the complete diagnostic chain for path-reason assertion, formatting, numeric conversion, evidence path, idle Lease, fixture identity, and strict Clippy failures. Packet count, minimum throughput, zero-drop, queue, authentication, restart, and cleanup assertions were not reduced or skipped.
 - Exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` passed Relay job `93362562136` in run `31358498444`. Artifact `9051561308` has archive digest `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`; both manifest layers verify directly after download and the no-value scan has zero findings.
 - The measured hosted baseline is 5,000,000 × 216-byte frames in 70.213 seconds, 71,212.14 packet/s, 14.67 MiB/s, internal delay average 5 µs/max 150 µs, zero Relay drops and zero final queue. Gate 08 remains `PARTIAL` because public-WAN, distributed-abuse, cloud-DDoS, multi-region/multi-instance and long-duration evidence remains external; production was not changed.
+
+### Gate 09 ACL enforcement
+
+- Fixed a signed-policy rollback path by requiring both outer configuration version and ACL policy version to remain monotonic before Agent state mutation.
+- Added a real three-Agent/TUN disconnected-Controller matrix for A→B allow, A→C/C→B deny, ICMP/TCP/UDP, unexpected ports, forged virtual source, allowed-node routing attempts, and independent receiver enforcement.
+- Extended protocol identity negatives to forged source and destination Node IDs without consuming valid replay state.
+- Added fail-closed Relay and subnet-router bypass regressions that require absence of matching encrypted transport frames and destination plaintext.
+- First passing artifact `9052236354` was retained as valid but insufficiently explicit for independent evidence review. Assertion markers were added without changing behavior or thresholds, and the final exact-head run was repeated.
+- Revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` passed all seven jobs in run `31360862865`; ACL job `93369332314`, artifact `9052383034`, archive digest, inner checksums, and no-value scan pass.
+- Gate 09 changes to `PASS`. No production host, service, network, 1Panel resource, credential, DNS, firewall, or deployed image was modified; overall status remains `NO_GO`.

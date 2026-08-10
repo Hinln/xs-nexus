@@ -97,7 +97,7 @@ Gate 04 补充证据：revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 修�
 - [x] MUST：网关离线后路由失效。
 - [x] MUST：卸载和禁用可撤销路由。
 
-证据：M3.1 `/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`、M3.2 `/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`。真实 NAS 子网审批仍属于人工门禁，不以 namespace 结果替代。
+证据：M3.1 `/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`、M3.2 `/srv/xs-nexus/artifacts/qa/m3.2-20260730T211914Z`。Gate 09 又在精确 revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` 以三台真实 Linux Agent/TUN、Controller 离线、Direct/Relay/子网路由分别验证 A→B 允许、A→C/C→B 拒绝、ICMP/TCP/UDP、异常端口、伪造虚拟源/Node ID、双端执行、配置与策略双重回滚拒绝，以及 Relay/子网绕过失败；GitHub Actions run `31360862865` 全部七个 job 通过，ACL job `93369332314`、artifact `9052383034` 的归档/内部 SHA-256 和无值秘密扫描通过。Gate 09 为 `PASS`；真实 NAS 子网审批仍属于独立人工门禁，不以 namespace 结果替代。
 
 ---
 

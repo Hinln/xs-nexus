@@ -20,6 +20,7 @@
 | PRV2-016 | High | 24 | `cargo-deny` did not enforce a complete workspace license policy | CLOSED at `3bf8619`: explicit allowlist and full all-feature check PASS |
 | PRV2-017 | High | 06 | Hosted real-systemd crash/restart and isolated link-change pass, but no approved ordinary host has completed reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 recovery | BLOCKED_EXTERNAL |
 | PRV2-018 | High | 08/21 | Hosted Relay resource bounds, 5M-frame sustained forwarding, and controlled two-Relay restart pass, but public-WAN adversarial, multi-region/multi-instance, volumetric and long-duration capacity evidence is absent | BLOCKED_EXTERNAL |
+| PRV2-019 | High | 09 | A higher signed configuration version could carry a lower ACL policy version and roll Agent authorization state back | CLOSED at `3f27ed9`; exact-head Gate 09 PASS at `e908e67` |
 
 Findings remain open until the associated raw evidence is linked from `EVIDENCE_INDEX.md`.
 
@@ -30,3 +31,5 @@ The four closed Gate 23 findings were independently revalidated at exact commit 
 `PRV2-017` has complete automated evidence for its safely reproducible submatrix at exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02`, GitHub Actions run `31352258781`, job `93345151258`, and artifact `9049384061`. It remains blocked because destructive host failure modes must not be exercised on the production server and no disposable approved Linux/arm64 host is currently available.
 
 `PRV2-018` has complete automated evidence for bounded single-process Relay admission/queue accounting, authenticated 5,000,000-frame forwarding with short-Lease renewal, and controlled two-Relay stop/restart recovery at exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e`, run `31358498444`, job `93362562136`, and artifact `9051561308`. It remains blocked because hosted loopback/namespace evidence cannot prove Internet-scale abuse resistance, cloud-edge saturation controls, multi-region/multi-instance behavior, or an hours/days production operating envelope.
+
+`PRV2-019` is closed by independent monotonic enforcement of `configuration.version` and `policy_version`, with rejection-before-mutation regression. Exact revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b`, run `31360862865`, job `93369332314`, and artifact `9052383034` additionally prove the complete Direct/Relay/subnet ACL matrix. The closure changes Gate 09 only and does not alter external findings or overall `NO_GO`.

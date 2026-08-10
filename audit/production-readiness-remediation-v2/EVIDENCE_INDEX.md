@@ -190,6 +190,24 @@ The root binds source revision `45dbc19690f6f738a43cabf2c344118d0b8bc055`, the s
 
 Production Controller/Relay/Console remained healthy at `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `1panel-network` ID/subnet, default route, IP rules, canonical nftables, containers, Docker networks, and failed units were unchanged, and temporary QA resources were absent. This evidence closes only `KI-026`; Gate 24 remains `PARTIAL`.
 
+## Gate 09 ACL Enforcement Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Policy rollback fix | Git revision `3f27ed9` | VERIFIED |
+| Final exact source | Git revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` | VERIFIED |
+| Exact-head CI | GitHub Actions run [`31360862865`](https://github.com/Hinln/xs-nexus/actions/runs/31360862865) | PASS, ALL 7 JOBS |
+| ACL job | GitHub Actions job [`93369332314`](https://github.com/Hinln/xs-nexus/actions/runs/31360862865/job/93369332314) | PASS |
+| Final ACL artifact | Artifact `9052383034`, `acl-enforcement-evidence` | PASS |
+| Artifact archive digest | `fd5cbc219591264ae6f1376db2d5c4aa9949c33be4684196887a3703a9ef8e23` | VERIFIED |
+| Downloaded inner manifest | `SHA256SUMS` hash `8a43cf8a4619c957baf7e108c68b4e4f879e6934bbf42ab169f0aa14b97a5205` | PASS, 6 PAYLOADS |
+| Downloaded no-value scan | Repository scanner over extracted artifact | PASS, 0 FINDINGS |
+| Superseded terse artifact | Run `31360425165`, artifact `9052236354` | PASSING BUT NON-FINAL; ASSERTION MARKERS INCOMPLETE |
+
+The final artifact binds exact revision, configuration rollback tests, forged Node/source identity tests, a three-Agent disconnected-Controller Direct matrix, authenticated Relay bypass regression, and approved subnet-router bypass regression. Structured markers prove offline policy retention, sender deny, receiver deny, Relay deny, and subnet TCP/UDP deny; traffic tests use real Agent processes, TUN interfaces, XSP/1/XSR/1 frames, and Linux namespaces.
+
+Gate 09 is `PASS`. The artifact does not claim public-WAN conditions, real NAS/router operation, independent protocol audit, formal release provenance, or production deployment. Production remains unchanged and overall status remains `NO_GO`.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.
@@ -205,5 +223,5 @@ Production Controller/Relay/Console remained healthy at `3d93656cc9ec3ea35d58e45
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
-- Gates 09/15/18/19/20/21/22/25 current-revision regressions. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gates 15/18/19/20/21/22/25 current-revision regressions. Gate 09 is complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

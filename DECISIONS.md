@@ -1079,3 +1079,15 @@
 - 故障验证：双 Agent/双 Relay namespace 必须证明主 Relay 停止、备用接管、主 Relay 重启、双方重新注册、备用停止后经重启主 Relay 恢复，以及最终认证 Direct 回切；断言依据实际认证端点，不把合法 `relay_fallback`/`relay_failover` 状态命名差异伪报为链路失败。
 - 证据：精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e`；GitHub Actions run `31358498444`；Relay job `93362562136`；artifact `9051561308`，归档 digest `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`，下载后原始相对 SHA-256 清单和无值秘密扫描均通过。
 - 边界：该决策只闭合 hosted 单进程资源边界、持续 loopback 转发和受控 Relay 重启。真实公网恶意流量、分布式有效凭据、云侧链路饱和、多地域/多实例容量和小时/天级负载仍需外部环境；Gate 08 保持 `PARTIAL`，总体保持 `NO_GO`。
+
+---
+
+## ADR-094：配置外层版本与 ACL 策略版本必须分别单调
+
+- 状态：接受
+- 日期：2026-08-10
+- 背景：签名配置同时包含传输/拓扑使用的 `configuration.version` 和授权语义使用的 `policy_version`。只约束外层版本会允许“较高配置版本包裹较低 ACL 策略版本”的已签名回滚，破坏 Agent 最近有效授权状态。
+- 决策：Agent 在解析、签名、网络和节点身份校验后、任何状态替换前，分别要求外层配置版本和策略版本不下降；外层同版本异内容继续按 equivocation 失败关闭。策略版本下降即使外层版本更高也拒绝，拒绝不得修改持久状态、路由、Peer 或 ACL。
+- Gate 09 证据拓扑：三节点 Direct 矩阵证明 Controller 离线下的 A→B allow、A→C/C→B deny 和双端执行；独立 Relay 与子网 namespace 矩阵证明授权不能通过转发路径绕过；协议单测证明 Node ID 和虚拟源身份绑定。所有路径使用真实 Agent/TUN/XSP/1，不以 Mock 替代。
+- 证据：修复提交 `3f27ed9`；最终 revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b`；GitHub Actions run `31360862865`、ACL job `93369332314`、artifact `9052383034`。
+- 边界：namespace 证据足以关闭 ACL 实现 Gate 09，但不替代真实 WAN、真实 NAS/subnet router、独立安全审计或生产部署；总体仍为 `NO_GO`。
