@@ -887,7 +887,8 @@ wait_relay_metric "$RELAY_HEALTH_1" active_leases 2
 kill "$RELAY_2_PID"
 wait "$RELAY_2_PID"
 RELAY_2_PID=
-wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_failover
+wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" \
+    relay_fallback,relay_failover
 ip netns exec "$NETNS_A" "$PROBE" icmp \
     --destination "$virtual_ip_b" \
     --payload xs-m23-relay-restart-recovery \
