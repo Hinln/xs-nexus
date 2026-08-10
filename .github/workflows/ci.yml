@@ -56,7 +56,7 @@ jobs:
       - run: make security-check
       - run: make dependency-check
       - run: make test-production-health
-      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh scripts/test-agent-systemd.sh scripts/test-agent-relay.sh
+      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh scripts/test-agent-systemd.sh scripts/test-agent-relay.sh scripts/test-relay-throughput.sh
 
   linux-agent-recovery:
     runs-on: ubuntu-24.04
@@ -134,7 +134,17 @@ jobs:
         with:
           toolchain: 1.94.0
       - run: mkdir -p artifacts/relay-resilience
-      - run: shellcheck scripts/test-agent-relay.sh
+      - run: shellcheck scripts/test-agent-relay.sh scripts/test-relay-throughput.sh
+      - name: Run Relay unit and resource-boundary tests
+        run: |
+          set -o pipefail
+          cargo test -p xs-relay --all-targets 2>&1 | tee artifacts/relay-resilience/unit-tests.log
+      - name: Run sustained Relay capacity baseline
+        run: |
+          EVIDENCE_DIR=artifacts/relay-resilience/capacity \
+            XS_RELAY_THROUGHPUT_PACKETS=1000000 \
+            XS_RELAY_MINIMUM_PACKETS_PER_SECOND=10000 \
+            make test-relay-throughput
       - name: Run Relay loss and restart recovery
         run: |
           set -o pipefail
@@ -146,6 +156,12 @@ jobs:
             make test-agent-relay 2>&1 | tee artifacts/relay-resilience/test.log
           printf 'revision=%s\nstatus=PASS\n' "$GITHUB_SHA" >artifacts/relay-resilience/summary.txt
           sha256sum artifacts/relay-resilience/test.log \
+            artifacts/relay-resilience/unit-tests.log \
+            artifacts/relay-resilience/capacity/SHA256SUMS \
+            artifacts/relay-resilience/capacity/environment.txt \
+            artifacts/relay-resilience/capacity/report.json \
+            artifacts/relay-resilience/capacity/revision.txt \
+            artifacts/relay-resilience/capacity/test-output.txt \
             artifacts/relay-resilience/summary.txt \
             >artifacts/relay-resilience/SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
