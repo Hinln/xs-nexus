@@ -785,16 +785,9 @@ mod tests {
         assert!(sender.rotate_epoch(0).is_err());
         assert_eq!(sender.current_epoch(), u32::MAX);
 
-        let mut receiver = DataReceiver::new(
-            secret,
-            ids.0,
-            ids.1,
-            ids.2,
-            ids.3,
-            source,
-            destination,
-        )
-        .expect("receiver");
+        let mut receiver =
+            DataReceiver::new(secret, ids.0, ids.1, ids.2, ids.3, source, destination)
+                .expect("receiver");
         receiver.current.epoch = u32::MAX;
         assert!(receiver.install_next_epoch(0).is_err());
         assert_eq!(receiver.current_epoch(), u32::MAX);
