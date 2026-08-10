@@ -233,6 +233,8 @@ systemd-run \
     --collect \
     --quiet \
     --property=Type=simple \
+    --property=Restart=on-failure \
+    --property=RestartSec=1s \
     --property=PrivateNetwork=yes \
     --property=CapabilityBoundingSet=CAP_NET_ADMIN \
     --property=AmbientCapabilities=CAP_NET_ADMIN \
@@ -244,7 +246,7 @@ systemd-run \
     --property=ProtectHome=yes \
     --property="ReadWritePaths=$state_directory $runtime_directory" \
     --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' \
-    --property=RuntimeMaxSec=60s \
+    --property=RuntimeMaxSec=120s \
     "$ROOT_DIR/target/debug/xs-agent" run --config "$config_path"
 
 current_step=socket_wait
@@ -275,18 +277,54 @@ grep -F 'configured_peers=0 returned=0 truncated=false' <<<"$peers_output" >/dev
 diagnostics_output=$("$ROOT_DIR/target/debug/xs" diagnostics --socket "$socket_path")
 grep -F 'address_pool=100.89.20.0/24' <<<"$diagnostics_output" >/dev/null
 
-current_step=crash_recovery
+current_step=crash_restart
 test -f "$state_directory/network-manifest.json"
+initial_main_pid=$main_pid
 systemctl kill --kill-whom=main --signal=SIGKILL "$unit.service"
+restarted_main_pid=0
+for _ in {1..150}; do
+    candidate_pid=$(systemctl show --property=MainPID --value "$unit.service")
+    if systemctl is-active --quiet "$unit.service" \
+        && [[ $candidate_pid =~ ^[1-9][0-9]*$ ]] \
+        && [[ $candidate_pid != "$initial_main_pid" ]] \
+        && "$ROOT_DIR/target/debug/xs" status --socket "$socket_path" >/dev/null 2>&1; then
+        restarted_main_pid=$candidate_pid
+        break
+    fi
+    sleep 0.1
+done
+[[ $restarted_main_pid =~ ^[1-9][0-9]*$ ]]
+restart_count=$(systemctl show --property=NRestarts --value "$unit.service")
+[[ $restart_count =~ ^[0-9]+$ ]]
+(( restart_count == 1 ))
+test -f "$state_directory/network-manifest.json"
+nsenter --target "$restarted_main_pid" --net ip link show dev "$TEST_INTERFACE" >/dev/null
+test ! -e "/sys/class/net/$TEST_INTERFACE"
+
+current_step=network_change
+nsenter --target "$restarted_main_pid" --net ip link set dev lo down
+sleep 0.5
+systemctl is-active --quiet "$unit.service"
+[[ $(systemctl show --property=MainPID --value "$unit.service") == "$restarted_main_pid" ]]
+nsenter --target "$restarted_main_pid" --net ip link set dev lo up
+"$ROOT_DIR/target/debug/xs" status --socket "$socket_path" >/dev/null
+
+current_step=unit_stop
+systemctl stop "$unit.service"
 for _ in {1..50}; do
     ! systemctl is-active --quiet "$unit.service" && break
     sleep 0.1
 done
-if systemctl is-active --quiet "$unit.service"; then
-    exit 1
-fi
+! systemctl is-active --quiet "$unit.service"
+
+current_step=crash_cleanup
 "$ROOT_DIR/target/debug/xs-agent" cleanup --config "$config_path" >/dev/null
 test ! -e "$state_directory/network-manifest.json"
 rm -f "$socket_path"
 test ! -e "/sys/class/net/$TEST_INTERFACE"
-printf 'Agent systemd lifecycle, crash cleanup, and local diagnostics passed\n'
+printf 'initial_main_pid=%s\n' "$initial_main_pid"
+printf 'restarted_main_pid=%s\n' "$restarted_main_pid"
+printf 'restart_count=%s\n' "$restart_count"
+printf 'network_change=PASS\n'
+printf 'crash_cleanup=PASS\n'
+printf 'status=PASS\n'
