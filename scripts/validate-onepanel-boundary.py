@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -143,19 +145,67 @@ def validate_rendered_compose(root: Path) -> list[str]:
     docker = shutil.which("docker")
     if docker is None:
         return ["docker CLI is unavailable for rendered Compose validation"]
-    command = [
-        docker,
-        "compose",
-        "-f",
-        str(root / "deploy/docker/compose.yaml"),
-        "-f",
-        str(root / "deploy/docker/edge.compose.yaml"),
-        "config",
-        "--no-interpolate",
-        "--format",
-        "json",
-    ]
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    with tempfile.TemporaryDirectory() as temporary:
+        fixture = Path(temporary)
+        directories = {
+            name: fixture / name
+            for name in (
+                "backups",
+                "controller",
+                "database",
+                "edge-data",
+                "relay",
+                "replica",
+            )
+        }
+        for directory in directories.values():
+            directory.mkdir()
+        edge_config = fixture / "Caddyfile"
+        edge_config.write_text(":8080 { respond \"ok\" }\n", encoding="utf-8")
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "XS_BACKUP_DIR": str(directories["backups"]),
+                "XS_BACKUP_REPLICA_DIR": str(directories["replica"]),
+                "XS_COMPOSE_PROJECT_NAME": "xs-nexus-coexistence-validation",
+                "XS_CONSOLE_IMAGE": "alpine:3.22",
+                "XS_CONTROLLER_IMAGE": "alpine:3.22",
+                "XS_CONTROLLER_SECRETS_DIR": str(directories["controller"]),
+                "XS_DATABASE_APP_ROLE": "xs_app",
+                "XS_DATABASE_OWNER_ROLE": "xs_owner",
+                "XS_DATABASE_SCHEMA": "xs_nexus_validation",
+                "XS_DATABASE_SECRETS_DIR": str(directories["database"]),
+                "XS_DB_TOOLS_IMAGE": "alpine:3.22",
+                "XS_DEPLOYMENT": "dev",
+                "XS_DISCOVERY_PUBLIC_ENDPOINT": "127.0.0.1:42000",
+                "XS_EDGE_CONFIG_FILE": str(edge_config),
+                "XS_EDGE_DATA_DIR": str(directories["edge-data"]),
+                "XS_EDGE_IMAGE": "alpine:3.22",
+                "XS_MIGRATION_IMAGE": "alpine:3.22",
+                "XS_RELAY_ID_BASE64": "AAAAAAAAAAAAAAAAAAAAAA==",
+                "XS_RELAY_IMAGE": "alpine:3.22",
+                "XS_RELAY_SECRETS_DIR": str(directories["relay"]),
+                "XS_RELEASE_REVISION": "0" * 40,
+            }
+        )
+        command = [
+            docker,
+            "compose",
+            "-f",
+            str(root / "deploy/docker/compose.yaml"),
+            "-f",
+            str(root / "deploy/docker/edge.compose.yaml"),
+            "config",
+            "--format",
+            "json",
+        ]
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
+        )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
         return [f"docker compose config failed: {detail}"]
