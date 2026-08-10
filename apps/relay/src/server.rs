@@ -959,10 +959,9 @@ mod tests {
         let first = register(&relay.context, 35, [55_u8; 16]).await;
         let second = register(&relay.context, 36, [56_u8; 16]).await;
         let inner = framed_xsp_keepalive(relay.context.network_id, first.node_id, second.node_id);
-        let frame_bytes = u32::try_from(
-            relay_frame(&relay.context, &first, &second, 1, &inner).len(),
-        )
-        .expect("frame length fits u32");
+        let frame_bytes =
+            u32::try_from(relay_frame(&relay.context, &first, &second, 1, &inner).len())
+                .expect("frame length fits u32");
         let started = Instant::now();
         let mut received = [0_u8; RELAY_MAX_FRAME_LENGTH];
         for window_start in (1..=u64::from(packets)).step_by(64) {
