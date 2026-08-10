@@ -142,7 +142,7 @@ jobs:
       - name: Run sustained Relay capacity baseline
         run: |
           EVIDENCE_DIR=artifacts/relay-resilience/capacity \
-            XS_RELAY_THROUGHPUT_PACKETS=1000000 \
+            XS_RELAY_THROUGHPUT_PACKETS=5000000 \
             XS_RELAY_MINIMUM_PACKETS_PER_SECOND=10000 \
             make test-relay-throughput
       - name: Run Relay loss and restart recovery

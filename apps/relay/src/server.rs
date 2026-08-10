@@ -992,9 +992,9 @@ mod tests {
         assert_eq!(snapshot.packets_dropped, 0);
         assert_eq!(snapshot.queued_packets, 0);
         assert_eq!(snapshot.queued_bytes, 0);
-        let total_bytes = packets
-            .checked_mul(frame_bytes)
-            .expect("byte count fits u32");
+        let total_bytes = u64::from(packets)
+            .checked_mul(u64::from(frame_bytes))
+            .expect("byte count fits u64");
         let report = serde_json::json!({
             "packets": packets,
             "frame_bytes": frame_bytes,
@@ -1020,7 +1020,7 @@ mod tests {
 
     fn throughput_packet_count() -> u32 {
         const DEFAULT_PACKETS: u32 = 10_000;
-        const MAXIMUM_PACKETS: u32 = 1_000_000;
+        const MAXIMUM_PACKETS: u32 = 5_000_000;
         let packets = match std::env::var("XS_RELAY_THROUGHPUT_PACKETS") {
             Ok(value) => value.parse::<u32>().expect("valid throughput packet count"),
             Err(std::env::VarError::NotPresent) => DEFAULT_PACKETS,
