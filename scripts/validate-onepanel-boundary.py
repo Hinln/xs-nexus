@@ -168,6 +168,7 @@ def validate_rendered_compose(root: Path) -> list[str]:
                 "XS_BACKUP_DIR": str(directories["backups"]),
                 "XS_BACKUP_REPLICA_DIR": str(directories["replica"]),
                 "XS_COMPOSE_PROJECT_NAME": "xs-nexus-coexistence-validation",
+                "COMPOSE_PROFILES": "baseline,migration,ops",
                 "XS_CONSOLE_IMAGE": "alpine:3.22",
                 "XS_CONTROLLER_IMAGE": "alpine:3.22",
                 "XS_CONTROLLER_SECRETS_DIR": str(directories["controller"]),
@@ -220,7 +221,10 @@ def validate_rendered_compose(root: Path) -> list[str]:
     services = configuration.get("services", {})
     expected = EXPECTED_APPLICATION_SERVICES | {"edge"}
     if set(services) != expected:
-        failures.append("rendered Compose service set differs from the reviewed set")
+        failures.append(
+            "rendered Compose services differ: "
+            f"expected {sorted(expected)}, got {sorted(services)}"
+        )
     for name, service in services.items():
         networks = service.get("networks", {})
         if "1panel-network" not in networks:
