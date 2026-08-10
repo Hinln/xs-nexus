@@ -9,7 +9,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 03 | Formal key lifecycle | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Human-controlled offline ceremony, backup, revoke, and recovery |
 | 04 | XSP/1 internal security | PARTIAL | PASS | Continue regression and obtain the separate Gate 05 independent review before any production-security claim |
 | 05 | Independent security audit | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Independent report, findings, fixes, and retest |
-| 06 | Linux Agent recovery | PARTIAL | PARTIAL | Real-host reboot/failure/network-change matrix |
+| 06 | Linux Agent recovery | PARTIAL | PARTIAL | Real-host reboot, disk-full, DHCP/address-churn and competing-VPN conflict matrix; hosted real-systemd crash/restart and isolated link-change are complete |
 | 07 | Real Direct/NAT | SIMULATED_ONLY | SIMULATED_ONLY | Different public networks, hotspot, UDP block, Relay and Direct recovery |
 | 08 | Relay security and resilience | PARTIAL | PARTIAL | Adversarial public-network and sustained-capacity evidence |
 | 09 | ACL enforcement | PARTIAL | PARTIAL | A/B/C topology and Relay/subnet bypass attempts |
@@ -51,6 +51,8 @@ Counts change only after raw evidence has been indexed and independently checked
 - UNKNOWN: 1
 
 Gate 04 changed from `PARTIAL` to `PASS` after code-bearing revision `875395352afc8a17dafc17b2496d62ce701ee4ae` fixed lost-response state-machine failures without changing XSP/1 framing or cryptographic primitives. Exact-head GitHub Actions run `31350065978` passed formatting, strict Clippy, all workspace tests, real PostgreSQL and namespace regressions, Console E2E, double no-cache image reproducibility, and six AddressSanitizer fuzz targets for 180 seconds each. Downloaded fuzz evidence contains 525 SHA-256 verified files, six PASS status files, zero secret-scan findings, and 134,262,706 total executions. Gate 05 remains `BLOCKED_EXTERNAL`; this internal gate result is not an independent protocol or cryptographic audit and does not change overall `NO_GO`.
+
+Gate 06 remains `PARTIAL`. Exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` passed all five jobs in GitHub Actions run `31352258781`. Dedicated job `93345151258` ran the Agent as a real transient systemd service with `Restart=on-failure` and a private network namespace, killed the main process with `SIGKILL`, observed exactly one replacement PID, preserved the signed state manifest, recreated the TUN only inside the service namespace, survived an isolated link down/up event, and left no host interface or active unit after stop. Artifact `9049384061` has verified archive digest `2a88d3a6344c66c699daff9966119df0a77718bcb6b68499ac43a293c742009f`, verified inner checksums, and a zero-finding no-value scan. This hosted x86_64 evidence does not cover a deployed ordinary host reboot, disk exhaustion, DHCP/address churn, competing VPN routes, or arm64/NAS operation; production still runs the older revision without a host Agent.
 
 Gate 16 changed to `PASS` after exact revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` passed full CI, isolated PostgreSQL and Docker lifecycle validation, production role migration, negative permissions, deployment, independent SSH reverse verification, and post-finalization checks. Gate 02 remains `FAIL` because the platform bootstrap credential and other disclosed credentials have not all been rotated and independently rejected.
 

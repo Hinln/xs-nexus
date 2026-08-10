@@ -341,3 +341,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0033`：Server 发送 ServerFinish 后立即进入 Established 并丢弃编码，最终响应丢失时重复 ClientFinish 得不到响应。修复为按 ClientFinish 摘要有界缓存精确 ServerFinish；重复请求不重建 nonce/密钥且不授权路径迁移。
 - `XS-2026-0034`：KeyUpdate 尝试耗尽后仅清空 pending，下一 Tick 会静默启动另一轮相同 Epoch 更新，与规范要求的完整重握手不符。修复为显式 `Rehandshake` 动作并清除会话路径探测状态；单元测试覆盖全部尝试和耗尽边界。
 - `XS-2026-0035`：首个 CI run `31349380836` 被固定 rustfmt 门禁拒绝；格式修复后的 run `31349709018` 又由严格 Clippy 拒绝 105 行维护函数。按工具输出格式化并抽取会话维护函数，未添加 allow/ignore；最终 run `31350065978` 四项 job 全通过，失败运行保持可审计。
+
+## Gate 06 Linux Agent 恢复测试闭环（2026-08-10）
+
+- `XS-2026-0036`：原 systemd 回归验证了 transient unit、TUN 隔离和可信 cleanup，但 `SIGKILL` 后由脚本手工清理，没有证明正式 `Restart=on-failure` 行为。修复后测试要求不同 PID 的单次自动重启、状态保留、TUN 私有重建、链路变化存活和最终清理。
+- `XS-2026-0037`：首次 CI 加固版从 runner home 直接执行 Agent，而 unit 保持 `ProtectHome=yes`，真实失败为 `203/EXEC`。没有关闭 `ProtectHome`；改为把精确构建产物复制到唯一的 `/usr/local/lib/xs-nexus-tests/<unit>` 测试路径，并只清理该路径。
+- `XS-2026-0038`：运行路径修复后，`systemd-analyze verify` 仍检查正式 `/usr/local/lib/xs-nexus/current` 可执行文件，导致 `unit_verify` 失败。改为在临时 root 中复制正式 unit 和测试二进制，再以 `--root` 验证；主机正式安装路径不再触碰。
+- 失败 runs `31351583134`、`31351658402`、`31352027606` 与失败 artifact `9049311530` 均保留。最终 exact-head run `31352258781` 五项 job 全通过，专项 artifact `9049384061` 的归档/内部哈希和无值秘密扫描通过。

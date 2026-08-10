@@ -137,6 +137,25 @@ The state-machine regressions prove that lost KeyUpdateAck and PathResponse pack
 
 The AddressSanitizer artifact records six targets at 180 seconds each: credential 1,400,229 executions, data 131,659,099, discovery 339,852, handshake 97,594, relay 688,081, and session_state 77,851, totaling 134,262,706. All six status files and the overall summary are PASS; all 525 `SHA256SUMS` entries independently match. This closes only internal Gate 04. Gate 05 independent review, formal keys, real WAN/device gates, signed release, deployment provenance, soak, and other open production gates remain unchanged.
 
+## Gate 06 Linux Agent Recovery Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Recovery harness implementation | Git revisions `998e06fe8d11c7186d6c883e9dce40e7abda23c9`, `b967691547b99b002692ab4d413a6215ac1f6884`, `9ca211512f9aac2fae0a78ef22e288818be9b76a`, `fb45fd43256d65cb4c72824d6cee0bec0884ad02` | VERIFIED |
+| Exact-head GitHub Actions | GitHub Actions run [`31352258781`](https://github.com/Hinln/xs-nexus/actions/runs/31352258781), exact head `fb45fd43256d65cb4c72824d6cee0bec0884ad02` | PASS, 5 JOBS |
+| Real-systemd recovery job | GitHub Actions job [`93345151258`](https://github.com/Hinln/xs-nexus/actions/runs/31352258781/job/93345151258) | PASS |
+| Recovery artifact | GitHub artifact `9049384061`; verified copy `C:\Users\panyo\Documents\Codex\2026-07-29\yue\gate06-ci-fb45fd4` | PASS, ARCHIVE SHA-256 VERIFIED |
+| Artifact archive digest | `2a88d3a6344c66c699daff9966119df0a77718bcb6b68499ac43a293c742009f` | VERIFIED AGAINST GITHUB METADATA |
+| Inner evidence checksums | `test.log` `53a3cd38ef1f6d7fabb7e9b0facaa2615fd9f2b235798dfa5d156456459dcce8`; `summary.txt` `14db1ee65fcb6d7d1e90fa8373375a92f6ce8395ec29094f3fe683a3af64364a` | VERIFIED |
+| Downloaded artifact no-value scan | `C:\Users\panyo\Documents\Codex\2026-07-29\yue\gate06-ci-fb45fd4` | PASS, 0 FINDINGS |
+| Retained ShellCheck failure | GitHub Actions run [`31351583134`](https://github.com/Hinln/xs-nexus/actions/runs/31351583134) | FAILED JOB RETAINED; SUPERSEDED RUN CANCELLED |
+| Retained protected-home execution failure | GitHub Actions run [`31351658402`](https://github.com/Hinln/xs-nexus/actions/runs/31351658402) | `203/EXEC` RETAINED; SUPERSEDED RUN CANCELLED |
+| Retained host-path unit-verification failure | GitHub Actions run [`31352027606`](https://github.com/Hinln/xs-nexus/actions/runs/31352027606), failed artifact `9049311530` | FAILED JOB/ARTIFACT RETAINED; SUPERSEDED RUN CANCELLED |
+
+The passing job uses a unique test-only binary below `/usr/local/lib/xs-nexus-tests/<unit>`, validates the packaged service file through an isolated `systemd-analyze --root` tree, and never creates or changes the formal `/usr/local/lib/xs-nexus/current` installation. The transient service uses `PrivateNetwork`, real `/dev/net/tun`, `Restart=on-failure`, and the production sandbox boundaries relevant to TUN/Netlink. A forced crash produced exactly one new main PID, retained state, recreated the TUN only inside the service namespace, survived an isolated network-link change, and cleaned the unit/interface on stop.
+
+This is authoritative automated evidence for the crash/restart and isolated link-change submatrix only. It is not evidence of an ordinary deployed-host reboot, disk-full behavior, DHCP lease/address churn, coexistence with another VPN and competing routes, real arm64 hardware, or NAS operation. Those items require a disposable approved Linux host and remain open; Gate 06 stays `PARTIAL`.
+
 ## Gate 24 Dependency Topology Evidence
 
 | Evidence | Path | Result |
@@ -163,5 +182,6 @@ Production Controller/Relay/Console remained healthy at `3d93656cc9ec3ea35d58e45
 - Gate 02 no-value secret inventory, rotation receipts, old-value rejection checks, deep artifact/history/layer scan.
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
-- Gates 06/08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
+- Gates 08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

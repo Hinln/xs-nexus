@@ -18,9 +18,12 @@
 | PRV2-014 | Medium | 20/23 | Production PostgreSQL Docker logs had no bounded rotation policy | CLOSED at `9764d58`: `10m`/`5` policy applied with rollback and production invariants |
 | PRV2-015 | Medium | 19/23 | Framework JSON extraction errors exposed detailed parser rejection text to unauthenticated clients | CLOSED at `03c7557`: exact generic 400 envelope and negative regressions |
 | PRV2-016 | High | 24 | `cargo-deny` did not enforce a complete workspace license policy | CLOSED at `3bf8619`: explicit allowlist and full all-feature check PASS |
+| PRV2-017 | High | 06 | Hosted real-systemd crash/restart and isolated link-change pass, but no approved ordinary host has completed reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 recovery | BLOCKED_EXTERNAL |
 
 Findings remain open until the associated raw evidence is linked from `EVIDENCE_INDEX.md`.
 
 `PRV2-005` repository-side preparation is complete at commit `94ccae3`: a strict TLS/SNI/HTTP/WebSocket auditor, negative tests, and a placeholder-only OpenResty template route the approved future origin to Console. The production finding is not closed. DNS/CDN/1Panel ownership and certificate material require explicit owner authorization; current raw evidence remains a functional failure.
 
 The four closed Gate 23 findings were independently revalidated at exact commit `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`. GitHub Actions run `31313868529` passed all four jobs, and the clean-checkout evidence root `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` passed every recorded status. These closures do not close the remaining global Critical/High findings, do not deploy `3bf8619`, and do not change the overall `NO_GO` decision.
+
+`PRV2-017` has complete automated evidence for its safely reproducible submatrix at exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02`, GitHub Actions run `31352258781`, job `93345151258`, and artifact `9049384061`. It remains blocked because destructive host failure modes must not be exercised on the production server and no disposable approved Linux/arm64 host is currently available.

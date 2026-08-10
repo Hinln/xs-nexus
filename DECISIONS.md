@@ -1055,3 +1055,14 @@
 - 决策：Server 在有界握手重试窗口内按 ClientFinish 摘要缓存精确 ServerFinish，匹配重复请求只返回缓存帧且不授权路径迁移。PathChallenge 和 KeyUpdate 保持逻辑 Path ID/token 或 payload/Epoch 不变，但每次重试通过当前发送器生成新的单调序列与 AEAD 密文。KeyUpdate 重试耗尽、序列耗尽或状态不确定时丢弃会话并完整重握手。
 - 兼容性：XSP/1 版本、字段、长度、密钥派生和首个请求编码均不变；旧实现仍可处理新序列重试。测试向量新增 `retry_semantics` 元数据，不改变既有字节向量；Fuzz 状态机和 corpus 覆盖同 payload 的新序列重试与旧密文重放拒绝。
 - 验证边界：内部回归只能证明实现行为，不替代独立密码学审计、真实 WAN 丢包矩阵或正式发布门禁；这些 Gate 状态保持原结论，直至各自原始证据完成。
+
+---
+
+## ADR-092：Linux Agent 恢复测试不得依赖或改写正式安装路径
+
+- 状态：接受
+- 日期：2026-08-10
+- 背景：真实 systemd sandbox 的 `ProtectHome=yes` 会正确阻止从 CI runner home 执行二进制；若为绕过该限制而关闭 sandbox，会使测试失真。旧测试又曾临时依赖 `/usr/local/lib/xs-nexus/current` 完成 unit verify，存在与既有安装冲突的风险。
+- 决策：每次恢复测试创建唯一 `/usr/local/lib/xs-nexus-tests/<unit>` 根并复制精确构建产物，保持 `ProtectHome`、设备、capability、namespace 和文件系统限制。正式 unit 复制到临时 root，并通过 `systemd-analyze verify --root` 离线验证；测试永不创建、替换或删除正式 `current` 路径。
+- 验证：transient unit 必须以 `Restart=on-failure` 运行，`SIGKILL` 后恰好自动重启一次且 PID 改变；签名状态保留、TUN 只在私有 namespace 重建、隔离链路变化后进程存活，最终 unit/TUN/test root 全部清理。run `31352258781` 和 artifact `9049384061` 通过。
+- 边界：GitHub hosted x86_64 的真实 systemd/TUN 证据不替代普通主机 reboot、disk-full、DHCP/VPN 冲突、arm64/NAS 或生产 Agent 部署。Gate 06 保持 `PARTIAL`。

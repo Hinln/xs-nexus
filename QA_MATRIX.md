@@ -193,7 +193,7 @@
 - 已通过：真实 x86_64 与 aarch64 release 构建，分别验证 ELF `X86-64` 与 `AArch64`；
 - Enrollment Token 的一次性、过期和错误语义由 M1.1 Controller/PostgreSQL 集成测试覆盖；安装器只接受 token 文件路径并在 staging 后删除，不在命令行或状态中输出 token；
 - 截断或下载中断产物由外部清单长度、文件名和 SHA-256 校验失败关闭；安装器不内置下载器；
-- systemd 自动重启与 SIGKILL 后可信 cleanup 已在真实 transient unit 验证；整机重启、真实 arm64/NAS 运行仍属于实机门禁；
+- systemd 自动重启与 SIGKILL 后可信 cleanup 已在真实 transient unit 验证；精确 Gate 06 补充证据为 revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02`、run `31352258781`、job `93345151258` 和 artifact `9049384061`；整机重启、真实 arm64/NAS 运行仍属于实机门禁；
 - 证据：`/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。
 
 ### M5.2 自动化结果
@@ -519,3 +519,13 @@
 - [x] 精确 revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 的 run `31350065978`：格式、严格 Clippy、构建、全量测试、真实数据库/namespace、Console E2E、五镜像双无缓存复现及六目标 AddressSanitizer Fuzz 全通过。
 - [x] Fuzz 证据：六目标各 180 秒，总计 134,262,706 次；525 项 SHA-256 复核通过，artifact 秘密扫描 0 findings/0 incomplete。
 - [ ] 外部边界：Gate 04 内部门禁为 `PASS`，但 Gate 05 第三方独立审计仍为 `BLOCKED_EXTERNAL`，不得从内部 Fuzz 推导生产密码学安全认证。
+
+## 24. Gate 06 Linux Agent 恢复矩阵（2026-08-10）
+
+- [x] 真实 systemd 策略：transient unit 使用 `Restart=on-failure`；`SIGKILL` 后必须出现且仅出现一个不同主 PID，重启计数精确为 1。
+- [x] 状态与 TUN：签名状态跨崩溃保留；非持久 TUN 在服务私有 network namespace 重建，宿主 namespace 始终无同名接口。
+- [x] 网络变化：私有 namespace 内链路 down/up 后 Agent 继续运行；随后正常停止并完成可信 cleanup。
+- [x] 沙箱真实性：Agent 从独立测试安装根执行，`ProtectHome=yes` 保持启用；生产安装路径不被创建或修改；正式 unit 在隔离 root 中验证。
+- [x] 精确证据：revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` 的 run `31352258781` 五 job 全通过；artifact `9049384061` 归档/内部 SHA-256 与无值秘密扫描通过。
+- [x] 失败链：runs `31351583134`、`31351658402`、`31352027606` 分别保留 ShellCheck、受保护 home 执行和 host-path unit verify 缺陷，没有跳过或弱化测试。
+- [ ] 实机边界：普通部署主机整机重启、disk-full、DHCP/address churn、竞争 VPN 路由、重复失败/start-limit 与 arm64 硬件仍未验证；Gate 06 为 `PARTIAL`，不得判定生产通过。

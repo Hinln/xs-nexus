@@ -76,3 +76,11 @@
 - Accepted ADR-089: do not maintain a private netlink fork solely to suppress an informational warning. Keep the dated cargo-deny exception, empty cargo-audit ignore, `2026-08-31` fail-closed deadline, and immediate drift review.
 - Evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z` is root-only, SHA-256 verified, and proves production/1Panel invariants. `KI-026` is dispositioned; Gate 24 remains `PARTIAL` because `KI-021`, formal release/deployment, and independent audit remain open.
 - GitHub Actions run `31324714609` passed but retained Node 20 deprecation annotations for checkout/setup-node/upload-artifact. Commits `e63c59b` and `98ca145` move to verified, SHA-pinned official Node 24 releases, disable checkout credential persistence, and add fail-closed static/negative validation under `security-check`; exact-head run `31325753985` passed all four jobs with zero check-run annotations.
+
+### Gate 06 hosted Linux Agent recovery submatrix
+
+- Extended `scripts/test-agent-systemd.sh` to exercise real `Restart=on-failure`: force-kill the Agent, require exactly one different replacement PID, retain signed state, recreate TUN only in the private namespace, survive an isolated link down/up event, and clean all test state on stop.
+- Kept the production sandbox intact. The executable is copied to a unique test-only root outside the protected runner home; the formal service unit is verified in a disposable `systemd-analyze --root` tree, so `/usr/local/lib/xs-nexus/current` is never created or changed by the test.
+- Retained three failed/superseded runs exposing ShellCheck, protected-home execution, and formal-path verification defects. No assertion, warning, or sandbox property was suppressed.
+- Exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` passed all five jobs in run `31352258781`. Dedicated job `93345151258` and artifact `9049384061` passed archive/inner SHA-256 and no-value secret verification.
+- Gate 06 remains `PARTIAL`: ordinary-host reboot, disk-full, DHCP/address churn, competing VPN routes, repeated failure/start-limit, and arm64 hardware require a disposable approved host. Production was not changed and remains on `3d93656`.

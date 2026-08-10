@@ -9,6 +9,7 @@ Current value: `NO`
 - [ ] Gates 03 and 18 formal key lifecycle and signed RC are `PASS`.
 - [ ] Gate 05 independent security audit and retest are `PASS`.
 - [x] Gate 04 internal protocol security is `PASS` at `8753953` with exact-head CI, state-machine regressions, and six-target AddressSanitizer fuzz evidence.
+- [x] Gate 06 hosted x86_64 real-systemd `SIGKILL` restart and isolated link-change submatrix passes at `fb45fd4`; the gate itself remains `PARTIAL` pending the ordinary-host matrix.
 - [x] PostgreSQL Gate 16 is `PASS` with production reverse verification and retained rollback evidence.
 - [x] Gate 23 self-fixable findings pass exact-head CI and clean-checkout validation at `3bf8619`; failed evidence is dispositioned and sealed.
 - [ ] Host, planned-domain TLS, observability, defects, dependency, and deployment gates are `PASS`.
@@ -21,4 +22,4 @@ Current value: `NO`
 
 When all items are checked, create `audit/production-readiness-final/` and independently re-run every hard gate. Do not copy PASS states from this remediation directory.
 
-The checked Gate 04 item is internal evidence only and does not satisfy Gate 05 independent review. The checked Gate 23 internal item does not make Gate 23 `PASS`: global Critical/High findings and external hard gates remain open. Production still runs `3d93656`, not the current branch; current value remains `NO`.
+The checked Gate 04 item is internal evidence only and does not satisfy Gate 05 independent review. The checked Gate 06 submatrix does not cover reboot, disk-full, DHCP, competing VPN, arm64 or NAS. The checked Gate 23 internal item does not make Gate 23 `PASS`: global Critical/High findings and external hard gates remain open. Production still runs `3d93656`, not the current branch; current value remains `NO`.

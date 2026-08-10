@@ -27,7 +27,7 @@
 - [x] MUST：卸载后无项目路由残留。
 - [x] MUST：systemd 自动启动和重启策略正确。
 
-证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；arm64 为真实交叉构建与 ELF 架构验证，目标设备运行仍由 NAS/arm64 实机门禁验证。任务书九个 CLI 命令的协议、Unix 运行和 Windows Named Pipe 交叉编译补充证据为 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z` 及 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。
+证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`；Gate 06 补充 revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02`、GitHub Actions run `31352258781`、job `93345151258` 和 artifact `9049384061` 证明真实 systemd `SIGKILL` 单次自动重启、状态保留、私有 TUN 重建、隔离链路变化与 cleanup。arm64 为真实交叉构建与 ELF 架构验证，整机 reboot/disk-full/DHCP/VPN 冲突及目标设备运行仍由普通主机和 NAS/arm64 实机门禁验证。任务书九个 CLI 命令的协议、Unix 运行和 Windows Named Pipe 交叉编译补充证据为 `/srv/xs-nexus/artifacts/qa/m1.2-cli-completion-20260802T100106Z` 及 `/srv/xs-nexus/artifacts/qa/final-local-audit-20260802T102009Z`。
 
 ---
 

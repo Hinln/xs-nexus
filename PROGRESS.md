@@ -460,3 +460,12 @@ make clean
 - 精确 revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 的 GitHub Actions run `31350065978` 四个 job 全通过。AddressSanitizer 对 credential/data/discovery/handshake/relay/session_state 各执行 180 秒，总计 134,262,706 次；525 项 artifact SHA-256 全匹配，秘密扫描 0 findings/0 incomplete。
 - 失败链保留：run `31349380836` 暴露 rustfmt 差异；run `31349709018` 在格式修复后暴露 `maintain` 超过 Clippy 100 行门禁，随后通过抽取辅助函数修复，没有添加 allow、skip 或弱化测试。
 - Gate 04 改为 `PASS`；Gate 05 独立第三方协议/密码学审计仍为 `BLOCKED_EXTERNAL`，`KI-001` 保持开放。生产仍运行旧 revision，总体仍为 `NO_GO`。下一步进入 Gate 06 Linux Agent 真实恢复矩阵的可自行完成部分。
+
+## 2026-08-10 Gate 06 Linux Agent 自动恢复子矩阵
+
+- `scripts/test-agent-systemd.sh` 现在以真实 transient systemd unit 和 `Restart=on-failure` 运行 Agent；对主进程发送 `SIGKILL` 后必须观察到且仅观察到一次不同 PID 的自动重启，并验证签名状态保留、TUN 只在服务私有 namespace 重建。
+- 同一作业在私有网络 namespace 内执行链路 down/up，要求 Agent 继续运行；停止后 transient unit、测试安装目录和 TUN 全部清理，宿主接口无泄漏。正式 `/usr/local/lib/xs-nexus/current` 路径不会被测试创建或修改，单元文件改用隔离 `systemd-analyze --root` 验证。
+- 失败链完整保留：run `31351583134` 暴露 ShellCheck；run `31351658402` 暴露 `ProtectHome` 对 runner home 二进制的 `203/EXEC`；run `31352027606` 暴露离线 unit verify 仍依赖正式安装路径。均按根因修复，没有 suppress、skip 或放宽 sandbox/assertion。
+- 精确 revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` 的 GitHub Actions run `31352258781` 五个 job 全通过；专项 job `93345151258` 和 artifact `9049384061` 通过。artifact 归档 SHA-256、两项内部证据哈希和无值秘密扫描均复核通过。
+- Gate 06 保持 `PARTIAL`：当前证据是 hosted x86_64 的真实 systemd/TUN 子矩阵，不是普通部署主机的整机 reboot、disk-full、DHCP/address churn、竞争 VPN 路由或 arm64/NAS 实测。生产未部署本分支，也未运行宿主 Agent，总体保持 `NO_GO`。
+- 下一步进入 Gate 08 Relay 的可自行完成安全与韧性项；Gate 06 剩余项写入 `PRV2-017`、`KI-027` 和 `audit/production-readiness-remediation-v2/LINUX_AGENT_RECOVERY.md`，等待可回滚的独立 Linux/arm64 环境。

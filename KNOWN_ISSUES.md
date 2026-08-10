@@ -364,3 +364,15 @@
 - 解除证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate24-dependency-topology-20260809T170012Z`；专项报告 `audit/production-readiness-remediation-v2/DEPENDENCY_TOPOLOGY.md`。
 - 自动重开：到达 `2026-08-31`，或 `Cargo.lock`、`rtnetlink` 路径/feature、上游 manifest、公告分类、Rust/SQLx、正式 RC revision 任一变化时立即重新审计。不得静默 ignore。
 - 边界：该 P2 处置不关闭 `KI-021`、Gate 24、正式签名发布、生产部署或第三方审计。
+
+---
+
+## KI-027 Linux Agent 普通主机恢复矩阵尚未闭合
+
+- 严重度：高
+- 状态：外部阻塞（可安全自动化子矩阵已完成）
+- 首次发现：2026-08-08 正式生产审计；2026-08-10 Gate 06 重新验证。
+- 已完成：exact revision `fb45fd43256d65cb4c72824d6cee0bec0884ad02` 在 GitHub Actions run `31352258781` 通过真实 transient systemd `SIGKILL` 单次自动重启、状态保留、私有 namespace TUN 重建、隔离链路 down/up 存活与最终 cleanup。artifact `9049384061` 的归档和内部 SHA-256、无值秘密扫描通过。
+- 影响：hosted x86_64 runner 不能证明普通部署主机整机 reboot、disk-full、DHCP/address/default-route churn、竞争 VPN 路由、重复失败/start-limit 或 arm64 硬件行为。生产服务器当前没有宿主 Agent，且不得在该服务器执行破坏性故障注入，因此 Gate 06 仍为 `PARTIAL`。
+- 计划：提供可重装、带控制台和独立证据导出的普通 Linux x86_64/arm64 测试主机；按 `audit/production-readiness-remediation-v2/LINUX_AGENT_RECOVERY.md` 执行完整矩阵，保留故障前后普通网络、路由、TUN、状态、服务、日志和清理证据。
+- 解除条件：全部剩余真实主机场景通过，失败注入后普通网络与非项目路由不受损，Agent 可恢复且卸载无残留；证据经 SHA-256 和无值秘密扫描加入索引。NAS 仍由独立 Gate 12 验收。
