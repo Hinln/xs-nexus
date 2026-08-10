@@ -58,6 +58,39 @@ jobs:
       - run: make test-production-health
       - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh scripts/test-agent-systemd.sh scripts/test-agent-acl.sh scripts/test-agent-relay.sh scripts/test-agent-subnet-route.sh scripts/test-relay-throughput.sh
 
+  onepanel-coexistence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: mkdir -p artifacts/onepanel-coexistence
+      - run: shellcheck scripts/test-onepanel-network-runtime.sh
+      - name: Validate current Compose and lifecycle boundary
+        run: |
+          set -o pipefail
+          python3 scripts/test-onepanel-boundary.py 2>&1 | tee artifacts/onepanel-coexistence/source-tests.log
+          python3 scripts/validate-onepanel-boundary.py --require-compose 2>&1 | tee artifacts/onepanel-coexistence/source-validation.log
+      - name: Exercise external network across Docker restart
+        env:
+          XS_ONEPANEL_CI_FIXTURE: "1"
+        run: |
+          set -o pipefail
+          ./scripts/test-onepanel-network-runtime.sh 2>&1 | tee artifacts/onepanel-coexistence/runtime.log
+          printf 'revision=%s\nstatus=PASS\n' "$GITHUB_SHA" >artifacts/onepanel-coexistence/summary.txt
+          sha256sum artifacts/onepanel-coexistence/runtime.log \
+            artifacts/onepanel-coexistence/source-tests.log \
+            artifacts/onepanel-coexistence/source-validation.log \
+            artifacts/onepanel-coexistence/summary.txt \
+            >artifacts/onepanel-coexistence/SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: onepanel-coexistence-evidence
+          path: artifacts/onepanel-coexistence
+          if-no-files-found: error
+
   linux-agent-recovery:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
