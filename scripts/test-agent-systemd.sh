@@ -55,6 +55,7 @@ current_step=initialization
 schema="xs_nexus_agent_systemd_test"
 test_install_root="/usr/local/lib/xs-nexus-tests/$unit"
 test_agent_binary="$test_install_root/bin/xs-agent"
+verify_root="$temporary/systemd-verify-root"
 
 report_failure() {
     status=$?
@@ -221,7 +222,11 @@ wait "$controller_pid"
 controller_pid=
 
 current_step=unit_verify
-systemd-analyze verify "$ROOT_DIR/deploy/systemd/xs-agent.service"
+install -D -m 0644 "$ROOT_DIR/deploy/systemd/xs-agent.service" \
+    "$verify_root/etc/systemd/system/xs-agent.service"
+install -D -m 0755 "$test_agent_binary" \
+    "$verify_root/usr/local/lib/xs-nexus/current/bin/xs-agent"
+systemd-analyze verify --recursive-errors=no --root="$verify_root" xs-agent.service
 current_step=unit_start
 systemd-run \
     --unit="$unit" \
