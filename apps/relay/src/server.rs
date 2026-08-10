@@ -799,6 +799,7 @@ mod tests {
         node_id: [u8; 16],
         lease_id: [u8; 16],
         identity_key: SigningKey,
+        identity_seed: u8,
     }
 
     struct TestRelay {
@@ -1294,7 +1295,7 @@ mod tests {
             .expect("bind node");
         let identity_key = SigningKey::from_bytes(&[identity_seed; 32]);
         let (request, response, lease_id) =
-            registration_exchange(context, &socket, &identity_key, request_id).await;
+            registration_exchange(context, &socket, &identity_key, identity_seed, request_id).await;
         socket
             .send_to(&request, context.relay_endpoint)
             .await
@@ -1313,6 +1314,7 @@ mod tests {
             node_id: node_id(&identity_key.verifying_key().to_bytes()),
             lease_id,
             identity_key,
+            identity_seed,
         }
     }
 
@@ -1321,8 +1323,14 @@ mod tests {
         node: &mut RegisteredNode,
         request_id: [u8; 16],
     ) {
-        let (_, _, lease_id) =
-            registration_exchange(context, &node.socket, &node.identity_key, request_id).await;
+        let (_, _, lease_id) = registration_exchange(
+            context,
+            &node.socket,
+            &node.identity_key,
+            node.identity_seed,
+            request_id,
+        )
+        .await;
         node.lease_id = lease_id;
     }
 
@@ -1330,6 +1338,7 @@ mod tests {
         context: &TestContext,
         socket: &UdpSocket,
         identity_key: &SigningKey,
+        identity_seed: u8,
         request_id: [u8; 16],
     ) -> (
         [u8; RELAY_REGISTER_REQUEST_LENGTH],
