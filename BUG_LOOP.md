@@ -334,3 +334,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 修复：从官方仓库解析最新 Node 24 release 到验证有效的精确 commit，分别升级到 checkout `v7.0.1`、setup-node `v7.0.0`、upload-artifact `v7.0.1`；所有 checkout 禁止 credential persistence。
 - 防回退：新增无第三方 YAML 依赖的静态验证器和负向测试，拒绝 mutable tag、旧 Node 20 SHA、版本标签漂移、畸形 `uses`、非 40 位 SHA 和令牌持久化；纳入 `security-check`。没有把 warning 隐藏或降低级别。
 - `KI-026` 同轮完成 exact lock 与上游拓扑复核；当前上游仍依赖 `paste`，因此采用可见、自动到期的 P2 disposition，而非维护私有 netlink fork。
+
+## Gate 04 协议丢包恢复闭环（2026-08-10）
+
+- `XS-2026-0032`：KeyUpdate 和 PathChallenge 的重试复用原始 AEAD 帧；接收方处理首次请求后会把逐字节重试判为重放，丢失 Ack/Response 时无法恢复。修复为保留逻辑 payload/Epoch/Path ID/token，但每次通过现有 DataSender 生成新序列和密文；回归同时断言旧帧仍被拒绝。
+- `XS-2026-0033`：Server 发送 ServerFinish 后立即进入 Established 并丢弃编码，最终响应丢失时重复 ClientFinish 得不到响应。修复为按 ClientFinish 摘要有界缓存精确 ServerFinish；重复请求不重建 nonce/密钥且不授权路径迁移。
+- `XS-2026-0034`：KeyUpdate 尝试耗尽后仅清空 pending，下一 Tick 会静默启动另一轮相同 Epoch 更新，与规范要求的完整重握手不符。修复为显式 `Rehandshake` 动作并清除会话路径探测状态；单元测试覆盖全部尝试和耗尽边界。
+- `XS-2026-0035`：首个 CI run `31349380836` 被固定 rustfmt 门禁拒绝；格式修复后的 run `31349709018` 又由严格 Clippy 拒绝 105 行维护函数。按工具输出格式化并抽取会话维护函数，未添加 allow/ignore；最终 run `31350065978` 四项 job 全通过，失败运行保持可审计。

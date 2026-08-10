@@ -508,3 +508,14 @@
 - [x] CI Action 回归：全部远程 action 使用 40 位 commit SHA；checkout/setup-node/upload-artifact/Buildx 固定为已复核 Node 24 commit 与版本标签；checkout 全部关闭 credential persistence。负向 fixture 覆盖 mutable/旧 SHA/错误标签/畸形引用/缺失 credential hardening。
 - [x] 最新实现提交 `98ca145c197b1d2af20d7cf5df28008820a25e50` 的 GitHub Actions run `31325753985` 四项 job 全通过，四个 check-run annotation 数均为 0。
 - [ ] 结论边界：`KI-021`、正式签名发布、精确 revision 部署和第三方审计仍开放，因此 Gate 24 为 `PARTIAL`、总体为 `NO_GO`。
+
+## 23. Gate 04 XSP/1 状态机与 Fuzz（2026-08-10）
+
+- [x] 丢失 KeyUpdateAck：首次 KeyUpdate 被处理、Ack 丢失后，重试保持 payload/Epoch 但使用新序列；接收方通过旧 Epoch 接受并再次确认，发起方只在匹配 Ack 后切换发送 Epoch。
+- [x] 丢失 PathResponse：首次 Challenge 被处理、Response 丢失后，重试保持 Path ID/token 但使用新序列；匹配新 Response 后完成探测，旧 Challenge/Response 密文重放继续失败。
+- [x] 丢失 ServerFinish：重复 ClientFinish 命中摘要绑定的精确 ServerFinish 缓存；不会重新加密固定 nonce Finish，不改变 Established 状态，也不授权路径迁移。
+- [x] 重试耗尽：KeyUpdate 有界尝试耗尽返回完整重握手动作，清除 pending update，不静默开始另一轮相同 Epoch 更新。
+- [x] 协议变更纪律：规范、密码学设计、威胁模型、兼容性 ADR、测试向量元数据、Fuzz target 和 corpus 同步；线格式、版本和既有字节向量不变。
+- [x] 精确 revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 的 run `31350065978`：格式、严格 Clippy、构建、全量测试、真实数据库/namespace、Console E2E、五镜像双无缓存复现及六目标 AddressSanitizer Fuzz 全通过。
+- [x] Fuzz 证据：六目标各 180 秒，总计 134,262,706 次；525 项 SHA-256 复核通过，artifact 秘密扫描 0 findings/0 incomplete。
+- [ ] 外部边界：Gate 04 内部门禁为 `PASS`，但 Gate 05 第三方独立审计仍为 `BLOCKED_EXTERNAL`，不得从内部 Fuzz 推导生产密码学安全认证。

@@ -7,6 +7,7 @@
 - 严重度：高
 - 状态：开放
 - 说明：内部测试不能替代第三方协议和密码学审计。
+- 当前内部证据：Gate 04 已在 revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 通过状态机回归、六目标 AddressSanitizer Fuzz 和完整 CI；该结果不解除本条，Gate 05 仍为 `BLOCKED_EXTERNAL`。
 - 影响：在完成独立审计前不得宣称生产级安全。
 - 解除：完成外部审计并处理发现。
 

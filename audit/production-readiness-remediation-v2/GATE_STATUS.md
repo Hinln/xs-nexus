@@ -7,7 +7,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 01 | Code and deployment provenance | FAIL | FAIL | Owner-controlled signed RC tag/bundle, authenticated release key, and merge to `main`; branch deployment/reverse verification and `ff9551d3` rollback are complete |
 | 02 | Secrets and credential rotation | FAIL | FAIL | Full rotation plus proof that every old credential is rejected |
 | 03 | Formal key lifecycle | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Human-controlled offline ceremony, backup, revoke, and recovery |
-| 04 | XSP/1 internal security | PARTIAL | PARTIAL | Extended fuzz/sanitizer/state-machine evidence on current revision |
+| 04 | XSP/1 internal security | PARTIAL | PASS | Continue regression and obtain the separate Gate 05 independent review before any production-security claim |
 | 05 | Independent security audit | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Independent report, findings, fixes, and retest |
 | 06 | Linux Agent recovery | PARTIAL | PARTIAL | Real-host reboot/failure/network-change matrix |
 | 07 | Real Direct/NAT | SIMULATED_ONLY | SIMULATED_ONLY | Different public networks, hotspot, UDP block, Relay and Direct recovery |
@@ -43,12 +43,14 @@ Counts change only after raw evidence has been indexed and independently checked
 
 ## Current Counts
 
-- PASS: 1
+- PASS: 2
 - FAIL: 5
 - BLOCKED_EXTERNAL: 5
-- PARTIAL: 11
+- PARTIAL: 10
 - SIMULATED_ONLY: 2
 - UNKNOWN: 1
+
+Gate 04 changed from `PARTIAL` to `PASS` after code-bearing revision `875395352afc8a17dafc17b2496d62ce701ee4ae` fixed lost-response state-machine failures without changing XSP/1 framing or cryptographic primitives. Exact-head GitHub Actions run `31350065978` passed formatting, strict Clippy, all workspace tests, real PostgreSQL and namespace regressions, Console E2E, double no-cache image reproducibility, and six AddressSanitizer fuzz targets for 180 seconds each. Downloaded fuzz evidence contains 525 SHA-256 verified files, six PASS status files, zero secret-scan findings, and 134,262,706 total executions. Gate 05 remains `BLOCKED_EXTERNAL`; this internal gate result is not an independent protocol or cryptographic audit and does not change overall `NO_GO`.
 
 Gate 16 changed to `PASS` after exact revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` passed full CI, isolated PostgreSQL and Docker lifecycle validation, production role migration, negative permissions, deployment, independent SSH reverse verification, and post-finalization checks. Gate 02 remains `FAIL` because the platform bootstrap credential and other disclosed credentials have not all been rotated and independently rejected.
 

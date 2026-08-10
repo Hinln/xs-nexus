@@ -120,6 +120,23 @@ The full run records successful formatting, strict all-target/all-feature Clippy
 
 The evidence-seal verification rechecked every failed-root manifest and disposition, the successful-root manifest and summary, the production health guard, zero failed systemd units, zero temporary QA containers/networks/namespaces, `1panel-network` ID `7df70648b96ab2d6e5e178cce4e5892d655e7b451dd111f90f42ae86e3757ac0`, subnet `172.18.0.0/16`, and default gateway `10.3.0.1` on `eth0`. Production Controller/Relay/Console continue to run `3d93656cc9ec3ea35d58e453118154b25bcc4e14`; `3bf8619` was not deployed.
 
+## Gate 04 XSP/1 Internal Security Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Loss-tolerant control retry implementation | Git revision `875395352afc8a17dafc17b2496d62ce701ee4ae` | VERIFIED |
+| Exact-head GitHub Actions | GitHub Actions run [`31350065978`](https://github.com/Hinln/xs-nexus/actions/runs/31350065978) | PASS, 4 JOBS |
+| Protocol fuzz artifact | GitHub artifact `9048923658`; verified copy `C:\Users\panyo\Documents\Codex\2026-07-29\yue\gate04-ci-8753953\protocol-fuzz-evidence` | PASS, SHA-256 VERIFIED |
+| Image reproducibility artifact | GitHub artifact `9048762848` | PASS |
+| Console real E2E artifact | GitHub artifact `9048653712` | PASS |
+| Downloaded artifact no-value scan | `C:\Users\panyo\Documents\Codex\2026-07-29\yue\gate04-ci-8753953-secret-scan.json` | PASS, 0 FINDINGS, 0 INCOMPLETE |
+| Retained pre-format run | GitHub Actions run [`31349380836`](https://github.com/Hinln/xs-nexus/actions/runs/31349380836) | FAILED, RUSTFMT DIFFERENCE RETAINED |
+| Retained pre-refactor run | GitHub Actions run [`31349709018`](https://github.com/Hinln/xs-nexus/actions/runs/31349709018) | FAILED/CANCELLED AFTER CLIPPY DIAGNOSIS |
+
+The state-machine regressions prove that lost KeyUpdateAck and PathResponse packets recover through fresh-sequence AEAD retries, duplicate ClientFinish receives the exact cached ServerFinish, and exhausted KeyUpdate retries request a full handshake instead of silently restarting the same update. XSP/1 version, fields, lengths, key derivation, first-message vectors, and primitive selection are unchanged; test-vector metadata, Fuzz target/corpus, normative protocol text, threat model, and compatibility ADR were updated together.
+
+The AddressSanitizer artifact records six targets at 180 seconds each: credential 1,400,229 executions, data 131,659,099, discovery 339,852, handshake 97,594, relay 688,081, and session_state 77,851, totaling 134,262,706. All six status files and the overall summary are PASS; all 525 `SHA256SUMS` entries independently match. This closes only internal Gate 04. Gate 05 independent review, formal keys, real WAN/device gates, signed release, deployment provenance, soak, and other open production gates remain unchanged.
+
 ## Gate 24 Dependency Topology Evidence
 
 | Evidence | Path | Result |
@@ -146,5 +163,5 @@ Production Controller/Relay/Console remained healthy at `3d93656cc9ec3ea35d58e45
 - Gate 02 no-value secret inventory, rotation receipts, old-value rejection checks, deep artifact/history/layer scan.
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
-- Gates 04/06/08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gates 06/08/09/15/18/19/20/21/22/25 current-revision regressions. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

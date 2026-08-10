@@ -451,3 +451,12 @@ make clean
 - Gate 24 保持 `PARTIAL`：`KI-021` glibc 处置、正式密钥/签名 RC、部署及第三方供应链审计仍未完成。生产仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，总体仍为 `NO_GO`。
 - GitHub Actions run `31324714609` 的四个 job 全通过，但保留了三项 Node 20 action 弃用 annotation。提交 `e63c59b`/`98ca145` 已把 checkout/setup-node/upload-artifact 更新为官方 Node 24 精确 commit、关闭 checkout credential persistence，并新增 SHA/版本/runtime 防回退门禁；exact-head run `31325753985` 四项 job 全通过，四个 check-run annotation 数均为 0。
 - 下一步：进入 Gate 04 当前 revision 的协议状态机、长时 fuzz 与 sanitizer 证据补强，不把模拟或短时 CI 结果扩张为独立安全审计。
+
+## 2026-08-10 Gate 04 XSP/1 内部安全闭环
+
+- 状态机复核发现 KeyUpdate 与 PathChallenge 直接重发同一 AEAD 密文会被接收方重放窗口拒绝；首次请求已处理但 Ack/Response 丢失时无法恢复。修复后逻辑 payload、Epoch、Path ID 和 token 保持不变，每次重试使用新的单调发送序列重新加密，旧密文重放仍被拒绝。
+- Server 在有界握手重试窗口按 ClientFinish 摘要缓存精确 ServerFinish；匹配重复请求只重发缓存帧，不重新派生密钥，也不把重传作为路径迁移证明。KeyUpdate 重试、序列或状态耗尽改为丢弃会话并触发完整重握手。
+- 新增三个丢包恢复回归和一个重试耗尽回归；同步 XSP/1 规范、密码学设计、威胁模型、测试向量重试语义、Fuzz corpus/状态机和 ADR-091。协议版本、线格式、首包向量、密钥派生与密码学原语均未改变。
+- 精确 revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 的 GitHub Actions run `31350065978` 四个 job 全通过。AddressSanitizer 对 credential/data/discovery/handshake/relay/session_state 各执行 180 秒，总计 134,262,706 次；525 项 artifact SHA-256 全匹配，秘密扫描 0 findings/0 incomplete。
+- 失败链保留：run `31349380836` 暴露 rustfmt 差异；run `31349709018` 在格式修复后暴露 `maintain` 超过 Clippy 100 行门禁，随后通过抽取辅助函数修复，没有添加 allow、skip 或弱化测试。
+- Gate 04 改为 `PASS`；Gate 05 独立第三方协议/密码学审计仍为 `BLOCKED_EXTERNAL`，`KI-001` 保持开放。生产仍运行旧 revision，总体仍为 `NO_GO`。下一步进入 Gate 06 Linux Agent 真实恢复矩阵的可自行完成部分。

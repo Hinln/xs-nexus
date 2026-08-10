@@ -46,6 +46,8 @@
 - [x] MUST：Relay 无法恢复业务明文。
 - [x] MUST：明确记录未完成第三方安全审计。
 
+Gate 04 补充证据：revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 修复丢失 ServerFinish、KeyUpdateAck 和 PathResponse 时的有界恢复状态机，并让 KeyUpdate 尝试耗尽触发完整重握手。GitHub Actions run `31350065978` 的格式、严格 Clippy、全量测试、真实数据库/namespace、Console E2E、镜像复现和六目标 AddressSanitizer Fuzz 全部通过；Fuzz 各运行 180 秒，总计 134,262,706 次，525 项 artifact SHA-256 与无值秘密扫描通过。该内部验收不替代 Gate 05 独立安全审计。
+
 ---
 
 ## D. 控制平面
