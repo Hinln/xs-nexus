@@ -35,10 +35,13 @@ assert report["packets_per_second"] >= minimum_packets_per_second
 assert report["elapsed_ms"] > 0
 assert report["forwarding_latency_microseconds_average"] is not None
 PY
-sha256sum \
-    "$EVIDENCE_DIR/environment.txt" \
-    "$EVIDENCE_DIR/report.json" \
-    "$EVIDENCE_DIR/revision.txt" \
-    "$EVIDENCE_DIR/test-output.txt" \
-    >"$EVIDENCE_DIR/SHA256SUMS"
+(
+    cd "$EVIDENCE_DIR"
+    sha256sum \
+        environment.txt \
+        report.json \
+        revision.txt \
+        test-output.txt \
+        >SHA256SUMS
+)
 printf 'Relay throughput baseline passed; evidence: %s\n' "$EVIDENCE_DIR"
