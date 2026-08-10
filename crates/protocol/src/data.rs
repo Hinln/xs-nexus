@@ -747,6 +747,61 @@ mod tests {
     }
 
     #[test]
+    fn packet_nonce_separates_salt_and_sequence() {
+        let first = packet_nonce([1, 2, 3, 4], 0);
+        assert_eq!(first, [1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_ne!(first, packet_nonce([1, 2, 3, 4], 1));
+        assert_ne!(first, packet_nonce([1, 2, 3, 5], 0));
+    }
+
+    #[test]
+    fn sequence_and_epoch_exhaustion_fail_without_state_change() {
+        let source = Ipv4Addr::new(100, 96, 0, 16);
+        let destination = Ipv4Addr::new(100, 96, 0, 17);
+        let ids = ([41_u8; 16], [42_u8; 16], [43_u8; 16], [44_u8; 16]);
+        let secret = Zeroizing::new([45_u8; 32]);
+        let mut sender = DataSender::new(
+            secret.clone(),
+            ids.0,
+            ids.1,
+            ids.2,
+            ids.3,
+            source,
+            destination,
+        )
+        .expect("sender");
+        let mut packet = vec![0_u8; 20];
+        packet[0] = 0x45;
+        packet[2..4].copy_from_slice(&20_u16.to_be_bytes());
+        packet[12..16].copy_from_slice(&source.octets());
+        packet[16..20].copy_from_slice(&destination.octets());
+
+        sender.next_sequence = u64::MAX;
+        assert!(sender.seal_ipv4(DataFlags::NONE, 0, &packet).is_err());
+        assert_eq!(sender.next_sequence, u64::MAX);
+        assert_eq!(sender.current_epoch(), 0);
+
+        sender.epoch.epoch = u32::MAX;
+        assert!(sender.rotate_epoch(0).is_err());
+        assert_eq!(sender.current_epoch(), u32::MAX);
+
+        let mut receiver = DataReceiver::new(
+            secret,
+            ids.0,
+            ids.1,
+            ids.2,
+            ids.3,
+            source,
+            destination,
+        )
+        .expect("receiver");
+        receiver.current.epoch = u32::MAX;
+        assert!(receiver.install_next_epoch(0).is_err());
+        assert_eq!(receiver.current_epoch(), u32::MAX);
+        assert!(receiver.previous.is_none());
+    }
+
+    #[test]
     fn encryption_throughput_baseline() {
         const ITERATIONS: u32 = 50_000;
         let source = Ipv4Addr::new(100, 96, 0, 16);
