@@ -33,6 +33,7 @@ CONTROL_IP_B=10.250.23.3
 CONTROLLER_PID=
 RELAY_1_PID=
 RELAY_2_PID=
+STARTED_RELAY_PID=
 AGENT_A_PID=
 AGENT_B_PID=
 PROXY_A_PID=
@@ -148,7 +149,7 @@ cleanup() {
     ip netns del "$NETNS_B" >/dev/null 2>&1
     ip link del "$BRIDGE" >/dev/null 2>&1
     if (( status != 0 )); then
-        for log in controller.log relay-1.log relay-2.log agent-a.log agent-b.log \
+        for log in controller.log relay-1.log relay-1-restarted.log relay-2.log agent-a.log agent-b.log \
             proxy-a.log proxy-b.log relay-capture.log collector.log
         do
             if [[ -s $TEMPORARY/$log ]]; then
@@ -167,6 +168,36 @@ require_command() {
         printf 'required command is unavailable: %s\n' "$1" >&2
         exit 2
     }
+}
+
+start_relay() {
+    local relay_id=$1
+    local relay_port=$2
+    local health_port=$3
+    local identity_key=$4
+    local log_file=$5
+    RELAY_LISTEN="$BRIDGE_IP:$relay_port" \
+    RELAY_HEALTH_LISTEN="127.0.0.1:$health_port" \
+    RELAY_ID_BASE64="$relay_id" \
+    CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH="$credential_public" \
+    RELAY_IDENTITY_KEY_PATH="$identity_key" \
+    CONTROLLER_METRICS_URL="http://$BRIDGE_IP:$CONTROLLER_PORT/v1/relay-metrics" \
+    RELAY_ALLOW_INSECURE_CONTROLLER_METRICS=true \
+    RELAY_METRICS_REPORT_INTERVAL_SECONDS=10 \
+    RELAY_LEASE_TTL_SECONDS=30 \
+    RELAY_IDLE_TIMEOUT_SECONDS=15 \
+    RELAY_MAX_LEASES=16 \
+    RELAY_REGISTRATIONS_PER_SOURCE_PER_MINUTE=60 \
+    RELAY_REGISTRATIONS_GLOBAL_PER_SECOND=128 \
+    RELAY_PACKETS_PER_LEASE_PER_SECOND=1000 \
+    RELAY_BYTES_PER_LEASE_PER_SECOND=1048576 \
+    RELAY_QUEUE_PACKETS_PER_NODE=32 \
+    RELAY_QUEUE_BYTES_PER_NODE=65536 \
+    RELAY_QUEUE_PACKETS_GLOBAL=128 \
+    RELAY_QUEUE_BYTES_GLOBAL=262144 \
+    RUST_LOG=debug \
+        "$RELAY" >"$log_file" 2>&1 &
+    STARTED_RELAY_PID=$!
 }
 
 wait_http() {
@@ -691,44 +722,12 @@ Path(sys.argv[1]).write_text(json.dumps(relays))
 PY
 chmod 0600 "$relay_catalog"
 
-RELAY_LISTEN="$BRIDGE_IP:$RELAY_PORT_1" \
-RELAY_HEALTH_LISTEN="127.0.0.1:$RELAY_HEALTH_PORT_1" \
-RELAY_ID_BASE64="$RELAY_ID_1" \
-CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH="$credential_public" \
-RELAY_IDENTITY_KEY_PATH="$relay_key_1" \
-CONTROLLER_METRICS_URL="http://$BRIDGE_IP:$CONTROLLER_PORT/v1/relay-metrics" \
-RELAY_ALLOW_INSECURE_CONTROLLER_METRICS=true \
-RELAY_METRICS_REPORT_INTERVAL_SECONDS=10 \
-RELAY_LEASE_TTL_SECONDS=30 \
-RELAY_IDLE_TIMEOUT_SECONDS=15 \
-RELAY_MAX_LEASES=16 \
-RELAY_REGISTRATIONS_PER_SOURCE_PER_MINUTE=60 \
-RELAY_PACKETS_PER_LEASE_PER_SECOND=1000 \
-RELAY_BYTES_PER_LEASE_PER_SECOND=1048576 \
-RELAY_QUEUE_PACKETS_PER_NODE=32 \
-RELAY_QUEUE_BYTES_PER_NODE=65536 \
-RUST_LOG=debug \
-    "$RELAY" >"$TEMPORARY/relay-1.log" 2>&1 &
-RELAY_1_PID=$!
-RELAY_LISTEN="$BRIDGE_IP:$RELAY_PORT_2" \
-RELAY_HEALTH_LISTEN="127.0.0.1:$RELAY_HEALTH_PORT_2" \
-RELAY_ID_BASE64="$RELAY_ID_2" \
-CONTROLLER_CREDENTIAL_PUBLIC_KEY_PATH="$credential_public" \
-RELAY_IDENTITY_KEY_PATH="$relay_key_2" \
-CONTROLLER_METRICS_URL="http://$BRIDGE_IP:$CONTROLLER_PORT/v1/relay-metrics" \
-RELAY_ALLOW_INSECURE_CONTROLLER_METRICS=true \
-RELAY_METRICS_REPORT_INTERVAL_SECONDS=10 \
-RELAY_LEASE_TTL_SECONDS=30 \
-RELAY_IDLE_TIMEOUT_SECONDS=15 \
-RELAY_MAX_LEASES=16 \
-RELAY_REGISTRATIONS_PER_SOURCE_PER_MINUTE=60 \
-RELAY_PACKETS_PER_LEASE_PER_SECOND=1000 \
-RELAY_BYTES_PER_LEASE_PER_SECOND=1048576 \
-RELAY_QUEUE_PACKETS_PER_NODE=32 \
-RELAY_QUEUE_BYTES_PER_NODE=65536 \
-RUST_LOG=debug \
-    "$RELAY" >"$TEMPORARY/relay-2.log" 2>&1 &
-RELAY_2_PID=$!
+start_relay "$RELAY_ID_1" "$RELAY_PORT_1" "$RELAY_HEALTH_PORT_1" \
+    "$relay_key_1" "$TEMPORARY/relay-1.log"
+RELAY_1_PID=$STARTED_RELAY_PID
+start_relay "$RELAY_ID_2" "$RELAY_PORT_2" "$RELAY_HEALTH_PORT_2" \
+    "$relay_key_2" "$TEMPORARY/relay-2.log"
+RELAY_2_PID=$STARTED_RELAY_PID
 RELAY_HEALTH_1="http://127.0.0.1:$RELAY_HEALTH_PORT_1"
 RELAY_HEALTH_2="http://127.0.0.1:$RELAY_HEALTH_PORT_2"
 wait_http "$RELAY_HEALTH_1" "Relay 1"
@@ -880,6 +879,22 @@ ip netns exec "$NETNS_A" "$PROBE" icmp \
     --timeout 8
 wait_relay_metric "$RELAY_HEALTH_2" packets_forwarded 1
 
+start_relay "$RELAY_ID_1" "$RELAY_PORT_1" "$RELAY_HEALTH_PORT_1" \
+    "$relay_key_1" "$TEMPORARY/relay-1-restarted.log"
+RELAY_1_PID=$STARTED_RELAY_PID
+wait_http "$RELAY_HEALTH_1" "restarted Relay 1"
+wait_relay_metric "$RELAY_HEALTH_1" active_leases 2
+kill "$RELAY_2_PID"
+wait "$RELAY_2_PID"
+RELAY_2_PID=
+wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_failover
+ip netns exec "$NETNS_A" "$PROBE" icmp \
+    --destination "$virtual_ip_b" \
+    --payload xs-m23-relay-restart-recovery \
+    --sequence 27 \
+    --timeout 8
+wait_relay_metric "$RELAY_HEALTH_1" packets_forwarded 1
+
 unblock_direct
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
     authenticated_path_probe,authenticated_peer_traffic
@@ -909,6 +924,6 @@ ip netns exec "$NETNS_B" "$PROBE" icmp \
 
 kill -0 "$AGENT_A_PID"
 kill -0 "$AGENT_B_PID"
-kill -0 "$RELAY_2_PID"
+kill -0 "$RELAY_1_PID"
 kill -0 "$CONTROLLER_PID"
-printf 'Agent Relay fallback, ciphertext, failover, and Direct restoration test passed\n'
+printf 'Agent Relay fallback, ciphertext, failover, restart recovery, and Direct restoration test passed\n'
