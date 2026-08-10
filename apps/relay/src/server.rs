@@ -777,8 +777,9 @@ mod tests {
     use tokio::time::{sleep, timeout};
     use xs_protocol::{
         CREDENTIAL_LENGTH, CredentialClaims, DATA_HEADER_LENGTH, DATA_TAG_LENGTH, DataFlags,
-        DataHeader, PacketType, RELAY_KEEPALIVE_RESPONSE_LENGTH, RelayFrame, RelayRegisterRequest,
-        encode_relay_frame, encode_relay_keepalive, node_id, role_set_digest, sign_credential,
+        DataHeader, PacketType, RELAY_KEEPALIVE_RESPONSE_LENGTH, RELAY_REGISTER_REQUEST_LENGTH,
+        RELAY_REGISTER_RESPONSE_LENGTH, RelayFrame, RelayRegisterRequest, encode_relay_frame,
+        encode_relay_keepalive, node_id, role_set_digest, sign_credential,
         sign_relay_register_request, verify_relay_keepalive_response,
         verify_relay_register_response,
     };
@@ -797,6 +798,7 @@ mod tests {
         socket: UdpSocket,
         node_id: [u8; 16],
         lease_id: [u8; 16],
+        identity_key: SigningKey,
     }
 
     struct TestRelay {
@@ -954,20 +956,54 @@ mod tests {
 
     #[tokio::test]
     async fn udp_relay_throughput_baseline() {
+        const RENEWAL_INTERVAL_PACKETS: u32 = 400_000;
+
         let packets = throughput_packet_count();
         let relay = start_test_relay(1_000_000).await;
-        let first = register(&relay.context, 35, [55_u8; 16]).await;
-        let second = register(&relay.context, 36, [56_u8; 16]).await;
+        let mut first = register(&relay.context, 35, [55_u8; 16]).await;
+        let mut second = register(&relay.context, 36, [56_u8; 16]).await;
         let inner = framed_xsp_keepalive(relay.context.network_id, first.node_id, second.node_id);
         let frame_bytes =
             u32::try_from(relay_frame(&relay.context, &first, &second, 1, &inner).len())
                 .expect("frame length fits u32");
         let started = Instant::now();
         let mut received = [0_u8; RELAY_MAX_FRAME_LENGTH];
-        for window_start in (1..=u64::from(packets)).step_by(64) {
-            let window_end = window_start.saturating_add(63).min(u64::from(packets));
-            let frames = (window_start..=window_end)
-                .map(|sequence| relay_frame(&relay.context, &first, &second, sequence, &inner))
+        let mut completed_packets = 0_u32;
+        let mut lease_sequence = 1_u64;
+        let mut renewal = 0_u32;
+        while completed_packets < packets {
+            if completed_packets > 0 && completed_packets.is_multiple_of(RENEWAL_INTERVAL_PACKETS) {
+                renewal = renewal.saturating_add(1);
+                renew_registration(
+                    &relay.context,
+                    &mut first,
+                    throughput_renewal_request_id(57, renewal),
+                )
+                .await;
+                renew_registration(
+                    &relay.context,
+                    &mut second,
+                    throughput_renewal_request_id(58, renewal),
+                )
+                .await;
+                lease_sequence = 1;
+            }
+            let packets_until_renewal = RENEWAL_INTERVAL_PACKETS
+                .saturating_sub(completed_packets % RENEWAL_INTERVAL_PACKETS);
+            let window_packets = packets
+                .saturating_sub(completed_packets)
+                .min(packets_until_renewal)
+                .min(64);
+            let frames = (0..window_packets)
+                .map(|offset| {
+                    relay_frame(
+                        &relay.context,
+                        &first,
+                        &second,
+                        lease_sequence.saturating_add(u64::from(offset)),
+                        &inner,
+                    )
+                })
                 .collect::<Vec<_>>();
             for frame in &frames {
                 first
@@ -985,6 +1021,8 @@ mod tests {
                 .expect("throughput receive timeout")
                 .expect("receive throughput frame");
             }
+            completed_packets = completed_packets.saturating_add(window_packets);
+            lease_sequence = lease_sequence.saturating_add(u64::from(window_packets));
         }
         let elapsed = started.elapsed();
         let snapshot = relay.metrics.snapshot();
@@ -1026,6 +1064,12 @@ mod tests {
         };
         assert!((DEFAULT_PACKETS..=MAXIMUM_PACKETS).contains(&packets));
         packets
+    }
+
+    fn throughput_renewal_request_id(marker: u8, renewal: u32) -> [u8; 16] {
+        let mut request_id = [marker; 16];
+        request_id[..4].copy_from_slice(&renewal.to_be_bytes());
+        request_id
     }
 
     fn test_config(
@@ -1249,6 +1293,49 @@ mod tests {
             .await
             .expect("bind node");
         let identity_key = SigningKey::from_bytes(&[identity_seed; 32]);
+        let (request, response, lease_id) =
+            registration_exchange(context, &socket, &identity_key, request_id).await;
+        socket
+            .send_to(&request, context.relay_endpoint)
+            .await
+            .expect("retry registration");
+        let mut retry = [0_u8; RELAY_REGISTER_RESPONSE_LENGTH];
+        let (retry_length, retry_source) =
+            timeout(Duration::from_secs(1), socket.recv_from(&mut retry))
+                .await
+                .expect("registration retry timeout")
+                .expect("receive registration retry");
+        assert_eq!(retry_length, retry.len());
+        assert_eq!(retry_source, context.relay_endpoint);
+        assert_eq!(retry, response);
+        RegisteredNode {
+            socket,
+            node_id: node_id(&identity_key.verifying_key().to_bytes()),
+            lease_id,
+            identity_key,
+        }
+    }
+
+    async fn renew_registration(
+        context: &TestContext,
+        node: &mut RegisteredNode,
+        request_id: [u8; 16],
+    ) {
+        let (_, _, lease_id) =
+            registration_exchange(context, &node.socket, &node.identity_key, request_id).await;
+        node.lease_id = lease_id;
+    }
+
+    async fn registration_exchange(
+        context: &TestContext,
+        socket: &UdpSocket,
+        identity_key: &SigningKey,
+        request_id: [u8; 16],
+    ) -> (
+        [u8; RELAY_REGISTER_REQUEST_LENGTH],
+        [u8; RELAY_REGISTER_RESPONSE_LENGTH],
+        [u8; 16],
+    ) {
         let now = unix_time();
         let node = node_id(&identity_key.verifying_key().to_bytes());
         let credential = sign_credential(
@@ -1280,7 +1367,7 @@ mod tests {
             .send_to(&request, context.relay_endpoint)
             .await
             .expect("send registration");
-        let mut response = [0_u8; 168];
+        let mut response = [0_u8; RELAY_REGISTER_RESPONSE_LENGTH];
         let (length, source) = timeout(Duration::from_secs(1), socket.recv_from(&mut response))
             .await
             .expect("registration timeout")
@@ -1298,24 +1385,7 @@ mod tests {
         )
         .expect("valid registration response")
         .lease_id;
-        socket
-            .send_to(&request, context.relay_endpoint)
-            .await
-            .expect("retry registration");
-        let mut retry = [0_u8; 168];
-        let (retry_length, retry_source) =
-            timeout(Duration::from_secs(1), socket.recv_from(&mut retry))
-                .await
-                .expect("registration retry timeout")
-                .expect("receive registration retry");
-        assert_eq!(retry_length, retry.len());
-        assert_eq!(retry_source, context.relay_endpoint);
-        assert_eq!(retry, response);
-        RegisteredNode {
-            socket,
-            node_id: node,
-            lease_id,
-        }
+        (request, response, lease_id)
     }
 
     async fn assert_forwarding_and_replay(
