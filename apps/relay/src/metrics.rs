@@ -13,6 +13,8 @@ pub struct RelayMetrics {
 #[derive(Default)]
 struct MetricsInner {
     active_leases: AtomicUsize,
+    queued_packets: AtomicUsize,
+    queued_bytes: AtomicUsize,
     packets_received: AtomicU64,
     bytes_received: AtomicU64,
     registrations_accepted: AtomicU64,
@@ -37,6 +39,8 @@ struct MetricsInner {
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct RelayMetricsSnapshot {
     pub active_leases: usize,
+    pub queued_packets: usize,
+    pub queued_bytes: usize,
     pub packets_received: u64,
     pub bytes_received: u64,
     pub registrations_accepted: u64,
@@ -68,6 +72,11 @@ impl RelayMetrics {
 
     pub(crate) fn set_active_leases(&self, value: usize) {
         self.inner.active_leases.store(value, Ordering::Relaxed);
+    }
+
+    pub(crate) fn set_queue_depth(&self, packets: usize, bytes: usize) {
+        self.inner.queued_packets.store(packets, Ordering::Relaxed);
+        self.inner.queued_bytes.store(bytes, Ordering::Relaxed);
     }
 
     pub(crate) fn registration_accepted(&self) {
@@ -147,6 +156,8 @@ impl RelayMetrics {
             .load(Ordering::Relaxed);
         RelayMetricsSnapshot {
             active_leases: self.inner.active_leases.load(Ordering::Relaxed),
+            queued_packets: self.inner.queued_packets.load(Ordering::Relaxed),
+            queued_bytes: self.inner.queued_bytes.load(Ordering::Relaxed),
             packets_received: self.inner.packets_received.load(Ordering::Relaxed),
             bytes_received: self.inner.bytes_received.load(Ordering::Relaxed),
             registrations_accepted: self.inner.registrations_accepted.load(Ordering::Relaxed),
@@ -207,6 +218,8 @@ mod tests {
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.packets_received, 1);
         assert_eq!(snapshot.bytes_received, 120);
+        assert_eq!(snapshot.queued_packets, 0);
+        assert_eq!(snapshot.queued_bytes, 0);
         assert_eq!(snapshot.packets_forwarded, 2);
         assert_eq!(snapshot.bytes_forwarded, 120);
         assert_eq!(snapshot.packets_dropped, 3);

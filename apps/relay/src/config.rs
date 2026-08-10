@@ -21,10 +21,13 @@ pub struct RelayConfig {
     pub idle_timeout_seconds: u64,
     pub max_leases: usize,
     pub registration_requests_per_minute: u16,
+    pub registration_requests_global_per_second: u32,
     pub packets_per_lease_per_second: u32,
     pub bytes_per_lease_per_second: u64,
     pub queue_packets_per_node: usize,
     pub queue_bytes_per_node: usize,
+    pub queue_packets_global: usize,
+    pub queue_bytes_global: usize,
 }
 
 #[derive(Debug, Error)]
@@ -88,6 +91,13 @@ impl RelayConfig {
             600,
         )?)
         .map_err(|_| ConfigError::Limit("RELAY_REGISTRATIONS_PER_SOURCE_PER_MINUTE"))?;
+        let registration_requests_global_per_second = u32::try_from(bounded_u64(
+            "RELAY_REGISTRATIONS_GLOBAL_PER_SECOND",
+            512,
+            1,
+            10_000,
+        )?)
+        .map_err(|_| ConfigError::Limit("RELAY_REGISTRATIONS_GLOBAL_PER_SECOND"))?;
         let packets_per_lease_per_second = u32::try_from(bounded_u64(
             "RELAY_PACKETS_PER_LEASE_PER_SECOND",
             2_000,
@@ -108,9 +118,20 @@ impl RelayConfig {
             RELAY_MAX_FRAME_LENGTH,
             64 * 1024 * 1024,
         )?;
-        if queue_bytes_per_node < queue_packets_per_node {
-            return Err(ConfigError::Limit("RELAY_QUEUE_BYTES_PER_NODE"));
-        }
+        let queue_packets_global =
+            bounded_usize("RELAY_QUEUE_PACKETS_GLOBAL", 8_192, 1, 1_048_576)?;
+        let queue_bytes_global = bounded_usize(
+            "RELAY_QUEUE_BYTES_GLOBAL",
+            16 * 1024 * 1024,
+            RELAY_MAX_FRAME_LENGTH,
+            1024 * 1024 * 1024,
+        )?;
+        validate_queue_limits(
+            queue_packets_per_node,
+            queue_bytes_per_node,
+            queue_packets_global,
+            queue_bytes_global,
+        )?;
         Ok(Self {
             listen,
             health_listen,
@@ -123,12 +144,33 @@ impl RelayConfig {
             idle_timeout_seconds,
             max_leases,
             registration_requests_per_minute,
+            registration_requests_global_per_second,
             packets_per_lease_per_second,
             bytes_per_lease_per_second,
             queue_packets_per_node,
             queue_bytes_per_node,
+            queue_packets_global,
+            queue_bytes_global,
         })
     }
+}
+
+fn validate_queue_limits(
+    packets_per_node: usize,
+    bytes_per_node: usize,
+    packets_global: usize,
+    bytes_global: usize,
+) -> Result<(), ConfigError> {
+    if bytes_per_node < packets_per_node {
+        return Err(ConfigError::Limit("RELAY_QUEUE_BYTES_PER_NODE"));
+    }
+    if packets_global < packets_per_node {
+        return Err(ConfigError::Limit("RELAY_QUEUE_PACKETS_GLOBAL"));
+    }
+    if bytes_global < bytes_per_node || bytes_global < packets_global {
+        return Err(ConfigError::Limit("RELAY_QUEUE_BYTES_GLOBAL"));
+    }
+    Ok(())
 }
 
 fn strict_bool(name: &'static str, default: bool) -> Result<bool, ConfigError> {
@@ -309,5 +351,18 @@ mod tests {
         ] {
             assert!(parse_controller_metrics_url(invalid, false).is_err());
         }
+    }
+
+    #[test]
+    fn global_queue_limits_must_cover_one_complete_node_queue() {
+        assert!(validate_queue_limits(64, 131_072, 8_192, 16_777_216).is_ok());
+        assert!(matches!(
+            validate_queue_limits(65, 131_072, 64, 16_777_216),
+            Err(ConfigError::Limit("RELAY_QUEUE_PACKETS_GLOBAL"))
+        ));
+        assert!(matches!(
+            validate_queue_limits(64, 131_072, 8_192, 131_071),
+            Err(ConfigError::Limit("RELAY_QUEUE_BYTES_GLOBAL"))
+        ));
     }
 }

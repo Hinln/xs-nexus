@@ -27,6 +27,7 @@ const MAX_SEQUENCE_ADVANCE: u64 = 1 << 20;
 const RECEIVE_BUFFER_LENGTH: usize = 2048;
 const REQUEST_REPLAY_TTL: Duration = Duration::from_secs(300);
 const SOURCE_WINDOW: Duration = Duration::from_secs(60);
+const GLOBAL_REGISTRATION_WINDOW: Duration = Duration::from_secs(1);
 const TRAFFIC_WINDOW: Duration = Duration::from_secs(1);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
 const FLUSH_INTERVAL: Duration = Duration::from_millis(1);
@@ -72,6 +73,11 @@ struct SourceBudget {
     requests: u16,
 }
 
+struct RegistrationBudget {
+    window_started: Instant,
+    requests: u32,
+}
+
 struct TrafficBudget {
     window_started: Instant,
     packets: u32,
@@ -92,10 +98,15 @@ pub struct RelayServer {
     idle_timeout: Duration,
     max_leases: usize,
     registration_requests_per_minute: u16,
+    registration_requests_global_per_second: u32,
     packets_per_lease_per_second: u32,
     bytes_per_lease_per_second: u64,
     queue_packets_per_node: usize,
     queue_bytes_per_node: usize,
+    queue_packets_global: usize,
+    queue_bytes_global: usize,
+    queued_packets: usize,
+    queued_bytes: usize,
     nodes: HashMap<NodeKey, [u8; 16]>,
     leases: HashMap<[u8; 16], Lease>,
     active_queues: VecDeque<[u8; 16]>,
@@ -103,6 +114,7 @@ pub struct RelayServer {
     registration_order: VecDeque<RequestKey>,
     source_budgets: HashMap<IpAddr, SourceBudget>,
     source_order: VecDeque<IpAddr>,
+    registration_budget: RegistrationBudget,
     metrics: RelayMetrics,
 }
 
@@ -117,10 +129,16 @@ impl RelayServer {
             idle_timeout: Duration::from_secs(config.idle_timeout_seconds),
             max_leases: config.max_leases,
             registration_requests_per_minute: config.registration_requests_per_minute,
+            registration_requests_global_per_second: config
+                .registration_requests_global_per_second,
             packets_per_lease_per_second: config.packets_per_lease_per_second,
             bytes_per_lease_per_second: config.bytes_per_lease_per_second,
             queue_packets_per_node: config.queue_packets_per_node,
             queue_bytes_per_node: config.queue_bytes_per_node,
+            queue_packets_global: config.queue_packets_global,
+            queue_bytes_global: config.queue_bytes_global,
+            queued_packets: 0,
+            queued_bytes: 0,
             nodes: HashMap::new(),
             leases: HashMap::new(),
             active_queues: VecDeque::new(),
@@ -128,6 +146,7 @@ impl RelayServer {
             registration_order: VecDeque::new(),
             source_budgets: HashMap::new(),
             source_order: VecDeque::new(),
+            registration_budget: RegistrationBudget::new(Instant::now()),
             metrics,
         }
     }
@@ -191,7 +210,7 @@ impl RelayServer {
     fn handle_registration(&mut self, socket: &UdpSocket, datagram: &[u8], source: SocketAddr) {
         let instant = Instant::now();
         if datagram.len() != RELAY_REGISTER_REQUEST_LENGTH
-            || !self.allow_registration_source(source.ip(), instant)
+            || !self.allow_registration(source.ip(), instant)
         {
             self.metrics.registration_rejected();
             return;
@@ -240,7 +259,7 @@ impl RelayServer {
             return;
         }
         if let Some(previous) = self.nodes.insert(node, lease_id) {
-            self.leases.remove(&previous);
+            self.remove_lease(previous);
         }
         self.leases.insert(
             lease_id,
@@ -324,11 +343,7 @@ impl RelayServer {
             return;
         };
         if destination_lease.expires_at <= unix_now
-            || destination_lease.queue.len() >= self.queue_packets_per_node
-            || destination_lease
-                .queued_bytes
-                .saturating_add(datagram.len())
-                > self.queue_bytes_per_node
+            || !self.queue_has_capacity(destination_lease, datagram.len())
         {
             self.metrics.queue_drop();
             return;
@@ -343,10 +358,10 @@ impl RelayServer {
         }
         source_lease.traffic.commit(now, datagram.len());
         source_lease.last_activity = now;
-        let Some(destination_lease) = self.leases.get_mut(&destination_lease_id) else {
-            self.metrics.destination_drop();
-            return;
-        };
+        let destination_lease = self
+            .leases
+            .get_mut(&destination_lease_id)
+            .expect("destination lease was prechecked");
         destination_lease.queued_bytes = destination_lease
             .queued_bytes
             .saturating_add(datagram.len());
@@ -358,6 +373,10 @@ impl RelayServer {
             destination_lease.queue_scheduled = true;
             self.active_queues.push_back(destination_lease_id);
         }
+        self.queued_packets = self.queued_packets.saturating_add(1);
+        self.queued_bytes = self.queued_bytes.saturating_add(datagram.len());
+        self.metrics
+            .set_queue_depth(self.queued_packets, self.queued_bytes);
     }
 
     fn handle_keepalive(&mut self, socket: &UdpSocket, datagram: &[u8], source: SocketAddr) {
@@ -426,17 +445,21 @@ impl RelayServer {
             let Some(lease_id) = self.active_queues.pop_front() else {
                 return;
             };
-            let Some(lease) = self.leases.get_mut(&lease_id) else {
+            let Some(lease) = self.leases.get(&lease_id) else {
                 continue;
             };
             let Some(datagram) = lease.queue.front() else {
-                lease.queue_scheduled = false;
+                self.leases
+                    .get_mut(&lease_id)
+                    .expect("active lease exists")
+                    .queue_scheduled = false;
                 continue;
             };
             match socket.try_send_to(&datagram.bytes, lease.endpoint) {
                 Ok(length) => {
-                    let datagram = lease.queue.pop_front().expect("queue front exists");
-                    lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.bytes.len());
+                    let datagram = self
+                        .dequeue_datagram(lease_id)
+                        .expect("queue front was prechecked");
                     if length == datagram.bytes.len() {
                         self.metrics
                             .forwarded(length, datagram.enqueued_at.elapsed());
@@ -449,13 +472,13 @@ impl RelayServer {
                     return;
                 }
                 Err(_) => {
-                    if let Some(datagram) = lease.queue.pop_front() {
-                        lease.queued_bytes =
-                            lease.queued_bytes.saturating_sub(datagram.bytes.len());
-                    }
+                    self.dequeue_datagram(lease_id);
                     self.metrics.send_drop();
                 }
             }
+            let Some(lease) = self.leases.get_mut(&lease_id) else {
+                continue;
+            };
             if lease.queue.is_empty() {
                 lease.queue_scheduled = false;
             } else {
@@ -475,7 +498,7 @@ impl RelayServer {
             })
             .collect::<Vec<_>>();
         for (lease_id, node) in expired {
-            self.leases.remove(&lease_id);
+            self.remove_lease(lease_id);
             if self.nodes.get(&node) == Some(&lease_id) {
                 self.nodes.remove(&node);
             }
@@ -532,6 +555,43 @@ impl RelayServer {
         );
     }
 
+    fn queue_has_capacity(&self, lease: &Lease, datagram_length: usize) -> bool {
+        lease.queue.len() < self.queue_packets_per_node
+            && lease.queued_bytes.saturating_add(datagram_length) <= self.queue_bytes_per_node
+            && self.queued_packets < self.queue_packets_global
+            && self.queued_bytes.saturating_add(datagram_length) <= self.queue_bytes_global
+    }
+
+    fn dequeue_datagram(&mut self, lease_id: [u8; 16]) -> Option<QueuedDatagram> {
+        let lease = self.leases.get_mut(&lease_id)?;
+        let datagram = lease.queue.pop_front()?;
+        lease.queued_bytes = lease.queued_bytes.saturating_sub(datagram.bytes.len());
+        self.queued_packets = self.queued_packets.saturating_sub(1);
+        self.queued_bytes = self.queued_bytes.saturating_sub(datagram.bytes.len());
+        self.metrics
+            .set_queue_depth(self.queued_packets, self.queued_bytes);
+        Some(datagram)
+    }
+
+    fn remove_lease(&mut self, lease_id: [u8; 16]) {
+        let Some(lease) = self.leases.remove(&lease_id) else {
+            return;
+        };
+        self.queued_packets = self.queued_packets.saturating_sub(lease.queue.len());
+        self.queued_bytes = self.queued_bytes.saturating_sub(lease.queued_bytes);
+        self.active_queues
+            .retain(|scheduled| *scheduled != lease_id);
+        self.metrics.set_active_leases(self.leases.len());
+        self.metrics
+            .set_queue_depth(self.queued_packets, self.queued_bytes);
+    }
+
+    fn allow_registration(&mut self, source: IpAddr, now: Instant) -> bool {
+        self.registration_budget
+            .allow(now, self.registration_requests_global_per_second)
+            && self.allow_registration_source(source, now)
+    }
+
     fn allow_registration_source(&mut self, source: IpAddr, now: Instant) -> bool {
         if let Some(budget) = self.source_budgets.get_mut(&source) {
             if now.saturating_duration_since(budget.window_started) >= SOURCE_WINDOW {
@@ -560,6 +620,27 @@ impl RelayServer {
                 requests: 1,
             },
         );
+        true
+    }
+}
+
+impl RegistrationBudget {
+    fn new(now: Instant) -> Self {
+        Self {
+            window_started: now,
+            requests: 0,
+        }
+    }
+
+    fn allow(&mut self, now: Instant, maximum: u32) -> bool {
+        if now.saturating_duration_since(self.window_started) >= GLOBAL_REGISTRATION_WINDOW {
+            self.window_started = now;
+            self.requests = 0;
+        }
+        if self.requests >= maximum {
+            return false;
+        }
+        self.requests = self.requests.saturating_add(1);
         true
     }
 }
@@ -726,6 +807,24 @@ mod tests {
         task: tokio::task::JoinHandle<io::Result<()>>,
     }
 
+    #[derive(Clone, Copy)]
+    enum GlobalQueueConstraint {
+        Packets,
+        Bytes,
+    }
+
+    struct GlobalQueueScenario {
+        server: RelayServer,
+        metrics: RelayMetrics,
+        first_frame: Vec<u8>,
+        second_frame: Vec<u8>,
+        first_source_endpoint: SocketAddr,
+        second_source_endpoint: SocketAddr,
+        second_source_lease: [u8; 16],
+        first_destination_lease: [u8; 16],
+        now: Instant,
+    }
+
     #[test]
     fn replay_window_enforces_duplicate_old_and_jump_bounds() {
         let mut window = ReplayWindow::new();
@@ -739,6 +838,43 @@ mod tests {
         boundary.commit(0).expect("initial sequence");
         boundary.commit(1023).expect("window edge");
         assert!(boundary.commit(0).is_err());
+    }
+
+    #[test]
+    fn global_registration_budget_blocks_source_spray_before_source_state_growth() {
+        let controller_key = SigningKey::from_bytes(&[71_u8; 32]);
+        let relay_key = SigningKey::from_bytes(&[72_u8; 32]);
+        let mut config = test_config(
+            [73_u8; 16],
+            controller_key.verifying_key(),
+            relay_key,
+        );
+        config.registration_requests_global_per_second = 2;
+        let mut server = RelayServer::new(config, RelayMetrics::default());
+        let now = Instant::now();
+        server.registration_budget = RegistrationBudget::new(now);
+        let first = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
+        let second = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2));
+        let blocked = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 3));
+
+        assert!(server.allow_registration(first, now));
+        assert!(server.allow_registration(second, now));
+        assert!(!server.allow_registration(blocked, now));
+        assert_eq!(server.source_budgets.len(), 2);
+        assert!(!server.source_budgets.contains_key(&blocked));
+
+        assert!(server.allow_registration(blocked, now + GLOBAL_REGISTRATION_WINDOW));
+        assert_eq!(server.source_budgets.len(), 3);
+    }
+
+    #[test]
+    fn global_packet_queue_limit_is_shared_and_releases_on_cleanup() {
+        assert_global_queue_limit(GlobalQueueConstraint::Packets);
+    }
+
+    #[test]
+    fn global_byte_queue_limit_is_shared_and_releases_on_cleanup() {
+        assert_global_queue_limit(GlobalQueueConstraint::Bytes);
     }
 
     #[tokio::test]
@@ -901,11 +1037,165 @@ mod tests {
             idle_timeout_seconds: 60,
             max_leases: 8,
             registration_requests_per_minute: 30,
+            registration_requests_global_per_second: 512,
             packets_per_lease_per_second: 100,
             bytes_per_lease_per_second: 1_000_000,
             queue_packets_per_node: 8,
             queue_bytes_per_node: 16_000,
+            queue_packets_global: 64,
+            queue_bytes_global: 128_000,
         }
+    }
+
+    fn assert_global_queue_limit(constraint: GlobalQueueConstraint) {
+        let mut scenario = global_queue_scenario(constraint);
+        scenario
+            .server
+            .handle_data(&scenario.first_frame, scenario.first_source_endpoint);
+        scenario
+            .server
+            .handle_data(&scenario.second_frame, scenario.second_source_endpoint);
+        assert_eq!(scenario.server.queued_packets, 1);
+        assert_eq!(scenario.server.queued_bytes, scenario.first_frame.len());
+        assert_eq!(scenario.metrics.snapshot().queue_drops, 1);
+        assert_eq!(
+            lease_replay_and_packets(&scenario.server, scenario.second_source_lease),
+            (None, 0)
+        );
+
+        scenario
+            .server
+            .leases
+            .get_mut(&scenario.first_destination_lease)
+            .expect("first destination lease")
+            .expires_at = 0;
+        scenario.server.cleanup(scenario.now, unix_time());
+        assert_eq!(scenario.server.queued_packets, 0);
+        assert_eq!(scenario.server.queued_bytes, 0);
+        let snapshot = scenario.metrics.snapshot();
+        assert_eq!(snapshot.queued_packets, 0);
+        assert_eq!(snapshot.queued_bytes, 0);
+
+        scenario
+            .server
+            .handle_data(&scenario.second_frame, scenario.second_source_endpoint);
+        assert_eq!(scenario.server.queued_packets, 1);
+        assert_eq!(scenario.server.queued_bytes, scenario.second_frame.len());
+        assert_eq!(
+            lease_replay_and_packets(&scenario.server, scenario.second_source_lease),
+            (Some(1), 1)
+        );
+    }
+
+    fn global_queue_scenario(constraint: GlobalQueueConstraint) -> GlobalQueueScenario {
+        let controller_key = SigningKey::from_bytes(&[81_u8; 32]);
+        let relay_key = SigningKey::from_bytes(&[82_u8; 32]);
+        let relay_id = [83_u8; 16];
+        let network_id = [84_u8; 16];
+        let nodes = [85_u8, 86, 87, 88].map(|value| NodeKey {
+            network_id,
+            node_id: [value; 16],
+        });
+        let leases = [91_u8, 92, 93, 94].map(|value| [value; 16]);
+        let endpoints = [46_001_u16, 46_002, 46_003, 46_004]
+            .map(|port| SocketAddr::from(([127, 0, 0, 1], port)));
+        let first = test_relay_frame(
+            network_id,
+            relay_id,
+            nodes[0],
+            nodes[2],
+            leases[0],
+        );
+        let second = test_relay_frame(
+            network_id,
+            relay_id,
+            nodes[1],
+            nodes[3],
+            leases[1],
+        );
+        assert_eq!(first.len(), second.len());
+
+        let mut config = test_config(relay_id, controller_key.verifying_key(), relay_key);
+        match constraint {
+            GlobalQueueConstraint::Packets => {
+                config.queue_packets_per_node = 1;
+                config.queue_packets_global = 1;
+            }
+            GlobalQueueConstraint::Bytes => {
+                config.queue_bytes_per_node = first.len();
+                config.queue_bytes_global = first.len();
+            }
+        }
+        let metrics = RelayMetrics::default();
+        let mut server = RelayServer::new(config, metrics.clone());
+        let now = Instant::now();
+        for index in 0..nodes.len() {
+            insert_test_lease(&mut server, nodes[index], leases[index], endpoints[index], now);
+        }
+        GlobalQueueScenario {
+            server,
+            metrics,
+            first_frame: first,
+            second_frame: second,
+            first_source_endpoint: endpoints[0],
+            second_source_endpoint: endpoints[1],
+            second_source_lease: leases[1],
+            first_destination_lease: leases[2],
+            now,
+        }
+    }
+
+    fn lease_replay_and_packets(
+        server: &RelayServer,
+        lease_id: [u8; 16],
+    ) -> (Option<u64>, u32) {
+        let lease = server.leases.get(&lease_id).expect("source lease");
+        (lease.replay.highest, lease.traffic.packets)
+    }
+
+    fn insert_test_lease(
+        server: &mut RelayServer,
+        node: NodeKey,
+        lease_id: [u8; 16],
+        endpoint: SocketAddr,
+        now: Instant,
+    ) {
+        server.nodes.insert(node, lease_id);
+        server.leases.insert(
+            lease_id,
+            Lease {
+                node,
+                endpoint,
+                expires_at: unix_time() + 600,
+                last_activity: now,
+                replay: ReplayWindow::new(),
+                traffic: TrafficBudget::new(now),
+                queue: VecDeque::new(),
+                queued_bytes: 0,
+                queue_scheduled: false,
+            },
+        );
+        server.metrics.set_active_leases(server.leases.len());
+    }
+
+    fn test_relay_frame(
+        network_id: [u8; 16],
+        relay_id: [u8; 16],
+        source: NodeKey,
+        destination: NodeKey,
+        source_lease: [u8; 16],
+    ) -> Vec<u8> {
+        let inner = framed_xsp_keepalive(network_id, source.node_id, destination.node_id);
+        encode_relay_frame(RelayFrame {
+            network_id,
+            relay_id,
+            source_node_id: source.node_id,
+            destination_node_id: destination.node_id,
+            lease_id: source_lease,
+            sequence: 1,
+            payload: &inner,
+        })
+        .expect("Relay frame")
     }
 
     async fn start_test_relay(packets_per_second: u32) -> TestRelay {
@@ -919,6 +1209,8 @@ mod tests {
             config.bytes_per_lease_per_second = 100_000_000;
             config.queue_packets_per_node = 16_384;
             config.queue_bytes_per_node = 32_000_000;
+            config.queue_packets_global = 32_768;
+            config.queue_bytes_global = 64_000_000;
         }
         let server = RelayServer::new(config, metrics.clone());
         let socket = Arc::new(
