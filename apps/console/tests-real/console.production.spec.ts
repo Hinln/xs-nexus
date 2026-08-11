@@ -451,7 +451,15 @@ test.describe.serial("真实生产 Console 完整矩阵", () => {
         apiPath(response.url()).endsWith("/revoke"),
     );
     await revokeButton.click();
-    expect((await revoked).status()).toBe(204);
+    const revokedResponse = await revoked;
+    expect(revokedResponse.status()).toBe(200);
+    expect(await revokedResponse.json()).toMatchObject({
+      network_id: expect.any(String),
+      node_id_base64: expect.any(String),
+      virtual_ip: expect.stringMatching(/^100[.]/),
+      cooldown_until: expect.any(String),
+      configuration_version: expect.any(Number),
+    });
     await expect(row.getByText("已吊销", { exact: true })).toBeVisible();
     await expect(row.getByRole("button", { name: "吊销凭证" })).toHaveCount(0);
     expect(revokeRequests).toBe(1);
