@@ -161,6 +161,8 @@ Agent 只统计进入已认证加密数据面的发送业务包，以及完成�
 
 Relay 保留本地累计转发指标，但推送给 Controller 的签名报告不包含节点身份、端点、Lease ID、Network 或 payload。Controller 只信任 Relay 目录中的身份公钥，拒绝重放、计数回滚和分类不一致；Agent 限制为 25 小时/1800 样本，Relay 限制为 25 小时/9000 样本以覆盖最快 10 秒上报周期。Console 只把三分钟内的 Agent 报告和两分钟内的 Relay 报告视为新鲜；缺失或陈旧数据必须显式显示不可用/陈旧，不能推断 Direct、零流量或健康。
 
+宿主机 oneshot 采集器每五分钟通过 loopback 的认证只读端点取得上述低基数聚合，同时读取 `/proc`、statvfs、Docker 状态、健康端点、TLS 和备份回执。它原子写入最新 Prometheus/JSON 状态，并以有界队列维护 firing、严重度变化和 resolved 通知；通知失败本身只形成本机 critical，避免递归发送。采集器不保存节点/网络/Relay 标识或凭据，令牌只从 root-owned `0600` 普通文件读取。外部指标平台、通知目的地和 on-call 属于独立运营边界，不能由本机状态替代。
+
 ## 10. 实施顺序
 
 1. M1.1：Controller 注册、IPAM、配置签名和审计；

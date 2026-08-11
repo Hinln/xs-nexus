@@ -670,6 +670,10 @@ sudo ./installers/linux/xs-nexus-installer.sh uninstall
 
 ## 16. 监控和日常运维
 
+部署前必须按 `docs/PRODUCTION_MONITORING.md` 安装宿主机 health timer、Python 聚合采集器、root-only Controller/通知令牌和备份回执作业。Controller 采集 URL 只允许 loopback；正式通知只允许 HTTPS。`metrics.prom`、`snapshot.json`、`alerts.json` 和去重状态默认位于 `/var/lib/xs-nexus-monitor`，不得为方便抓取而放宽整个目录权限。
+
+本机 systemd 失败或 journal 记录不等于生产告警闭环。正式放行前必须从独立于被监控主机的目的地证明 warning、critical、on-call 确认和 resolved；在该证据缺失时 Gate 20 保持 `PARTIAL/BLOCKED_EXTERNAL`。
+
 每日：
 
 - 检查 Controller、Relay、Console、Edge health；
@@ -764,6 +768,7 @@ subnet=172.18.0.0/16
 - [ ] PostgreSQL/Redis/MySQL 无公网暴露；
 - [ ] 正式发布签名密钥、公钥分发和轮换仪式完成；
 - [ ] 正式备份 identity、真实异地主机、深度验证和恢复演练完成；
+- [ ] 主机/服务/安全/TLS/备份指标持续采集，独立告警目的地完成 warning、critical、on-call 确认和恢复关闭；
 - [ ] SBOM、provenance、Grype 和残余风险处置在有效期；
 - [ ] 临时密码、Token、SSH 和数据库凭据完成轮换；
 - [x] Windows 11 xsnet 测试签名驱动 VM/WDK/standard+UMDF+Application Verifier 门禁通过；
