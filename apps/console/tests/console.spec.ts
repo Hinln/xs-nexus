@@ -242,9 +242,11 @@ test("更新页覆盖加载、空数据、无权限与服务错误", async ({ pa
 test("键盘可到达跳转链接和主导航", async ({ page }) => {
   await mockAuthenticatedApi(page);
   await page.goto("/");
+  const skipLink = page.getByRole("link", { name: "跳到主要内容" });
+  await expect(skipLink).toBeVisible();
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "跳到主要内容" })).toBeFocused();
-  await page.getByRole("link", { name: "跳到主要内容" }).press("Enter");
+  await expect(skipLink).toBeFocused();
+  await skipLink.press("Enter");
   await expect(page.locator("#main-content")).toBeFocused();
 });
 

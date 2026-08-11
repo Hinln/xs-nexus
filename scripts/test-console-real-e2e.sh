@@ -15,6 +15,7 @@ readonly EVIDENCE_DIR
 TEMPORARY=$(mktemp -d)
 readonly TEMPORARY
 readonly CONTROLLER_LOG="$EVIDENCE_DIR/controller.log"
+readonly SOURCE_GUARD_LOG="$EVIDENCE_DIR/source-guard.log"
 controller_pid=''
 test_status=1
 
@@ -34,6 +35,12 @@ cleanup() {
     else
         printf 'status=FAIL\n' >"$EVIDENCE_DIR/status.txt"
     fi
+    (
+        cd "$EVIDENCE_DIR"
+        find . -type f ! -name SHA256SUMS -print0 |
+            LC_ALL=C sort -z |
+            xargs -0 -r sha256sum >SHA256SUMS
+    )
     rm -rf "$TEMPORARY"
     exit "$exit_status"
 }
@@ -42,9 +49,17 @@ trap cleanup EXIT
 umask 077
 openssl rand -hex 32 >"$TEMPORARY/admin-api-token"
 openssl rand -base64 24 | tr -d '\n' >"$TEMPORARY/console-password"
+openssl rand -base64 24 | tr -d '\n' >"$TEMPORARY/auditor-password"
 head -c 32 /dev/urandom >"$TEMPORARY/credential-signing-key"
 head -c 32 /dev/urandom >"$TEMPORARY/configuration-signing-key"
 printf '%s' "$DATABASE_URL_VALUE" >"$TEMPORARY/database-url"
+
+if grep -R -n -E 'page[.]route|context[.]route|routeFromHAR' \
+    "$ROOT_DIR/apps/console/tests-real" >"$SOURCE_GUARD_LOG"; then
+    printf 'real Console E2E may not intercept API requests\n' >&2
+    exit 1
+fi
+printf 'request_interception=absent\n' >"$SOURCE_GUARD_LOG"
 
 cd "$ROOT_DIR"
 cargo build -p xs-controller --bin xs-controller --example reset_test_schema
@@ -94,6 +109,8 @@ curl --fail --silent "$CONTROLLER_URL/health/ready" >/dev/null
 
 XS_CONSOLE_E2E_USERNAME="$CONSOLE_USERNAME" \
 XS_CONSOLE_E2E_PASSWORD_FILE="$TEMPORARY/console-password" \
+XS_CONSOLE_E2E_AUDITOR_PASSWORD_FILE="$TEMPORARY/auditor-password" \
+XS_CONSOLE_E2E_CONTROLLER_PID="$controller_pid" \
 XS_CONSOLE_E2E_EVIDENCE_DIR="$EVIDENCE_DIR" \
     npm run test:e2e:real
 
