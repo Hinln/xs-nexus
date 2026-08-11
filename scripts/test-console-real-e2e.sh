@@ -38,7 +38,7 @@ cleanup() {
     local checksum_file="$TEMPORARY/SHA256SUMS"
     (
         cd "$EVIDENCE_DIR"
-        find . -type f ! -name SHA256SUMS -print0 |
+        find . -type f ! -name SHA256SUMS ! -path '*/.*' -print0 |
             LC_ALL=C sort -z |
             xargs -0 -r sha256sum >"$checksum_file"
     )
