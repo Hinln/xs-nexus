@@ -14,26 +14,50 @@ NETWORKS_BEFORE=''
 DEFAULT_ROUTE_BEFORE=''
 
 cleanup() {
-    local status=$? label
+    local status=$?
+    local label network_removed=false networks_after route_after
     set +e
     if [[ -n $SENTINEL_ID ]]; then
         label=$(docker inspect "$SENTINEL_ID" --format '{{index .Config.Labels "io.xs-nexus.onepanel-fixture"}}' 2>/dev/null || true)
         if [[ $label == "$RUN_ID" ]]; then
-            docker rm -f "$SENTINEL_ID" >/dev/null 2>&1 || true
+            if ! docker rm -f "$SENTINEL_ID" >/dev/null 2>&1; then
+                printf 'cleanup failed to remove the labeled sentinel\n' >&2
+                status=1
+            fi
         fi
     fi
     if [[ -n $NETWORK_ID ]]; then
         label=$(docker network inspect "$NETWORK_ID" --format '{{index .Labels "io.xs-nexus.onepanel-fixture"}}' 2>/dev/null || true)
         if [[ $label == "$RUN_ID" ]]; then
-            docker network rm "$NETWORK_ID" >/dev/null 2>&1 || true
+            for _cleanup_attempt in $(seq 1 20); do
+                if docker network rm "$NETWORK_ID" >/dev/null 2>&1; then
+                    network_removed=true
+                    break
+                fi
+                sleep 1
+            done
+            if [[ $network_removed != true ]]; then
+                printf 'cleanup failed to remove the labeled external-network fixture\n' >&2
+                status=1
+            fi
         fi
     fi
     rm -rf -- "$TEMPORARY"
     if [[ -n $NETWORKS_BEFORE ]]; then
-        [[ $(docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort) == "$NETWORKS_BEFORE" ]] || status=1
+        networks_after=$(docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort)
+        if [[ $networks_after != "$NETWORKS_BEFORE" ]]; then
+            printf 'Docker network baseline changed during the fixture\nbefore:\n%s\nafter:\n%s\n' \
+                "$NETWORKS_BEFORE" "$networks_after" >&2
+            status=1
+        fi
     fi
     if [[ -n $DEFAULT_ROUTE_BEFORE ]]; then
-        [[ $(ip -json route show default) == "$DEFAULT_ROUTE_BEFORE" ]] || status=1
+        route_after=$(ip -json route show default)
+        if [[ $route_after != "$DEFAULT_ROUTE_BEFORE" ]]; then
+            printf 'default route baseline changed during the fixture\nbefore: %s\nafter: %s\n' \
+                "$DEFAULT_ROUTE_BEFORE" "$route_after" >&2
+            status=1
+        fi
     fi
     exit "$status"
 }
