@@ -1115,4 +1115,5 @@
 - 决策：Controller 撤销发布是单向事务，使用固定原因枚举，暂停全部引用策略、递增代次、写入脱敏审计并停止后续指令；Agent 在观察到指令撤回时只删除精确匹配的 ready 请求。主机另以 root-owned、非组/全局可写、规范排序的 manifest SHA-256 ledger 在暂存、特权复制和回滚前失败关闭。Agent/安装器/一键引导统一接受一至四把无重复 PEM 公钥，支持 old+new 重叠窗口后退役旧钥。自动更新统一消费 schema 2 十二字段清单，构建器与安装器共同执行规范版本、正整数 epoch 和 512 MiB 上限。
 - 故障语义：网络中断、不完整下载、存储写入失败、磁盘耗尽、错误平台/架构、无签名、签名或清单篡改、旧版本、已撤销目标和激活失败都不得发布或执行候选；失败保留当前 release、身份和项目路由，预激活半成品必须精确清理。回滚在执行目标二进制前检查撤销。
 - 验证：`scripts/test-update-supply-chain.sh` 在隔离 Linux CI 中组合 Rust 单测、真实 PostgreSQL、真实 tmpfs ENOSPC、独立 network namespace 路由、安装器生命周期和一键引导，并生成场景矩阵与 SHA-256 清单。所有失败 run 和最终 artifact 必须保留并独立复核。
+- 最终内部证据：候选 revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 GitHub Actions run `31515281011` 全九 job 通过；专项 job `93858773221`、artifact `9110864186`、GitHub/独立下载一致的归档 SHA-256、八个内部 payload hash 和零发现无值秘密扫描均通过。
 - 边界：开发测试密钥、hosted x86_64、namespace 和本地 ledger 不能替代正式离线双人密钥仪式、认证分发、签名 RC、真实 aarch64/NAS/Windows 平台矩阵或独立安全审计；Gate 18 在这些外部证据完成前保持 `PARTIAL`，总体保持 `NO_GO`。

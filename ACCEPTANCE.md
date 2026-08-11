@@ -153,6 +153,8 @@ M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰�
 
 证据：M5.1 `/srv/xs-nexus/artifacts/qa/m5.1-20260730T232953Z`。已验证测试密钥签名、首次公钥固定、错误密钥/签名/哈希/包内篡改拒绝；Gate 01 V2 又在 exact revision `fea456b3d6feff36856b1f2066ace8a22b650bce` 的 GitHub Actions run `31289641228` 验证统一 build identity、确定性 release bundle、OCI/Console identity、in-toto/SLSA subjects、严格 Ed25519 verifier 和 signed-forged-commit 安装拒绝。正式离线发布密钥、签名仪式、正式 signed tag/bundle、生产反向核验仍未完成，不以测试签名冒充生产签名。Windows 项保持未完成。
 
+Gate 18 候选 revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 run `31515281011` 全九 job 通过；专项 job `93858773221` 和 artifact `9110864186` 证明 schema 2 统一清单、密钥重叠、在线/离线撤销、中断/截断/超限/真实 ENOSPC、错误平台、篡改、旧版、撤销回滚、身份与现有版本保持及 namespace 路由清理。归档 SHA-256 与 GitHub digest 一致，八个内部 payload 和无值秘密扫描通过。该证据使用开发密钥和 hosted x86_64，不能替代正式离线仪式、认证分发、签名 RC、真实目标平台或生产发布/回滚链；Gate 18 保持 `PARTIAL`，Windows 两项保持未完成。
+
 ---
 
 ## J. 1Panel 部署

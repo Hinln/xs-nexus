@@ -111,3 +111,12 @@
 - Exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` passed all eight jobs in run `31504402285`; job `93822197946`, artifact `9106406005`, archive digest, inner checksums, and no-value scan pass.
 - Mapped existing production Gate 14 and Gate 16 raw evidence to real host reboot/1Panel recovery, project restart/upgrade/four automatic rollbacks, and preservation of OpenResty, database boundary, SSH, routes/rules, non-project nftables, protected containers, and the production external network.
 - Gate 15 changes from `PARTIAL` to `PASS`. The current branch was not deployed and the overall decision remains `NO_GO`.
+
+### Gate 18 update and release supply-chain submatrix
+
+- Unified release verification on schema 2 with canonical source/version/platform/archive identity, strict numeric and 512 MiB bounds, and one-to-four unique Ed25519 PEM public keys.
+- Added one-way Controller revocation, policy pause/generation updates, redacted audit, directive suppression, exact Agent cancellation, and a root-owned host ledger checked before stage, apply, and rollback execution.
+- Added interrupted, truncated, oversized, write-failure, real tmpfs ENOSPC, platform/architecture, identity, tamper, old-version, revoked-build, rollback, state-preservation, namespace-route-cleanup, and Console revocation regressions.
+- Retained eight failed runs/artifacts and fixed their root causes without skip, suppression, allowed failure, timeout reduction, or assertion weakening.
+- Candidate revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` passed all nine jobs in run `31515281011`; job `93858773221`, artifact `9110864186`, matching archive digest, eight inner hashes, and a zero-finding no-value scan pass.
+- Gate 18 remains `PARTIAL` because formal offline keys/ceremony, authenticated production distribution, a signed RC, real target-platform execution, and the production release/rollback chain remain absent. Production was not changed and overall status remains `NO_GO`.

@@ -3,7 +3,7 @@
 | ID | Severity | Gate | Finding | Status |
 |---|---|---:|---|---|
 | PRV2-001 | Critical | 02 | Previously disclosed infrastructure, application, enrollment, and recovery credentials lack complete rotation and old-value rejection evidence | OPEN |
-| PRV2-002 | Critical | 03/18 | No formal offline release/recovery key ceremony, authenticated public-key distribution, revocation, or restore exercise | BLOCKED_EXTERNAL |
+| PRV2-002 | Critical | 03/18 | Repository revocation enforcement is complete, but no formal offline release/recovery key ceremony, authenticated production key/revocation distribution, or restore exercise exists | BLOCKED_EXTERNAL |
 | PRV2-003 | High | 14 | SSH/firewall, protected security updates, new-kernel reboot regression, and bounded disk cleanup are closed; independently delivered and acknowledged warning/critical disk alerts remain open | BLOCKED_EXTERNAL |
 | PRV2-004 | High | 16 | Long-running Controller database access depended on a bootstrap superuser; production now uses separated owner/app/migrator roles | CLOSED |
 | PRV2-005 | High | 13/19 | Planned production domain returns CDN 525 because planned-domain origin SNI/certificate/vhost is absent; current public root is also routed to Controller rather than Console | BLOCKED_EXTERNAL |
@@ -33,3 +33,5 @@ The four closed Gate 23 findings were independently revalidated at exact commit 
 `PRV2-018` has complete automated evidence for bounded single-process Relay admission/queue accounting, authenticated 5,000,000-frame forwarding with short-Lease renewal, and controlled two-Relay stop/restart recovery at exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e`, run `31358498444`, job `93362562136`, and artifact `9051561308`. It remains blocked because hosted loopback/namespace evidence cannot prove Internet-scale abuse resistance, cloud-edge saturation controls, multi-region/multi-instance behavior, or an hours/days production operating envelope.
 
 `PRV2-019` is closed by independent monotonic enforcement of `configuration.version` and `policy_version`, with rejection-before-mutation regression. Exact revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b`, run `31360862865`, job `93369332314`, and artifact `9052383034` additionally prove the complete Direct/Relay/subnet ACL matrix. The closure changes Gate 09 only and does not alter external findings or overall `NO_GO`.
+
+`PRV2-002` now has complete repository-side revocation and failure-matrix evidence at candidate revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1`, run `31515281011`, job `93858773221`, and artifact `9110864186`. Controller withdrawal and the root-owned host ledger fail closed before stage/apply/rollback execution, but the owner-controlled offline ceremony, authenticated production key/revocation distribution, signed RC, and recovery exercise remain external. The Critical finding therefore remains `BLOCKED_EXTERNAL`, Gate 18 remains `PARTIAL`, and overall remains `NO_GO`.

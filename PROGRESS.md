@@ -496,3 +496,12 @@ make clean
 - exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` 的 run `31504402285` 八个 job 全通过；job `93822197946`、artifact `9106406005`、archive digest `93e174890d19264398090dcb891ab434a3839d769c4f0f14854982245678a28f`、内部 SHA-256 和无值秘密扫描通过。
 - 生产 Gate 14/16 证据映射补齐真实 host reboot/1Panel runtime restart、OpenResty/网站、数据库边界、SSH、项目 restart/upgrade、四次 automatic rollback、route/rule/nftables、protected containers 和生产 `1panel-network` identity/subnet。
 - Gate 15 从 `PARTIAL` 提升为 `PASS`。本轮未连接或修改生产，运行 revision 仍是 `3d93656`；当前分支未签名、未部署且总体保持 `NO_GO`。下一步进入 Gate 18 及其他可自行完成的内部硬门禁。
+
+## 2026-08-12 Gate 18 更新与发布供应链子矩阵
+
+- 自动更新、构建器、Linux 包/安装器/一键引导统一消费 schema 2 十二字段清单，严格绑定来源提交/epoch、协议、平台、架构、target、archive identity/size/SHA-256，并执行规范 `u32` 版本、正 `u64` epoch 和 512 MiB 上限。
+- Agent/安装器支持一至四把唯一 Ed25519 PEM 公钥重叠；Controller 撤销为单向事务，暂停引用策略、递增 generation、写入脱敏审计并停止指令；Agent 精确撤销 ready 请求，root-owned 本地 ledger 在 stage/apply/rollback 执行前再次失败关闭。
+- 新增网络中断、截断、超限、写失败、真实 tmpfs ENOSPC、错误平台/架构、来源/归档漂移、篡改、旧版、已撤销发布、撤销回滚、当前版本/身份/签名状态保持和真实 namespace 路由清理矩阵；Console 提供固定原因、不可逆确认和撤销过滤，不存在私钥上传面。
+- 八个失败 runs/artifacts 完整保留，依次暴露 ShellCheck 数字比较、负向夹具漂移、安装器诊断与 iproute 文本假设、撤销回滚执行顺序、Relay 最终收敛竞态、Clippy 函数长度和 SQLx transaction executor；所有根因修复后全量重跑，没有 skip、suppress、allowed failure 或弱化断言。
+- 候选 revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 run `31515281011` 全九 job 通过；job `93858773221`、artifact `9110864186`、GitHub/独立下载一致的归档 SHA-256 `9885bc0d7146d518d53d6de8a11a8a7702d1816b5a49378dc13a797b85be2376`、八个内部 payload 和无值秘密扫描通过。
+- Gate 18 保持 `PARTIAL`：正式离线双人密钥仪式、认证公钥/撤销分发、签名 RC、真实 aarch64/NAS/Windows 和生产 release/rollback 链尚无证据。本轮未修改生产，运行 revision 仍是 `3d93656`，总体保持 `NO_GO`；下一步进入 Gate 19 及其他可自行完成的内部硬门禁。

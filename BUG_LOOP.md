@@ -373,3 +373,14 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0048`：运行时外部网络、sentinel 和默认路由断言全部通过，但 EXIT cleanup 最初只返回非零而没有差异。加入有界清理重试和原始差异后，run `31504209932` 证明 hosted runner 在 Docker daemon restart 时只重建内置 `bridge` 的 ID；目标外部网络 ID 和 sentinel ID 均保持。最终比较稳定的 name/driver/scope 全局 inventory，同时继续对目标网络和 sentinel 执行精确 ID 检查，并把最终 PASS 移到 cleanup/baseline 验证之后。runs `31367632436`、`31504209932` 与 artifacts `9054770008`、`9106338810` 保留。
 - 精确 revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` 的 run `31504402285` 八个 job 全通过；共存 job `93822197946`、artifact `9106406005`、归档 SHA-256 `93e174890d19264398090dcb891ab434a3839d769c4f0f14854982245678a28f`、内部清单和无值秘密扫描通过。
 - 生产 Gate 14/16 的宿主 reboot、1Panel/OpenResty/SSH 恢复、项目升级、四次自动回滚和网络/数据库不变量证据完成正式矩阵映射。Gate 15 提升为 `PASS`；本分支未部署且总体仍为 `NO_GO`。
+
+## Gate 18 更新与发布供应链子矩阵（2026-08-12）
+
+- `XS-2026-0049`：schema 2 Shell 校验最初使用字符串 `<` 比较版本/epoch，ShellCheck `SC2071` 正确拒绝可能的词法排序。改为先执行规范十进制/u32/u64 边界验证再算术比较，并增加构建器非法边界回归；失败 run `31510934548` 与 artifact `9109033398` 保留。
+- `XS-2026-0050`：archive-hash 负向夹具同时改变 `source_commit`，无法证明归档身份门禁本身。夹具现只修改目标字段并保持其余已签名字段不变；失败 run `31511341568` 与 artifact `9109197337` 保留。
+- `XS-2026-0051`：安装器生命周期在 hosted `iproute2` 文本格式差异处提前退出且缺少命令上下文。先增加 ERR 行号/命令诊断，再把断言改为严格语义前缀和 metric，而不是发行版相关的整行文本；runs `31511912254`、`31512364301` 与 artifacts `9109507310`、`9109688746` 保留。
+- `XS-2026-0052`：撤销 rollback 检查位于读取当前已安装二进制版本之后，导致撤销目标仍可执行一段候选代码。检查已移至任何目标二进制执行之前，并以 marker 回归证明零执行；失败 run `31512767254` 与 artifact `9109857831` 保留。
+- `XS-2026-0053`：Gate 18 首次通过后的全量 run 暴露 Relay 最终 Direct 状态只做一次采样，在合法收敛窗口内偶发读到旧状态。改为有界轮询严格 JSON 状态，端点/会话/流量和最终 Direct 条件均未放宽；run `31513216122` 与 artifact `9110017348` 保留。
+- `XS-2026-0054`：Relay 修复后严格 baseline Clippy 拒绝 Controller 的 101 行函数。只抽取 rollout release validation，不改变事务、错误或授权语义；run `31513788232` 与 artifact `9110258489` 保留。
+- `XS-2026-0055`：抽取后的 SQLx 0.9 helper 对 transaction wrapper 执行查询而非底层 connection，专项 job 因 executor trait 失败。改为在同一事务连接上执行，保持锁和原子性；run `31514717354` 与 artifact `9110599058` 保留。
+- 最终 candidate `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 run `31515281011` 全九 job 通过；Gate 18 job `93858773221`、artifact `9110864186`、GitHub/独立下载一致的归档 SHA-256、八个内部 payload 和无值秘密扫描通过。Gate 18 仍因正式密钥仪式/分发、签名 RC、真实平台和生产发布链保持 `PARTIAL`，总体仍为 `NO_GO`。

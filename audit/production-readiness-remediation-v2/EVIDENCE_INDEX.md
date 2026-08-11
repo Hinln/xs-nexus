@@ -230,6 +230,24 @@ Failed runs `31364684902`, `31366046340`, `31367632436`, and `31504209932` and a
 
 Gate 15 is `PASS`. This is not a formal release, production deployment of the current branch, planned-domain repair, credential rotation, external-device proof, or overall production approval; overall status remains `NO_GO`.
 
+## Gate 18 Update Supply-Chain Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Candidate source | Git revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` | VERIFIED |
+| Exact-head CI | GitHub Actions run [`31515281011`](https://github.com/Hinln/xs-nexus/actions/runs/31515281011) | PASS, ALL 9 JOBS |
+| Dedicated supply-chain job | GitHub Actions job [`93858773221`](https://github.com/Hinln/xs-nexus/actions/runs/31515281011/job/93858773221) | PASS |
+| Supply-chain artifact | GitHub artifact `9110864186`, `update-supply-chain-evidence` | PASS |
+| Artifact archive digest | `9885bc0d7146d518d53d6de8a11a8a7702d1816b5a49378dc13a797b85be2376` | VERIFIED AGAINST GITHUB AND INDEPENDENT DOWNLOAD |
+| Downloaded evidence | `C:\Users\panyo\Documents\Codex\2026-07-29\yue\gate18-ci-b8cd49c` | PASS |
+| Downloaded inner manifest | `SHA256SUMS` hash `b43c39434453c8d30bea945faa1ff14005430a2432581d04a6a3596285469c66` | PASS, 8 PAYLOADS |
+| Downloaded no-value scan | Same verified copy | PASS, 0 FINDINGS, 0 INCOMPLETE SURFACES |
+| Full Gate 18 mapping and retained failure chain | `audit/production-readiness-remediation-v2/UPDATE_SUPPLY_CHAIN.md` | PARTIAL |
+
+The internal matrix proves canonical schema-2 release identity, strict numeric/archive bounds, bounded key overlap, Controller and host-local revocation, interrupted/truncated/oversized/ENOSPC failure handling, platform/architecture binding, rollback safety, identity/state preservation, namespace route cleanup, and irreversible Console revocation controls. Eight preceding runs and artifacts retain every ShellCheck, fixture, installer, rollback-ordering, Relay convergence, Clippy, and SQLx failure; no failure was skipped, suppressed, or weakened.
+
+Gate 18 remains `PARTIAL`. Hosted x86_64, development keys, namespace routes, tmpfs ENOSPC, and a local ledger do not replace the owner-controlled offline key ceremony, authenticated production key/revocation distribution, formally signed RC, real arm64/NAS/Windows execution, or the production release/rollback chain. Production was not changed and overall status remains `NO_GO`.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.
@@ -245,5 +263,5 @@ Gate 15 is `PASS`. This is not a formal release, production deployment of the cu
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
-- Gates 18/19/20/21/22/25 current-revision regressions. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gates 19/20/21/22/25 current-revision regressions. Gate 18's repository-side failure matrix is complete, while formal keys/ceremony, authenticated production distribution, signed RC, real target-platform execution, and the production release chain remain open. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

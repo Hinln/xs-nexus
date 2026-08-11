@@ -559,3 +559,16 @@
 - [x] 失败链：runs `31364684902`、`31366046340`、`31367632436`、`31504209932` 及四个 artifacts 保留；没有 skip、allowed failure、suppress 或弱化目标 exact-ID 断言。
 - [x] 精确证据：revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6`，run `31504402285` 全八 job，job `93822197946`，artifact `9106406005`；archive/inner SHA-256 和无值秘密扫描通过。
 - [x] 结论边界：Gate 15 为 `PASS`；当前分支未部署，正式签名、计划域名、凭据轮换、外部设备与总体 Production Ready 状态不变。
+
+## 27. Gate 18 更新与发布供应链矩阵（2026-08-12）
+
+- [x] 统一契约：Core、Agent、Controller、构建器、安装器和一键引导消费 schema 2 十二字段清单；来源、epoch、协议、平台、架构、target、归档 identity/size/hash 全绑定。
+- [x] 边界：版本组件为规范 `u32`，epoch 为规范正 `u64`，归档不超过 512 MiB；错误边界由构建器和消费者共同拒绝。
+- [x] 密钥与撤销：一至四把唯一 PEM 公钥支持 old+new 重叠；未知/重复/退役/无签名/篡改输入失败关闭；Controller 单向撤销与 root-owned ledger 双重执行。
+- [x] 故障矩阵：中断、截断、超限、写失败、真实 tmpfs ENOSPC、错误平台/架构、来源/归档漂移、篡改、旧版、撤销目标和激活失败均不发布候选。
+- [x] 回滚与状态：显式回滚重新验证 metadata/撤销，撤销目标在执行任何已安装候选前拒绝；失败保留当前版本、节点身份、签名状态、服务状态和路由。
+- [x] 网络与控制台：真实独立 namespace 证明路由只在活动期存在且无残留；Console 撤销使用固定原因、不可逆确认、状态/过滤，不存在私钥上传面。
+- [x] 失败链：八个失败 runs/artifacts 全保留，ShellCheck、fixture、installer、rollback ordering、Relay convergence、Clippy 与 SQLx 根因均修复，没有 skip、suppress、allowed failure 或阈值下降。
+- [x] 精确证据：candidate `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1`，run `31515281011` 全九 job，job `93858773221`，artifact `9110864186`；archive/inner SHA-256 和无值秘密扫描通过。
+- [ ] 外部门禁：正式离线密钥仪式、认证生产分发、签名 RC、真实 aarch64/NAS/Windows 与生产 release/rollback 链尚未执行。
+- [x] 结论边界：仓库侧子矩阵通过，但 Gate 18 保持 `PARTIAL`，生产未变且总体仍为 `NO_GO`。
