@@ -222,6 +222,18 @@ M2.1 全量证据位于 `/srv/xs-nexus/artifacts/qa/m2.1-20260729T175243Z`。隔
 
 全量证据：`/srv/xs-nexus/artifacts/qa/m3.1-20260730T135838Z`。M3.2 子网审批、转发模式、网关离线和子网重叠仍未包含在本节完成声明中。
 
+### 8.6 聚合安全遥测边界
+
+| 风险 | 控制 |
+|---|---|
+| 未认证流量伪造重放告警 | 只有通过 AEAD 与对应内层地址/结构验证的重复或越窗数据报才增加重放累计计数；Tag、头、身份或载荷无效只走统一拒绝 |
+| 遥测形成错误 oracle | 数据面始终返回同一 `InvalidProtocolMessage`；Controller 只接收签名的累计总数，不接收包序列、端点、Node ID 明细、业务载荷或密码学失败原因 |
+| 计数回滚或伪造 | Agent 报告绑定身份、Network/Node、非零 boot ID 与单调 sequence；同 boot 的 ACL/重放累计值不得下降，schema 1 的新增计数必须为零 |
+| 旧 Agent 升级中断 | Controller 对 schema 1 使用原字段顺序和原签名字节投影，对 schema 2 验证完整新增字段；采用 Controller-first 再 Agent 的滚动顺序 |
+| 不完整遥测被误判健康 | 聚合 API 显式报告 fresh/complete/unknown；缺失或陈旧节点、Relay 不推断为零故障或健康 |
+
+这些累计指标用于检测和门禁证据，不替代原始日志、外部告警送达、独立安全审计或真实攻击流量验证。
+
 ## 9. 不在安全承诺内
 
 - 被 root、SYSTEM 或设备管理员完全攻陷的端点；

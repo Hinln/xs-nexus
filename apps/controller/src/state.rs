@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use sqlx::PgPool;
@@ -25,6 +28,7 @@ pub struct AppState {
     pub discovery_public_endpoints: Arc<Vec<SocketAddr>>,
     pub relays: Arc<Vec<ConfigurationRelay>>,
     online_nodes: Arc<RwLock<HashMap<[u8; 16], usize>>>,
+    control_auth_failures: Arc<AtomicU64>,
     configuration_events: broadcast::Sender<uuid::Uuid>,
     update_events: broadcast::Sender<uuid::Uuid>,
 }
@@ -50,6 +54,7 @@ impl AppState {
             ),
             relays: Arc::new(config.relays.clone()),
             online_nodes: Arc::new(RwLock::new(HashMap::new())),
+            control_auth_failures: Arc::new(AtomicU64::new(0)),
             configuration_events,
             update_events,
         }
@@ -76,6 +81,18 @@ impl AppState {
 
     pub(crate) async fn online_node_ids(&self) -> Vec<[u8; 16]> {
         self.online_nodes.read().await.keys().copied().collect()
+    }
+
+    pub(crate) fn record_control_auth_failure(&self) {
+        let _ = self.control_auth_failures.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.saturating_add(1)),
+        );
+    }
+
+    pub(crate) fn control_auth_failures_total(&self) -> u64 {
+        self.control_auth_failures.load(Ordering::Relaxed)
     }
 
     pub(crate) fn subscribe_configuration_events(&self) -> broadcast::Receiver<uuid::Uuid> {

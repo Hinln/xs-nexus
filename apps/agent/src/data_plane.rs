@@ -114,6 +114,7 @@ struct Peer {
     rx_bytes_total: u64,
     handshake_attempts_total: u64,
     handshake_successes_total: u64,
+    replay_drops_total: u64,
     latency_samples_total: u64,
     latency_microseconds_total: u64,
     last_latency_microseconds: Option<u64>,
@@ -125,6 +126,8 @@ struct TelemetryCounters {
     rx_bytes: u64,
     handshake_attempts: u64,
     handshake_successes: u64,
+    acl_drops: u64,
+    replay_drops: u64,
     latency_samples: u64,
     latency_microseconds: u64,
 }
@@ -139,6 +142,7 @@ impl TelemetryCounters {
         self.handshake_successes = self
             .handshake_successes
             .saturating_add(peer.handshake_successes_total);
+        self.replay_drops = self.replay_drops.saturating_add(peer.replay_drops_total);
         self.latency_samples = self
             .latency_samples
             .saturating_add(peer.latency_samples_total);
@@ -310,6 +314,8 @@ pub struct DataPlaneStatus {
     pub rx_bytes_total: u64,
     pub handshake_attempts_total: u64,
     pub handshake_successes_total: u64,
+    pub acl_drops_total: u64,
+    pub replay_drops_total: u64,
     pub latency_samples_total: u64,
     pub latency_microseconds_total: u64,
 }
@@ -612,6 +618,8 @@ impl UdpDataPlane {
             )
             .allowed
         {
+            self.retired_telemetry.acl_drops = self.retired_telemetry.acl_drops.saturating_add(1);
+            self.synchronize_status().await;
             return Ok(true);
         }
         let (destination_peer_ip, routed_packet) =
@@ -760,6 +768,7 @@ impl UdpDataPlane {
             && result.path_authenticated
             && peer.active_endpoint == Some(source);
         let destination_node_id = peer.node_id;
+        let mut acl_dropped = false;
         let plaintext = result.plaintext.filter(|plaintext| {
             ipv4_flow(plaintext).is_some_and(|flow| {
                 let identity_bound = (flow.source == peer_ip
@@ -778,6 +787,9 @@ impl UdpDataPlane {
                     flow.protocol,
                     flow.destination_port,
                 );
+                if identity_bound && !decision.allowed {
+                    acl_dropped = true;
+                }
                 identity_bound && decision.allowed
             })
         });
@@ -797,6 +809,9 @@ impl UdpDataPlane {
         }
         if endpoint_index_changed {
             self.rebuild_endpoint_index()?;
+        }
+        if acl_dropped {
+            self.retired_telemetry.acl_drops = self.retired_telemetry.acl_drops.saturating_add(1);
         }
         self.synchronize_status().await;
         Ok(plaintext)
@@ -1006,6 +1021,8 @@ impl UdpDataPlane {
         status.rx_bytes_total = totals.rx_bytes;
         status.handshake_attempts_total = totals.handshake_attempts;
         status.handshake_successes_total = totals.handshake_successes;
+        status.acl_drops_total = totals.acl_drops;
+        status.replay_drops_total = totals.replay_drops;
         status.latency_samples_total = totals.latency_samples;
         status.latency_microseconds_total = totals.latency_microseconds;
         status.peers = self
@@ -1127,6 +1144,7 @@ fn build_peer_directory(
                 rx_bytes_total: 0,
                 handshake_attempts_total: 0,
                 handshake_successes_total: 0,
+                replay_drops_total: 0,
                 latency_samples_total: 0,
                 latency_microseconds_total: 0,
                 last_latency_microseconds: None,
@@ -1732,22 +1750,37 @@ fn handle_data(
     allow_routed_data: bool,
 ) -> ProcessResult {
     let mut path_probe_result = None;
-    let result = {
+    let (opened, replay_drop_delta) = {
         let PeerState::Established(established) = &mut peer.state else {
             return ProcessResult::empty();
         };
+        let replay_drops_before = established.receiver.replay_drops_total();
         let opened = match established.receiver.open(datagram) {
-            Ok(opened) => opened,
+            Ok(opened) => Ok(opened),
             Err(_)
                 if allow_routed_data
+                    && established.receiver.replay_drops_total() == replay_drops_before
                     && datagram.get(5).copied() == Some(PacketType::Data as u8) =>
             {
-                let Ok(opened) = established.receiver.open_routed(datagram) else {
-                    return ProcessResult::empty();
-                };
-                opened
+                established.receiver.open_routed(datagram)
             }
-            Err(_) => return ProcessResult::empty(),
+            Err(error) => Err(error),
+        };
+        (
+            opened,
+            established
+                .receiver
+                .replay_drops_total()
+                .saturating_sub(replay_drops_before),
+        )
+    };
+    peer.replay_drops_total = peer.replay_drops_total.saturating_add(replay_drop_delta);
+    let Ok(opened) = opened else {
+        return ProcessResult::empty();
+    };
+    let result = {
+        let PeerState::Established(established) = &mut peer.state else {
+            return ProcessResult::empty();
         };
         match opened.packet_type {
             PacketType::Data => ProcessResult {
@@ -2265,6 +2298,7 @@ mod tests {
             rx_bytes_total: 0,
             handshake_attempts_total: 0,
             handshake_successes_total: 0,
+            replay_drops_total: 0,
             latency_samples_total: 0,
             latency_microseconds_total: 0,
             last_latency_microseconds: None,
@@ -2425,6 +2459,7 @@ mod tests {
             rx_bytes_total: 0,
             handshake_attempts_total: 1,
             handshake_successes_total: 0,
+            replay_drops_total: 0,
             latency_samples_total: 0,
             latency_microseconds_total: 0,
             last_latency_microseconds: None,
@@ -2530,6 +2565,37 @@ mod tests {
             false,
         );
         assert!(client_peer.pending_path_probe.is_none());
+    }
+
+    #[test]
+    fn authenticated_replay_updates_peer_telemetry_without_exposing_error_details() {
+        let now = Instant::now();
+        let (mut client_peer, mut server_peer, client_endpoint, _) = established_test_peers(now);
+        let mut packet = vec![0_u8; 20];
+        packet[0] = 0x45;
+        packet[2..4].copy_from_slice(&20_u16.to_be_bytes());
+        packet[12..16].copy_from_slice(&[100, 88, 0, 21]);
+        packet[16..20].copy_from_slice(&[100, 88, 0, 31]);
+        let PeerState::Established(client) = &mut client_peer.state else {
+            panic!("client session must be established");
+        };
+        let encoded = client
+            .sender
+            .seal_ipv4(DataFlags::ACK_ELICITING, 0, &packet)
+            .expect("data packet");
+
+        let first = handle_data(&mut server_peer, client_endpoint, &encoded, now, false);
+        assert_eq!(first.plaintext, Some(packet));
+        assert_eq!(server_peer.replay_drops_total, 0);
+        let replay = handle_data(&mut server_peer, client_endpoint, &encoded, now, false);
+        assert!(replay.plaintext.is_none());
+        assert_eq!(server_peer.replay_drops_total, 1);
+
+        let mut tampered = encoded;
+        *tampered.last_mut().expect("tag byte") ^= 1;
+        let invalid = handle_data(&mut server_peer, client_endpoint, &tampered, now, false);
+        assert!(invalid.plaintext.is_none());
+        assert_eq!(server_peer.replay_drops_total, 1);
     }
 
     #[test]

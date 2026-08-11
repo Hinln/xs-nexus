@@ -112,6 +112,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             "encrypted_control": "same-payload-fresh-sequence",
             "finish": "exact-frame",
         },
+        "replay_observability": {
+            "classification": "authenticated-only",
+            "exposure": "aggregate-counter",
+            "wire_error": "invalid-protocol-message",
+        },
         "message_id": message_id,
         "network_id_hex": hexadecimal(&network_id),
         "controller_seed_hex": hexadecimal(&controller_seed),

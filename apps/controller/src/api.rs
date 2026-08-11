@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::Response,
     routing::{get, post, put},
 };
@@ -46,6 +46,7 @@ pub fn router(state: AppState) -> Router {
             get(auth::list_users).post(auth::create_user),
         )
         .route("/v1/admin/console", get(console_snapshot))
+        .route("/v1/admin/observability", get(observability_snapshot))
         .route(
             "/v1/admin/update-releases",
             get(list_update_releases).post(create_update_release),
@@ -154,6 +155,19 @@ async fn console_snapshot(
 ) -> Result<Json<crate::console::ConsoleSnapshot>, ApiError> {
     auth::authorize(&state, &headers, Permission::Read, false).await?;
     Ok(Json(crate::console::snapshot(&state).await?))
+}
+
+async fn observability_snapshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(HeaderMap, Json<crate::observability::ObservabilitySnapshot>), ApiError> {
+    auth::authorize(&state, &headers, Permission::Read, false).await?;
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok((
+        response_headers,
+        Json(crate::observability::snapshot(&state).await?),
+    ))
 }
 
 async fn create_enrollment_token(

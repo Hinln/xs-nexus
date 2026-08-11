@@ -1127,3 +1127,12 @@
 - 证据：真实矩阵关闭 trace，生成凭据位于 evidence 外；artifact 只接受上传边界内的非隐藏文件，要求下载后 archive digest、全部内部 hash、文件全集和无值扫描独立通过。成功 `204` 只在同一 request 同时存在真实 response 时从 Chromium 伪失败中消歧。
 - 最终内部证据：revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；job `93905489516`、artifact `9116327161`、一致 archive digest、139/139 文件清单、8 项测试和 132 张截图通过。
 - 边界：该 ADR 不授权 DNS/CDN/证书/1Panel/生产部署变更，也不把 hosted HTTP preview 称为正式公网严格 TLS。Gate 19 保持 `PARTIAL`，总体保持 `NO_GO`。
+
+## ADR-098：安全遥测采用认证累计值、低基数聚合与 Controller-first 兼容
+
+- 日期：2026-08-12
+- 背景：Gate 20 需要握手、认证、重放、ACL、路由、升级和 Relay 分类失败的可告警指标。仅解析日志不可稳定复现，逐包明细又会扩大隐私、存储、基数和密码学 oracle 风险；直接给结构体新增字段还会改变旧 schema 1 的签名字节并破坏滚动升级。
+- 决策：XSP/1 接收器只对通过 AEAD 与对应内层验证的重放增加本地累计值，外部错误继续统一。Agent schema 2 签名并上报 ACL/重放累计值；Controller 对 schema 1 使用原字段投影、只允许新增值为零，对 schema 2 使用完整投影，并对同 boot 全部累计值执行单调检查。Relay 分类累计值独立持久化。
+- 聚合：认证的 `/v1/admin/observability` 只返回低基数总量、新鲜度和完整性，不返回任何主体标识、名称、地址、端点或秘密。无样本与陈旧样本不能等价为零故障；Redis 在当前 Controller 无依赖时明确为 `not_applicable`。控制认证失败使用进程单调计数，后续主机采集器负责形成跨采样趋势。
+- 兼容性：滚动顺序固定为 Controller-first、Agent-second。旧 Agent schema 1 的原签名继续通过；旧 Controller 不理解 schema 2，升级 Agent 前必须先完成 Controller 切换。XSP/1 wire bytes、向量字节和 corpus 中的协议消息不变；向量元数据、状态 Fuzz 断言和 corpus seed 已同步更新。
+- 边界：本 ADR 只建立可复现采集契约，不证明外部通知送达、真人值班确认、证书、公网、生产密钥或独立审计；Gate 20 与总体结论在这些证据完成前不得提升为 GO。

@@ -585,4 +585,11 @@ M1.3 和 M2.1 已锁定以下自动化证据：
 
 这些证据覆盖协议库、真实 Controller/PostgreSQL 和隔离 Linux namespace 中的 Agent UDP/TUN/NAT/双 Relay 模型链路。Relay 服务的来源绑定、重放、限速、队列、密文转发、主备故障切换和认证 Direct 回切已由 `/srv/xs-nexus/artifacts/qa/m2.3-20260731T185454Z` 验证；持续 Fuzz、真实公网/跨地域容量和独立第三方协议/密码学审计仍未完成。
 
+### 19.1 重放可观测性兼容边界
+
+- `DataReceiver` 仅在 AEAD 验证及对应 Data 地址/结构验证成功后，把已提交、过旧或异常前跳的序列计入本地累计 `replay_drops_total`；Tag、头、身份或载荷无效的数据报不得抬高该计数。
+- 对调用方和网络对端仍只返回统一 `InvalidProtocolMessage`；计数不包含序列、端点、Node ID、明文、密钥材料或失败细节，不能形成新的密码学错误 oracle。
+- XSP/1 头、密文、AAD、nonce、密钥派生、窗口大小和错误字节均未改变。`session-v1.json` 只增加非线上的 `replay_observability` 元数据，全部既有 canonical 字节与 SHA-256 保持不变。
+- `session_state` Fuzz target 现在断言未认证篡改不增加计数、首次认证包不增加计数、认证重放恰好增加一次；新增 corpus seed 固定该状态路径。
+
 任何协议字段或标签变化都必须更新本规范、密码学设计、威胁模型、测试向量和 Fuzz corpus。

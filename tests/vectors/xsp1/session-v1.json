@@ -13,6 +13,11 @@
   "message_id": 270544960,
   "network_id_hex": "29292929292929292929292929292929",
   "now": 1700000100,
+  "replay_observability": {
+    "classification": "authenticated-only",
+    "exposure": "aggregate-counter",
+    "wire_error": "invalid-protocol-message"
+  },
   "retry_semantics": {
     "encrypted_control": "same-payload-fresh-sequence",
     "finish": "exact-frame"

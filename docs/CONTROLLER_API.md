@@ -192,6 +192,18 @@ challenge 每连接一次性生成。二进制、未知或越序消息被拒绝�
 
 报告不包含 Network/Node、来源/目标端点、Lease ID 或业务载荷。Controller 拒绝未知/过期 Relay、错误签名、10 分钟以上陈旧报告、未来时间、同 boot 重放/计数回滚、分类丢弃和总丢弃不一致及异常延迟；只保存每 Relay 最新报告和最多 25 小时/9000 个样本，覆盖允许的最快 10 秒周期。生产使用 HTTPS；只有 loopback 或显式批准的隔离容器网络可允许 HTTP，签名验真不因此关闭。
 
+### Agent 遥测 schema 2 与滚动兼容
+
+- schema 2 在原累计字段后增加 `acl_drops_total` 与 `replay_drops_total`，二者都必须非负、同 boot 单调且纳入身份签名。
+- Controller 继续接受 schema 1；缺失新增字段反序列化为零，签名验证使用 schema 1 的原始字段集合与原顺序，因此旧 Agent 的既有签名保持有效。schema 1 若显式或隐式产生非零新增计数则拒绝。
+- 升级顺序必须为 Controller-first，再逐步升级 Agent。新版 Agent 发出 schema 2 后，旧 Controller 会拒绝该遥测消息并关闭控制连接，但不会改变既有 XSP/1 数据面字节；回滚时应先回滚 Agent 或恢复兼容 Controller。
+
+### `GET /v1/admin/observability`
+
+Read 权限或 `Authorization: Bearer <ADMIN_API_TOKEN>` 可读取 `Cache-Control: no-store` 的低基数聚合快照。响应包含 Controller build、数据库状态、Redis `not_applicable` 边界、活动/在线节点、新鲜度与完整性、Direct/Relay 路径观察比例、24 小时流量/握手失败/ACL/重放、Relay 分类丢弃、管理认证失败、进程启动后控制认证失败、路由变更、失败升级和审计留存范围。
+
+该端点不返回 Network/Node/Relay 标识、名称、地址、端点、业务载荷、Token、Cookie、hash 或密钥。路径比例以新鲜 Agent 报告中的已建立 Peer 观察为分母；无观察时返回 `null`，缺失或陈旧报告通过 `path_telemetry_complete`、`telemetry_complete` 和 `unknown_path_nodes` 明确暴露，不推断为健康。控制认证失败为进程生命周期累计量；24 小时趋势由主机采集器按单调样本形成。
+
 ## 9. 数据库与审计
 
 - Controller 只创建和迁移 `DATABASE_SCHEMA` 指定的项目 schema，不修改 `public` 或 1Panel 管理资源。

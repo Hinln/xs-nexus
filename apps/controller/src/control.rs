@@ -79,16 +79,13 @@ async fn authenticate_socket(
         .flatten()
         .and_then(Result::ok)
     else {
-        send_error(socket, "authentication_failed").await;
-        return None;
+        return reject_authentication(socket, state).await;
     };
     let Message::Text(text) = message else {
-        send_error(socket, "authentication_failed").await;
-        return None;
+        return reject_authentication(socket, state).await;
     };
     if text.len() > 4096 {
-        send_error(socket, "authentication_failed").await;
-        return None;
+        return reject_authentication(socket, state).await;
     }
     let Ok(ControlClientMessage::Authenticate {
         node_id_base64,
@@ -96,8 +93,7 @@ async fn authenticate_socket(
         signature_base64,
     }) = serde_json::from_str(&text)
     else {
-        send_error(socket, "authentication_failed").await;
-        return None;
+        return reject_authentication(socket, state).await;
     };
 
     let Ok(authenticated) = crate::service::authenticate_control(
@@ -109,10 +105,18 @@ async fn authenticate_socket(
     )
     .await
     else {
-        send_error(socket, "authentication_failed").await;
-        return None;
+        return reject_authentication(socket, state).await;
     };
     Some(authenticated)
+}
+
+async fn reject_authentication(
+    socket: &mut WebSocket,
+    state: &AppState,
+) -> Option<AuthenticatedNode> {
+    state.record_control_auth_failure();
+    send_error(socket, "authentication_failed").await;
+    None
 }
 
 async fn send_initial_configuration(

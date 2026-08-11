@@ -46,9 +46,30 @@ pub struct AgentTelemetryReport {
     pub rx_bytes_total: u64,
     pub handshake_attempts_total: u64,
     pub handshake_successes_total: u64,
+    #[serde(default)]
+    pub acl_drops_total: u64,
+    #[serde(default)]
+    pub replay_drops_total: u64,
     pub latency_samples_total: u64,
     pub latency_microseconds_total: u64,
     pub peers: Vec<AgentPeerTelemetry>,
+}
+
+#[derive(Serialize)]
+struct AgentTelemetryReportV1<'a> {
+    schema_version: u8,
+    network_id: &'a Uuid,
+    node_id_base64: &'a str,
+    boot_id_base64: &'a str,
+    sequence: u64,
+    generated_at: &'a DateTime<Utc>,
+    tx_bytes_total: u64,
+    rx_bytes_total: u64,
+    handshake_attempts_total: u64,
+    handshake_successes_total: u64,
+    latency_samples_total: u64,
+    latency_microseconds_total: u64,
+    peers: &'a [AgentPeerTelemetry],
 }
 
 /// Encodes the domain-separated bytes signed by an Agent telemetry report.
@@ -59,7 +80,25 @@ pub struct AgentTelemetryReport {
 pub fn agent_telemetry_report_signing_input(
     report: &AgentTelemetryReport,
 ) -> Result<Vec<u8>, serde_json::Error> {
-    let payload = serde_json::to_vec(report)?;
+    let payload = if report.schema_version == 1 {
+        serde_json::to_vec(&AgentTelemetryReportV1 {
+            schema_version: report.schema_version,
+            network_id: &report.network_id,
+            node_id_base64: &report.node_id_base64,
+            boot_id_base64: &report.boot_id_base64,
+            sequence: report.sequence,
+            generated_at: &report.generated_at,
+            tx_bytes_total: report.tx_bytes_total,
+            rx_bytes_total: report.rx_bytes_total,
+            handshake_attempts_total: report.handshake_attempts_total,
+            handshake_successes_total: report.handshake_successes_total,
+            latency_samples_total: report.latency_samples_total,
+            latency_microseconds_total: report.latency_microseconds_total,
+            peers: &report.peers,
+        })?
+    } else {
+        serde_json::to_vec(report)?
+    };
     let mut signing_input = Vec::with_capacity(AGENT_TELEMETRY_DOMAIN.len() + payload.len());
     signing_input.extend_from_slice(AGENT_TELEMETRY_DOMAIN);
     signing_input.extend_from_slice(&payload);
@@ -132,7 +171,7 @@ mod tests {
 
     fn report() -> AgentTelemetryReport {
         AgentTelemetryReport {
-            schema_version: 1,
+            schema_version: 2,
             network_id: Uuid::from_u128(1),
             node_id_base64: "AQEBAQEBAQEBAQEBAQEBAQ".to_owned(),
             boot_id_base64: "AgICAgICAgICAgICAgICAg".to_owned(),
@@ -142,6 +181,8 @@ mod tests {
             rx_bytes_total: 200,
             handshake_attempts_total: 1,
             handshake_successes_total: 1,
+            acl_drops_total: 2,
+            replay_drops_total: 3,
             latency_samples_total: 4,
             latency_microseconds_total: 48_000,
             peers: vec![AgentPeerTelemetry {
@@ -183,6 +224,24 @@ mod tests {
             .expect("object")
             .insert("unexpected".to_owned(), serde_json::json!(true));
         assert!(serde_json::from_value::<AgentTelemetryReport>(value).is_err());
+    }
+
+    #[test]
+    fn version_one_defaults_new_counters_and_preserves_legacy_signing_shape() {
+        let mut value = serde_json::to_value(report()).expect("json");
+        let object = value.as_object_mut().expect("object");
+        object.insert("schema_version".to_owned(), serde_json::json!(1));
+        object.remove("acl_drops_total");
+        object.remove("replay_drops_total");
+        let legacy: AgentTelemetryReport = serde_json::from_value(value).expect("legacy report");
+        assert_eq!(legacy.acl_drops_total, 0);
+        assert_eq!(legacy.replay_drops_total, 0);
+
+        let signing_input = agent_telemetry_report_signing_input(&legacy).expect("signing input");
+        let payload = &signing_input[AGENT_TELEMETRY_DOMAIN.len()..];
+        let payload = std::str::from_utf8(payload).expect("UTF-8 JSON");
+        assert!(!payload.contains("acl_drops_total"));
+        assert!(!payload.contains("replay_drops_total"));
     }
 
     #[test]

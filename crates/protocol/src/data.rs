@@ -160,6 +160,7 @@ pub struct DataReceiver {
     direction_secret: Zeroizing<[u8; 32]>,
     current: EpochCipher,
     previous: Option<EpochCipher>,
+    replay_drops_total: u64,
     network_id: [u8; 16],
     source_node_id: [u8; 16],
     destination_node_id: [u8; 16],
@@ -173,6 +174,17 @@ struct EpochCipher {
     key: Zeroizing<[u8; 32]>,
     nonce_salt: [u8; 4],
     replay: ReplayWindow,
+}
+
+enum DataOpenFailure {
+    Invalid,
+    Replay,
+}
+
+impl From<InvalidProtocolMessage> for DataOpenFailure {
+    fn from(_error: InvalidProtocolMessage) -> Self {
+        Self::Invalid
+    }
 }
 
 #[derive(Clone)]
@@ -340,6 +352,7 @@ impl DataReceiver {
             direction_secret,
             current,
             previous: None,
+            replay_drops_total: 0,
             network_id,
             source_node_id,
             destination_node_id,
@@ -355,7 +368,7 @@ impl DataReceiver {
     ///
     /// Returns `InvalidProtocolMessage` for any framing, identity, epoch, replay, tag, or payload failure.
     pub fn open(&mut self, encoded: &[u8]) -> Result<OpenedPacket, InvalidProtocolMessage> {
-        self.open_with_routed_addresses(encoded, false)
+        self.open_counted(encoded, false)
     }
 
     /// Authenticates and decrypts a routed packet without requiring the inner
@@ -369,32 +382,47 @@ impl DataReceiver {
     /// Returns `InvalidProtocolMessage` for any framing, identity, epoch,
     /// replay, tag, payload, or IPv4 structure failure.
     pub fn open_routed(&mut self, encoded: &[u8]) -> Result<OpenedPacket, InvalidProtocolMessage> {
-        self.open_with_routed_addresses(encoded, true)
+        self.open_counted(encoded, true)
+    }
+
+    fn open_counted(
+        &mut self,
+        encoded: &[u8],
+        allow_routed_addresses: bool,
+    ) -> Result<OpenedPacket, InvalidProtocolMessage> {
+        match self.open_with_routed_addresses(encoded, allow_routed_addresses) {
+            Ok(opened) => Ok(opened),
+            Err(DataOpenFailure::Invalid) => Err(InvalidProtocolMessage),
+            Err(DataOpenFailure::Replay) => {
+                self.replay_drops_total = self.replay_drops_total.saturating_add(1);
+                Err(InvalidProtocolMessage)
+            }
+        }
     }
 
     fn open_with_routed_addresses(
         &mut self,
         encoded: &[u8],
         allow_routed_addresses: bool,
-    ) -> Result<OpenedPacket, InvalidProtocolMessage> {
+    ) -> Result<OpenedPacket, DataOpenFailure> {
         if encoded.len() < DATA_HEADER_LENGTH + DATA_TAG_LENGTH
             || encoded.len() > MAX_DATAGRAM_LENGTH
         {
-            return Err(InvalidProtocolMessage);
+            return Err(DataOpenFailure::Invalid);
         }
         let header = DataHeader::parse(encoded)?;
         let payload_length = usize::from(header.payload_length);
         let expected_length = DATA_HEADER_LENGTH
             .checked_add(payload_length)
             .and_then(|length| length.checked_add(DATA_TAG_LENGTH))
-            .ok_or(InvalidProtocolMessage)?;
+            .ok_or(DataOpenFailure::Invalid)?;
         if expected_length != encoded.len()
             || header.network_id != self.network_id
             || header.source_node_id != self.source_node_id
             || header.destination_node_id != self.destination_node_id
             || header.session_id != self.session_id
         {
-            return Err(InvalidProtocolMessage);
+            return Err(DataOpenFailure::Invalid);
         }
         let state = if header.key_epoch == self.current.epoch {
             &mut self.current
@@ -403,17 +431,17 @@ impl DataReceiver {
             .as_ref()
             .is_some_and(|previous| previous.epoch == header.key_epoch)
         {
-            self.previous.as_mut().ok_or(InvalidProtocolMessage)?
+            self.previous.as_mut().ok_or(DataOpenFailure::Invalid)?
         } else {
-            return Err(InvalidProtocolMessage);
+            return Err(DataOpenFailure::Invalid);
         };
-        state.replay.precheck(header.sequence)?;
+        let replay_rejected = state.replay.precheck(header.sequence).is_err();
         let ciphertext_end = DATA_HEADER_LENGTH + payload_length;
         let mut plaintext = encoded[DATA_HEADER_LENGTH..ciphertext_end].to_vec();
         let tag = Tag::from_slice(&encoded[ciphertext_end..]);
         let nonce = packet_nonce(state.nonce_salt, header.sequence);
-        let cipher =
-            ChaCha20Poly1305::new_from_slice(&state.key[..]).map_err(|_| InvalidProtocolMessage)?;
+        let cipher = ChaCha20Poly1305::new_from_slice(&state.key[..])
+            .map_err(|_| DataOpenFailure::Invalid)?;
         cipher
             .decrypt_in_place_detached(
                 Nonce::from_slice(&nonce),
@@ -421,7 +449,7 @@ impl DataReceiver {
                 &mut plaintext,
                 tag,
             )
-            .map_err(|_| InvalidProtocolMessage)?;
+            .map_err(|_| DataOpenFailure::Invalid)?;
         validate_payload(header.packet_type, &plaintext)?;
         if header.packet_type == PacketType::Data {
             if allow_routed_addresses {
@@ -434,7 +462,13 @@ impl DataReceiver {
                 )?;
             }
         }
-        state.replay.commit(header.sequence)?;
+        if replay_rejected {
+            return Err(DataOpenFailure::Replay);
+        }
+        state
+            .replay
+            .commit(header.sequence)
+            .map_err(|_| DataOpenFailure::Replay)?;
         Ok(OpenedPacket {
             packet_type: header.packet_type,
             flags: header.flags,
@@ -467,6 +501,11 @@ impl DataReceiver {
     #[must_use]
     pub const fn current_epoch(&self) -> u32 {
         self.current.epoch
+    }
+
+    #[must_use]
+    pub const fn replay_drops_total(&self) -> u64 {
+        self.replay_drops_total
     }
 }
 
@@ -792,6 +831,48 @@ mod tests {
         assert!(receiver.install_next_epoch(0).is_err());
         assert_eq!(receiver.current_epoch(), u32::MAX);
         assert!(receiver.previous.is_none());
+    }
+
+    #[test]
+    fn authenticated_replays_increment_only_the_aggregate_replay_counter() {
+        let source = Ipv4Addr::new(100, 96, 0, 16);
+        let destination = Ipv4Addr::new(100, 96, 0, 17);
+        let ids = ([41_u8; 16], [42_u8; 16], [43_u8; 16], [44_u8; 16]);
+        let secret = Zeroizing::new([45_u8; 32]);
+        let mut sender = DataSender::new(
+            secret.clone(),
+            ids.0,
+            ids.1,
+            ids.2,
+            ids.3,
+            source,
+            destination,
+        )
+        .expect("sender");
+        let mut receiver =
+            DataReceiver::new(secret, ids.0, ids.1, ids.2, ids.3, source, destination)
+                .expect("receiver");
+        let mut packet = vec![0_u8; 20];
+        packet[0] = 0x45;
+        packet[2..4].copy_from_slice(&20_u16.to_be_bytes());
+        packet[12..16].copy_from_slice(&source.octets());
+        packet[16..20].copy_from_slice(&destination.octets());
+        let encoded = sender
+            .seal_ipv4(DataFlags::ACK_ELICITING, 7, &packet)
+            .expect("encrypt");
+
+        assert_eq!(
+            receiver.open(&encoded).expect("first open").plaintext,
+            packet
+        );
+        assert_eq!(receiver.replay_drops_total(), 0);
+        assert_eq!(receiver.open(&encoded), Err(InvalidProtocolMessage));
+        assert_eq!(receiver.replay_drops_total(), 1);
+
+        let mut tampered = encoded;
+        *tampered.last_mut().expect("tag byte") ^= 1;
+        assert_eq!(receiver.open(&tampered), Err(InvalidProtocolMessage));
+        assert_eq!(receiver.replay_drops_total(), 1);
     }
 
     #[test]

@@ -456,7 +456,7 @@ where
     }
     *sequence = sequence.checked_add(1).ok_or(AgentError::State)?;
     let report = AgentTelemetryReport {
-        schema_version: 1,
+        schema_version: 2,
         network_id: state.network_id,
         node_id_base64: state.node_id_base64.clone(),
         boot_id_base64: boot_id_base64.to_owned(),
@@ -466,6 +466,8 @@ where
         rx_bytes_total: status.rx_bytes_total,
         handshake_attempts_total: status.handshake_attempts_total,
         handshake_successes_total: status.handshake_successes_total,
+        acl_drops_total: status.acl_drops_total,
+        replay_drops_total: status.replay_drops_total,
         latency_samples_total: status.latency_samples_total,
         latency_microseconds_total: status.latency_microseconds_total,
         peers,

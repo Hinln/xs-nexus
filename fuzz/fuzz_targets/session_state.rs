@@ -261,12 +261,15 @@ fuzz_target!(|input: &[u8]| {
             .open(&tamper(&client_frame, cursor.byte()))
             .is_err()
     );
+    assert_eq!(server_receiver.replay_drops_total(), 0);
     let opened = server_receiver
         .open(&client_frame)
         .expect("valid client frame");
     assert_eq!(opened.packet_type, PacketType::Data);
     assert_eq!(opened.plaintext, client_packet);
+    assert_eq!(server_receiver.replay_drops_total(), 0);
     assert!(server_receiver.open(&client_frame).is_err());
+    assert_eq!(server_receiver.replay_drops_total(), 1);
 
     let server_frame = server_sender
         .seal_ipv4(DataFlags::ACK_ELICITING, path_id, &server_packet)
@@ -277,12 +280,15 @@ fuzz_target!(|input: &[u8]| {
             .open(&tamper(&server_frame, cursor.byte()))
             .is_err()
     );
+    assert_eq!(client_receiver.replay_drops_total(), 0);
     let opened = client_receiver
         .open(&server_frame)
         .expect("valid server frame");
     assert_eq!(opened.packet_type, PacketType::Data);
     assert_eq!(opened.plaintext, server_packet);
+    assert_eq!(client_receiver.replay_drops_total(), 0);
     assert!(client_receiver.open(&server_frame).is_err());
+    assert_eq!(client_receiver.replay_drops_total(), 1);
 
     let old_client_before_retire = client_sender
         .seal_ipv4(DataFlags::NONE, path_id, &client_packet)

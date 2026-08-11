@@ -9,6 +9,7 @@ pub mod discovery;
 mod downloads;
 mod error;
 pub mod model;
+mod observability;
 mod relay_telemetry;
 mod service;
 mod state;

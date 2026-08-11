@@ -38,6 +38,13 @@ expected_retry_semantics = {
 }
 if vector.get("retry_semantics") != expected_retry_semantics:
     raise SystemExit("Session vector retry semantics mismatch")
+expected_replay_observability = {
+    "classification": "authenticated-only",
+    "exposure": "aggregate-counter",
+    "wire_error": "invalid-protocol-message",
+}
+if vector.get("replay_observability") != expected_replay_observability:
+    raise SystemExit("Session vector replay observability mismatch")
 
 def changed(original, index, *, value=None):
     malformed = bytearray(original)

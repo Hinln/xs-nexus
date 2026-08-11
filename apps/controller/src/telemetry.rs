@@ -21,6 +21,8 @@ struct TelemetryTotals {
     rx_bytes: i64,
     handshake_attempts: i64,
     handshake_successes: i64,
+    acl_drops: i64,
+    replay_drops: i64,
     latency_samples: i64,
     latency_microseconds: i64,
 }
@@ -76,6 +78,7 @@ pub(crate) async fn record_agent_report(
     let previous = sqlx::query(
         "SELECT boot_id, sequence, report, tx_bytes_total, rx_bytes_total,
                 handshake_attempts_total, handshake_successes_total,
+                acl_drops_total, replay_drops_total,
                 latency_samples_total, latency_microseconds_total, generated_at
          FROM node_telemetry_reports WHERE node_id = $1 FOR UPDATE",
     )
@@ -117,8 +120,9 @@ pub(crate) async fn record_agent_report(
         "INSERT INTO node_telemetry_samples
          (node_id, network_id, boot_id, sequence, tx_bytes_total, rx_bytes_total,
           handshake_attempts_total, handshake_successes_total,
-          latency_samples_total, latency_microseconds_total, generated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+          acl_drops_total, replay_drops_total, latency_samples_total,
+          latency_microseconds_total, generated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
     )
     .bind(authenticated.node_id.as_slice())
     .bind(authenticated.network_id)
@@ -128,6 +132,8 @@ pub(crate) async fn record_agent_report(
     .bind(totals.rx_bytes)
     .bind(totals.handshake_attempts)
     .bind(totals.handshake_successes)
+    .bind(totals.acl_drops)
+    .bind(totals.replay_drops)
     .bind(totals.latency_samples)
     .bind(totals.latency_microseconds)
     .bind(report.generated_at)
@@ -139,8 +145,9 @@ pub(crate) async fn record_agent_report(
         "INSERT INTO node_telemetry_reports
          (node_id, network_id, boot_id, sequence, report, tx_bytes_total, rx_bytes_total,
           handshake_attempts_total, handshake_successes_total,
-          latency_samples_total, latency_microseconds_total, generated_at, received_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+          acl_drops_total, replay_drops_total, latency_samples_total,
+          latency_microseconds_total, generated_at, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
          ON CONFLICT (node_id) DO UPDATE SET
            network_id = EXCLUDED.network_id, boot_id = EXCLUDED.boot_id,
            sequence = EXCLUDED.sequence, report = EXCLUDED.report,
@@ -148,6 +155,8 @@ pub(crate) async fn record_agent_report(
            rx_bytes_total = EXCLUDED.rx_bytes_total,
            handshake_attempts_total = EXCLUDED.handshake_attempts_total,
            handshake_successes_total = EXCLUDED.handshake_successes_total,
+           acl_drops_total = EXCLUDED.acl_drops_total,
+           replay_drops_total = EXCLUDED.replay_drops_total,
            latency_samples_total = EXCLUDED.latency_samples_total,
            latency_microseconds_total = EXCLUDED.latency_microseconds_total,
            generated_at = EXCLUDED.generated_at, received_at = now()",
@@ -161,6 +170,8 @@ pub(crate) async fn record_agent_report(
     .bind(totals.rx_bytes)
     .bind(totals.handshake_attempts)
     .bind(totals.handshake_successes)
+    .bind(totals.acl_drops)
+    .bind(totals.replay_drops)
     .bind(totals.latency_samples)
     .bind(totals.latency_microseconds)
     .bind(report.generated_at)
@@ -198,7 +209,9 @@ fn validate_report(
     report: &AgentTelemetryReport,
 ) -> Result<([u8; 16], TelemetryTotals, serde_json::Value), ApiError> {
     let now = Utc::now();
-    if report.schema_version != 1
+    if !matches!(report.schema_version, 1 | 2)
+        || (report.schema_version == 1
+            && (report.acl_drops_total != 0 || report.replay_drops_total != 0))
         || report.network_id != authenticated.network_id
         || report.node_id_base64 != authenticated.node_id_base64
         || report.sequence == 0
@@ -289,6 +302,8 @@ fn validate_report(
         rx_bytes: to_i64(report.rx_bytes_total)?,
         handshake_attempts: to_i64(report.handshake_attempts_total)?,
         handshake_successes: to_i64(report.handshake_successes_total)?,
+        acl_drops: to_i64(report.acl_drops_total)?,
+        replay_drops: to_i64(report.replay_drops_total)?,
         latency_samples: to_i64(report.latency_samples_total)?,
         latency_microseconds: to_i64(report.latency_microseconds_total)?,
     };
@@ -302,6 +317,8 @@ fn totals_decreased(row: &sqlx::postgres::PgRow, totals: TelemetryTotals) -> boo
         ("rx_bytes_total", totals.rx_bytes),
         ("handshake_attempts_total", totals.handshake_attempts),
         ("handshake_successes_total", totals.handshake_successes),
+        ("acl_drops_total", totals.acl_drops),
+        ("replay_drops_total", totals.replay_drops),
         ("latency_samples_total", totals.latency_samples),
         ("latency_microseconds_total", totals.latency_microseconds),
     ]

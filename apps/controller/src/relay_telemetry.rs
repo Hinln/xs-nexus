@@ -26,6 +26,15 @@ struct StoredMetrics {
     bytes_received: i64,
     packets_forwarded: i64,
     bytes_forwarded: i64,
+    registration_retries: i64,
+    registrations_rejected: i64,
+    invalid_drops: i64,
+    authentication_drops: i64,
+    replay_drops: i64,
+    rate_limit_drops: i64,
+    queue_drops: i64,
+    destination_drops: i64,
+    send_drops: i64,
     packets_dropped: i64,
     io_errors: i64,
     latency_samples: i64,
@@ -149,9 +158,13 @@ async fn insert_sample(
     sqlx::query(
         "INSERT INTO relay_telemetry_samples
          (relay_id, boot_id, sequence, packets_received, bytes_received,
-          packets_forwarded, bytes_forwarded, packets_dropped, io_errors,
-          forwarding_latency_samples, forwarding_latency_microseconds_total, generated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+          packets_forwarded, bytes_forwarded, registration_retries,
+          registrations_rejected, invalid_drops, authentication_drops, replay_drops,
+          rate_limit_drops, queue_drops, destination_drops, send_drops,
+          packets_dropped, io_errors, forwarding_latency_samples,
+          forwarding_latency_microseconds_total, generated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                 $14, $15, $16, $17, $18, $19, $20, $21)",
     )
     .bind(relay_id.as_slice())
     .bind(boot_id.as_slice())
@@ -160,6 +173,15 @@ async fn insert_sample(
     .bind(metrics.bytes_received)
     .bind(metrics.packets_forwarded)
     .bind(metrics.bytes_forwarded)
+    .bind(metrics.registration_retries)
+    .bind(metrics.registrations_rejected)
+    .bind(metrics.invalid_drops)
+    .bind(metrics.authentication_drops)
+    .bind(metrics.replay_drops)
+    .bind(metrics.rate_limit_drops)
+    .bind(metrics.queue_drops)
+    .bind(metrics.destination_drops)
+    .bind(metrics.send_drops)
     .bind(metrics.packets_dropped)
     .bind(metrics.io_errors)
     .bind(metrics.latency_samples)
@@ -184,16 +206,28 @@ async fn upsert_latest(
     sqlx::query(
         "INSERT INTO relay_telemetry_reports
          (relay_id, boot_id, sequence, report, packets_received, bytes_received,
-          packets_forwarded, bytes_forwarded, packets_dropped, io_errors,
-          forwarding_latency_samples, forwarding_latency_microseconds_total,
-          generated_at, received_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+          packets_forwarded, bytes_forwarded, registration_retries,
+          registrations_rejected, invalid_drops, authentication_drops, replay_drops,
+          rate_limit_drops, queue_drops, destination_drops, send_drops,
+          packets_dropped, io_errors, forwarding_latency_samples,
+          forwarding_latency_microseconds_total, generated_at, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                 $14, $15, $16, $17, $18, $19, $20, $21, $22, now())
          ON CONFLICT (relay_id) DO UPDATE SET
            boot_id = EXCLUDED.boot_id, sequence = EXCLUDED.sequence,
            report = EXCLUDED.report, packets_received = EXCLUDED.packets_received,
            bytes_received = EXCLUDED.bytes_received,
            packets_forwarded = EXCLUDED.packets_forwarded,
            bytes_forwarded = EXCLUDED.bytes_forwarded,
+           registration_retries = EXCLUDED.registration_retries,
+           registrations_rejected = EXCLUDED.registrations_rejected,
+           invalid_drops = EXCLUDED.invalid_drops,
+           authentication_drops = EXCLUDED.authentication_drops,
+           replay_drops = EXCLUDED.replay_drops,
+           rate_limit_drops = EXCLUDED.rate_limit_drops,
+           queue_drops = EXCLUDED.queue_drops,
+           destination_drops = EXCLUDED.destination_drops,
+           send_drops = EXCLUDED.send_drops,
            packets_dropped = EXCLUDED.packets_dropped,
            io_errors = EXCLUDED.io_errors,
            forwarding_latency_samples = EXCLUDED.forwarding_latency_samples,
@@ -208,6 +242,15 @@ async fn upsert_latest(
     .bind(metrics.bytes_received)
     .bind(metrics.packets_forwarded)
     .bind(metrics.bytes_forwarded)
+    .bind(metrics.registration_retries)
+    .bind(metrics.registrations_rejected)
+    .bind(metrics.invalid_drops)
+    .bind(metrics.authentication_drops)
+    .bind(metrics.replay_drops)
+    .bind(metrics.rate_limit_drops)
+    .bind(metrics.queue_drops)
+    .bind(metrics.destination_drops)
+    .bind(metrics.send_drops)
     .bind(metrics.packets_dropped)
     .bind(metrics.io_errors)
     .bind(metrics.latency_samples)
@@ -275,6 +318,15 @@ fn stored_metrics(metrics: &RelayTelemetryMetrics) -> Result<StoredMetrics, ApiE
         bytes_received: to_i64(metrics.bytes_received)?,
         packets_forwarded: to_i64(metrics.packets_forwarded)?,
         bytes_forwarded: to_i64(metrics.bytes_forwarded)?,
+        registration_retries: to_i64(metrics.registration_retries)?,
+        registrations_rejected: to_i64(metrics.registrations_rejected)?,
+        invalid_drops: to_i64(metrics.invalid_drops)?,
+        authentication_drops: to_i64(metrics.authentication_drops)?,
+        replay_drops: to_i64(metrics.replay_drops)?,
+        rate_limit_drops: to_i64(metrics.rate_limit_drops)?,
+        queue_drops: to_i64(metrics.queue_drops)?,
+        destination_drops: to_i64(metrics.destination_drops)?,
+        send_drops: to_i64(metrics.send_drops)?,
         packets_dropped: to_i64(metrics.packets_dropped)?,
         io_errors: to_i64(metrics.io_errors)?,
         latency_samples: to_i64(metrics.forwarding_latency_samples)?,

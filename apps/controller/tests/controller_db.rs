@@ -1598,6 +1598,17 @@ async fn assert_relay_telemetry(router: &Router, pool: &sqlx::PgPool) {
             .await
             .expect("Relay telemetry samples");
     assert_eq!(sample_count, 2);
+    let detailed: (i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT registration_retries, registrations_rejected, invalid_drops,
+                authentication_drops, replay_drops, rate_limit_drops, queue_drops,
+                destination_drops, send_drops
+         FROM relay_telemetry_reports WHERE relay_id = $1",
+    )
+    .bind(relay_id.as_slice())
+    .fetch_one(pool)
+    .await
+    .expect("detailed Relay telemetry");
+    assert_eq!(detailed, (0, 1, 1, 0, 0, 0, 0, 0, 0));
 }
 
 fn relay_metrics_fixture() -> RelayTelemetryMetrics {
@@ -1969,6 +1980,79 @@ async fn assert_console_snapshot(router: &Router) {
     assert!(!encoded.contains("token_hash"));
     assert!(!encoded.contains("password_hash"));
     assert!(!encoded.contains(CONSOLE_PASSWORD));
+    assert_observability_snapshot(router).await;
+}
+
+async fn assert_observability_snapshot(router: &Router) {
+    let (status, unauthorized) =
+        request_json(router, Method::GET, "/v1/admin/observability", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(unauthorized["error"]["code"], "unauthorized");
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/v1/admin/observability")
+                .header(header::AUTHORIZATION, format!("Bearer {ADMIN_TOKEN}"))
+                .body(Body::empty())
+                .expect("observability request"),
+        )
+        .await
+        .expect("observability response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    let snapshot: Value = serde_json::from_slice(
+        &response
+            .into_body()
+            .collect()
+            .await
+            .expect("observability body")
+            .to_bytes(),
+    )
+    .expect("observability JSON");
+    assert_eq!(snapshot["schema_version"], 1);
+    assert_eq!(snapshot["controller"]["status"], "ok");
+    assert_eq!(snapshot["database"]["status"], "ok");
+    assert_eq!(snapshot["redis"]["status"], "not_applicable");
+    assert!(
+        snapshot["nodes"]["managed"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
+    assert!(
+        snapshot["nodes"]["fresh_telemetry"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
+    assert_eq!(snapshot["nodes"]["acl_drops_24h"], 2);
+    assert_eq!(snapshot["nodes"]["replay_drops_24h"], 3);
+    assert_eq!(snapshot["relays"]["configured"], 1);
+    assert_eq!(snapshot["relays"]["fresh"], 1);
+    assert_eq!(snapshot["security"]["acl_drops_24h"], 2);
+    assert_eq!(snapshot["security"]["replay_drops_24h"], 3);
+    assert!(
+        snapshot["security"]["management_auth_failures_24h"]
+            .as_u64()
+            .is_some_and(|value| value >= 6)
+    );
+    assert!(
+        snapshot["audit"]["total_events"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
+    let encoded = serde_json::to_string(&snapshot).expect("serialize observability snapshot");
+    assert!(!encoded.contains("node_id_base64"));
+    assert!(!encoded.contains("virtual_ip"));
+    assert!(!encoded.contains("password"));
+    assert!(!encoded.contains("token"));
 }
 
 async fn browser_request(
@@ -2390,11 +2474,53 @@ async fn send_initial_telemetry(
     identity: &SigningKey,
     socket: &mut ControlSocket,
 ) {
-    let mut report = telemetry_report_fixture(pool, enrollment, 1, Utc::now()).await;
+    let generated_at = Utc::now();
+    let mut legacy = telemetry_report_fixture(pool, enrollment, 1, generated_at).await;
+    legacy.schema_version = 1;
+    if let Some(peer) = legacy.peers.first_mut() {
+        peer.tx_packets_total = 1;
+        peer.tx_bytes_total = 10;
+        legacy.tx_bytes_total = 10;
+    }
+    let signing_input =
+        agent_telemetry_report_signing_input(&legacy).expect("legacy telemetry signing input");
+    let mut legacy_value = serde_json::to_value(&legacy).expect("legacy telemetry JSON");
+    let legacy_object = legacy_value
+        .as_object_mut()
+        .expect("legacy telemetry object");
+    legacy_object.remove("acl_drops_total");
+    legacy_object.remove("replay_drops_total");
+    send_telemetry_report_value(
+        socket,
+        legacy_value,
+        URL_SAFE_NO_PAD.encode(identity.sign(&signing_input).to_bytes()),
+    )
+    .await;
+    let response = socket
+        .next()
+        .await
+        .expect("telemetry response")
+        .expect("valid telemetry response");
+    let Message::Text(response) = response else {
+        panic!("expected telemetry response text");
+    };
+    let response: Value = serde_json::from_str(&response).expect("telemetry response JSON");
+    assert_eq!(response["type"], "telemetry_accepted");
+    assert_eq!(response["sequence"], 1);
+
+    let mut report = telemetry_report_fixture(
+        pool,
+        enrollment,
+        2,
+        generated_at + chrono::Duration::milliseconds(1),
+    )
+    .await;
+    report.tx_bytes_total = 10;
+    report.acl_drops_total = 2;
+    report.replay_drops_total = 3;
     if let Some(peer) = report.peers.first_mut() {
         peer.tx_packets_total = 1;
         peer.tx_bytes_total = 10;
-        report.tx_bytes_total = 10;
     }
     send_signed_telemetry_report(socket, &report, identity).await;
     let response = socket
@@ -2407,7 +2533,34 @@ async fn send_initial_telemetry(
     };
     let response: Value = serde_json::from_str(&response).expect("telemetry response JSON");
     assert_eq!(response["type"], "telemetry_accepted");
-    assert_eq!(response["sequence"], 1);
+    assert_eq!(response["sequence"], 2);
+
+    let latest: (i64, i64) = sqlx::query_as(
+        "SELECT acl_drops_total, replay_drops_total
+         FROM node_telemetry_reports WHERE node_id = $1",
+    )
+    .bind(
+        URL_SAFE_NO_PAD
+            .decode(enrollment["node_id_base64"].as_str().expect("node id"))
+            .expect("node id base64"),
+    )
+    .fetch_one(pool)
+    .await
+    .expect("latest observability counters");
+    assert_eq!(latest, (2, 3));
+    let sample_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM node_telemetry_samples
+         WHERE node_id = $1 AND acl_drops_total = 2 AND replay_drops_total = 3",
+    )
+    .bind(
+        URL_SAFE_NO_PAD
+            .decode(enrollment["node_id_base64"].as_str().expect("node id"))
+            .expect("node id base64"),
+    )
+    .fetch_one(pool)
+    .await
+    .expect("observability counter sample");
+    assert_eq!(sample_count, 1);
 }
 
 async fn assert_telemetry_report_rejections(
@@ -2416,7 +2569,14 @@ async fn assert_telemetry_report_rejections(
     enrollment: &Value,
     identity: &SigningKey,
 ) {
-    let accepted = telemetry_report_fixture(pool, enrollment, 1, Utc::now()).await;
+    let mut accepted = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    accepted.tx_bytes_total = 10;
+    accepted.acl_drops_total = 2;
+    accepted.replay_drops_total = 3;
+    if let Some(peer) = accepted.peers.first_mut() {
+        peer.tx_packets_total = 1;
+        peer.tx_bytes_total = 10;
+    }
     let (mut replay, _) = authenticate_websocket(address, enrollment, identity).await;
     send_signed_telemetry_report(&mut replay, &accepted, identity).await;
     assert_control_error_and_close(&mut replay, "telemetry_report_rejected").await;
@@ -2424,7 +2584,7 @@ async fn assert_telemetry_report_rejections(
     let stale = telemetry_report_fixture(
         pool,
         enrollment,
-        2,
+        3,
         Utc::now() - chrono::Duration::minutes(11),
     )
     .await;
@@ -2432,7 +2592,7 @@ async fn assert_telemetry_report_rejections(
     send_signed_telemetry_report(&mut stale_socket, &stale, identity).await;
     assert_control_error_and_close(&mut stale_socket, "telemetry_report_rejected").await;
 
-    let invalid = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    let invalid = telemetry_report_fixture(pool, enrollment, 3, Utc::now()).await;
     let (mut invalid_signature, _) = authenticate_websocket(address, enrollment, identity).await;
     send_telemetry_report_value(
         &mut invalid_signature,
@@ -2442,13 +2602,15 @@ async fn assert_telemetry_report_rejections(
     .await;
     assert_control_error_and_close(&mut invalid_signature, "telemetry_report_rejected").await;
 
-    let mut inconsistent = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    let mut inconsistent = telemetry_report_fixture(pool, enrollment, 3, Utc::now()).await;
     inconsistent.handshake_successes_total = 1;
     let (mut inconsistent_socket, _) = authenticate_websocket(address, enrollment, identity).await;
     send_signed_telemetry_report(&mut inconsistent_socket, &inconsistent, identity).await;
     assert_control_error_and_close(&mut inconsistent_socket, "telemetry_report_rejected").await;
 
-    let mut peer_rollback = telemetry_report_fixture(pool, enrollment, 2, Utc::now()).await;
+    let mut peer_rollback = telemetry_report_fixture(pool, enrollment, 3, Utc::now()).await;
+    peer_rollback.acl_drops_total = 2;
+    peer_rollback.replay_drops_total = 3;
     if let Some(peer) = peer_rollback.peers.first_mut() {
         peer.tx_bytes_total = 9;
         peer_rollback.tx_bytes_total = 10;
@@ -2480,7 +2642,7 @@ async fn telemetry_report_fixture(
     .await
     .expect("load telemetry peers");
     AgentTelemetryReport {
-        schema_version: 1,
+        schema_version: 2,
         network_id,
         node_id_base64: enrollment["node_id_base64"]
             .as_str()
@@ -2493,6 +2655,8 @@ async fn telemetry_report_fixture(
         rx_bytes_total: 0,
         handshake_attempts_total: 0,
         handshake_successes_total: 0,
+        acl_drops_total: 0,
+        replay_drops_total: 0,
         latency_samples_total: 0,
         latency_microseconds_total: 0,
         peers: peer_ids
