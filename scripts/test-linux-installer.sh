@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+trap 'status=$?; printf "installer lifecycle failed: status=%s line=%s command=%q\n" "$status" "$LINENO" "$BASH_COMMAND" >&2; exit "$status"' ERR
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BUILDER="$ROOT_DIR/installers/linux/build-package.sh"
