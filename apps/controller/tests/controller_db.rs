@@ -1768,10 +1768,8 @@ async fn refresh_console_session(
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(response["user"]["username"], expected_username);
-    response["csrf_token"]
-        .as_str()
-        .expect("rotated CSRF token")
-        .clone_into(&mut session.csrf_token);
+    let refreshed_csrf_token = response["csrf_token"].as_str().expect("stable CSRF token");
+    assert_eq!(refreshed_csrf_token, session.csrf_token);
 }
 
 async fn create_auditor(router: &Router, administrator: &BrowserSession) {

@@ -23,6 +23,7 @@ use crate::{
 const SESSION_COOKIE: &str = "xs_nexus_session";
 const SESSION_TOKEN_DOMAIN: &[u8] = b"XS Nexus console session token v1";
 const CSRF_TOKEN_DOMAIN: &[u8] = b"XS Nexus console csrf token v1";
+const CSRF_SESSION_DERIVATION_DOMAIN: &[u8] = b"XS Nexus console session csrf derivation v1";
 const USERNAME_DOMAIN: &[u8] = b"XS Nexus console username v1";
 const LOGIN_WINDOW_MINUTES: i64 = 15;
 const MAX_LOGIN_FAILURES: i64 = 5;
@@ -282,7 +283,8 @@ async fn create_login_session(
     role: ConsoleRole,
 ) -> Result<(String, LoginResponse), ApiError> {
     let (session_token, token_hash) = random_token(SESSION_TOKEN_DOMAIN)?;
-    let (csrf_token, csrf_hash) = random_token(CSRF_TOKEN_DOMAIN)?;
+    let csrf_token = csrf_token_for_session(&session_token);
+    let csrf_hash = domain_hash(CSRF_TOKEN_DOMAIN, csrf_token.as_bytes());
     let expires_at = Utc::now()
         + Duration::seconds(
             i64::try_from(state.console_session_ttl_seconds).map_err(|_| ApiError::internal())?,
@@ -355,7 +357,9 @@ pub(crate) async fn current_session(
     headers: HeaderMap,
 ) -> Result<(HeaderMap, Json<SessionResponse>), ApiError> {
     let session = authenticate_session(&state, &headers).await?;
-    let (csrf_token, csrf_hash) = random_token(CSRF_TOKEN_DOMAIN)?;
+    let csrf_token =
+        csrf_token_for_session(session_cookie_value(&headers).ok_or_else(ApiError::unauthorized)?);
+    let csrf_hash = domain_hash(CSRF_TOKEN_DOMAIN, csrf_token.as_bytes());
     sqlx::query(
         "UPDATE console_sessions SET csrf_hash = $1, last_seen_at = now()
          WHERE id = $2 AND revoked_at IS NULL AND expires_at > now()",
@@ -741,6 +745,13 @@ fn random_token(domain: &[u8]) -> Result<(String, [u8; 32]), ApiError> {
     let token = URL_SAFE_NO_PAD.encode(random);
     let hash = domain_hash(domain, token.as_bytes());
     Ok((token, hash))
+}
+
+fn csrf_token_for_session(session_token: &str) -> String {
+    URL_SAFE_NO_PAD.encode(domain_hash(
+        CSRF_SESSION_DERIVATION_DOMAIN,
+        session_token.as_bytes(),
+    ))
 }
 
 fn domain_hash(domain: &[u8], value: &[u8]) -> [u8; 32] {
