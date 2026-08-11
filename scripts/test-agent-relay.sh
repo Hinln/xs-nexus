@@ -962,9 +962,8 @@ ip netns exec "$NETNS_B" "$PROBE" icmp \
     --payload xs-m23-direct-reverse \
     --sequence 26 \
     --timeout 5
-"$CLI" peers --socket "$TEMPORARY/node-a/run/agent.sock" |
-    grep -F "active=$endpoint_b" |
-    grep -E 'reason=(authenticated_path_probe|authenticated_peer_traffic)' >/dev/null
+wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
+    authenticated_path_probe,authenticated_peer_traffic
 
 kill -0 "$AGENT_A_PID"
 kill -0 "$AGENT_B_PID"
