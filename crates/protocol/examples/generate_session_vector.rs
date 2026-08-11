@@ -140,9 +140,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         "data_header_hex": hexadecimal(&artifacts.data_packet[..xs_protocol::DATA_HEADER_LENGTH]),
         "data_packet_sha256": sha256(&artifacts.data_packet),
     });
+    write_vector(&vector)
+}
+
+fn write_vector(vector: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let stdout = std::io::stdout();
     let mut output = stdout.lock();
-    serde_json::to_writer_pretty(&mut output, &vector)?;
+    serde_json::to_writer_pretty(&mut output, vector)?;
     writeln!(output)?;
     Ok(())
 }
