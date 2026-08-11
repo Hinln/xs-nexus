@@ -387,7 +387,7 @@ async fn policy_release(
          FROM update_releases WHERE id = $1",
     )
     .bind(release_id)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional(&mut **transaction)
     .await
     .map_err(internal_database)?
     .ok_or_else(ApiError::not_found)?;
