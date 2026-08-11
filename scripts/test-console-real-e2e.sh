@@ -35,12 +35,14 @@ cleanup() {
     else
         printf 'status=FAIL\n' >"$EVIDENCE_DIR/status.txt"
     fi
+    local checksum_file="$TEMPORARY/SHA256SUMS"
     (
         cd "$EVIDENCE_DIR"
         find . -type f ! -name SHA256SUMS -print0 |
             LC_ALL=C sort -z |
-            xargs -0 -r sha256sum >SHA256SUMS
+            xargs -0 -r sha256sum >"$checksum_file"
     )
+    mv "$checksum_file" "$EVIDENCE_DIR/SHA256SUMS"
     rm -rf "$TEMPORARY"
     exit "$exit_status"
 }
