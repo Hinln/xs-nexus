@@ -18,7 +18,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 12 | Real NAS | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | User-local signed install and ordinary-node matrix |
 | 13 | Planned domain/CDN/TLS | FAIL | FAIL | Owner-authorized planned-domain origin certificate/vhost and CDN strict-mode repair, then API, WebSocket, Console and browser evidence; current edge is 525 and direct-origin SNI fails |
 | 14 | Production host hardening | FAIL | PARTIAL | Prove warning/critical disk alerts through an independent external destination and on-call acknowledgement |
-| 15 | 1Panel coexistence | PARTIAL | PARTIAL | Restart/upgrade/rollback and safe reboot evidence |
+| 15 | 1Panel coexistence | PARTIAL | PASS | Continue exact-head source regression; external-network, restart, reboot, upgrade and rollback evidence is complete |
 | 16 | PostgreSQL least privilege | FAIL | PASS | Continue drift monitoring; bootstrap credential rotation remains a separate Gate 02 requirement |
 | 17 | Offsite backup and recovery | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Independent failure domain and clean-server restore |
 | 18 | Update and release supply chain | PARTIAL | PARTIAL | Formal keys, revocation, signed RC and platform failure matrix |
@@ -43,10 +43,10 @@ Counts change only after raw evidence has been indexed and independently checked
 
 ## Current Counts
 
-- PASS: 3
+- PASS: 4
 - FAIL: 5
 - BLOCKED_EXTERNAL: 5
-- PARTIAL: 9
+- PARTIAL: 8
 - SIMULATED_ONLY: 2
 - UNKNOWN: 1
 
@@ -57,6 +57,8 @@ Gate 06 remains `PARTIAL`. Exact revision `fb45fd43256d65cb4c72824d6cee0bec0884a
 Gate 08 remains `PARTIAL`. Exact revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` passed the dedicated Relay job `93362562136` in GitHub Actions run `31358498444`. Unit tests prove verification-before-state global registration admission, per-Lease/global packet and byte queues, transactional rejection, and exact cleanup. The release capacity run forwards 5,000,000 authenticated frames with real short-Lease renewal at 71,212.14 packet/s and zero Relay drops/final queue; the namespace run proves two-Agent/two-Relay stop, failover, restart, re-registration, restored-primary recovery, and Direct return. Artifact `9051561308` has archive digest `d2b4a858d8db2e18b780d7b0cb279b985ff392e04a8b0a7021228e783b8f6b67`, portable inner checksums, and a zero-finding no-value scan. This is not public-WAN, distributed-abuse, multi-region/multi-instance, volumetric-DDoS, or long-duration production evidence.
 
 Gate 09 changed from `PARTIAL` to `PASS`. Revision `3f27ed9` closes a signed ACL rollback path by rejecting a lower `policy_version` even when the outer configuration version increases. Final revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` passed all seven jobs in run `31360862865`; ACL job `93369332314` proves three real Agents/TUNs with a disconnected Controller, A→B allow, A→C/C→B deny, protocol/port coverage, forged Node and virtual-source rejection, independent receiver enforcement, and Relay/subnet bypass rejection. Artifact `9052383034` has verified archive/inner hashes and a zero-finding no-value scan. This does not close real WAN, real NAS/subnet-router, independent audit, formal release, or deployment gates; overall remains `NO_GO`.
+
+Gate 15 changed from `PARTIAL` to `PASS`. Exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` passed all eight jobs in run `31504402285`; dedicated job `93822197946` validates the current Compose/lifecycle source and preserves an exact external-network ID plus an unrelated sentinel across project-scoped down and a real Docker-daemon restart. Artifact `9106406005` has independently verified archive and inner SHA-256 values and a zero-finding no-value scan. Existing production evidence separately proves project restart/upgrade/four automatic rollbacks, a real host reboot that restarts the 1Panel runtime, and preservation of OpenResty/web service, database boundary, SSH, routes/rules, non-project nftables, protected containers, and the exact production `1panel-network`. The current branch remains undeployed and overall remains `NO_GO`.
 
 Gate 16 changed to `PASS` after exact revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` passed full CI, isolated PostgreSQL and Docker lifecycle validation, production role migration, negative permissions, deployment, independent SSH reverse verification, and post-finalization checks. Gate 02 remains `FAIL` because the platform bootstrap credential and other disclosed credentials have not all been rotated and independently rejected.
 

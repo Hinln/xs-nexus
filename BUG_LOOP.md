@@ -365,3 +365,11 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 三节点 Direct 回归使用真实 Agent、TUN、bridge 和 namespace，Controller 明确不可用；覆盖 A→B 允许，A→C/C→B 拒绝，ICMP/TCP/UDP、异常端口、伪造虚拟源、经允许节点路由及接收端独立拒绝。协议回归同时篡改源/目标 Node ID，并证明非法帧不会消耗有效帧的重放状态。
 - Relay 回归在认证 Relay 活动时要求拒绝流量既不产生匹配 XSR 数据帧也不抵达接收端；子网回归要求拒绝 TCP/UDP 既不产生 XSP 帧也不抵达 LAN 服务。没有把绕过测试替换为 Mock。
 - 精确 revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` 的 run `31360862865` 七个 job 全通过；ACL job `93369332314`、artifact `9052383034`、归档 digest `fd5cbc219591264ae6f1376db2d5c4aa9949c33be4684196887a3703a9ef8e23`、内部清单和无值秘密扫描通过。Gate 09 提升为 `PASS`，但总体仍为 `NO_GO`。
+
+## Gate 15 1Panel 共存闭环（2026-08-11）
+
+- `XS-2026-0046`：首个 current-source Compose 门禁使用 `config --no-interpolate`，Docker Compose 将边缘端口的未解析 host IP 表达式作为非法地址拒绝。修复为在私有临时目录生成无秘密、完整的环境和挂载夹具，再执行正常插值的 JSON 渲染；失败 run `31364684902` 与 artifact `9053670838` 保留。
+- `XS-2026-0047`：渲染修复后，migration、ops 和 baseline profile 服务未进入默认 Compose service set，严格预期集合按设计失败。夹具显式启用全部三个已审 profile，并在失败消息中保留 expected/actual 集合；失败 run `31366046340` 与 artifact `9054165902` 保留。
+- `XS-2026-0048`：运行时外部网络、sentinel 和默认路由断言全部通过，但 EXIT cleanup 最初只返回非零而没有差异。加入有界清理重试和原始差异后，run `31504209932` 证明 hosted runner 在 Docker daemon restart 时只重建内置 `bridge` 的 ID；目标外部网络 ID 和 sentinel ID 均保持。最终比较稳定的 name/driver/scope 全局 inventory，同时继续对目标网络和 sentinel 执行精确 ID 检查，并把最终 PASS 移到 cleanup/baseline 验证之后。runs `31367632436`、`31504209932` 与 artifacts `9054770008`、`9106338810` 保留。
+- 精确 revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` 的 run `31504402285` 八个 job 全通过；共存 job `93822197946`、artifact `9106406005`、归档 SHA-256 `93e174890d19264398090dcb891ab434a3839d769c4f0f14854982245678a28f`、内部清单和无值秘密扫描通过。
+- 生产 Gate 14/16 的宿主 reboot、1Panel/OpenResty/SSH 恢复、项目升级、四次自动回滚和网络/数据库不变量证据完成正式矩阵映射。Gate 15 提升为 `PASS`；本分支未部署且总体仍为 `NO_GO`。

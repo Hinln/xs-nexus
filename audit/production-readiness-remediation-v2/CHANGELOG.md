@@ -102,3 +102,12 @@
 - First passing artifact `9052236354` was retained as valid but insufficiently explicit for independent evidence review. Assertion markers were added without changing behavior or thresholds, and the final exact-head run was repeated.
 - Revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` passed all seven jobs in run `31360862865`; ACL job `93369332314`, artifact `9052383034`, archive digest, inner checksums, and no-value scan pass.
 - Gate 09 changes to `PASS`. No production host, service, network, 1Panel resource, credential, DNS, firewall, or deployed image was modified; overall status remains `NO_GO`.
+
+### Gate 15 1Panel coexistence
+
+- Added a fail-closed source validator for the external `1panel-network`, all application/edge service attachments, project-scoped lifecycle commands, privilege boundaries, and global prune/network/volume-delete prohibitions.
+- Added a dedicated hosted CI fixture that refuses to run when the exact network already exists, then verifies project-scoped Compose down and a real Docker-daemon restart preserve the exact external network, an unrelated sentinel, the host route, and the stable network inventory before exact labeled cleanup.
+- Retained four failed runs and artifacts. Compose interpolation, inactive profiles, opaque cleanup status, and unstable built-in bridge IDs were fixed at their root causes without skip, allowed failure, assertion reduction, or production mutation.
+- Exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` passed all eight jobs in run `31504402285`; job `93822197946`, artifact `9106406005`, archive digest, inner checksums, and no-value scan pass.
+- Mapped existing production Gate 14 and Gate 16 raw evidence to real host reboot/1Panel recovery, project restart/upgrade/four automatic rollbacks, and preservation of OpenResty, database boundary, SSH, routes/rules, non-project nftables, protected containers, and the production external network.
+- Gate 15 changes from `PARTIAL` to `PASS`. The current branch was not deployed and the overall decision remains `NO_GO`.

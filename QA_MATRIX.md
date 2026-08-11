@@ -546,3 +546,16 @@
 - [x] 子网绕过：审批路由存在时，被拒绝 TCP/UDP 不产生匹配 XSP/1 帧且不抵达 LAN 服务；允许 ICMP/TCP、NAT、伪造拒绝、网关离线和 route/nftables cleanup 继续通过。
 - [x] 精确证据：revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b`，run `31360862865` 全七 job，ACL job `93369332314`，artifact `9052383034`；归档 digest、七个下载文件 SHA-256 和无值秘密扫描通过。
 - [x] 结论边界：Gate 09 为 `PASS`；真实 WAN、真实 NAS/subnet router 与独立安全审计由其他 Gate 保持原状态，总体仍为 `NO_GO`。
+
+## 26. Gate 15 1Panel 共存矩阵（2026-08-11）
+
+- [x] 当前源码：application/edge Compose 仅声明 exact external `1panel-network`，全部七个服务连接；driver/IPAM/subnet ownership、privileged、host network、Docker socket 和额外 managed network 均被 validator 拒绝。
+- [x] 生命周期源码：global prune、network create/remove/prune/connect/disconnect、unscoped Docker remove、volume delete 和 unscoped Compose down 均失败关闭；正式 stack 只允许两个 project-scoped `down --remove-orphans` 路径。
+- [x] 渲染：私有无秘密 fixture 完整插值三个 profile 和 edge，`docker compose config --format json` 的 service/network set 与受审集合精确相等。
+- [x] 项目 restart/down：非 Compose sentinel 存活，external network exact ID 不变，证明 project-scoped lifecycle 不删除网络或未知容器。
+- [x] Docker restart：真实 daemon restart 后 external network exact ID、sentinel exact ID/running 和 attachment、默认路由保持。
+- [x] Cleanup：只删除当前 run label 的 sentinel/network；最终 stable network inventory 和默认路由与基线相同，最终 PASS 仅在 cleanup 后输出。
+- [x] 真实生产：Gate 14 Boot-ID host reboot 与 Gate 16 project upgrade/四次 automatic rollback 证明 1Panel/OpenResty/网站、数据库边界、SSH、route/rule、non-project nftables、protected containers 和生产网络 ID/subnet 保持。
+- [x] 失败链：runs `31364684902`、`31366046340`、`31367632436`、`31504209932` 及四个 artifacts 保留；没有 skip、allowed failure、suppress 或弱化目标 exact-ID 断言。
+- [x] 精确证据：revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6`，run `31504402285` 全八 job，job `93822197946`，artifact `9106406005`；archive/inner SHA-256 和无值秘密扫描通过。
+- [x] 结论边界：Gate 15 为 `PASS`；当前分支未部署，正式签名、计划域名、凭据轮换、外部设备与总体 Production Ready 状态不变。

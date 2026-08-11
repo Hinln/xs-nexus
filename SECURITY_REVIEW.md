@@ -509,3 +509,14 @@ Current clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-202
 - Relay and subnet-router regressions prove the same authorization cannot be bypassed by changing transport. Denied Relay traffic emits no matching XSR/1 Data frame; denied routed traffic emits no XSP/1 frame and reaches no LAN service.
 - Exact revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` passed all seven jobs in run `31360862865`. ACL job `93369332314` and artifact `9052383034` pass independent archive, inner-checksum, assertion-marker, and no-value secret verification.
 - Gate 09 is `PASS`. This is an implementation-security result, not independent protocol certification or evidence for real WAN/NAS/Windows operation. Production remains on an older revision and the overall decision remains `NO_GO`.
+
+## 30. Gate 15 1Panel coexistence review (2026-08-11)
+
+- Current source has a fail-closed ownership boundary: application and edge Compose declare only the exact external `1panel-network`; every reviewed service is attached; no service is privileged, uses host networking, mounts the Docker socket, or manages driver/IPAM/subnet state.
+- Lifecycle validation rejects global prune, network mutation, unscoped remove/down, and volume deletion. The only accepted teardown paths are project-scoped Compose operations without volume removal.
+- The dedicated CI fixture refuses to run if the exact network name already exists, so it cannot target a real 1Panel host. Its temporary network and sentinel are run-labeled and cleanup verifies labels before removal.
+- A real hosted Docker-daemon restart preserved the exact target network ID, exact sentinel ID/running state and attachment, stable network inventory, and default route. Final PASS is emitted only after exact labeled cleanup and post-cleanup inventory/route comparison.
+- The hosted daemon legitimately recreated the built-in `bridge` network ID. The final check therefore compares the global stable name/driver/scope inventory while continuing exact-ID checks for the external target and sentinel; this is a semantic correction, not a weakened target-network assertion.
+- Gate 14 and Gate 16 production evidence separately proves real host reboot/1Panel runtime restart, OpenResty and website continuity, database boundary, key-only SSH, project restart/upgrade/four automatic rollbacks, routes/rules/non-project nftables, protected containers, and exact production network identity/subnet.
+- Exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6`, run `31504402285`, job `93822197946`, artifact `9106406005`, independently verified archive/inner hashes, and a zero-finding no-value scan pass. Four failed runs/artifacts remain retained.
+- Gate 15 is `PASS` only for coexistence. The current branch is not deployed or formally signed, production still runs `3d93656`, and the project remains `NO_GO`.

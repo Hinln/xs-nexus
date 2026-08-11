@@ -1091,3 +1091,16 @@
 - Gate 09 证据拓扑：三节点 Direct 矩阵证明 Controller 离线下的 A→B allow、A→C/C→B deny 和双端执行；独立 Relay 与子网 namespace 矩阵证明授权不能通过转发路径绕过；协议单测证明 Node ID 和虚拟源身份绑定。所有路径使用真实 Agent/TUN/XSP/1，不以 Mock 替代。
 - 证据：修复提交 `3f27ed9`；最终 revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b`；GitHub Actions run `31360862865`、ACL job `93369332314`、artifact `9052383034`。
 - 边界：namespace 证据足以关闭 ACL 实现 Gate 09，但不替代真实 WAN、真实 NAS/subnet router、独立安全审计或生产部署；总体仍为 `NO_GO`。
+
+---
+
+## ADR-095：1Panel 共存证据必须分离当前源码夹具与真实生产生命周期
+
+- 状态：接受
+- 日期：2026-08-11
+- 背景：真实生产宿主已经有项目升级/回滚和整机重启证据，但当前整改 revision 未部署；仅复用旧生产结果不能证明当前 Compose 边界，仅运行 hosted fixture 又不能证明真实 1Panel、网站、数据库和 SSH 在主机生命周期后的状态。
+- 决策：Gate 15 必须由两层证据共同闭合。当前精确 revision 通过静态 source validator、完整插值 Compose JSON 和 CI-only real Docker-daemon restart，证明 external-only ownership、项目 scoped down、未知 sentinel、目标网络 exact ID、稳定网络 inventory、默认路由和 cleanup。真实生产 Gate 14/16 证据独立证明 host reboot、1Panel/OpenResty/SSH 恢复、project restart/upgrade/automatic rollback、数据库边界与生产网络 identity。
+- 运行安全：CI fixture 只有在 `GITHUB_ACTIONS=true`、显式 fixture flag 和精确 `1panel-network` 不存在时才运行；资源带当前 run label 且只按 label 清理。真实网络已存在时必须失败关闭，禁止在生产或 1Panel 主机运行。生命周期源码禁止 global prune、network create/remove/connect/disconnect、Docker socket、host networking、privileged、volume delete 和 unscoped Compose down。
+- 证据语义：Docker daemon 可重建 hosted runner 的内置 `bridge` ID，因此全局基线比较 name/driver/scope inventory；目标 external network 和 unrelated sentinel 始终要求 exact ID。最终 PASS 只能在显式 cleanup、全局 inventory 和 route 复核后输出，不能先打印成功再依赖 EXIT trap。
+- 证据：revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6`；run `31504402285`；job `93822197946`；artifact `9106406005`；`audit/production-readiness-remediation-v2/ONEPANEL_COEXISTENCE.md`；Gate 14/16 生产 evidence roots。
+- 边界：该组合足以关闭 Gate 15 的共存范围，但不证明当前 revision 已部署、已签名、可公开访问或整体 Production Ready；Gate 01/13/18/20/22/23/24/25 与外部门禁保持原状态。

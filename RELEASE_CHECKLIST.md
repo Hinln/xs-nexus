@@ -52,6 +52,7 @@
 ## 部署
 
 - [x] 使用外部 `1panel-network`
+- [x] Gate 15 共存（current-source external-only/lifecycle、真实 Docker restart、生产 host reboot、项目 upgrade/rollback 与 1Panel/OpenResty/SSH/网络不变量）
 - [x] 无数据库公网端口（当前生产候选服务器外部探测与 Docker host binding 复核通过）
 - [x] 容器非 root
 - [x] Secret 仓库外

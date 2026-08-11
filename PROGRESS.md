@@ -487,3 +487,12 @@ make clean
 - Relay 活动路径的拒绝 UDP 不产生匹配 XSR 数据帧且不抵达 B；已审批子网路径的拒绝 TCP/UDP 不产生 XSP 帧且不抵达 LAN 服务。所有测试使用真实项目进程与内核网络对象，没有替换为 Mock。
 - 最终 exact-head revision `e908e67d6d745f91ef44b1f5c1613d1b5e3cad3b` 的 GitHub Actions run `31360862865` 七个 job 全通过；ACL job `93369332314`、artifact `9052383034`、archive digest `fd5cbc219591264ae6f1376db2d5c4aa9949c33be4684196887a3703a9ef8e23`、内部 SHA-256 与无值秘密扫描通过。
 - Gate 09 从 `PARTIAL` 提升为 `PASS`。生产没有部署本分支，真实 WAN、NAS、Windows、计划域名、正式密钥、凭据轮换、异地恢复、外部告警和第三方审计均未因此关闭；总体保持 `NO_GO`。下一步按整改顺序进入 Gate 15 1Panel 共存复核。
+
+## 2026-08-11 Gate 15 1Panel 共存闭环
+
+- 新增 `scripts/validate-onepanel-boundary.py` 和负向回归，严格验证两个 Compose 只 external reference 精确 `1panel-network`、全部服务连接、无 privileged/host network/Docker socket，以及项目 lifecycle 不含 global prune、network mutation、unscoped down 或 volume delete。
+- 新增独立 `onepanel-coexistence` CI job。夹具只在 GitHub hosted runner 且真实同名网络不存在时创建带 run label 的临时外部网络和非 Compose sentinel；执行项目 scoped down 和真实 Docker daemon restart 后，精确网络 ID、sentinel ID/running、默认路由、稳定网络 inventory 与 cleanup 全部通过。
+- 失败链完整保留：`31364684902` 为未插值 host IP；`31366046340` 为 profile 服务遗漏；`31367632436` 为无诊断 cleanup 非零；`31504209932` 证明 hosted Docker 只重建内置 bridge ID。修复没有使用 allowed failure、skip、suppress、降低 exact 目标身份或提前打印最终 PASS。
+- exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` 的 run `31504402285` 八个 job 全通过；job `93822197946`、artifact `9106406005`、archive digest `93e174890d19264398090dcb891ab434a3839d769c4f0f14854982245678a28f`、内部 SHA-256 和无值秘密扫描通过。
+- 生产 Gate 14/16 证据映射补齐真实 host reboot/1Panel runtime restart、OpenResty/网站、数据库边界、SSH、项目 restart/upgrade、四次 automatic rollback、route/rule/nftables、protected containers 和生产 `1panel-network` identity/subnet。
+- Gate 15 从 `PARTIAL` 提升为 `PASS`。本轮未连接或修改生产，运行 revision 仍是 `3d93656`；当前分支未签名、未部署且总体保持 `NO_GO`。下一步进入 Gate 18 及其他可自行完成的内部硬门禁。
