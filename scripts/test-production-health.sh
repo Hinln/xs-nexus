@@ -22,6 +22,7 @@ record_scenario() {
 }
 
 write_evidence() {
+    local checksum_file
     [[ -n "${EVIDENCE_DIRECTORY}" ]] || return 0
     mkdir -p "${EVIDENCE_DIRECTORY}/samples"
     printf 'status=%s\n' "${TEST_STATUS}" >"${EVIDENCE_DIRECTORY}/status.txt"
@@ -42,12 +43,14 @@ write_evidence() {
             cp "${TEMPORARY}/output/${name}" "${EVIDENCE_DIRECTORY}/samples/${name}"
         fi
     done
+    checksum_file="${TEMPORARY}/evidence-SHA256SUMS"
     (
         cd "${EVIDENCE_DIRECTORY}"
         find . -type f ! -name SHA256SUMS -print0 |
             sort -z |
-            xargs -0 sha256sum >SHA256SUMS
-    )
+            xargs -0 sha256sum
+    ) >"${checksum_file}"
+    mv -- "${checksum_file}" "${EVIDENCE_DIRECTORY}/SHA256SUMS"
 }
 
 cleanup() {
@@ -138,11 +141,12 @@ cat >"${TEMPORARY}/bin/docker" <<'EOF'
 set -Eeuo pipefail
 case "${1:-}" in
     inspect)
-        if [[ "${TEST_CONTAINER_STATE:-running healthy}" == missing ]]; then
+        state="${TEST_CONTAINER_STATE:-running healthy}"
+        if [[ "${state}" == missing ]]; then
             exit 1
         fi
-        status="${TEST_CONTAINER_STATE%% *}"
-        health="${TEST_CONTAINER_STATE#* }"
+        status="${state%% *}"
+        health="${state#* }"
         printf '%s|%s|%s\n' "${status}" "${health}" "${TEST_CONTAINER_LOG:?}"
         ;;
     stats)
