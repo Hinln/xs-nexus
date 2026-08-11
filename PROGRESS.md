@@ -505,3 +505,13 @@ make clean
 - 八个失败 runs/artifacts 完整保留，依次暴露 ShellCheck 数字比较、负向夹具漂移、安装器诊断与 iproute 文本假设、撤销回滚执行顺序、Relay 最终收敛竞态、Clippy 函数长度和 SQLx transaction executor；所有根因修复后全量重跑，没有 skip、suppress、allowed failure 或弱化断言。
 - 候选 revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 run `31515281011` 全九 job 通过；job `93858773221`、artifact `9110864186`、GitHub/独立下载一致的归档 SHA-256 `9885bc0d7146d518d53d6de8a11a8a7702d1816b5a49378dc13a797b85be2376`、八个内部 payload 和无值秘密扫描通过。
 - Gate 18 保持 `PARTIAL`：正式离线双人密钥仪式、认证公钥/撤销分发、签名 RC、真实 aarch64/NAS/Windows 和生产 release/rollback 链尚无证据。本轮未修改生产，运行 revision 仍是 `3d93656`，总体保持 `NO_GO`；下一步进入 Gate 19 及其他可自行完成的内部硬门禁。
+
+## 2026-08-12 Gate 19 真实 Console 与视觉矩阵
+
+- 新增生产形态 Playwright 门禁：专用 PostgreSQL schema、真实 Controller 二进制、生产 Console build/preview 和 Chromium；源码守卫拒绝 `page.route`、`context.route` 与 HAR 路由，不以固定健康或 API fixture 满足验收。当前部署不使用 Redis，测试没有用 Redis Mock 替代事实源。
+- 七个生产矩阵场景覆盖 Controller stop/resume loading、错误/正确登录、全部初始页面、网络快速双提交、Token/双节点/审计员、节点详情、ACL 默认拒绝、400/403/404、双标签页过期版本 409、六视口全页面、破坏性取消/单次确认、审计员绕过拒绝、注销失效和真实浏览器 offline/recovery；原始真实流程继续通过。
+- 产品缺陷闭环包括网络创建同步 in-flight guard、Chromium 有效用户名 pattern、跨标签页稳定 CSRF。CSRF 由 256-bit HttpOnly session token 通过域分离 SHA-256 派生；session token 不暴露，数据库只保存域分离 hash，双标签页现在到达正确的乐观并发边界。
+- 视觉证据共 132 张：六个规定视口各 19 张、16 张初始真实数据页和 loading/offline 两个状态。自动断言 document overflow、命名控件、节点 dialog、skip-link 键盘焦点与 table-shell 横向滚动；人工抽检 desktop dashboard/ACL、mobile login/dashboard/audit 和 offline，无伪健康、秘密、坏字形或主操作遮挡。
+- 失败链完整保留：ShellCheck、真实双 POST、无效 pattern/trace 表面、CSRF tab rotation、API 契约断言、选择器歧义、托管包源、403 文案、Chromium 204 伪失败和 artifact 隐藏文件清单均按根因修复；没有 skip、allowed failure、重试掩盖或阈值降低。
+- 精确 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；Console job `93905489516`、artifact `9116327161`、GitHub/独立 ZIP 一致的 digest `f6d4903febab15e6c92bd46ee91451bfbea849fae84a166afd4aa1c0b67632d6`、139/139 文件清单和零发现无值扫描通过。
+- Gate 19 仍为 `PARTIAL`：计划域名 origin SNI/certificate/vhost、CDN、正式公网 Console/API/WebSocket、外部浏览器与当前分支部署仍无证据，由 Gate 13/`KI-025` 保持外部阻塞。本轮未连接或修改生产，最后已知运行 revision 仍为 `3d93656`，总体保持 `NO_GO`；下一步进入 Gate 20 及其他可自行完成的内部硬门禁。

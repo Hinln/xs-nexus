@@ -24,3 +24,13 @@
 - 该门禁关闭“只有 Mock E2E”的内部缺口，但计划域名和正式公网 Console 路由仍未修复，生产仍运行旧 Console 镜像。
 
 最终结果：Gate 19 从 `FAIL` 改善为 `PARTIAL`，仍不是生产 PASS。
+
+## V2 Current-Source Reassessment
+
+- revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 GitHub Actions run `31529393933` 全九 job 通过；Console job `93905489516` 启动独立 PostgreSQL schema、真实 Controller、production Console build/preview 和 Chromium，测试源码守卫拒绝 API/HAR 拦截。
+- 7 个生产矩阵场景与原始真实流程共 8 项全部 expected，0 unexpected/skipped/flaky；覆盖真实 loading、登录、空/数据、全部管理页、双提交、ACL/API 边界、双标签页 409、破坏性确认、auditor 绕过拒绝、logout 和 offline/recovery。
+- 132 张截图覆盖六个规定视口、全部管理页、登录、node detail、404、initial real data、loading 和 offline；自动验证 document overflow、命名控件、键盘 skip-link 与表格内部横向滚动，人工抽检未发现伪健康、秘密或主操作遮挡。
+- artifact `9116327161` 的 GitHub digest 与独立 ZIP SHA-256 同为 `f6d4903febab15e6c92bd46ee91451bfbea849fae84a166afd4aa1c0b67632d6`；下载后 139 个 payload 与内部 139 项清单逐一匹配，无值扫描 0 findings。
+- 完整失败链和安全边界见 `audit/production-readiness-remediation-v2/CONSOLE_VISUAL_UX.md`。该证据关闭 shallow/mock 内部缺口，但不证明计划域名 origin TLS/SNI/CDN、正式公网浏览器/API/WebSocket 或当前分支生产部署。
+
+V2 结论仍为 `PARTIAL`；Gate 13 仍为 `FAIL`；总体仍为 `NO_GO`。

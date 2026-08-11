@@ -384,3 +384,14 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0054`：Relay 修复后严格 baseline Clippy 拒绝 Controller 的 101 行函数。只抽取 rollout release validation，不改变事务、错误或授权语义；run `31513788232` 与 artifact `9110258489` 保留。
 - `XS-2026-0055`：抽取后的 SQLx 0.9 helper 对 transaction wrapper 执行查询而非底层 connection，专项 job 因 executor trait 失败。改为在同一事务连接上执行，保持锁和原子性；run `31514717354` 与 artifact `9110599058` 保留。
 - 最终 candidate `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 run `31515281011` 全九 job 通过；Gate 18 job `93858773221`、artifact `9110864186`、GitHub/独立下载一致的归档 SHA-256、八个内部 payload 和无值秘密扫描通过。Gate 18 仍因正式密钥仪式/分发、签名 RC、真实平台和生产发布链保持 `PARTIAL`，总体仍为 `NO_GO`。
+
+## Gate 19 真实 Console 与视觉矩阵（2026-08-12）
+
+- `XS-2026-0056`：证据脚本在 evidence 目录内同时读取并覆盖 `SHA256SUMS`，ShellCheck `SC2094` 正确拒绝。改为私有临时文件生成后原子移动；run `31521405820` 保留。
+- `XS-2026-0057`：真实 Chromium 快速双击在 React disabled state 渲染前发送两个 network POST。页面增加同步 in-flight ref，并以本地请求计数和真实数据库最终状态要求恰好一次；失败 run `31521600690` 保留。
+- `XS-2026-0058`：用户名 HTML pattern 在 Chromium Unicode `v` 规则下无效，浏览器报告 pattern error；失败 trace 还会持久化填入的临时测试值。改用有效等价 pattern 并增加回归，real config 永久关闭 trace；runs/artifacts 保留或按秘密卫生删除 trace-bearing artifact，最终证据无 trace/video。
+- `XS-2026-0059`：每次 `/v1/auth/session` 随机轮换 CSRF hash 会使同一 session 的第二标签页令第一标签页失效，过期配置测试错误得到 403。改为从 256-bit HttpOnly session token 进行域分离 SHA-256 派生，数据库仍只存 hash；Controller 回归和真实双标签页 409 通过。失败 run `31522425606` 保留。
+- `XS-2026-0060`：节点吊销、吊销状态和 forbidden envelope 的测试期望分别与 canonical API `200` typed body、两个正确“已吊销”区域及 `permission denied` 文案不一致。测试改为逐字段/逐区域/精确 envelope 验证，不改变产品契约；runs `31522820229`、`31523146155`、`31523454612` 保留。该 run 首次 attempt 的托管包源 403 也保留为基础设施失败。
+- `XS-2026-0061`：Chromium 对成功 fetch `204` 同时发出 `requestfailed/net::ERR_ABORTED`。本地最小假后端稳定复现；observer 只在相同 Request 对象也收到真实 204 时消歧，真正无 response abort 仍失败。run `31525584275` 保留。
+- `XS-2026-0062`：run `31527592960` 全九 job 通过，但独立下载 artifact 后内部清单引用上传器默认过滤的 `.last-run.json`，证据完整性失败。清单现排除所有上传器同样排除的隐藏路径；最终下载 139 个 payload 与 139 个 manifest 项逐一匹配。
+- 精确 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；Console job `93905489516`、artifact `9116327161`、GitHub/独立 ZIP 一致 digest、139/139 内部 SHA-256、8 expected 测试、132 张截图和零发现无值扫描通过。没有 skip、allowed failure、断言弱化或生产变更；Gate 19 保持 `PARTIAL`，总体保持 `NO_GO`。

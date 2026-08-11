@@ -136,6 +136,8 @@ Gate 04 补充证据：revision `875395352afc8a17dafc17b2496d62ce701ee4ae` 修�
 
 M4.1/M4.2 说明：页面只显示 Controller 已知事实；更新发布、灰度策略、节点分配通道和 Agent 签名更新状态现已接入真实 API。后续可观测性闭环又接入节点身份签名的路径/流量/握手/RTT 报告与 Relay 目录身份签名的累计指标；Controller 保存有界 25 小时窗口，缺失或陈旧数据仍显示不可用/陈旧，不以固定值满足验收。隔离验证覆盖真实 PostgreSQL、双 Agent/双 Relay 控制与数据面、10 条 Playwright 主流程和 6 个视口；备份恢复 UI 仍只描述已实现能力，不伪造执行状态。
 
+Gate 19 候选 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；专项 job `93905489516` 和 artifact `9116327161` 使用真实 PostgreSQL、Controller、生产 Console build 与 Chromium，执行 7 个生产矩阵场景和原始真实流程，8 项均为 expected、无 skip/flaky/unexpected。132 张截图覆盖六视口、全部管理页、登录、详情、404、loading 和 offline；浏览器观测无 page error/5xx，只有显式断网的两项预期失败。归档 digest、139 项内部清单和无值秘密扫描通过。该证据不包含 API 拦截，但仍不是计划域名严格 TLS、公网 Console 或当前生产部署证据；Gate 19 保持 `PARTIAL`，总体保持 `NO_GO`。
+
 ---
 
 ## I. 安装、升级和卸载

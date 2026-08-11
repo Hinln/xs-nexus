@@ -1117,3 +1117,13 @@
 - 验证：`scripts/test-update-supply-chain.sh` 在隔离 Linux CI 中组合 Rust 单测、真实 PostgreSQL、真实 tmpfs ENOSPC、独立 network namespace 路由、安装器生命周期和一键引导，并生成场景矩阵与 SHA-256 清单。所有失败 run 和最终 artifact 必须保留并独立复核。
 - 最终内部证据：候选 revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` 的 GitHub Actions run `31515281011` 全九 job 通过；专项 job `93858773221`、artifact `9110864186`、GitHub/独立下载一致的归档 SHA-256、八个内部 payload hash 和零发现无值秘密扫描均通过。
 - 边界：开发测试密钥、hosted x86_64、namespace 和本地 ledger 不能替代正式离线双人密钥仪式、认证分发、签名 RC、真实 aarch64/NAS/Windows 平台矩阵或独立安全审计；Gate 18 在这些外部证据完成前保持 `PARTIAL`，总体保持 `NO_GO`。
+
+## ADR-097：Console 生产门禁必须使用真实后端、生产构建和可独立验证证据
+
+- 日期：2026-08-12
+- 背景：既有 135 张截图和多数 Playwright 流程依赖 `page.route`，浅层真实流程不足以证明权限、并发、故障、破坏性操作和视觉状态。真实矩阵又发现重复提交、无效浏览器 pattern 与跨标签页 CSRF 失效，说明 Mock 证据不能替代生产形态。
+- 决策：Gate 19 内部矩阵启动独立 PostgreSQL schema、真实 Controller 和生产 Console build/preview；`tests-real` 禁止 API/HAR 拦截，覆盖六视口全部管理页、错误边界、并发冲突、权限绕过、单次破坏性执行、offline/recovery、可访问名称、键盘和内部表格滚动。
+- 会话：每个登录 session 只生成一个随机 256-bit HttpOnly token；公开 CSRF 值使用独立域 SHA-256 从该 token 派生，数据库只保存各自域 hash。相同 session 的标签页取得稳定 CSRF，新的登录 session 仍完全独立。
+- 证据：真实矩阵关闭 trace，生成凭据位于 evidence 外；artifact 只接受上传边界内的非隐藏文件，要求下载后 archive digest、全部内部 hash、文件全集和无值扫描独立通过。成功 `204` 只在同一 request 同时存在真实 response 时从 Chromium 伪失败中消歧。
+- 最终内部证据：revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；job `93905489516`、artifact `9116327161`、一致 archive digest、139/139 文件清单、8 项测试和 132 张截图通过。
+- 边界：该 ADR 不授权 DNS/CDN/证书/1Panel/生产部署变更，也不把 hosted HTTP preview 称为正式公网严格 TLS。Gate 19 保持 `PARTIAL`，总体保持 `NO_GO`。

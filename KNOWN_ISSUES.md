@@ -347,7 +347,7 @@
 - 首次发现：2026-08-08 CDN `525`；2026-08-09 Gate 13 独立定界。
 - 影响：`vpn.xiashikeji.cn` 的边缘证书可验证，但根、health、install 与 WebSocket 路径均返回 `525`；直连源站使用计划域名 SNI 时 TLS 握手失败。计划域名无法提供严格 TLS Console/API/WebSocket 路径，Gate 13/19 不能通过，项目不能正式生产上线。
 - 根因：源站无计划域名证书和 1Panel/OpenResty vhost；现有站点证书只覆盖 `qinwen.co`，且现有站点根路径代理 Controller 而非 Console。
-- 已完成缓解：提交 `94ccae3` 增加失败关闭的严格 TLS/SNI/HTTP/WebSocket 审计器及负向测试，并提供只含占位符、TLS 1.2/1.3、HTTP 308、Console loopback 和 WebSocket 透传的 OpenResty 模板。证据已秘密扫描和 SHA-256 封存；未修改生产配置。
+- 已完成缓解：提交 `94ccae3` 增加失败关闭的严格 TLS/SNI/HTTP/WebSocket 审计器及负向测试，并提供只含占位符、TLS 1.2/1.3、HTTP 308、Console loopback 和 WebSocket 透传的 OpenResty 模板。Gate 19 候选 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 又以全绿 run `31529393933`、job `93905489516` 和 artifact `9116327161` 完成无 API 拦截的真实 PostgreSQL/Controller/生产 Console/Chromium、六视口 132 图、权限/并发/故障/破坏性操作和证据完整性矩阵。以上只闭合仓库侧内部子矩阵；证据已无值扫描和 SHA-256 封存，未修改生产配置。
 - 计划：所有者按 `audit/production-readiness-remediation-v2/CDN_TLS.md` 批准并执行证书、计划域名 vhost、CDN Origin Host/SNI 和 strict 验证变更，以完整基线和自动/手工回滚保护；随后从独立外部客户端和真实浏览器复验。
 - 解除条件：源站和 CDN 严格证书/主机名验证、根/health/install、登录、认证 API、WebSocket、Console E2E 和未知路由全部通过；无关 1Panel 站点、容器、路由、防火墙与 `1panel-network` 保持不变。
 

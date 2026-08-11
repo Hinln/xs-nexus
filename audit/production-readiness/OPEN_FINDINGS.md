@@ -41,6 +41,7 @@
 | PR-007 | RESOLVED_INTERNAL | 源 SBOM 与锁文件一致，Cargo 325 + npm 110 = 435，最终 baseline 通过 |
 | PR-008 | RESOLVED_INTERNAL | 固定 `cargo audit 0.22.2`、`cargo deny 0.20.2` 与策略门禁在最终 baseline 通过 |
 | PR-009 | RESOLVED_INTERNAL | 新增 executable fuzz targets，artifact `9025496390` 通过；独立审计仍由 PR-004 跟踪 |
+| PR-010 | BLOCKED_EXTERNAL | revision `5505893` 的真实 PostgreSQL/Controller/production Console/Chromium 六视口完整矩阵与 artifact `9116327161` 通过；计划域名 origin TLS/SNI/vhost、CDN 和正式公网 Console/API/WebSocket 仍未修复 |
 | PR-015 | PARTIALLY_REMEDIATED | 本地五分钟健康守卫、失败注入、备份年龄和磁盘告警通过；外部通知/on-call/TLS 监控和 87% 磁盘仍开放 |
 | PR-019 | CONTAINED | 临时 clone token 未进入 Git/生产；证据脱敏和复扫为零，不能替代全部生产凭据轮换 |
 

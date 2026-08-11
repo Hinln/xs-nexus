@@ -572,3 +572,19 @@
 - [x] 精确证据：candidate `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1`，run `31515281011` 全九 job，job `93858773221`，artifact `9110864186`；archive/inner SHA-256 和无值秘密扫描通过。
 - [ ] 外部门禁：正式离线密钥仪式、认证生产分发、签名 RC、真实 aarch64/NAS/Windows 与生产 release/rollback 链尚未执行。
 - [x] 结论边界：仓库侧子矩阵通过，但 Gate 18 保持 `PARTIAL`，生产未变且总体仍为 `NO_GO`。
+
+## 28. Gate 19 真实 Console 与视觉矩阵（2026-08-12）
+
+- [x] 真实运行时：独立 PostgreSQL schema、真实 Controller binary、生产 Console build/preview 和 Chromium；Redis 不在当前部署数据路径中，未用 Redis/API Mock 替代。
+- [x] 无拦截：`tests-real` 源码守卫拒绝 `page.route`、`context.route` 和 HAR；所有 `/v1` 交互到达真实 Controller。
+- [x] 状态与初始化：真实 stop/resume loading、错误登录 401、正确登录、空状态、全部初始页面、网络/Token/双节点/审计员和审计事件通过；快速双提交只产生一个网络。
+- [x] 安全边界：ACL 默认拒绝、malformed JSON 400、缺 CSRF 403、未知端点 404、双标签页旧配置 409、审计员无写 UI 且直接绕过 403、注销后 session 401。
+- [x] 破坏性操作：取消节点吊销发送 0 请求，确认发送恰好 1 请求；校验 canonical 200 body、冷却、配置版本与双区域 revoked 状态。
+- [x] 故障恢复：真实浏览器 offline 后旧数据替换为明确错误，只有 Console/users 两项请求报告断网；恢复网络和 reload 后真实 dashboard 返回。
+- [x] 视觉覆盖：`1920x1080`、`1440x900`、`1280x720`、`1024x768`、`768x1024`、`390x844`；每视口覆盖登录、16 管理页、节点 dialog 和 404，共 132 张截图。
+- [x] 可访问性与布局：document 无整体横向溢出，宽表在 table-shell 内滚动，交互控件有名称，skip-link 可由键盘聚焦并把焦点移到主内容。
+- [x] 浏览器观测：8 expected、0 unexpected/skipped/flaky；14 个观测集、0 page error、0 HTTP 5xx，只有显式 offline 的两个预期 request failure。
+- [x] 证据安全：real traces 关闭，生成凭据位于 evidence 外；下载 artifact 不含 trace/video/凭据表面；无值扫描 0 findings。
+- [x] 精确证据：revision `5505893710ab1d15e06495603dff08bf5c1e035f`，run `31529393933` 全九 job，job `93905489516`，artifact `9116327161`；archive digest 和 139/139 内部文件 SHA-256 通过。
+- [ ] 公网硬门禁：计划域名严格 origin TLS/SNI、CDN、公开 Console/API/WebSocket、外部浏览器和当前分支生产部署未执行。
+- [x] 结论边界：内部生产形态子矩阵通过，但 Gate 19 保持 `PARTIAL`、Gate 13 保持 `FAIL`、总体保持 `NO_GO`。

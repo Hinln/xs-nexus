@@ -69,3 +69,7 @@
 `CRITICAL`
 
 正式范围包含公网、自研加密链路、特权网络 Agent、Windows 和 NAS，但凭据、正式密钥、第三方审计、真实平台、异地恢复和运营监控均未闭环。
+
+## Subsequent Gate 19 V2 Evidence (2026-08-12)
+
+本文件首轮只读结论保持冻结。后续 remediation v2 在 exact revision `5505893710ab1d15e06495603dff08bf5c1e035f`、run `31529393933`、job `93905489516` 和 artifact `9116327161` 完成真实 PostgreSQL/Controller/production Console/Chromium、无 API 拦截、六视口 132 图、权限/并发/故障/破坏性操作和 139/139 证据完整性矩阵。该内部子矩阵为 `PASS`，但计划域名严格 origin TLS/SNI、CDN、正式公网 Console/API/WebSocket、当前分支部署及其他生产硬门禁仍未完成，因此 Gate 19 仍为 `PARTIAL`，整体决策仍严格为 `NO_GO`。

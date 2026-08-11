@@ -64,7 +64,7 @@
 | 16 数据库 | 集成和迁移通过；bootstrap superuser 不能原地降权，需新角色、grants、secret rotation、redeploy | FAIL |
 | 17 异地备份/DR | 加密备份健康守卫通过；副本仍同机，无全新服务器恢复 | BLOCKED_EXTERNAL |
 | 18 升级供应链 | 测试签名、篡改、降级和回滚通过；无正式 key ceremony 和真实平台矩阵 | PARTIAL |
-| 19 Web Console | 真实 PostgreSQL/Controller/Vite Playwright 通过且无 API Mock；正式公网 Console 仍不可用 | PARTIAL |
+| 19 Web Console | revision `5505893` 的真实 PostgreSQL/Controller/production-build/Chromium 七场景、六视口 132 图矩阵通过，无 API 拦截，artifact 139/139 校验；计划域名严格 TLS 与正式公网 Console 仍不可用 | PARTIAL |
 | 20 可观测性 | 本地 systemd 五分钟守卫和失败注入通过；无外部通知、on-call、TLS/证书监控和指标平台 | PARTIAL |
 | 21 性能 | 本机/namespace/1000 节点基线存在；无 WAN、并发容量和长期负载 | PARTIAL |
 | 22 稳定性 Soak | 当前修复版本没有 24 小时原始证据 | UNKNOWN |

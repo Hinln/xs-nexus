@@ -38,7 +38,7 @@
 - 状态：外部阻塞；计划域名 `vpn.xiashikeji.cn` 的 Gate 13 保持 `FAIL`。2026-08-09 外部复核中，边缘证书与 TLS 1.3 可验证，但 `/`、`/health/ready`、`/install`、`/v1/control` 全部返回 `525`；直连源站并发送计划域名 SNI 时在 HTTP 前收到 `unrecognized_name` TLS alert。
 - 根因：源站没有计划域名 1Panel/OpenResty vhost 和匹配证书；现有证书只覆盖 `qinwen.co`。现有 `vpn.qinwen.co` 根路径还代理到 Controller `127.0.0.1:28080`，而不是可提供 Console/API/WebSocket 的 Console `127.0.0.1:28081`。
 - 外部条件：用户批准 DNS/CDN/1Panel 变更窗口和回滚，提供或授权签发计划域名源站证书，并由控制面所有者配置 HTTPS 443、计划域名 Origin Host/SNI 与严格证书验证。禁止 Flexible SSL、明文回源、忽略证书错误或关闭验证。
-- 已完成的不受阻塞工作：提交 `94ccae3` 增加严格 TLS/SNI/HTTP/WebSocket 审计器、负向测试和占位符 OpenResty 模板；模板只代理 Console loopback 且不修改任何现有站点。生产最小 INPUT 防火墙和 1Panel TCP `188` 公网关闭已由 Gate 14 独立完成。
+- 已完成的不受阻塞工作：提交 `94ccae3` 增加严格 TLS/SNI/HTTP/WebSocket 审计器、负向测试和占位符 OpenResty 模板；模板只代理 Console loopback 且不修改任何现有站点。Gate 19 revision `5505893` 的真实 PostgreSQL/Controller/生产 Console/Chromium、六视口、权限/并发/offline 和无拦截矩阵已通过 run `31529393933`，因此剩余 Console 阻塞已精确缩小到本项的计划域名公网路径。生产最小 INPUT 防火墙和 1Panel TCP `188` 公网关闭已由 Gate 14 独立完成。
 - 证据：`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-cdn-tls-readonly-20260809T094531Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate13-strict-tls-tool-20260809T100334Z`。完整批准、基线、变更、回滚和复验步骤见 `audit/production-readiness-remediation-v2/CDN_TLS.md`。
 - 解除条件：直连源站和 CDN 严格 TLS 均验证通过，公网 health/login/authenticated API/WebSocket/Console/未知路由与浏览器 E2E 通过，且无关站点、路由、防火墙、容器和 `1panel-network` 不变量保持。
 - 不阻塞：当前 `vpn.qinwen.co` 测试发布、IP 和临时端口测试。
@@ -112,7 +112,7 @@
 - 状态：阻塞 Release Candidate 和正式生产；最终审计 `NO_GO`。
 - 首次发现：2026-08-08 正式生产发布门禁审计。
 - 外部条件：生产所有者完成剩余全量凭据轮换和旧值拒绝、计划 DNS/CDN/strict origin TLS；SRE 提供独立通知 provider/destination/credential 和正式 on-call；独立第三方完成安全审计和 retest。
-- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、真实 Console E2E、协议 fuzz、五镜像可复现、五分钟本地健康守卫、PostgreSQL 最小权限、仅密钥 SSH、最小 INPUT 防火墙、1Panel 公网管理端口关闭、全部宿主安全更新、受自动 fallback 保护的新内核 reboot、Gate 23 可自行修复 finding 和有界磁盘清理。Gate 23 最终复核时根分区 `79%`、约 `12.65 GB` 可用，0 failed unit、无临时 QA 容器/网络/namespace。
+- 已完成的不受阻塞工作：固定 CI/依赖/镜像、源 SBOM、Gate 19 无 API 拦截的真实 PostgreSQL/Controller/生产 Console/Chromium 与六视口 132 图矩阵、协议 fuzz、五镜像可复现、五分钟本地健康守卫、PostgreSQL 最小权限、仅密钥 SSH、最小 INPUT 防火墙、1Panel 公网管理端口关闭、全部宿主安全更新、受自动 fallback 保护的新内核 reboot、Gate 23 可自行修复 finding 和有界磁盘清理。Gate 23 最终复核时根分区 `79%`、约 `12.65 GB` 可用，0 failed unit、无临时 QA 容器/网络/namespace。
 - 磁盘告警外部阻塞：没有批准的独立目的地和 on-call 时不能安全配置或证明真实送达；`external-disk-alert-status.txt` 明确为 `BLOCKED_EXTERNAL`，本机日志不计作通过。
 - 证据：`audit/production-readiness/GO_NO_GO_FINAL.md`、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`、Gate 16 生产证据、Gate 14 防火墙/维护证据、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`。
 - 解除后验证：旧凭据全部被拒绝；SSH/端口/防火墙回归；正式域名 API/WS/Console/health/TLS 通过；应用角色非 superuser；外部告警真实送达；第三方 findings 修复并 retest；重新执行全部 Hard Gate。

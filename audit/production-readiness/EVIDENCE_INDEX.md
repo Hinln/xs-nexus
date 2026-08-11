@@ -77,3 +77,14 @@
 - Artifact `9025496390`：`protocol-fuzz-evidence`，GitHub digest `sha256:905a28e11fd96d6605bf9989322fa39c4e99974020c78a618438ce798f4fe941`
 - Artifact `9025655997`：`image-reproducibility-evidence`，GitHub digest `sha256:c84f58fb11639c274bed70b93e0a18b008492643714dc26105639f9b2fe24069`
 - 可复现 OCI SHA-256：Edge `3557136259b04170b302c0a1c0ac88aa9b42a1362b65f7bc321c29d1bb671cd4`；Console `88ab58ebc6a9e78932bc5fa22f449a203d5ddac39f6cd583a3a0cfefa21dffcf`；Controller `2740f6e6110a1d22ab8c9f36306567e58d9234a00e9bce6cc1a773919d24c6be`；Relay `70e751415f97b3fb890e9de78068aea5fb4adcc5293fcb192a1c17405bac176a`；db-tools `2f7c53cb37c33125eb37a5d790d72ba735ad50786a8f509f27cb8c08c07db334`。
+
+## Gate 19 V2 Console Evidence
+
+- Exact source: revision `5505893710ab1d15e06495603dff08bf5c1e035f`.
+- Exact-head CI: [run 31529393933](https://github.com/Hinln/xs-nexus/actions/runs/31529393933), all 9 jobs passed.
+- Console job: [93905489516](https://github.com/Hinln/xs-nexus/actions/runs/31529393933/job/93905489516), real PostgreSQL/Controller/production-build/Chromium, no API interception.
+- Artifact `9116327161`: `console-real-e2e-evidence`; GitHub and independent ZIP digest `sha256:f6d4903febab15e6c92bd46ee91451bfbea849fae84a166afd4aa1c0b67632d6`.
+- Inner manifest digest `abe90dbf2525ee4587c1d521208253c262c3f3418d2ffee354b10cf7fcd78b31`; 139 listed files equal 139 downloaded files and all hashes match.
+- Results: 8 expected, 0 unexpected/skipped/flaky; 14 browser observation sets, 0 page error/5xx; 132 screenshots over six viewports and real loading/offline/data states; no-value scan 0 findings.
+- Detailed scope, visual review, failure chain and residual boundary: `audit/production-readiness-remediation-v2/CONSOLE_VISUAL_UX.md`.
+- Result: internal current-source submatrix `PASS`, hard Gate 19 `PARTIAL` because planned-domain strict TLS/CDN/public runtime and current deployment remain absent.

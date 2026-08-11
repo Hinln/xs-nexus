@@ -248,6 +248,29 @@ The internal matrix proves canonical schema-2 release identity, strict numeric/a
 
 Gate 18 remains `PARTIAL`. Hosted x86_64, development keys, namespace routes, tmpfs ENOSPC, and a local ledger do not replace the owner-controlled offline key ceremony, authenticated production key/revocation distribution, formally signed RC, real arm64/NAS/Windows execution, or the production release/rollback chain. Production was not changed and overall status remains `NO_GO`.
 
+## Gate 19 Console and Visual UX Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Candidate source | Git revision `5505893710ab1d15e06495603dff08bf5c1e035f` | VERIFIED |
+| Exact-head CI | GitHub Actions run [`31529393933`](https://github.com/Hinln/xs-nexus/actions/runs/31529393933) | PASS, ALL 9 JOBS |
+| Dedicated Console job | GitHub Actions job [`93905489516`](https://github.com/Hinln/xs-nexus/actions/runs/31529393933/job/93905489516) | PASS |
+| Console artifact | GitHub artifact `9116327161`, `console-real-e2e-evidence` | PASS |
+| Artifact archive digest | `f6d4903febab15e6c92bd46ee91451bfbea849fae84a166afd4aa1c0b67632d6` | VERIFIED AGAINST GITHUB AND INDEPENDENT ZIP DOWNLOAD |
+| Downloaded evidence | `C:\Users\panyo\Documents\Codex\2026-07-29\yue\ci-evidence\31529393933-console` | PASS |
+| Downloaded inner manifest | `SHA256SUMS` hash `abe90dbf2525ee4587c1d521208253c262c3f3418d2ffee354b10cf7fcd78b31` | PASS, 139 LISTED = 139 DOWNLOADED FILES |
+| Playwright results | `results.json`, `scenario-matrix.tsv`, `browser-observations.json` | 8 EXPECTED, 0 UNEXPECTED/SKIPPED/FLAKY; 14 OBSERVATIONS; 0 PAGE ERROR/5XX |
+| Visual evidence | `screenshots/` | PASS, 132 PNG FILES ACROSS 6 VIEWPORTS AND REAL STATES |
+| Source guard | `source-guard.log` | PASS, REQUEST INTERCEPTION ABSENT |
+| Downloaded no-value scan | Same verified copy | PASS, 0 FINDINGS |
+| Full Gate 19 mapping and retained failure chain | `audit/production-readiness-remediation-v2/CONSOLE_VISUAL_UX.md` | PARTIAL |
+
+The matrix uses a dedicated real PostgreSQL schema, the actual Controller binary, a production Console build/preview and Chromium. It covers real loading, login, every management page, data initialization, rapid double activation, ACL/API boundaries, multi-tab stale-state rejection, all required viewports, destructive confirmation, auditor UI/server authorization, logout invalidation and real offline recovery. The current deployment does not use Redis in this path, and no Redis or API mock is substituted.
+
+Nine preceding workflow states retain the full diagnostic chain for ShellCheck, duplicate submission, browser pattern/trace handling, CSRF tab rotation, API contract assertions, selector ambiguity, hosted package infrastructure, successful-204 browser classification and artifact manifest portability. Two failed trace-bearing artifacts were deleted after diagnosis because they persisted generated test values; failed workflow logs remain. No final test was skipped, suppressed or weakened.
+
+Gate 19 remains `PARTIAL`. Internal hosted runtime and visual evidence cannot replace the owner-controlled planned-domain origin certificate/SNI/vhost, CDN strict routing, public browser/API/WebSocket path or deployment of the current branch. Production was not changed and overall status remains `NO_GO`.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.
@@ -263,5 +286,5 @@ Gate 18 remains `PARTIAL`. Hosted x86_64, development keys, namespace routes, tm
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
-- Gates 19/20/21/22/25 current-revision regressions. Gate 18's repository-side failure matrix is complete, while formal keys/ceremony, authenticated production distribution, signed RC, real target-platform execution, and the production release chain remain open. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gates 20/21/22/25 current-revision regressions. Gate 19's repository runtime/visual matrix is complete, while its Gate 13 planned-domain strict TLS/CDN/public browser path remains external. Gate 18's repository-side failure matrix is complete, while formal keys/ceremony, authenticated production distribution, signed RC, real target-platform execution, and the production release chain remain open. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

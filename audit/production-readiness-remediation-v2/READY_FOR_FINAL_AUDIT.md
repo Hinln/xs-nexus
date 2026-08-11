@@ -16,7 +16,7 @@ Current value: `NO`
 - [x] PostgreSQL Gate 16 is `PASS` with production reverse verification and retained rollback evidence.
 - [x] Gate 23 self-fixable findings pass exact-head CI and clean-checkout validation at `3bf8619`; failed evidence is dispositioned and sealed.
 - [ ] Host, planned-domain TLS, observability, defects, dependency, and deployment gates are `PASS`.
-- [ ] Linux recovery, Relay, Console, and performance gates are `PASS`; ACL and 1Panel coexistence are complete.
+- [ ] Linux recovery, Relay, and performance gates are `PASS`; Console's repository matrix is complete but Gate 19 remains `PARTIAL` pending Gate 13's public strict-TLS path; ACL and 1Panel coexistence are complete.
 - [ ] Real WAN, Windows, NAS, subnet router, and offsite restore gates are `PASS`.
 - [ ] Current signed RC has a successful mandatory 24-hour soak.
 - [x] Exact remediation revision CI, production upgrade, independent runtime verification, and rollback rehearsal are complete.

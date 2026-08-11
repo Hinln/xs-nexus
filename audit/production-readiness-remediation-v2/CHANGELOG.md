@@ -120,3 +120,14 @@
 - Retained eight failed runs/artifacts and fixed their root causes without skip, suppression, allowed failure, timeout reduction, or assertion weakening.
 - Candidate revision `b8cd49cf2be401cfe3b2d289a8cd1a50c3cc5bb1` passed all nine jobs in run `31515281011`; job `93858773221`, artifact `9110864186`, matching archive digest, eight inner hashes, and a zero-finding no-value scan pass.
 - Gate 18 remains `PARTIAL` because formal offline keys/ceremony, authenticated production distribution, a signed RC, real target-platform execution, and the production release/rollback chain remain absent. Production was not changed and overall status remains `NO_GO`.
+
+### Gate 19 real Console and visual matrix
+
+- Added a dedicated real-runtime Playwright matrix using an isolated PostgreSQL schema, the real Controller binary, a production Console build/preview and Chromium. A source guard rejects API and HAR interception.
+- Covered Controller stop/resume loading, bad and successful login, empty/initialized data, every management page, exact rapid-submit request count, tokens, two enrolled nodes, auditor creation, ACL default deny, 400/403/404 boundaries, concurrent stale-state 409, destructive cancel/single confirm, direct auditor bypass rejection, logout invalidation and real browser offline recovery.
+- Added six-viewport visual and accessibility coverage for login, all 16 management pages, node detail and not-found, plus initial real-data and loading/offline screenshots. The final artifact contains 132 PNG files and asserts document overflow, bounded table scrolling, accessible names and skip-link focus.
+- Fixed real defects found by the matrix: duplicate network creation, a Chromium-invalid username pattern, and cross-tab CSRF invalidation. Stable CSRF is domain-separated from the random HttpOnly session token; only hashes are stored.
+- Disabled real traces to avoid persisting filled test values. Corrected exact API-response assertions, Chromium's successful-204 pseudo-failure classification and artifact hidden-file manifest alignment without allowing genuine network failures or weakening product assertions.
+- Retained the complete workflow failure chain. Two failed trace-bearing artifacts were deleted for secret hygiene after diagnosis; immutable workflow logs remain and the successful artifact has a zero-finding no-value scan.
+- Exact revision `5505893710ab1d15e06495603dff08bf5c1e035f` passed all nine jobs in run `31529393933`; job `93905489516`, artifact `9116327161`, matching archive digest and exact 139/139 inner manifest pass.
+- Gate 19 remains `PARTIAL` because planned-domain strict origin TLS/SNI, CDN routing, the external public browser/API/WebSocket path and deployment of the current branch remain absent. Production was not changed and overall status remains `NO_GO`.
