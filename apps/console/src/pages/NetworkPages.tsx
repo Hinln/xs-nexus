@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
   createEnrollmentToken,
@@ -36,9 +36,12 @@ export function NetworksPage({ snapshot, user, csrfToken, onChanged }: WritableP
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submitInFlight = useRef(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
     const data = new FormData(event.currentTarget);
     setBusy(true);
     setError(null);
@@ -56,6 +59,7 @@ export function NetworksPage({ snapshot, user, csrfToken, onChanged }: WritableP
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "创建网络失败");
     } finally {
+      submitInFlight.current = false;
       setBusy(false);
     }
   };

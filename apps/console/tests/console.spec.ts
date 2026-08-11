@@ -110,6 +110,33 @@ test("审计员界面不提供写操作", async ({ page }) => {
   await expect(page.getByLabel(/的升级通道/)).toHaveCount(0);
 });
 
+test("网络创建阻止快速重复提交", async ({ page }) => {
+  await mockAuthenticatedApi(page, { snapshot: emptySnapshotFixture() });
+  let createRequests = 0;
+  await page.route("**/v1/admin/networks", async (route) => {
+    createRequests += 1;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
+    return fulfillJson(route, 201, {});
+  });
+
+  await page.goto("/#/networks");
+  await page.getByRole("button", { name: "创建网络" }).click();
+  await page.getByLabel("网络名称").fill("double-submit-guard");
+  await page.getByLabel("IPv4 地址池").fill("100.127.0.0/24");
+  const created = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/v1/admin/networks",
+  );
+  await page.getByRole("button", { name: "确认创建" }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  expect((await created).status()).toBe(201);
+  await page.waitForTimeout(250);
+  expect(createRequests).toBe(1);
+});
+
 test("更新页导入公开签名材料并以代次保护灰度策略", async ({ page }) => {
   await mockAuthenticatedApi(page);
   let importedBody: Record<string, unknown> | null = null;
