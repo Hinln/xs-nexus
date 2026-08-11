@@ -723,7 +723,6 @@ rollback_release() {
     validate_regular_file "$pinned_key" 'pinned release public key'
     old_release=$(current_release || true)
     [[ -n "$old_release" ]] || fail 'no current release is installed'
-    verify_installed_release "$old_release"
     if [[ -n "$rollback_version" ]]; then
         canonical_version "$rollback_version" || fail 'rollback version is invalid'
         case "$(uname -m)" in
@@ -740,6 +739,7 @@ rollback_release() {
     fi
     [[ "$release_name" != "$old_release" ]] || fail 'requested rollback release is already current'
     verify_manifest_not_revoked "$metadata_directory/$release_name.manifest"
+    verify_installed_release "$old_release"
     verify_installed_release "$release_name"
     was_active=false
     service_is_active && was_active=true
