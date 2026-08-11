@@ -10,12 +10,12 @@ TEMPORARY=$(mktemp -d)
 ENVIRONMENT_FILE="$TEMPORARY/coexistence.env"
 NETWORK_ID=''
 SENTINEL_ID=''
-NETWORKS_BEFORE=''
+NETWORK_INVENTORY_BEFORE=''
 DEFAULT_ROUTE_BEFORE=''
 
 cleanup() {
     local status=$?
-    local label network_removed=false networks_after route_after
+    local label network_removed=false network_inventory_after route_after
     set +e
     if [[ -n $SENTINEL_ID ]]; then
         label=$(docker inspect "$SENTINEL_ID" --format '{{index .Config.Labels "io.xs-nexus.onepanel-fixture"}}' 2>/dev/null || true)
@@ -43,11 +43,11 @@ cleanup() {
         fi
     fi
     rm -rf -- "$TEMPORARY"
-    if [[ -n $NETWORKS_BEFORE ]]; then
-        networks_after=$(docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort)
-        if [[ $networks_after != "$NETWORKS_BEFORE" ]]; then
-            printf 'Docker network baseline changed during the fixture\nbefore:\n%s\nafter:\n%s\n' \
-                "$NETWORKS_BEFORE" "$networks_after" >&2
+    if [[ -n $NETWORK_INVENTORY_BEFORE ]]; then
+        network_inventory_after=$(docker network ls --format '{{.Name}} {{.Driver}} {{.Scope}}' | sort)
+        if [[ $network_inventory_after != "$NETWORK_INVENTORY_BEFORE" ]]; then
+            printf 'Docker network inventory changed during the fixture\nbefore:\n%s\nafter:\n%s\n' \
+                "$NETWORK_INVENTORY_BEFORE" "$network_inventory_after" >&2
             status=1
         fi
     fi
@@ -58,6 +58,11 @@ cleanup() {
                 "$DEFAULT_ROUTE_BEFORE" "$route_after" >&2
             status=1
         fi
+    fi
+    if [[ $status -eq 0 ]]; then
+        printf 'fixture_cleanup_preserved_network_inventory=true\n'
+        printf 'fixture_cleanup_preserved_default_route=true\n'
+        printf '1Panel external-network runtime fixture passed\n'
     fi
     exit "$status"
 }
@@ -71,7 +76,7 @@ if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
     exit 1
 fi
 
-NETWORKS_BEFORE=$(docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort)
+NETWORK_INVENTORY_BEFORE=$(docker network ls --format '{{.Name}} {{.Driver}} {{.Scope}}' | sort)
 DEFAULT_ROUTE_BEFORE=$(ip -json route show default)
 NETWORK_ID=$(docker network create \
     --driver bridge \
@@ -134,4 +139,3 @@ printf 'compose_external_network_preserved=true\n'
 printf 'docker_daemon_restart_preserved_network=true\n'
 printf 'docker_daemon_restart_preserved_sentinel=true\n'
 printf 'host_default_route_preserved=true\n'
-printf '1Panel external-network runtime fixture passed\n'
