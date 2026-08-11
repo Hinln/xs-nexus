@@ -460,7 +460,8 @@ test.describe.serial("真实生产 Console 完整矩阵", () => {
       cooldown_until: expect.any(String),
       configuration_version: expect.any(Number),
     });
-    await expect(row.getByText("已吊销", { exact: true })).toBeVisible();
+    await expect(row.locator(".status-pill", { hasText: "已吊销" })).toBeVisible();
+    await expect(row.locator(".action-stack .muted")).toHaveText("已吊销");
     await expect(row.getByRole("button", { name: "吊销凭证" })).toHaveCount(0);
     expect(revokeRequests).toBe(1);
     page.off("request", countRevocations);
