@@ -114,6 +114,7 @@ test("更新页导入公开签名材料并以代次保护灰度策略", async ({
   await mockAuthenticatedApi(page);
   let importedBody: Record<string, unknown> | null = null;
   let policyBody: Record<string, unknown> | null = null;
+  let revocationBody: Record<string, unknown> | null = null;
   await page.unroute("**/v1/admin/update-releases");
   await page.route("**/v1/admin/update-releases", (route) => {
     if (route.request().method() === "POST") {
@@ -131,6 +132,14 @@ test("更新页导入公开签名材料并以代次保护灰度策略", async ({
       paused: false,
     });
   });
+  await page.route("**/v1/admin/update-releases/*/revoke", (route) => {
+    revocationBody = route.request().postDataJSON() as Record<string, unknown>;
+    return fulfillJson(route, 200, {
+      ...updateReleasesFixture[0],
+      revoked_at: "2026-08-11T00:00:00Z",
+      revocation_reason: "security_issue",
+    });
+  });
 
   await page.goto("/#/updates");
   await expect(page.getByRole("heading", { name: "已验证发布" })).toBeVisible();
@@ -138,7 +147,7 @@ test("更新页导入公开签名材料并以代次保护灰度策略", async ({
   await page.getByLabel("发布清单").setInputFiles({
     name: "xs-nexus-0.3.0.manifest",
     mimeType: "text/plain",
-    buffer: Buffer.from("schema_version=1\nproduct=xs-nexus\nversion=0.3.0\n"),
+    buffer: Buffer.from("schema_version=2\nproduct=xs-nexus\nversion=0.3.0\n"),
   });
   await page.getByLabel("Ed25519 签名").setInputFiles({
     name: "xs-nexus-0.3.0.manifest.sig",
@@ -167,6 +176,15 @@ test("更新页导入公开签名材料并以代次保护灰度策略", async ({
     rollout_basis_points: 5000,
     paused: false,
   });
+
+  await page.getByLabel("发布 0.2.0 的撤销原因").selectOption("security_issue");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("不可逆撤销发布 0.2.0");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "撤销", exact: true }).click();
+  await expect(page.getByText("发布 0.2.0 已撤销；引用策略已暂停。")).toBeVisible();
+  expect(revocationBody).toEqual({ reason: "security_issue" });
 });
 
 test("更新页通过签名配置切换节点通道并保护配置版本", async ({ page }) => {

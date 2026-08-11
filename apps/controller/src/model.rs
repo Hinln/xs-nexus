@@ -189,6 +189,12 @@ pub struct CreateUpdateReleaseRequest {
     pub archive_url: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RevokeUpdateReleaseRequest {
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct UpdateReleaseResponse {
     pub id: Uuid,
@@ -200,6 +206,8 @@ pub struct UpdateReleaseResponse {
     pub archive_size: u64,
     pub archive_sha256: String,
     pub archive_url: String,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub revocation_reason: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

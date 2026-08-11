@@ -18,7 +18,7 @@ use crate::{
         CreateEnrollmentTokenRequest, CreateNetworkRequest, CreateUpdateReleaseRequest,
         EnrollRequest, ExplainAclRequest, HealthResponse, ReplaceAclPolicyRequest,
         ReplaceNodeUpdateChannelRequest, ReplaceSubnetRoutesRequest, ReplaceUpdatePolicyRequest,
-        RevokeNodeRequest,
+        RevokeNodeRequest, RevokeUpdateReleaseRequest,
     },
     state::AppState,
 };
@@ -49,6 +49,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/admin/update-releases",
             get(list_update_releases).post(create_update_release),
+        )
+        .route(
+            "/v1/admin/update-releases/{release_id}/revoke",
+            post(revoke_update_release),
         )
         .route(
             "/v1/admin/networks",
@@ -178,6 +182,18 @@ async fn list_update_releases(
 ) -> Result<Json<Vec<crate::model::UpdateReleaseResponse>>, ApiError> {
     auth::authorize(&state, &headers, Permission::Read, false).await?;
     Ok(Json(crate::updates::list_releases(&state).await?))
+}
+
+async fn revoke_update_release(
+    State(state): State<AppState>,
+    Path(release_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+    ApiJson(request): ApiJson<RevokeUpdateReleaseRequest>,
+) -> Result<Json<crate::model::UpdateReleaseResponse>, ApiError> {
+    let actor = auth::authorize(&state, &headers, Permission::Manage, true).await?;
+    Ok(Json(
+        crate::updates::revoke_release(&state, release_id, request, &actor).await?,
+    ))
 }
 
 async fn list_update_policies(

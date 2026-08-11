@@ -7,6 +7,7 @@ import {
   loadUpdateReleases,
   replaceNodeUpdateChannel,
   replaceUpdatePolicy,
+  revokeUpdateRelease,
 } from "../api";
 import {
   EmptyState,
@@ -123,7 +124,11 @@ export function UpdatesPage({ snapshot, user, csrfToken, onSnapshotChanged }: Up
   }, [networkKey, policyNetworkId, snapshot.networks]);
 
   const compatibleReleases = useMemo(
-    () => data.releases.filter((release) => release.platform === "linux" && release.architecture === policyArchitecture),
+    () => data.releases.filter((release) =>
+      release.platform === "linux" &&
+      release.architecture === policyArchitecture &&
+      release.revoked_at === null
+    ),
     [data.releases, policyArchitecture],
   );
   const currentPolicy = data.policies.find((policy) =>
@@ -256,7 +261,7 @@ export function UpdatesPage({ snapshot, user, csrfToken, onSnapshotChanged }: Up
                 <label>Ed25519 签名<input name="signature" type="file" accept=".sig,application/octet-stream" required /></label>
                 <label>HTTPS 归档地址<input name="archive_url" type="url" required placeholder="https://updates.example/xs-nexus-1.2.3-x86_64-unknown-linux-gnu.tar.gz" autoComplete="off" /></label>
               </div>
-              <Notice>Controller 会再次验证签名、九字段清单、归档文件名和 HTTPS 地址；导入后内容不可修改。</Notice>
+              <Notice>Controller 会再次验证签名、十二字段清单、归档文件名和 HTTPS 地址；导入后内容不可修改，只能执行不可逆撤销。</Notice>
               {releaseError ? <Notice tone="danger">{releaseError}</Notice> : null}
               <button className="button button--primary" type="submit" disabled={releaseBusy}>{releaseBusy ? "正在验证并导入" : "验证并导入"}</button>
             </form>
@@ -287,6 +292,7 @@ export function UpdatesPage({ snapshot, user, csrfToken, onSnapshotChanged }: Up
             canManage={canManage}
             csrfToken={csrfToken}
             onSnapshotChanged={onSnapshotChanged}
+            onUpdatesChanged={refresh}
           />
         </>
       )}
@@ -301,6 +307,7 @@ function UpdateTables({
   canManage,
   csrfToken,
   onSnapshotChanged,
+  onUpdatesChanged,
 }: {
   snapshot: ConsoleSnapshot;
   releases: UpdateRelease[];
@@ -308,6 +315,7 @@ function UpdateTables({
   canManage: boolean;
   csrfToken: string;
   onSnapshotChanged: () => Promise<void>;
+  onUpdatesChanged: () => Promise<void>;
 }) {
   const channelKey = snapshot.nodes
     .map((node) => `${node.id}:${node.update_channel.value ?? "stable"}`)
@@ -316,6 +324,10 @@ function UpdateTables({
   const [channelBusy, setChannelBusy] = useState<string | null>(null);
   const [channelError, setChannelError] = useState<string | null>(null);
   const [channelNotice, setChannelNotice] = useState<string | null>(null);
+  const [revocationReasons, setRevocationReasons] = useState<Record<string, "build_error" | "key_compromise" | "security_issue" | "superseded" | "withdrawn">>({});
+  const [revocationBusy, setRevocationBusy] = useState<string | null>(null);
+  const [revocationError, setRevocationError] = useState<string | null>(null);
+  const [revocationNotice, setRevocationNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setDraftChannels(Object.fromEntries(
@@ -357,18 +369,39 @@ function UpdateTables({
     }
   };
 
+  const revokeRelease = async (release: UpdateRelease) => {
+    const reason = revocationReasons[release.id] ?? "withdrawn";
+    if (!window.confirm(`确认不可逆撤销发布 ${release.version}（${release.architecture}）？\n\n所有引用策略会立即暂停并递增代次，Controller 将停止下发该发布。`)) {
+      return;
+    }
+    setRevocationBusy(release.id);
+    setRevocationError(null);
+    setRevocationNotice(null);
+    try {
+      await revokeUpdateRelease(release.id, reason, csrfToken);
+      await onUpdatesChanged();
+      setRevocationNotice(`发布 ${release.version} 已撤销；引用策略已暂停。`);
+    } catch (cause) {
+      setRevocationError(cause instanceof Error ? cause.message : "发布撤销失败");
+    } finally {
+      setRevocationBusy(null);
+    }
+  };
+
   return (
     <div className="update-sections">
       <section aria-labelledby="release-list-title">
         <h2 id="release-list-title">已验证发布</h2>
+        {revocationNotice ? <Notice>{revocationNotice}</Notice> : null}
+        {revocationError ? <Notice tone="danger">{revocationError}</Notice> : null}
         {releases.length === 0 ? <EmptyState title="尚无签名发布" description="先由离线发布流程生成清单和签名，再导入公开材料。" /> : (
-          <div className="table-shell"><table><caption>已验证更新发布</caption><thead><tr><th scope="col">版本</th><th scope="col">目标</th><th scope="col">归档</th><th scope="col">大小</th><th scope="col">SHA-256</th><th scope="col">导入时间</th></tr></thead><tbody>{releases.map((release) => <tr key={release.id}><td><strong>{release.version}</strong><span className="cell-secondary">{release.platform} · {release.architecture}</span></td><td><code>{release.target}</code></td><td><a href={release.archive_url} target="_blank" rel="noreferrer">{release.archive_name}</a></td><td>{formatBytes(release.archive_size)}</td><td><code className="long-value" title={release.archive_sha256}>{release.archive_sha256}</code></td><td>{formatDateTime(release.created_at)}</td></tr>)}</tbody></table></div>
+          <div className="table-shell"><table><caption>已验证更新发布</caption><thead><tr><th scope="col">版本</th><th scope="col">目标</th><th scope="col">归档</th><th scope="col">大小</th><th scope="col">SHA-256</th><th scope="col">状态</th><th scope="col">导入时间</th>{canManage ? <th scope="col">操作</th> : null}</tr></thead><tbody>{releases.map((release) => <tr key={release.id}><td><strong>{release.version}</strong><span className="cell-secondary">{release.platform} · {release.architecture}</span></td><td><code>{release.target}</code></td><td><a href={release.archive_url} target="_blank" rel="noreferrer">{release.archive_name}</a></td><td>{formatBytes(release.archive_size)}</td><td><code className="long-value" title={release.archive_sha256}>{release.archive_sha256}</code></td><td><StatusPill state={release.revoked_at ? "revoked" : "active"} label={release.revoked_at ? `已撤销：${release.revocation_reason ?? "unknown"}` : "可用"} /></td><td>{formatDateTime(release.created_at)}</td>{canManage ? <td>{release.revoked_at ? formatDateTime(release.revoked_at) : <div className="inline-control"><select aria-label={`发布 ${release.version} 的撤销原因`} value={revocationReasons[release.id] ?? "withdrawn"} disabled={revocationBusy === release.id} onChange={(event) => setRevocationReasons((current) => ({ ...current, [release.id]: event.target.value as "build_error" | "key_compromise" | "security_issue" | "superseded" | "withdrawn" }))}><option value="withdrawn">主动撤回</option><option value="superseded">已替代</option><option value="build_error">构建错误</option><option value="security_issue">安全问题</option><option value="key_compromise">密钥风险</option></select><button className="button button--danger" type="button" disabled={revocationBusy === release.id} onClick={() => void revokeRelease(release)}>{revocationBusy === release.id ? "撤销中" : "撤销"}</button></div>}</td> : null}</tr>)}</tbody></table></div>
         )}
       </section>
       <section aria-labelledby="policy-list-title">
         <h2 id="policy-list-title">当前灰度策略</h2>
         {policies.length === 0 ? <EmptyState title="尚无更新策略" description="没有策略时 Controller 不会向节点下发更新。" /> : (
-          <div className="table-shell"><table><caption>当前更新灰度策略</caption><thead><tr><th scope="col">网络</th><th scope="col">范围</th><th scope="col">目标</th><th scope="col">最低版本</th><th scope="col">灰度</th><th scope="col">状态</th><th scope="col">代次</th></tr></thead><tbody>{policies.map((policy) => <tr key={`${policy.network_id}-${policy.channel}-${policy.platform}-${policy.architecture}`}><td>{snapshot.networks.find((network) => network.id === policy.network_id)?.name ?? policy.network_id}</td><td>{channelLabel(policy.channel)}<span className="cell-secondary">{policy.platform} · {policy.architecture}</span></td><td><strong>{policy.release.version}</strong></td><td>{policy.minimum_version ?? "—"}</td><td>{(policy.rollout_basis_points / 100).toFixed(2)}%</td><td><StatusPill state={policy.paused ? "paused" : "active"} label={policy.paused ? "已暂停" : "下发中"} /></td><td>{policy.generation}<span className="cell-secondary">{formatDateTime(policy.updated_at)}</span></td></tr>)}</tbody></table></div>
+          <div className="table-shell"><table><caption>当前更新灰度策略</caption><thead><tr><th scope="col">网络</th><th scope="col">范围</th><th scope="col">目标</th><th scope="col">最低版本</th><th scope="col">灰度</th><th scope="col">状态</th><th scope="col">代次</th></tr></thead><tbody>{policies.map((policy) => <tr key={`${policy.network_id}-${policy.channel}-${policy.platform}-${policy.architecture}`}><td>{snapshot.networks.find((network) => network.id === policy.network_id)?.name ?? policy.network_id}</td><td>{channelLabel(policy.channel)}<span className="cell-secondary">{policy.platform} · {policy.architecture}</span></td><td><strong>{policy.release.version}</strong></td><td>{policy.minimum_version ?? "—"}</td><td>{(policy.rollout_basis_points / 100).toFixed(2)}%</td><td><StatusPill state={policy.release.revoked_at ? "revoked" : policy.paused ? "paused" : "active"} label={policy.release.revoked_at ? "发布已撤销" : policy.paused ? "已暂停" : "下发中"} /></td><td>{policy.generation}<span className="cell-secondary">{formatDateTime(policy.updated_at)}</span></td></tr>)}</tbody></table></div>
         )}
       </section>
       <section aria-labelledby="node-update-title">

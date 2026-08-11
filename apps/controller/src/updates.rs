@@ -15,8 +15,8 @@ use crate::{
     auth::ManagementActor,
     error::ApiError,
     model::{
-        CreateUpdateReleaseRequest, ReplaceUpdatePolicyRequest, UpdatePolicyResponse,
-        UpdateReleaseResponse,
+        CreateUpdateReleaseRequest, ReplaceUpdatePolicyRequest, RevokeUpdateReleaseRequest,
+        UpdatePolicyResponse, UpdateReleaseResponse,
     },
     service::AuthenticatedNode,
     state::AppState,
@@ -33,6 +33,8 @@ struct ReleaseRow {
     archive_size: i64,
     archive_sha256: Vec<u8>,
     archive_url: String,
+    revoked_at: Option<DateTime<Utc>>,
+    revocation_reason: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -54,6 +56,8 @@ struct PolicyRow {
     archive_size: i64,
     archive_sha256: Vec<u8>,
     archive_url: String,
+    release_revoked_at: Option<DateTime<Utc>>,
+    release_revocation_reason: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -144,7 +148,8 @@ pub(crate) async fn create_release(
           created_by_type, created_by_id)
          VALUES ($1, $2, 'linux', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id, version, platform, architecture, target, archive_name,
-                   archive_size, archive_sha256, archive_url, created_at",
+                   archive_size, archive_sha256, archive_url, revoked_at,
+                   revocation_reason, created_at",
     )
     .bind(id)
     .bind(manifest.version.to_string())
@@ -186,7 +191,8 @@ pub(crate) async fn list_releases(
 ) -> Result<Vec<UpdateReleaseResponse>, ApiError> {
     let rows = sqlx::query_as::<_, ReleaseRow>(
         "SELECT id, version, platform, architecture, target, archive_name,
-                archive_size, archive_sha256, archive_url, created_at
+                archive_size, archive_sha256, archive_url, revoked_at,
+                revocation_reason, created_at
          FROM update_releases
          ORDER BY created_at DESC, id
          LIMIT 256",
@@ -195,6 +201,82 @@ pub(crate) async fn list_releases(
     .await
     .map_err(internal_database)?;
     rows.into_iter().map(release_response).collect()
+}
+
+pub(crate) async fn revoke_release(
+    state: &AppState,
+    release_id: Uuid,
+    request: RevokeUpdateReleaseRequest,
+    actor: &ManagementActor,
+) -> Result<UpdateReleaseResponse, ApiError> {
+    if !valid_revocation_reason(&request.reason) {
+        return Err(ApiError::validation());
+    }
+    let mut transaction = state.pool.begin().await.map_err(internal_database)?;
+    let current = sqlx::query_as::<_, ReleaseRow>(
+        "SELECT id, version, platform, architecture, target, archive_name,
+                archive_size, archive_sha256, archive_url, revoked_at,
+                revocation_reason, created_at
+         FROM update_releases WHERE id = $1 FOR UPDATE",
+    )
+    .bind(release_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    if current.revoked_at.is_some() {
+        return Err(ApiError::conflict());
+    }
+
+    let revoked = sqlx::query_as::<_, ReleaseRow>(
+        "UPDATE update_releases
+         SET revoked_at = now(), revoked_by_type = $2, revoked_by_id = $3,
+             revocation_reason = $4
+         WHERE id = $1 AND revoked_at IS NULL
+         RETURNING id, version, platform, architecture, target, archive_name,
+                   archive_size, archive_sha256, archive_url, revoked_at,
+                   revocation_reason, created_at",
+    )
+    .bind(release_id)
+    .bind(actor.actor_type())
+    .bind(actor.actor_id())
+    .bind(&request.reason)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(map_write_error)?;
+    let mut affected_networks = sqlx::query_scalar::<_, Uuid>(
+        "UPDATE update_rollout_policies
+         SET paused = true, generation = generation + 1,
+             updated_by_type = $2, updated_by_id = $3, updated_at = now()
+         WHERE release_id = $1
+         RETURNING network_id",
+    )
+    .bind(release_id)
+    .bind(actor.actor_type())
+    .bind(actor.actor_id())
+    .fetch_all(&mut *transaction)
+    .await
+    .map_err(map_write_error)?;
+    append_audit(
+        &mut transaction,
+        actor,
+        None,
+        "update.release.revoke",
+        "update_release",
+        release_id.to_string(),
+        json!({
+            "reason": request.reason,
+            "paused_policy_count": affected_networks.len(),
+        }),
+    )
+    .await?;
+    transaction.commit().await.map_err(internal_database)?;
+    affected_networks.sort_unstable();
+    affected_networks.dedup();
+    for network_id in affected_networks {
+        state.notify_update_changed(network_id);
+    }
+    release_response(revoked)
 }
 
 pub(crate) async fn replace_policy(
@@ -227,7 +309,8 @@ pub(crate) async fn replace_policy(
     }
     let release = sqlx::query_as::<_, ReleaseRow>(
         "SELECT id, version, platform, architecture, target, archive_name,
-                archive_size, archive_sha256, archive_url, created_at
+                archive_size, archive_sha256, archive_url, revoked_at,
+                revocation_reason, created_at
          FROM update_releases WHERE id = $1",
     )
     .bind(request.release_id)
@@ -235,7 +318,10 @@ pub(crate) async fn replace_policy(
     .await
     .map_err(internal_database)?
     .ok_or_else(ApiError::not_found)?;
-    if release.platform != platform || release.architecture != architecture {
+    if release.platform != platform
+        || release.architecture != architecture
+        || release.revoked_at.is_some()
+    {
         return Err(ApiError::validation());
     }
     let target_version = release
@@ -368,7 +454,8 @@ pub(crate) async fn list_policies(
         "SELECT p.network_id, p.channel, p.platform, p.architecture, p.release_id,
                 p.minimum_version, p.rollout_basis_points, p.paused, p.generation,
                 p.updated_at, r.version, r.target, r.archive_name, r.archive_size,
-                r.archive_sha256, r.archive_url, r.created_at
+                r.archive_sha256, r.archive_url, r.revoked_at AS release_revoked_at,
+                r.revocation_reason AS release_revocation_reason, r.created_at
          FROM update_rollout_policies p
          JOIN update_releases r ON r.id = p.release_id
          WHERE p.network_id = $1
@@ -391,6 +478,8 @@ pub(crate) async fn list_policies(
                 archive_size: row.archive_size,
                 archive_sha256: row.archive_sha256,
                 archive_url: row.archive_url,
+                revoked_at: row.release_revoked_at,
+                revocation_reason: row.release_revocation_reason,
                 created_at: row.created_at,
             };
             policy_response(
@@ -518,7 +607,8 @@ async fn directive_for_report(
          FROM update_rollout_policies p
          JOIN update_releases r ON r.id = p.release_id
          WHERE p.network_id = $1 AND p.channel = $2
-           AND p.platform = $3 AND p.architecture = $4",
+           AND p.platform = $3 AND p.architecture = $4
+           AND r.revoked_at IS NULL",
     )
     .bind(authenticated.network_id)
     .bind(channel_name(report.update_channel))
@@ -644,6 +734,13 @@ fn valid_error_code(value: &str) -> bool {
         })
 }
 
+fn valid_revocation_reason(value: &str) -> bool {
+    matches!(
+        value,
+        "build_error" | "key_compromise" | "security_issue" | "superseded" | "withdrawn"
+    )
+}
+
 const fn update_state_name(state: AgentUpdateState) -> &'static str {
     match state {
         AgentUpdateState::Idle => "idle",
@@ -694,6 +791,8 @@ fn release_response(row: ReleaseRow) -> Result<UpdateReleaseResponse, ApiError> 
         archive_size: u64::try_from(row.archive_size).map_err(|_| ApiError::internal())?,
         archive_sha256: encode_lower_hex(&row.archive_sha256),
         archive_url: row.archive_url,
+        revoked_at: row.revoked_at,
+        revocation_reason: row.revocation_reason,
         created_at: row.created_at,
     })
 }

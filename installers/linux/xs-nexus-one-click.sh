@@ -33,7 +33,7 @@ trap cleanup EXIT INT TERM HUP
 install_prerequisites() {
     local -a missing=()
     local command
-    for command in curl openssl tar gzip sha256sum stat flock getent useradd groupadd runuser systemctl hostname sed tr cut awk grep sort mktemp getconf install; do
+    for command in cmp curl openssl tar gzip sha256sum stat flock getent useradd groupadd runuser systemctl hostname sed tr cut awk grep sort mktemp getconf install; do
         command -v "$command" >/dev/null 2>&1 || missing+=("$command")
     done
     ((${#missing[@]} > 0)) || return 0
@@ -55,7 +55,7 @@ install_prerequisites() {
         fail "missing commands (${missing[*]}) and no supported package manager was found"
     fi
 
-    for command in curl openssl tar gzip sha256sum stat flock getent useradd groupadd runuser systemctl hostname sed tr cut awk grep sort mktemp getconf install; do
+    for command in cmp curl openssl tar gzip sha256sum stat flock getent useradd groupadd runuser systemctl hostname sed tr cut awk grep sort mktemp getconf install; do
         command -v "$command" >/dev/null 2>&1 || fail "required command is unavailable after package installation: $command"
     done
 }
@@ -77,6 +77,58 @@ fetch_https() {
         --output "$destination" \
         "$url"
     [[ -f "$destination" && ! -L "$destination" ]] || fail 'download did not create a regular file'
+}
+
+verify_release_signature() {
+    local key_bundle=$1 manifest_path=$2 signature_path=$3
+    local key_directory candidate accepted verified=false key_count=0
+    local -a accepted_keys=()
+    key_directory="$temporary_directory/public-keys"
+    mkdir "$key_directory"
+    awk -v directory="$key_directory" '
+        BEGIN { inside = 0; count = 0 }
+        /^-----BEGIN PUBLIC KEY-----$/ {
+            if (inside || count == 4) exit 1
+            count += 1
+            inside = 1
+            path = sprintf("%s/key-%d.pem", directory, count)
+            print >path
+            next
+        }
+        /^-----END PUBLIC KEY-----$/ {
+            if (!inside) exit 1
+            print >>path
+            inside = 0
+            next
+        }
+        {
+            if (!inside || $0 !~ /^[A-Za-z0-9+\/=]+$/) exit 1
+            print >>path
+        }
+        END { if (inside || count == 0) exit 1 }
+    ' "$key_bundle" || fail 'release public key bundle is invalid'
+    for candidate in "$key_directory"/key-*.pem; do
+        openssl pkey -pubin -in "$candidate" -noout >/dev/null 2>&1 \
+            || fail 'release public key bundle is invalid'
+        for accepted in "${accepted_keys[@]}"; do
+            cmp -s "$candidate" "$accepted" || continue
+            fail 'release public key bundle contains a duplicate key'
+        done
+        accepted_keys+=("$candidate")
+        key_count=$((key_count + 1))
+        if openssl pkeyutl -verify -rawin -pubin -inkey "$candidate" \
+            -in "$manifest_path" -sigfile "$signature_path" >/dev/null 2>&1; then
+            verified=true
+        fi
+    done
+    [[ $key_count -ge 1 && $key_count -le 4 && $verified == true ]] \
+        || fail 'release signature verification failed'
+}
+
+canonical_positive_u64() {
+    local value=$1
+    [[ $value =~ ^[1-9][0-9]{0,19}$ ]] || return 1
+    ((${#value} < 20)) || [[ $value < 18446744073709551616 ]]
 }
 
 verify_payload_manifest() {
@@ -191,14 +243,12 @@ fetch_https "$RELEASE_BASE_URL/release-public-key.pem" "$public_key"
 [[ $(stat -c '%s' "$public_key") -le 8192 ]] || fail 'release public key is oversized'
 [[ $(sha256sum "$public_key" | awk '{print $1}') == "$RELEASE_PUBLIC_KEY_SHA256" ]] \
     || fail 'release public key fingerprint verification failed'
-openssl pkey -pubin -in "$public_key" -noout >/dev/null 2>&1 || fail 'release public key is invalid'
 
 fetch_https "$RELEASE_BASE_URL/$manifest_name" "$manifest"
 fetch_https "$RELEASE_BASE_URL/$signature_name" "$signature"
 [[ $(stat -c '%s' "$manifest") -le 4096 ]] || fail 'release manifest is oversized'
 [[ $(stat -c '%s' "$signature") -eq 64 ]] || fail 'release signature length is invalid'
-openssl pkeyutl -verify -rawin -pubin -inkey "$public_key" -in "$manifest" -sigfile "$signature" \
-    >/dev/null 2>&1 || fail 'release signature verification failed'
+verify_release_signature "$public_key" "$manifest" "$signature"
 
 mapfile -t manifest_lines <"$manifest"
 [[ ${#manifest_lines[@]} -eq 12 ]] || fail 'release manifest field count is invalid'
@@ -206,7 +256,8 @@ mapfile -t manifest_lines <"$manifest"
 [[ ${manifest_lines[1]} == 'product=xs-nexus' ]] || fail 'release manifest product is invalid'
 [[ ${manifest_lines[2]} == "version=$RELEASE_VERSION" ]] || fail 'release manifest version is invalid'
 [[ ${manifest_lines[3]} =~ ^source_commit=[0-9a-f]{40}$ ]] || fail 'release manifest source commit is invalid'
-[[ ${manifest_lines[4]} =~ ^source_date_epoch=[0-9]+$ ]] || fail 'release manifest source date epoch is invalid'
+[[ ${manifest_lines[4]} =~ ^source_date_epoch=(.*)$ ]] || fail 'release manifest source date epoch is invalid'
+canonical_positive_u64 "${BASH_REMATCH[1]}" || fail 'release manifest source date epoch is invalid'
 [[ ${manifest_lines[5]} == 'protocol_version=XSP/1' ]] || fail 'release manifest protocol version is invalid'
 [[ ${manifest_lines[6]} == 'platform=linux' ]] || fail 'release manifest platform is invalid'
 [[ ${manifest_lines[7]} == "architecture=$architecture" ]] || fail 'release manifest architecture is invalid'

@@ -200,6 +200,7 @@ async fn assert_update_release_and_rollout(router: &Router, pool: &sqlx::PgPool,
     let fixture = update_release_fixture();
     let release_id = assert_update_release_import(router, &fixture).await;
     assert_update_policy_lifecycle(router, pool, network_id, &release_id, &fixture).await;
+    assert_update_release_revocation(router, pool, network_id, &release_id).await;
 }
 
 struct UpdateReleaseFixture {
@@ -210,9 +211,12 @@ struct UpdateReleaseFixture {
 
 fn update_release_fixture() -> UpdateReleaseFixture {
     let manifest = concat!(
-        "schema_version=1\n",
+        "schema_version=2\n",
         "product=xs-nexus\n",
         "version=0.2.0\n",
+        "source_commit=0123456789abcdef0123456789abcdef01234567\n",
+        "source_date_epoch=1700000000\n",
+        "protocol_version=XSP/1\n",
         "platform=linux\n",
         "architecture=x86_64\n",
         "target=x86_64-unknown-linux-gnu\n",
@@ -283,6 +287,8 @@ async fn assert_update_release_import(router: &Router, fixture: &UpdateReleaseFi
     assert_eq!(release["platform"], "linux");
     assert_eq!(release["architecture"], "x86_64");
     assert_eq!(release["archive_size"], 4096);
+    assert!(release["revoked_at"].is_null());
+    assert!(release["revocation_reason"].is_null());
     assert!(release.get("manifest_base64").is_none());
     assert!(release.get("signature_base64").is_none());
     let release_id = release["id"].as_str().expect("release id").to_owned();
@@ -430,6 +436,99 @@ async fn assert_update_persistence_and_audit(pool: &sqlx::PgPool, fixture: &Upda
         assert!(!metadata.contains(&URL_SAFE_NO_PAD.encode(fixture.signature)));
         assert!(!metadata.contains("updates.example.test"));
     }
+}
+
+async fn assert_update_release_revocation(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    network_id: &str,
+    release_id: &str,
+) {
+    let path = format!("/v1/admin/update-releases/{release_id}/revoke");
+    let (unauthorized_status, _) = request_json(
+        router,
+        Method::POST,
+        &path,
+        Some(json!({ "reason": "security_issue" })),
+        None,
+    )
+    .await;
+    assert_eq!(unauthorized_status, StatusCode::UNAUTHORIZED);
+
+    let (invalid_status, _) = request_json(
+        router,
+        Method::POST,
+        &path,
+        Some(json!({ "reason": "free-form reason" })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(invalid_status, StatusCode::BAD_REQUEST);
+
+    let (revoked_status, revoked) = request_json(
+        router,
+        Method::POST,
+        &path,
+        Some(json!({ "reason": "security_issue" })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(revoked_status, StatusCode::OK);
+    assert_eq!(revoked["id"], release_id);
+    assert_eq!(revoked["revocation_reason"], "security_issue");
+    assert!(revoked["revoked_at"].is_string());
+
+    let (duplicate_status, _) = request_json(
+        router,
+        Method::POST,
+        &path,
+        Some(json!({ "reason": "withdrawn" })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(duplicate_status, StatusCode::CONFLICT);
+
+    let policy_path =
+        format!("/v1/admin/networks/{network_id}/update-policies/stable/linux/x86_64");
+    let (policy_status, _) = request_json(
+        router,
+        Method::PUT,
+        &policy_path,
+        Some(json!({
+            "expected_generation": 3,
+            "release_id": release_id,
+            "minimum_version": "0.1.0",
+            "rollout_basis_points": 10000,
+            "paused": false
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(policy_status, StatusCode::BAD_REQUEST);
+
+    let stored: (bool, String, bool, i64) = sqlx::query_as(
+        "SELECT r.revoked_at IS NOT NULL, r.revocation_reason, p.paused, p.generation
+         FROM update_releases r
+         JOIN update_rollout_policies p ON p.release_id = r.id
+         WHERE r.id = $1",
+    )
+    .bind(Uuid::parse_str(release_id).expect("release id"))
+    .fetch_one(pool)
+    .await
+    .expect("revoked release state");
+    assert_eq!(stored, (true, "security_issue".to_owned(), true, 3));
+
+    let audit_metadata: String = sqlx::query_scalar(
+        "SELECT metadata::text FROM audit_events
+         WHERE action = 'update.release.revoke' AND target_id = $1",
+    )
+    .bind(release_id)
+    .fetch_one(pool)
+    .await
+    .expect("release revocation audit");
+    assert!(audit_metadata.contains("security_issue"));
+    assert!(!audit_metadata.contains("signature"));
+    assert!(!audit_metadata.contains("updates.example.test"));
 }
 
 async fn assert_database_pool_recovers_after_backend_termination(

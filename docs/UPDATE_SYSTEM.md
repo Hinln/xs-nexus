@@ -10,8 +10,13 @@ Console E2E, and visual tests. Production release signing remains an operator ga
 - The Controller receives only the raw 32-byte Ed25519 public key through
   `UPDATE_SIGNING_PUBLIC_KEY_PATH`. If the variable is absent, release import is unavailable and
   the Console reports the reason instead of pretending the capability exists.
-- Each Agent pins the PEM release public key at `/etc/xs-nexus/release-public-key.pem`. The first
-  signed install creates this pin; later installs and updates reject a different key.
+- Each Agent pins a canonical bundle of one to four PEM release public keys at
+  `/etc/xs-nexus/release-public-key.pem`. The first signed install creates this pin; later installs
+  require the exact same bundle. Rotation therefore uses an authenticated operator step that first
+  installs an old-plus-new overlap bundle, transitions signing, and only then retires the old key.
+- Host application requires the pinned bundle and optional `release-revocations` ledger to be
+  root-owned and not group/world writable. The ledger is a sorted set of signed-manifest SHA-256
+  values and is checked before staging, again by the privileged helper, and before rollback.
 - A Controller directive is scheduling input, not installation authority. The unprivileged Agent
   and the root update helper independently verify the release manifest, signature, target,
   archive name, size, SHA-256, and package contents.
@@ -19,10 +24,11 @@ Console E2E, and visual tests. Production release signing remains an operator ga
 ## Release and policy model
 
 A release is an immutable signed Linux manifest plus its exact HTTPS archive URL. The manifest is
-the same strict nine-field format consumed by the Linux installer. Versions are canonical
-`major.minor.patch`; supported targets are Linux `x86_64` and `aarch64`. Duplicate manifests,
-signature failures, URL/file-name drift, non-HTTPS URLs, and attempts to mutate an existing
-release fail closed.
+the strict schema-2 twelve-field format consumed by the Linux installer: product, canonical
+`major.minor.patch`, exact source commit, positive source-date epoch, `XSP/1`, platform,
+architecture, target, archive name, bounded size, and SHA-256. Supported targets are Linux
+`x86_64` and `aarch64`. Duplicate manifests, signature failures, provenance drift,
+URL/file-name drift, non-HTTPS URLs, and attempts to mutate an existing release fail closed.
 
 Policies are keyed by network, channel, platform, and architecture. Channels are `stable`,
 `testing`, and `development`. A policy contains the target release, optional minimum version,
@@ -33,6 +39,12 @@ rollout percentage in basis points, pause state, and optimistic generation. Eval
 3. a node below the minimum version is required to update;
 4. remaining nodes use a deterministic SHA-256 bucket over network and node identity;
 5. generation conflicts return HTTP 409 rather than overwriting another operator's change.
+
+Release revocation is one-way. Revoking a release records a constrained reason, pauses every
+referencing policy, increments each policy generation, appends a redacted audit event, and stops
+future directives. A withdrawn directive removes the matching ready Agent stage. The local
+revocation ledger remains the final offline/root boundary for a build that must not execute during
+Controller unavailability or a withdrawal race.
 
 The assigned node channel is part of the Controller-signed per-node configuration. Channel changes
 use the network configuration version as an optimistic lock, publish a new signed configuration,
@@ -79,6 +91,7 @@ the pinned key unless the operator explicitly purges project state.
 The Updates page provides:
 
 - signed manifest/signature import without any private-key upload field;
+- irreversible release revocation with an explicit constrained reason and confirmation;
 - release and policy lists with loading, empty, forbidden, and service-error states;
 - explicit confirmation for rollout/pause changes;
 - assigned-channel changes for active nodes with configuration-version conflict protection;
@@ -95,6 +108,7 @@ cargo clippy -p xs-core -p xs-controller -p xs-agent --all-targets -- -D warning
 make test-controller-db
 make test-agent-control
 make test-linux-installer
+make test-update-supply-chain
 make test-agent-systemd
 npm run build --workspace @xs-nexus/console
 npm run test:e2e --workspace @xs-nexus/console

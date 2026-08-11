@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+MAX_UPDATE_ARCHIVE_BYTES=536870912
 target=
 signing_key=
 output_directory=
@@ -16,6 +18,25 @@ Options:
   --version VERSION       Override the workspace version (test packaging only).
   --binary-dir DIRECTORY  Package prebuilt xs-agent and xs binaries without invoking Cargo.
 EOF
+}
+
+canonical_u32() {
+    local value=$1
+    [[ $value =~ ^(0|[1-9][0-9]{0,9})$ ]] || return 1
+    ((${#value} < 10)) || [[ $value < 4294967296 ]]
+}
+
+canonical_version() {
+    local value=$1 major minor patch extra
+    IFS=. read -r major minor patch extra <<<"$value"
+    [[ "$value" == "$major.$minor.$patch" && -z ${extra:-} ]] || return 1
+    canonical_u32 "$major" && canonical_u32 "$minor" && canonical_u32 "$patch"
+}
+
+canonical_positive_u64() {
+    local value=$1
+    [[ $value =~ ^[1-9][0-9]{0,19}$ ]] || return 1
+    ((${#value} < 20)) || [[ $value < 18446744073709551616 ]]
 }
 
 while (($#)); do
@@ -67,29 +88,32 @@ if [[ -z "$version" ]]; then
         }
     ' "$ROOT_DIR/Cargo.toml")
 fi
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-    printf 'release version must use numeric major.minor.patch form\n' >&2
+canonical_version "$version" || {
+    printf 'release version must use canonical u32 major.minor.patch form\n' >&2
     exit 2
 }
 
 build_commit=${XS_BUILD_GIT_COMMIT:-}
 source_date_epoch=${SOURCE_DATE_EPOCH:-}
-if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    repository_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)
+if git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    repository_commit=$(git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" rev-parse HEAD)
     if [[ -n "$build_commit" && "$build_commit" != "$repository_commit" ]]; then
         printf 'XS_BUILD_GIT_COMMIT differs from the repository HEAD\n' >&2
         exit 2
     fi
     build_commit=$repository_commit
     if [[ -z "$source_date_epoch" ]]; then
-        source_date_epoch=$(git -C "$ROOT_DIR" show -s --format=%ct HEAD)
+        source_date_epoch=$(git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" show -s --format=%ct HEAD)
     fi
 fi
 [[ "$build_commit" =~ ^[0-9a-f]{40}$ ]] || {
     printf 'XS_BUILD_GIT_COMMIT must identify an exact lowercase Git commit\n' >&2
     exit 2
 }
-[[ "$source_date_epoch" =~ ^[0-9]+$ ]] || { printf 'SOURCE_DATE_EPOCH must be an integer\n' >&2; exit 2; }
+canonical_positive_u64 "$source_date_epoch" || {
+    printf 'SOURCE_DATE_EPOCH must be a canonical positive u64 integer\n' >&2
+    exit 2
+}
 
 if [[ -z "$binary_directory" ]]; then
     command -v cargo >/dev/null || { printf 'required command is unavailable: cargo\n' >&2; exit 2; }
@@ -181,6 +205,10 @@ signature="$manifest.sig"
         -cf - "$package_name" | gzip -n >"$archive"
 )
 archive_size=$(stat -c '%s' "$archive")
+((10#$archive_size <= MAX_UPDATE_ARCHIVE_BYTES)) || {
+    printf 'release archive exceeds the update size limit\n' >&2
+    exit 2
+}
 archive_sha256=$(sha256sum "$archive" | awk '{print $1}')
 cat >"$manifest" <<EOF
 schema_version=2

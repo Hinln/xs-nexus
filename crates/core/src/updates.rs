@@ -104,6 +104,9 @@ pub enum UpdateChannel {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinuxReleaseManifest {
+    pub source_commit: String,
+    pub source_date_epoch: u64,
+    pub protocol_version: String,
     pub version: ReleaseVersion,
     pub architecture: String,
     pub target: String,
@@ -113,7 +116,7 @@ pub struct LinuxReleaseManifest {
 }
 
 impl LinuxReleaseManifest {
-    /// Parses the exact nine-field manifest consumed by the Linux installer.
+    /// Parses the exact current release manifest consumed by the Linux installer.
     ///
     /// # Errors
     ///
@@ -130,30 +133,52 @@ impl LinuxReleaseManifest {
         }
         let text = text.strip_suffix('\n').unwrap_or(text);
         let fields = text.split('\n').collect::<Vec<_>>();
-        if fields.len() != 9 {
+        if fields.len() != 12 {
             return Err(ReleaseManifestError::FieldCount);
         }
-        exact_field(fields[0], "schema_version", "1")?;
+        exact_field(fields[0], "schema_version", "2")?;
         exact_field(fields[1], "product", "xs-nexus")?;
         let version: ReleaseVersion = field_value(fields[2], "version")?
             .parse()
             .map_err(|_| ReleaseManifestError::Version)?;
-        exact_field(fields[3], "platform", "linux")?;
-        let architecture = field_value(fields[4], "architecture")?;
+        let source_commit = field_value(fields[3], "source_commit")?;
+        if source_commit.len() != 40
+            || !source_commit
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(ReleaseManifestError::SourceCommit);
+        }
+        let source_date_epoch_text = field_value(fields[4], "source_date_epoch")?;
+        if source_date_epoch_text.starts_with('0')
+            || !source_date_epoch_text
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+        {
+            return Err(ReleaseManifestError::SourceDateEpoch);
+        }
+        let source_date_epoch = source_date_epoch_text
+            .parse::<u64>()
+            .ok()
+            .filter(|epoch| *epoch > 0)
+            .ok_or(ReleaseManifestError::SourceDateEpoch)?;
+        exact_field(fields[5], "protocol_version", "XSP/1")?;
+        exact_field(fields[6], "platform", "linux")?;
+        let architecture = field_value(fields[7], "architecture")?;
         if !matches!(architecture, "x86_64" | "aarch64") {
             return Err(ReleaseManifestError::Architecture);
         }
-        let target = field_value(fields[5], "target")?;
+        let target = field_value(fields[8], "target")?;
         let expected_target = format!("{architecture}-unknown-linux-gnu");
         if target != expected_target {
             return Err(ReleaseManifestError::Target);
         }
-        let archive = field_value(fields[6], "archive")?;
+        let archive = field_value(fields[9], "archive")?;
         let expected_archive = format!("xs-nexus-{version}-{target}.tar.gz");
         if archive != expected_archive {
             return Err(ReleaseManifestError::Archive);
         }
-        let archive_size_text = field_value(fields[7], "archive_size")?;
+        let archive_size_text = field_value(fields[10], "archive_size")?;
         if archive_size_text.starts_with('0')
             || !archive_size_text.bytes().all(|byte| byte.is_ascii_digit())
         {
@@ -164,7 +189,7 @@ impl LinuxReleaseManifest {
             .ok()
             .filter(|size| (1..=MAX_UPDATE_ARCHIVE_BYTES).contains(size))
             .ok_or(ReleaseManifestError::ArchiveSize)?;
-        let archive_sha256 = field_value(fields[8], "archive_sha256")?;
+        let archive_sha256 = field_value(fields[11], "archive_sha256")?;
         if archive_sha256.len() != 64
             || !archive_sha256
                 .bytes()
@@ -173,6 +198,9 @@ impl LinuxReleaseManifest {
             return Err(ReleaseManifestError::ArchiveHash);
         }
         Ok(Self {
+            source_commit: source_commit.to_owned(),
+            source_date_epoch,
+            protocol_version: "XSP/1".to_owned(),
             version,
             architecture: architecture.to_owned(),
             target: target.to_owned(),
@@ -210,10 +238,14 @@ pub enum ReleaseManifestError {
     Encoding,
     #[error("release manifest format is invalid")]
     Format,
-    #[error("release manifest must contain exactly nine fields")]
+    #[error("release manifest must contain exactly twelve fields")]
     FieldCount,
     #[error("release version is invalid")]
     Version,
+    #[error("release source commit is invalid")]
+    SourceCommit,
+    #[error("release source date epoch is invalid")]
+    SourceDateEpoch,
     #[error("release architecture is unsupported")]
     Architecture,
     #[error("release target does not match its architecture")]
@@ -401,9 +433,12 @@ mod tests {
     use uuid::Uuid;
 
     const VALID_MANIFEST: &str = concat!(
-        "schema_version=1\n",
+        "schema_version=2\n",
         "product=xs-nexus\n",
         "version=1.2.3\n",
+        "source_commit=0123456789abcdef0123456789abcdef01234567\n",
+        "source_date_epoch=1700000000\n",
+        "protocol_version=XSP/1\n",
         "platform=linux\n",
         "architecture=x86_64\n",
         "target=x86_64-unknown-linux-gnu\n",
@@ -446,6 +481,12 @@ mod tests {
         assert_eq!(manifest.version, ReleaseVersion::new(1, 2, 3));
         assert_eq!(manifest.archive_size, 12_345);
         assert_eq!(manifest.architecture, "x86_64");
+        assert_eq!(
+            manifest.source_commit,
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+        assert_eq!(manifest.source_date_epoch, 1_700_000_000);
+        assert_eq!(manifest.protocol_version, "XSP/1");
     }
 
     #[test]
@@ -453,12 +494,31 @@ mod tests {
         let cases = [
             ("schema_version=1\n", ReleaseManifestError::FieldCount),
             (
+                &VALID_MANIFEST.replace("schema_version=2", "schema_version=1"),
+                ReleaseManifestError::Format,
+            ),
+            (
                 &VALID_MANIFEST.replace("product=xs-nexus", "product=other"),
                 ReleaseManifestError::Format,
             ),
             (
                 &VALID_MANIFEST.replace("version=1.2.3", "version=01.2.3"),
                 ReleaseManifestError::Version,
+            ),
+            (
+                &VALID_MANIFEST.replace(
+                    "source_commit=0123456789abcdef0123456789abcdef01234567",
+                    "source_commit=0123456789abcdef0123456789abcdef0123456G",
+                ),
+                ReleaseManifestError::SourceCommit,
+            ),
+            (
+                &VALID_MANIFEST.replace("source_date_epoch=1700000000", "source_date_epoch=0"),
+                ReleaseManifestError::SourceDateEpoch,
+            ),
+            (
+                &VALID_MANIFEST.replace("protocol_version=XSP/1", "protocol_version=XSP/0"),
+                ReleaseManifestError::Format,
             ),
             (
                 &VALID_MANIFEST.replace("architecture=x86_64", "architecture=amd64"),

@@ -8,7 +8,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{Signature, VerifyingKey, pkcs8::DecodePublicKey};
-use futures_util::StreamExt as _;
+use futures_util::{Stream, StreamExt as _};
 use reqwest::{Client, StatusCode, Url, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -29,7 +29,10 @@ const MANIFEST_FILE: &str = "release.manifest";
 const SIGNATURE_FILE: &str = "release.manifest.sig";
 const READY_FILE: &str = "ready.json";
 const UPDATE_REQUEST_FILE: &str = "update-request.json";
-const MAX_PUBLIC_KEY_BYTES: u64 = 2048;
+const REVOCATIONS_FILE: &str = "release-revocations";
+const MAX_PUBLIC_KEY_BYTES: u64 = 8192;
+const MAX_RELEASE_KEYS: usize = 4;
+const MAX_REVOCATIONS_BYTES: u64 = 64 * 1024;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -209,6 +212,51 @@ pub fn apply_staged_update(
     Ok(())
 }
 
+pub(crate) fn cancel_staged_update(
+    config: &AgentConfig,
+    expected_release_id: Uuid,
+) -> Result<bool, UpdateStagingError> {
+    let request_path = config.state_directory.join(UPDATE_REQUEST_FILE);
+    let request_bytes = match read_bounded_regular(&request_path, 16 * 1024) {
+        Ok(bytes) => bytes,
+        Err(UpdateStagingError::State)
+            if request_path
+                .symlink_metadata()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+    };
+    let request: StagedUpdateRequest =
+        serde_json::from_slice(&request_bytes).map_err(|_| UpdateStagingError::State)?;
+    if request.release_id != expected_release_id
+        || request.directory_name != request.release_id.simple().to_string()
+    {
+        return Ok(false);
+    }
+    std::fs::remove_file(&request_path).map_err(|_| UpdateStagingError::State)?;
+    sync_directory(&config.state_directory)?;
+
+    let staging_directory = config
+        .state_directory
+        .join("update-staging")
+        .join(&request.directory_name);
+    match staging_directory.symlink_metadata() {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            std::fs::remove_dir_all(&staging_directory).map_err(|_| UpdateStagingError::State)?;
+            sync_directory(
+                staging_directory
+                    .parent()
+                    .ok_or(UpdateStagingError::State)?,
+            )?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return Err(UpdateStagingError::State),
+    }
+    Ok(true)
+}
+
 fn validate_apply_environment(
     installer: &Path,
     install_root: &Path,
@@ -275,9 +323,13 @@ fn prepare_update_copy(
         .as_slice()
         .try_into()
         .map_err(|_| UpdateApplyError::Trust)?;
-    read_pinned_key(&config.update_signing_public_key_path)
-        .map_err(|_| UpdateApplyError::Trust)?
-        .verify_strict(&manifest_bytes, &Signature::from_bytes(&signature))
+    verify_release_signature(
+        &config.update_signing_public_key_path,
+        &manifest_bytes,
+        &Signature::from_bytes(&signature),
+    )
+    .map_err(|_| UpdateApplyError::Trust)?;
+    reject_revoked_manifest(&config.update_signing_public_key_path, &manifest_bytes)
         .map_err(|_| UpdateApplyError::Trust)?;
     verify_archive_file_sync(
         &copied_archive,
@@ -531,10 +583,12 @@ fn verify_directive(
     }
 
     let archive_url = validate_archive_url(&directive.archive_url, &directive.archive_name)?;
-    let verifying_key = read_pinned_key(&config.update_signing_public_key_path)?;
-    verifying_key
-        .verify_strict(&manifest_bytes, &Signature::from_bytes(&signature_bytes))
-        .map_err(|_| UpdateStagingError::Trust)?;
+    verify_release_signature(
+        &config.update_signing_public_key_path,
+        &manifest_bytes,
+        &Signature::from_bytes(&signature_bytes),
+    )?;
+    reject_revoked_manifest(&config.update_signing_public_key_path, &manifest_bytes)?;
     Ok(VerifiedDirective {
         manifest,
         manifest_bytes,
@@ -616,25 +670,44 @@ async fn download_archive(
         return Err(UpdateStagingError::Download);
     }
     let mut file = create_new_private(destination)?;
-    let mut stream = response.bytes_stream();
+    write_archive_stream(
+        response.bytes_stream(),
+        &mut file,
+        expected_size,
+        expected_sha256,
+    )
+    .await?;
+    file.sync_all().await.map_err(|_| UpdateStagingError::State)
+}
+
+async fn write_archive_stream<S, B, E, W>(
+    stream: S,
+    file: &mut W,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<(), UpdateStagingError>
+where
+    S: Stream<Item = Result<B, E>>,
+    B: AsRef<[u8]>,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    futures_util::pin_mut!(stream);
     let mut received = 0_u64;
     let mut digest = Sha256::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| UpdateStagingError::Download)?;
+        let chunk = chunk.as_ref();
         received = received
             .checked_add(u64::try_from(chunk.len()).map_err(|_| UpdateStagingError::Archive)?)
             .ok_or(UpdateStagingError::Archive)?;
         if received > expected_size || received > MAX_UPDATE_ARCHIVE_BYTES {
             return Err(UpdateStagingError::Archive);
         }
-        digest.update(&chunk);
-        file.write_all(&chunk)
+        digest.update(chunk);
+        file.write_all(chunk)
             .await
             .map_err(|_| UpdateStagingError::State)?;
     }
-    file.sync_all()
-        .await
-        .map_err(|_| UpdateStagingError::State)?;
     if received != expected_size || encode_lower_hex(&digest.finalize()) != expected_sha256 {
         return Err(UpdateStagingError::Archive);
     }
@@ -748,7 +821,7 @@ fn read_bounded_regular(path: &Path, maximum: u64) -> Result<Vec<u8>, UpdateStag
     Ok(bytes)
 }
 
-fn read_pinned_key(path: &Path) -> Result<VerifyingKey, UpdateStagingError> {
+fn read_pinned_keys(path: &Path) -> Result<Vec<VerifyingKey>, UpdateStagingError> {
     let mut file = open_regular_nofollow(path).map_err(|_| UpdateStagingError::Trust)?;
     let metadata = file.metadata().map_err(|_| UpdateStagingError::Trust)?;
     if metadata.len() == 0
@@ -762,14 +835,104 @@ fn read_pinned_key(path: &Path) -> Result<VerifyingKey, UpdateStagingError> {
     );
     file.read_to_string(&mut encoded)
         .map_err(|_| UpdateStagingError::Trust)?;
-    VerifyingKey::from_public_key_pem(&encoded).map_err(|_| UpdateStagingError::Trust)
+    parse_public_key_bundle(&encoded)
+}
+
+fn parse_public_key_bundle(encoded: &str) -> Result<Vec<VerifyingKey>, UpdateStagingError> {
+    const BEGIN: &str = "-----BEGIN PUBLIC KEY-----\n";
+    const END: &str = "-----END PUBLIC KEY-----\n";
+
+    if encoded.contains('\r') {
+        return Err(UpdateStagingError::Trust);
+    }
+    let mut remaining = encoded;
+    let mut keys = Vec::new();
+    while !remaining.is_empty() {
+        let body = remaining
+            .strip_prefix(BEGIN)
+            .ok_or(UpdateStagingError::Trust)?;
+        let end = body.find(END).ok_or(UpdateStagingError::Trust)?;
+        let block_length = BEGIN
+            .len()
+            .checked_add(end)
+            .and_then(|length| length.checked_add(END.len()))
+            .ok_or(UpdateStagingError::Trust)?;
+        let (block, rest) = remaining.split_at(block_length);
+        let key =
+            VerifyingKey::from_public_key_pem(block).map_err(|_| UpdateStagingError::Trust)?;
+        if keys.len() == MAX_RELEASE_KEYS
+            || keys
+                .iter()
+                .any(|existing: &VerifyingKey| existing.to_bytes() == key.to_bytes())
+        {
+            return Err(UpdateStagingError::Trust);
+        }
+        keys.push(key);
+        remaining = rest;
+    }
+    if keys.is_empty() {
+        return Err(UpdateStagingError::Trust);
+    }
+    Ok(keys)
+}
+
+fn verify_release_signature(
+    key_path: &Path,
+    message: &[u8],
+    signature: &Signature,
+) -> Result<(), UpdateStagingError> {
+    if read_pinned_keys(key_path)?
+        .iter()
+        .any(|key| key.verify_strict(message, signature).is_ok())
+    {
+        Ok(())
+    } else {
+        Err(UpdateStagingError::Trust)
+    }
+}
+
+fn reject_revoked_manifest(key_path: &Path, manifest: &[u8]) -> Result<(), UpdateStagingError> {
+    let parent = key_path.parent().ok_or(UpdateStagingError::Trust)?;
+    let path = parent.join(REVOCATIONS_FILE);
+    let mut file = match open_regular_nofollow(&path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(UpdateStagingError::Trust),
+    };
+    let metadata = file.metadata().map_err(|_| UpdateStagingError::Trust)?;
+    if metadata.len() == 0
+        || metadata.len() > MAX_REVOCATIONS_BYTES
+        || public_key_is_writable_by_untrusted_principal(&metadata)
+    {
+        return Err(UpdateStagingError::Trust);
+    }
+    let mut encoded = String::with_capacity(
+        usize::try_from(metadata.len()).map_err(|_| UpdateStagingError::Trust)?,
+    );
+    file.read_to_string(&mut encoded)
+        .map_err(|_| UpdateStagingError::Trust)?;
+    if encoded.contains('\r') || !encoded.ends_with('\n') {
+        return Err(UpdateStagingError::Trust);
+    }
+    let manifest_hash = encode_lower_hex(&Sha256::digest(manifest));
+    let mut previous: Option<&str> = None;
+    for hash in encoded.lines() {
+        if !valid_lower_sha256(hash) || previous.is_some_and(|value| value >= hash) {
+            return Err(UpdateStagingError::Trust);
+        }
+        if hash == manifest_hash {
+            return Err(UpdateStagingError::Trust);
+        }
+        previous = Some(hash);
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
 fn public_key_is_writable_by_untrusted_principal(metadata: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt as _;
 
-    metadata.mode() & 0o022 != 0
+    metadata.mode() & 0o022 != 0 || (effective_user_is_root() && metadata.uid() != 0)
 }
 
 #[cfg(not(unix))]
@@ -839,13 +1002,18 @@ fn sync_directory(path: &Path) -> Result<(), UpdateStagingError> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use std::os::unix::fs::PermissionsExt as _;
+    use std::{
+        os::unix::fs::PermissionsExt as _,
+        pin::Pin,
+        task::{Context, Poll},
+    };
 
     use ed25519_dalek::{
         Signer as _, SigningKey,
         pkcs8::{EncodePublicKey as _, spki::der::pem::LineEnding},
     };
     use sha2::{Digest as _, Sha256};
+    use tokio::io::AsyncWrite;
     use xs_core::{UpdateChannel, UpdateDecision};
 
     use super::*;
@@ -872,7 +1040,7 @@ mod tests {
         let archive_bytes = b"signed archive fixture";
         let archive_hash = encode_lower_hex(&Sha256::digest(archive_bytes));
         let manifest = format!(
-            "schema_version=1\nproduct=xs-nexus\nversion=0.2.0\nplatform=linux\narchitecture={}\ntarget={}-unknown-linux-gnu\narchive={}\narchive_size={}\narchive_sha256={}\n",
+            "schema_version=2\nproduct=xs-nexus\nversion=0.2.0\nsource_commit=0123456789abcdef0123456789abcdef01234567\nsource_date_epoch=1700000000\nprotocol_version=XSP/1\nplatform=linux\narchitecture={}\ntarget={}-unknown-linux-gnu\narchive={}\narchive_size={}\narchive_sha256={}\n",
             std::env::consts::ARCH,
             std::env::consts::ARCH,
             archive,
@@ -968,6 +1136,32 @@ mod tests {
         (installer, record)
     }
 
+    struct FailingWriter;
+
+    impl AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            _buffer: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::other("simulated storage exhaustion")))
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
     #[test]
     fn directive_requires_the_locally_pinned_offline_signature() {
         if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
@@ -994,6 +1188,124 @@ mod tests {
     }
 
     #[test]
+    fn directive_rejects_wrong_platform_architecture_and_unsigned_release() {
+        if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            return;
+        }
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let signing_key = SigningKey::from_bytes(&[45_u8; 32]);
+        let (config, directive) = fixture(&temporary, &signing_key);
+
+        let mut wrong_platform = directive.clone();
+        wrong_platform.platform = "windows".to_owned();
+        assert_eq!(
+            verify_directive(&config, config.update_channel, &wrong_platform).unwrap_err(),
+            UpdateStagingError::Directive
+        );
+
+        let mut wrong_architecture = directive.clone();
+        wrong_architecture.architecture = if std::env::consts::ARCH == "x86_64" {
+            "aarch64".to_owned()
+        } else {
+            "x86_64".to_owned()
+        };
+        assert_eq!(
+            verify_directive(&config, config.update_channel, &wrong_architecture).unwrap_err(),
+            UpdateStagingError::Directive
+        );
+
+        let mut unsigned = directive;
+        unsigned.signature_base64 = URL_SAFE_NO_PAD.encode([0_u8; 64]);
+        assert_eq!(
+            verify_directive(&config, config.update_channel, &unsigned).unwrap_err(),
+            UpdateStagingError::Trust
+        );
+    }
+
+    #[tokio::test]
+    async fn archive_stream_fails_closed_on_interruption_truncation_and_storage_error() {
+        let complete = b"complete update archive".to_vec();
+        let complete_hash = encode_lower_hex(&Sha256::digest(&complete));
+
+        let mut sink = tokio::io::sink();
+        assert_eq!(
+            write_archive_stream(
+                futures_util::stream::iter(vec![Ok::<_, ()>(complete.clone())]),
+                &mut sink,
+                complete.len() as u64,
+                &complete_hash,
+            )
+            .await,
+            Ok(())
+        );
+
+        let mut sink = tokio::io::sink();
+        assert_eq!(
+            write_archive_stream(
+                futures_util::stream::iter(vec![Ok::<_, ()>(b"short".to_vec())]),
+                &mut sink,
+                complete.len() as u64,
+                &complete_hash,
+            )
+            .await,
+            Err(UpdateStagingError::Archive)
+        );
+
+        let mut sink = tokio::io::sink();
+        assert_eq!(
+            write_archive_stream(
+                futures_util::stream::iter(vec![
+                    Ok(complete[..8].to_vec()),
+                    Err("simulated network interruption"),
+                ]),
+                &mut sink,
+                complete.len() as u64,
+                &complete_hash,
+            )
+            .await,
+            Err(UpdateStagingError::Download)
+        );
+
+        assert_eq!(
+            write_archive_stream(
+                futures_util::stream::iter(vec![Ok::<_, ()>(complete.clone())]),
+                &mut FailingWriter,
+                complete.len() as u64,
+                &complete_hash,
+            )
+            .await,
+            Err(UpdateStagingError::State)
+        );
+    }
+
+    #[tokio::test]
+    async fn transport_failure_never_publishes_a_partial_stage() {
+        if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            return;
+        }
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let signing_key = SigningKey::from_bytes(&[46_u8; 32]);
+        let (config, mut directive) = fixture(&temporary, &signing_key);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserved local port");
+        let endpoint = listener.local_addr().expect("local address");
+        drop(listener);
+        directive.archive_url = format!("https://{endpoint}/{}", directive.archive_name);
+
+        assert_eq!(
+            stage_update(&config, config.update_channel, &directive).await,
+            Err(UpdateStagingError::Download)
+        );
+        assert!(!config.state_directory.join(UPDATE_REQUEST_FILE).exists());
+        let staging_root = config.state_directory.join("update-staging");
+        assert_eq!(
+            std::fs::read_dir(staging_root)
+                .expect("staging root")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn pinned_key_rejects_group_or_world_writes() {
         let temporary = tempfile::tempdir().expect("temporary directory");
         let signing_key = SigningKey::from_bytes(&[42_u8; 32]);
@@ -1007,6 +1319,93 @@ mod tests {
             verify_directive(&config, config.update_channel, &directive).unwrap_err(),
             UpdateStagingError::Trust
         );
+    }
+
+    #[test]
+    fn pinned_key_bundle_supports_overlap_rotation_and_rejects_untrusted_keys() {
+        if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            return;
+        }
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let old_key = SigningKey::from_bytes(&[47_u8; 32]);
+        let new_key = SigningKey::from_bytes(&[48_u8; 32]);
+        let (config, directive) = fixture(&temporary, &new_key);
+        let old_pem = old_key
+            .verifying_key()
+            .to_public_key_pem(LineEnding::LF)
+            .expect("old public key PEM");
+        let new_pem = new_key
+            .verifying_key()
+            .to_public_key_pem(LineEnding::LF)
+            .expect("new public key PEM");
+
+        std::fs::write(
+            &config.update_signing_public_key_path,
+            format!("{old_pem}{new_pem}"),
+        )
+        .expect("overlap key bundle");
+        assert!(verify_directive(&config, config.update_channel, &directive).is_ok());
+
+        std::fs::write(&config.update_signing_public_key_path, &new_pem)
+            .expect("rotated key bundle");
+        assert!(verify_directive(&config, config.update_channel, &directive).is_ok());
+
+        std::fs::write(&config.update_signing_public_key_path, &old_pem)
+            .expect("untrusted key bundle");
+        assert_eq!(
+            verify_directive(&config, config.update_channel, &directive).unwrap_err(),
+            UpdateStagingError::Trust
+        );
+
+        std::fs::write(
+            &config.update_signing_public_key_path,
+            format!("{new_pem}{new_pem}"),
+        )
+        .expect("duplicate key bundle");
+        assert_eq!(
+            verify_directive(&config, config.update_channel, &directive).unwrap_err(),
+            UpdateStagingError::Trust
+        );
+    }
+
+    #[test]
+    fn revoked_manifest_is_rejected_before_staging_and_again_before_apply() {
+        if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            return;
+        }
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let signing_key = SigningKey::from_bytes(&[49_u8; 32]);
+        let (config, directive) = fixture(&temporary, &signing_key);
+        let manifest = URL_SAFE_NO_PAD
+            .decode(&directive.manifest_base64)
+            .expect("manifest base64");
+        let revocations = config
+            .update_signing_public_key_path
+            .parent()
+            .expect("key parent")
+            .join(REVOCATIONS_FILE);
+        std::fs::write(
+            &revocations,
+            format!("{}\n", encode_lower_hex(&Sha256::digest(&manifest))),
+        )
+        .expect("revocation ledger");
+        std::fs::set_permissions(&revocations, std::fs::Permissions::from_mode(0o644))
+            .expect("revocation mode");
+
+        assert_eq!(
+            verify_directive(&config, config.update_channel, &directive).unwrap_err(),
+            UpdateStagingError::Trust
+        );
+
+        materialize_stage(&config, &directive, b"signed archive fixture");
+        let install_root = temporary.path().join("install-root");
+        std::fs::create_dir(&install_root).expect("install root");
+        let (installer, record) = fake_installer(&temporary);
+        assert_eq!(
+            apply_staged_update(&config, &installer, &install_root, None),
+            Err(UpdateApplyError::Trust)
+        );
+        assert!(!record.exists());
     }
 
     #[test]
@@ -1076,5 +1475,37 @@ mod tests {
         );
         assert!(config.state_directory.join(UPDATE_REQUEST_FILE).exists());
         assert!(!record.exists());
+    }
+
+    #[test]
+    fn withdrawn_directive_removes_only_the_matching_ready_stage() {
+        if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            return;
+        }
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let signing_key = SigningKey::from_bytes(&[50_u8; 32]);
+        let (config, directive) = fixture(&temporary, &signing_key);
+        let request = materialize_stage(&config, &directive, b"signed archive fixture");
+        let stage = config
+            .state_directory
+            .join("update-staging")
+            .join(&request.directory_name);
+
+        assert_eq!(
+            cancel_staged_update(&config, Uuid::from_u128(999)),
+            Ok(false)
+        );
+        assert!(config.state_directory.join(UPDATE_REQUEST_FILE).exists());
+        assert!(stage.exists());
+        assert_eq!(
+            cancel_staged_update(&config, directive.release_id),
+            Ok(true)
+        );
+        assert!(!config.state_directory.join(UPDATE_REQUEST_FILE).exists());
+        assert!(!stage.exists());
+        assert_eq!(
+            cancel_staged_update(&config, directive.release_id),
+            Ok(false)
+        );
     }
 }

@@ -274,6 +274,8 @@ export interface UpdateRelease {
   archive_size: number;
   archive_sha256: string;
   archive_url: string;
+  revoked_at: string | null;
+  revocation_reason: string | null;
   created_at: string;
 }
 

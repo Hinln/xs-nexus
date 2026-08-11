@@ -14,7 +14,8 @@ before activating the release.
 - Linux with systemd, `/dev/net/tun`, nftables, and an available `CAP_NET_ADMIN` capability;
 - `bash`, GNU `tar`, `gzip`, `sha256sum`, `openssl`, `flock`, and standard account tools;
 - a release archive, its matching `.manifest` and `.manifest.sig`, and the trusted release public
-  key obtained through a separate authenticated channel.
+  key bundle obtained through a separate authenticated channel. A host install requires this file
+  to be root-owned and not group/world writable.
 
 The production bootstrap supports glibc-based x86_64 and aarch64 Linux hosts running systemd. It
 installs missing command-line prerequisites with apt, dnf, yum, zypper, or pacman, but it does not
@@ -53,8 +54,11 @@ host fails closed.
 The installer accepts only `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu` packages that
 match the current host. It verifies the detached manifest signature before parsing the manifest,
 then verifies archive name, size, SHA-256, member allowlist, member types, and every payload hash.
-The first installation pins the release public key at `/etc/xs-nexus/release-public-key.pem`;
-later upgrades reject a different key.
+The first installation pins a canonical one-to-four-key release bundle at
+`/etc/xs-nexus/release-public-key.pem`; later upgrades reject a different bundle. Key rotation is
+an explicit authenticated operation: deploy an old-plus-new overlap bundle, transition release
+signing, and remove the old key only after every supported rollback/upgrade path has been verified.
+Duplicate keys, more than four keys, malformed PEM, and unsafe permissions fail closed.
 
 New external installs require manifest schema 2. The lifecycle verifier can still validate an
 already-installed schema 1 release during rollback, but it will not accept schema 1 as a new
@@ -93,6 +97,13 @@ Releases are installed under `/usr/local/lib/xs-nexus/versions/`. The `current` 
 atomically. Existing `/etc/xs-nexus/agent.json`, `/var/lib/xs-nexus/identity.key`, and signed node
 state are not replaced during upgrade. A lower external version is rejected; an operator may only
 roll back to a previously installed, still signature- and hash-valid release.
+
+Operators may place a root-owned, non-group/world-writable
+`/etc/xs-nexus/release-revocations` file containing sorted unique lowercase SHA-256 hashes of
+revoked signed manifests, one per line. Installation and the privileged update helper check this
+ledger before activation; rollback checks it before executing the target release. An absent ledger
+means no local revocations. An empty, malformed, unsorted, duplicate, oversized, unsafe, or
+non-root-owned host ledger fails closed rather than being ignored.
 
 ## Rollback and status
 
@@ -137,6 +148,10 @@ the pinned release key and archive metadata, and publishes an atomic update requ
 `xs-agent-update.path` then invokes the network-disabled root helper, which copies the archive with
 link protection, verifies it again, and calls this same installer transaction. The root helper never
 trusts the Controller directive or the unprivileged staging result by itself.
+
+The installer removes both extraction staging and any not-yet-committed version/metadata files on
+pre-activation failures, including storage exhaustion. Activation failure restores the prior
+release, service state, identity, and exact project route state.
 
 The Controller-assigned channel is carried inside the signed node configuration. New installations
 default to `stable`; an older signed configuration without the field falls back to the local Agent

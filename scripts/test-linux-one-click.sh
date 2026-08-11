@@ -14,7 +14,7 @@ case "$(uname -m)" in
     aarch64|arm64) target=aarch64-unknown-linux-gnu ;;
     *) printf 'unsupported test architecture\n' >&2; exit 2 ;;
 esac
-release_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)
+release_commit=$(git -c "safe.directory=$ROOT_DIR" -C "$ROOT_DIR" rev-parse HEAD)
 release_epoch=$(git -C "$ROOT_DIR" show -s --format=%ct HEAD)
 
 temporary=$(mktemp -d)
@@ -118,8 +118,14 @@ EOF
 
 private_key="$temporary/release-private-key.pem"
 public_key="$release_directory/release-public-key.pem"
+signing_public_key="$temporary/release-signing-public-key.pem"
+old_private_key="$temporary/release-old-private-key.pem"
+old_public_key="$temporary/release-old-public-key.pem"
 openssl genpkey -algorithm ED25519 -out "$private_key" >/dev/null 2>&1
-openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+openssl pkey -in "$private_key" -pubout -out "$signing_public_key" >/dev/null 2>&1
+openssl genpkey -algorithm ED25519 -out "$old_private_key" >/dev/null 2>&1
+openssl pkey -in "$old_private_key" -pubout -out "$old_public_key" >/dev/null 2>&1
+cat "$old_public_key" "$signing_public_key" >"$public_key"
 openssl pkeyutl -sign -rawin -inkey "$private_key" -in "$manifest" -out "$manifest.sig"
 public_key_sha256=$(sha256sum "$public_key" | awk '{print $1}')
 

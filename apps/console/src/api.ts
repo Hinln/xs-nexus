@@ -169,6 +169,18 @@ export async function createUpdateRelease(
   );
 }
 
+export async function revokeUpdateRelease(
+  releaseId: string,
+  reason: "build_error" | "key_compromise" | "security_issue" | "superseded" | "withdrawn",
+  csrfToken: string,
+): Promise<UpdateRelease> {
+  return request<UpdateRelease>(
+    `/v1/admin/update-releases/${encodeURIComponent(releaseId)}/revoke`,
+    { method: "POST", body: JSON.stringify({ reason }) },
+    csrfToken,
+  );
+}
+
 export async function replaceUpdatePolicy(
   networkId: string,
   channel: UpdateChannel,

@@ -27,7 +27,7 @@ use crate::{
     health::AgentHealth,
     state::{NodeState, decode_fixed},
     storage::{Identity, write_json},
-    updates::stage_update,
+    updates::{cancel_staged_update, stage_update},
 };
 
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
@@ -286,6 +286,19 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let Some(directive) = directive else {
+        let Some(release_id) = status.observed_release_id else {
+            return Ok(());
+        };
+        if status.state == AgentUpdateState::Staged
+            && cancel_staged_update(config, release_id).map_err(|_| AgentError::Update)?
+        {
+            status.state = AgentUpdateState::Idle;
+            status.observed_release_id = None;
+            status.last_error_code = None;
+            *attempted_update = None;
+            health.set_last_error(None);
+            return send_runtime_report(socket, identity, config, state, status).await;
+        }
         return Ok(());
     };
     let update_channel = {

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C
 
 INSTALLER_SCHEMA=2
+MAX_UPDATE_ARCHIVE_BYTES=536870912
 UNIT_NAME=xs-agent.service
 UPDATE_PATH_NAME=xs-agent-update.path
 install_root=/
@@ -117,6 +119,7 @@ update_path_path=$(root_path /etc/systemd/system/xs-agent-update.path)
 config_directory=$(root_path /etc/xs-nexus)
 config_path="$config_directory/agent.json"
 pinned_key="$config_directory/release-public-key.pem"
+revocations_file="$config_directory/release-revocations"
 state_directory=$(root_path /var/lib/xs-nexus)
 identity_path="$state_directory/identity.key"
 node_state_path="$state_directory/node-state.json"
@@ -144,6 +147,25 @@ validate_regular_file() {
     [[ -f "$1" && ! -L "$1" ]] || fail "$2 must be a regular non-symlink file"
 }
 
+canonical_u32() {
+    local value=$1
+    [[ $value =~ ^(0|[1-9][0-9]{0,9})$ ]] || return 1
+    ((${#value} < 10)) || [[ $value < 4294967296 ]]
+}
+
+canonical_version() {
+    local value=$1 major minor patch extra
+    IFS=. read -r major minor patch extra <<<"$value"
+    [[ "$value" == "$major.$minor.$patch" && -z ${extra:-} ]] || return 1
+    canonical_u32 "$major" && canonical_u32 "$minor" && canonical_u32 "$patch"
+}
+
+canonical_positive_u64() {
+    local value=$1
+    [[ $value =~ ^[1-9][0-9]{0,19}$ ]] || return 1
+    ((${#value} < 20)) || [[ $value < 18446744073709551616 ]]
+}
+
 parse_manifest() {
     local manifest_path=$1 platform_index
     mapfile -t release_lines <"$manifest_path"
@@ -161,8 +183,9 @@ parse_manifest() {
             release_manifest_schema=$INSTALLER_SCHEMA
             [[ ${release_lines[3]} =~ ^source_commit=([0-9a-f]{40})$ ]] || fail 'release source commit is invalid'
             release_source_commit=${BASH_REMATCH[1]}
-            [[ ${release_lines[4]} =~ ^source_date_epoch=([0-9]+)$ ]] || fail 'release source date epoch is invalid'
+            [[ ${release_lines[4]} =~ ^source_date_epoch=(.*)$ ]] || fail 'release source date epoch is invalid'
             release_source_date_epoch=${BASH_REMATCH[1]}
+            canonical_positive_u64 "$release_source_date_epoch" || fail 'release source date epoch is invalid'
             [[ ${release_lines[5]} == 'protocol_version=XSP/1' ]] || fail 'release protocol version is invalid'
             release_protocol_version=XSP/1
             platform_index=6
@@ -170,8 +193,9 @@ parse_manifest() {
         *) fail 'release manifest schema is unsupported' ;;
     esac
     [[ ${release_lines[1]} == 'product=xs-nexus' ]] || fail 'release manifest product is invalid'
-    [[ ${release_lines[2]} =~ ^version=([0-9]+\.[0-9]+\.[0-9]+)$ ]] || fail 'release version is invalid'
+    [[ ${release_lines[2]} =~ ^version=(.*)$ ]] || fail 'release version is invalid'
     release_version=${BASH_REMATCH[1]}
+    canonical_version "$release_version" || fail 'release version is invalid'
     [[ ${release_lines[$platform_index]} == 'platform=linux' ]] || fail 'release platform is invalid'
     [[ ${release_lines[$((platform_index + 1))]} =~ ^architecture=(x86_64|aarch64)$ ]] || fail 'release architecture is invalid'
     release_architecture=${BASH_REMATCH[1]}
@@ -181,6 +205,10 @@ parse_manifest() {
     release_archive=${BASH_REMATCH[1]}
     [[ ${release_lines[$((platform_index + 4))]} =~ ^archive_size=([1-9][0-9]*)$ ]] || fail 'release archive size is invalid'
     release_archive_size=${BASH_REMATCH[1]}
+    if [[ $release_manifest_schema -eq $INSTALLER_SCHEMA ]]; then
+        canonical_positive_u64 "$release_archive_size" || fail 'release archive size is invalid'
+        ((10#$release_archive_size <= MAX_UPDATE_ARCHIVE_BYTES)) || fail 'release archive exceeds the update size limit'
+    fi
     [[ ${release_lines[$((platform_index + 5))]} =~ ^archive_sha256=([0-9a-f]{64})$ ]] || fail 'release archive hash is invalid'
     release_archive_sha256=${BASH_REMATCH[1]}
     [[ "$release_archive" == "xs-nexus-$release_version-$release_target.tar.gz" ]] || fail 'release archive fields disagree'
@@ -209,13 +237,89 @@ verify_release_binary_identity() {
 
 verify_manifest_signature() {
     local manifest_path=$1 signature_path=$2 key_path=$3
+    local key_directory candidate existing permissions verified=false key_count=0
+    local -a accepted_keys=()
     validate_regular_file "$manifest_path" 'release manifest'
     validate_regular_file "$signature_path" 'release signature'
     validate_regular_file "$key_path" 'release public key'
     [[ $(stat -c '%s' "$manifest_path") -le 4096 ]] || fail 'release manifest is oversized'
     [[ $(stat -c '%s' "$signature_path") -eq 64 ]] || fail 'release signature length is invalid'
-    openssl pkey -pubin -in "$key_path" -noout >/dev/null 2>&1 || fail 'release public key is invalid'
-    openssl pkeyutl -verify -rawin -pubin -inkey "$key_path" -in "$manifest_path" -sigfile "$signature_path" >/dev/null 2>&1 || fail 'release signature verification failed'
+    [[ $(stat -c '%s' "$key_path") -le 8192 ]] || fail 'release public key bundle is oversized'
+    if [[ $install_root == / ]]; then
+        [[ $(stat -c '%u' "$key_path") -eq 0 ]] || fail 'release public key bundle must be root-owned'
+    fi
+    permissions=$(stat -c '%a' "$key_path")
+    (( (8#$permissions & 8#022) == 0 )) || fail 'release public key bundle permissions are unsafe'
+    key_directory=$(mktemp -d)
+    if ! awk -v directory="$key_directory" '
+        BEGIN { inside = 0; count = 0 }
+        /^-----BEGIN PUBLIC KEY-----$/ {
+            if (inside || count == 4) exit 1
+            count += 1
+            inside = 1
+            path = sprintf("%s/key-%d.pem", directory, count)
+            print >path
+            next
+        }
+        /^-----END PUBLIC KEY-----$/ {
+            if (!inside) exit 1
+            print >>path
+            inside = 0
+            next
+        }
+        {
+            if (!inside || $0 !~ /^[A-Za-z0-9+\/=]+$/) exit 1
+            print >>path
+        }
+        END { if (inside || count == 0) exit 1 }
+    ' "$key_path"; then
+        rm -rf -- "$key_directory"
+        fail 'release public key bundle is invalid'
+    fi
+    for candidate in "$key_directory"/key-*.pem; do
+        openssl pkey -pubin -in "$candidate" -noout >/dev/null 2>&1 || {
+            rm -rf -- "$key_directory"
+            fail 'release public key bundle is invalid'
+        }
+        for existing in "${accepted_keys[@]}"; do
+            if cmp -s "$candidate" "$existing"; then
+                rm -rf -- "$key_directory"
+                fail 'release public key bundle contains a duplicate key'
+            fi
+        done
+        accepted_keys+=("$candidate")
+        key_count=$((key_count + 1))
+        if openssl pkeyutl -verify -rawin -pubin -inkey "$candidate" \
+            -in "$manifest_path" -sigfile "$signature_path" >/dev/null 2>&1; then
+            verified=true
+        fi
+    done
+    rm -rf -- "$key_directory"
+    [[ $key_count -ge 1 && $key_count -le 4 && $verified == true ]] \
+        || fail 'release signature verification failed'
+}
+
+verify_manifest_not_revoked() {
+    local manifest_path=$1 manifest_hash line permissions previous=
+    [[ -e "$revocations_file" ]] || return 0
+    validate_regular_file "$revocations_file" 'release revocation ledger'
+    [[ $(stat -c '%s' "$revocations_file") -ge 65 && $(stat -c '%s' "$revocations_file") -le 65536 ]] \
+        || fail 'release revocation ledger size is invalid'
+    if [[ $install_root == / ]]; then
+        [[ $(stat -c '%u' "$revocations_file") -eq 0 ]] || fail 'release revocation ledger must be root-owned'
+    fi
+    permissions=$(stat -c '%a' "$revocations_file")
+    (( (8#$permissions & 8#022) == 0 )) || fail 'release revocation ledger permissions are unsafe'
+    [[ -z $(tail -c 1 "$revocations_file") ]] || fail 'release revocation ledger is not canonical'
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[0-9a-f]{64}$ ]] || fail 'release revocation ledger is invalid'
+        [[ -z "$previous" || "$previous" < "$line" ]] || fail 'release revocation ledger is not sorted and unique'
+        previous=$line
+    done <"$revocations_file"
+    manifest_hash=$(sha256sum "$manifest_path" | awk '{print $1}')
+    if grep -Fxq "$manifest_hash" "$revocations_file"; then
+        fail 'release manifest has been revoked'
+    fi
 }
 
 verify_payload_manifest() {
@@ -428,12 +532,29 @@ install_release() {
     acquire_lock
     temporary=$(mktemp -d)
     token_copy=
+    staging_root=
+    pending_release_root=
+    pending_manifest=
+    pending_signature=
     cleanup_install_temporary() {
         rm -rf -- "$temporary"
         [[ -z $token_copy ]] || rm -f -- "$token_copy"
+        if [[ -n $staging_root && -d $staging_root && ! -L $staging_root ]]; then
+            case "$staging_root" in
+                "$versions_directory"/.staging-*) rm -rf -- "$staging_root" ;;
+            esac
+        fi
+        if [[ -n $pending_release_root && -d $pending_release_root && ! -L $pending_release_root ]]; then
+            case "$pending_release_root" in
+                "$versions_directory"/*) rm -rf -- "$pending_release_root" ;;
+            esac
+        fi
+        [[ -z $pending_manifest ]] || rm -f -- "$pending_manifest"
+        [[ -z $pending_signature ]] || rm -f -- "$pending_signature"
     }
     trap cleanup_install_temporary EXIT INT TERM
     verify_manifest_signature "$manifest" "$signature" "$public_key"
+    verify_manifest_not_revoked "$manifest"
     parse_manifest "$manifest"
     [[ $release_manifest_schema -eq $INSTALLER_SCHEMA ]] || fail 'external release manifest schema is obsolete'
     verify_archive
@@ -495,8 +616,12 @@ install_release() {
             ! -path '*/share/xs-nexus/xs-nexus-installer.sh' \
             -exec chmod 0644 {} +
         mv "$staging_root" "$release_root"
-        install -m 0644 "$manifest" "$metadata_directory/$release_name.manifest"
-        install -m 0644 "$signature" "$metadata_directory/$release_name.manifest.sig"
+        staging_root=
+        pending_release_root=$release_root
+        pending_manifest="$metadata_directory/$release_name.manifest"
+        pending_signature="$metadata_directory/$release_name.manifest.sig"
+        install -m 0644 "$manifest" "$pending_manifest"
+        install -m 0644 "$signature" "$pending_signature"
         created_release=true
     fi
 
@@ -584,6 +709,9 @@ install_release() {
     if [[ -n "$old_release" && "$old_release" != "$release_name" ]]; then
         atomic_release_link "$previous_link" "$old_release"
     fi
+    pending_release_root=
+    pending_manifest=
+    pending_signature=
     printf 'xs-nexus release %s installed\n' "$release_name"
 }
 
@@ -594,7 +722,7 @@ rollback_release() {
     [[ -n "$old_release" ]] || fail 'no current release is installed'
     verify_installed_release "$old_release"
     if [[ -n "$rollback_version" ]]; then
-        [[ "$rollback_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'rollback version is invalid'
+        canonical_version "$rollback_version" || fail 'rollback version is invalid'
         case "$(uname -m)" in
             x86_64) target=x86_64-unknown-linux-gnu ;;
             aarch64|arm64) target=aarch64-unknown-linux-gnu ;;
@@ -608,6 +736,7 @@ rollback_release() {
         release_name=${BASH_REMATCH[1]}
     fi
     [[ "$release_name" != "$old_release" ]] || fail 'requested rollback release is already current'
+    verify_manifest_not_revoked "$metadata_directory/$release_name.manifest"
     verify_installed_release "$release_name"
     was_active=false
     service_is_active && was_active=true

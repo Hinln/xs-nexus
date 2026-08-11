@@ -307,6 +307,8 @@ export const updateReleasesFixture: UpdateRelease[] = [
     archive_size: 18_874_368,
     archive_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     archive_url: "https://updates.example.test/xs-nexus-0.2.0-x86_64-unknown-linux-gnu.tar.gz",
+    revoked_at: null,
+    revocation_reason: null,
     created_at: now,
   },
 ];
