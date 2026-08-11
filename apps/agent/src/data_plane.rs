@@ -1749,7 +1749,6 @@ fn handle_data(
     now: Instant,
     allow_routed_data: bool,
 ) -> ProcessResult {
-    let mut path_probe_result = None;
     let (opened, replay_drop_delta) = {
         let PeerState::Established(established) = &mut peer.state else {
             return ProcessResult::empty();
@@ -1778,6 +1777,16 @@ fn handle_data(
     let Ok(opened) = opened else {
         return ProcessResult::empty();
     };
+    handle_opened_packet(peer, source, opened, now)
+}
+
+fn handle_opened_packet(
+    peer: &mut Peer,
+    source: SocketAddr,
+    opened: xs_protocol::OpenedPacket,
+    now: Instant,
+) -> ProcessResult {
+    let mut path_probe_result = None;
     let result = {
         let PeerState::Established(established) = &mut peer.state else {
             return ProcessResult::empty();

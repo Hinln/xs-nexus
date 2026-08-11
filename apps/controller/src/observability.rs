@@ -165,142 +165,45 @@ struct OperationalRow {
     failed_updates: i64,
 }
 
+struct SnapshotRows {
+    active_node_ids: Vec<Vec<u8>>,
+    latest_nodes: Vec<NodeLatestRow>,
+    node_window: NodeWindowRow,
+    latest_relays: Vec<RelayLatestRow>,
+    relay_window: Vec<RelayWindowRow>,
+    audit: AuditRow,
+    operational: OperationalRow,
+}
+
+#[derive(Default)]
+struct PathSummary {
+    fresh_telemetry: u64,
+    disconnected_nodes: u64,
+    direct_paths: u64,
+    relay_paths: u64,
+}
+
 pub(crate) async fn snapshot(state: &AppState) -> Result<ObservabilitySnapshot, ApiError> {
     let collected_at = Utc::now();
-    let active_node_ids = load_active_node_ids(state).await?;
-    let latest_nodes = load_latest_nodes(state).await?;
-    let node_window = load_node_window(state).await?;
-    let latest_relays = load_latest_relays(state).await?;
-    let relay_window = load_relay_window(state).await?;
-    let audit = load_audit(state).await?;
-    let operational = load_operational(state).await?;
-
-    let active_nodes = active_node_ids
-        .iter()
-        .map(|node_id| decode_id(node_id))
-        .collect::<Result<HashSet<_>, _>>()?;
-    let online_nodes = state
-        .online_node_ids()
-        .await
-        .into_iter()
-        .filter(|node_id| active_nodes.contains(node_id))
-        .count();
-    let mut fresh_telemetry = 0_u64;
-    let mut disconnected_nodes = 0_u64;
-    let mut direct_paths = 0_u64;
-    let mut relay_paths = 0_u64;
-    for row in latest_nodes {
-        let node_id = decode_id(&row.node_id)?;
-        if !active_nodes.contains(&node_id)
-            || row.generated_at < collected_at - Duration::minutes(AGENT_FRESHNESS_MINUTES)
-        {
-            continue;
-        }
-        let report = serde_json::from_value::<AgentTelemetryReport>(row.report)
-            .map_err(|_| ApiError::internal())?;
-        fresh_telemetry = fresh_telemetry.saturating_add(1);
-        let mut established = false;
-        for peer in report
-            .peers
-            .into_iter()
-            .filter(|peer| peer.session_established)
-        {
-            match peer.path {
-                AgentPathKind::Direct => {
-                    established = true;
-                    direct_paths = direct_paths.saturating_add(1);
-                }
-                AgentPathKind::Relay => {
-                    established = true;
-                    relay_paths = relay_paths.saturating_add(1);
-                }
-                AgentPathKind::Disconnected => {}
-            }
-        }
-        if !established {
-            disconnected_nodes = disconnected_nodes.saturating_add(1);
-        }
-    }
-    let managed = usize_u64(active_nodes.len())?;
-    let path_observations = direct_paths
-        .checked_add(relay_paths)
-        .ok_or_else(ApiError::internal)?;
-    let traffic_bytes = nonnegative(node_window.tx_bytes)?
-        .checked_add(nonnegative(node_window.rx_bytes)?)
-        .ok_or_else(ApiError::internal)?;
-    let handshake_attempts = nonnegative(node_window.handshake_attempts)?;
-    let handshake_successes = nonnegative(node_window.handshake_successes)?;
-    let handshake_failures = handshake_attempts
-        .checked_sub(handshake_successes)
-        .ok_or_else(ApiError::internal)?;
-    let node_acl_drops = nonnegative(node_window.acl_drops)?;
-    let node_replay_drops = nonnegative(node_window.replay_drops)?;
-    let node_summary = NodeSummary {
-        managed,
-        online: usize_u64(online_nodes)?,
-        fresh_telemetry,
-        unknown_path_nodes: managed.saturating_sub(fresh_telemetry),
-        disconnected_nodes,
-        path_telemetry_complete: fresh_telemetry == managed,
-        path_observations,
-        direct_path_observations: direct_paths,
-        relay_path_observations: relay_paths,
-        direct_ratio_basis_points: ratio_basis_points(direct_paths, path_observations)?,
-        relay_ratio_basis_points: ratio_basis_points(relay_paths, path_observations)?,
-        telemetry_nodes_24h: nonnegative(node_window.telemetry_nodes)?,
-        traffic_bytes_24h: traffic_bytes,
-        handshake_attempts_24h: handshake_attempts,
-        handshake_failures_24h: handshake_failures,
-        acl_drops_24h: node_acl_drops,
-        replay_drops_24h: node_replay_drops,
-    };
-
-    let configured_relays = relay_ids(state.relays.iter().map(|relay| &relay.relay_id_base64))?;
-    let unexpired_relays = relay_ids(
-        state
-            .relays
-            .iter()
-            .filter(|relay| relay.expires_at > collected_at)
-            .map(|relay| &relay.relay_id_base64),
-    )?;
-    let mut fresh_relays = 0_usize;
-    for row in &latest_relays {
-        let relay_id = decode_id(&row.relay_id)?;
-        if unexpired_relays.contains(&relay_id)
-            && row.generated_at >= collected_at - Duration::minutes(RELAY_FRESHNESS_MINUTES)
-        {
-            fresh_relays = fresh_relays.saturating_add(1);
-        }
-    }
-    let relay_totals = relay_totals(&relay_window, &unexpired_relays)?;
-    let relay_summary = RelaySummary {
-        configured: usize_u64(configured_relays.len())?,
-        unexpired_configured: usize_u64(unexpired_relays.len())?,
-        fresh: usize_u64(fresh_relays)?,
-        telemetry_complete: fresh_relays == unexpired_relays.len(),
-        telemetry_relays_24h: relay_totals.telemetry_relays,
-        packets_received_24h: relay_totals.packets_received,
-        packets_forwarded_24h: relay_totals.packets_forwarded,
-        registration_retries_24h: relay_totals.registration_retries,
-        registrations_rejected_24h: relay_totals.registrations_rejected,
-        invalid_drops_24h: relay_totals.invalid_drops,
-        authentication_drops_24h: relay_totals.authentication_drops,
-        replay_drops_24h: relay_totals.replay_drops,
-        rate_limit_drops_24h: relay_totals.rate_limit_drops,
-        queue_drops_24h: relay_totals.queue_drops,
-        destination_drops_24h: relay_totals.destination_drops,
-        send_drops_24h: relay_totals.send_drops,
-        packets_dropped_24h: relay_totals.packets_dropped,
-        io_errors_24h: relay_totals.io_errors,
-    };
-
+    let rows = load_snapshot_rows(state).await?;
+    let node_summary = summarize_nodes(
+        state,
+        collected_at,
+        rows.active_node_ids,
+        rows.latest_nodes,
+        rows.node_window,
+    )
+    .await?;
+    let relay_summary =
+        summarize_relays(state, collected_at, &rows.latest_relays, &rows.relay_window)?;
     let control_auth_failures = state.control_auth_failures_total();
     let security = SecuritySummary {
-        management_auth_failures_24h: nonnegative(audit.management_auth_failures_24h)?,
+        management_auth_failures_24h: nonnegative(rows.audit.management_auth_failures_24h)?,
         control_auth_failures_since_start: control_auth_failures,
-        acl_drops_24h: node_acl_drops,
-        replay_drops_24h: node_replay_drops
-            .checked_add(relay_totals.replay_drops)
+        acl_drops_24h: node_summary.acl_drops_24h,
+        replay_drops_24h: node_summary
+            .replay_drops_24h
+            .checked_add(relay_summary.replay_drops_24h)
             .ok_or_else(ApiError::internal)?,
     };
     Ok(ObservabilitySnapshot {
@@ -323,17 +226,166 @@ pub(crate) async fn snapshot(state: &AppState) -> Result<ObservabilitySnapshot, 
         relays: relay_summary,
         security,
         routing: RoutingSummary {
-            enabled_routes: nonnegative(operational.enabled_routes)?,
-            successful_changes_24h: nonnegative(audit.route_changes_24h)?,
+            enabled_routes: nonnegative(rows.operational.enabled_routes)?,
+            successful_changes_24h: nonnegative(rows.audit.route_changes_24h)?,
         },
         updates: UpdateSummary {
-            failed_nodes: nonnegative(operational.failed_updates)?,
+            failed_nodes: nonnegative(rows.operational.failed_updates)?,
         },
         audit: AuditSummary {
-            events_24h: nonnegative(audit.events_24h)?,
-            total_events: nonnegative(audit.total_events)?,
-            oldest_event_at: audit.oldest_event_at,
+            events_24h: nonnegative(rows.audit.events_24h)?,
+            total_events: nonnegative(rows.audit.total_events)?,
+            oldest_event_at: rows.audit.oldest_event_at,
         },
+    })
+}
+
+async fn load_snapshot_rows(state: &AppState) -> Result<SnapshotRows, ApiError> {
+    Ok(SnapshotRows {
+        active_node_ids: load_active_node_ids(state).await?,
+        latest_nodes: load_latest_nodes(state).await?,
+        node_window: load_node_window(state).await?,
+        latest_relays: load_latest_relays(state).await?,
+        relay_window: load_relay_window(state).await?,
+        audit: load_audit(state).await?,
+        operational: load_operational(state).await?,
+    })
+}
+
+async fn summarize_nodes(
+    state: &AppState,
+    collected_at: DateTime<Utc>,
+    active_node_ids: Vec<Vec<u8>>,
+    latest_nodes: Vec<NodeLatestRow>,
+    window: NodeWindowRow,
+) -> Result<NodeSummary, ApiError> {
+    let active_nodes = active_node_ids
+        .iter()
+        .map(|node_id| decode_id(node_id))
+        .collect::<Result<HashSet<_>, _>>()?;
+    let online_nodes = state
+        .online_node_ids()
+        .await
+        .into_iter()
+        .filter(|node_id| active_nodes.contains(node_id))
+        .count();
+    let paths = summarize_paths(collected_at, &active_nodes, latest_nodes)?;
+    let managed = usize_u64(active_nodes.len())?;
+    let path_observations = paths
+        .direct_paths
+        .checked_add(paths.relay_paths)
+        .ok_or_else(ApiError::internal)?;
+    let traffic_bytes = nonnegative(window.tx_bytes)?
+        .checked_add(nonnegative(window.rx_bytes)?)
+        .ok_or_else(ApiError::internal)?;
+    let handshake_attempts = nonnegative(window.handshake_attempts)?;
+    let handshake_successes = nonnegative(window.handshake_successes)?;
+    Ok(NodeSummary {
+        managed,
+        online: usize_u64(online_nodes)?,
+        fresh_telemetry: paths.fresh_telemetry,
+        unknown_path_nodes: managed.saturating_sub(paths.fresh_telemetry),
+        disconnected_nodes: paths.disconnected_nodes,
+        path_telemetry_complete: paths.fresh_telemetry == managed,
+        path_observations,
+        direct_path_observations: paths.direct_paths,
+        relay_path_observations: paths.relay_paths,
+        direct_ratio_basis_points: ratio_basis_points(paths.direct_paths, path_observations)?,
+        relay_ratio_basis_points: ratio_basis_points(paths.relay_paths, path_observations)?,
+        telemetry_nodes_24h: nonnegative(window.telemetry_nodes)?,
+        traffic_bytes_24h: traffic_bytes,
+        handshake_attempts_24h: handshake_attempts,
+        handshake_failures_24h: handshake_attempts
+            .checked_sub(handshake_successes)
+            .ok_or_else(ApiError::internal)?,
+        acl_drops_24h: nonnegative(window.acl_drops)?,
+        replay_drops_24h: nonnegative(window.replay_drops)?,
+    })
+}
+
+fn summarize_paths(
+    collected_at: DateTime<Utc>,
+    active_nodes: &HashSet<[u8; 16]>,
+    latest_nodes: Vec<NodeLatestRow>,
+) -> Result<PathSummary, ApiError> {
+    let mut summary = PathSummary::default();
+    for row in latest_nodes {
+        let node_id = decode_id(&row.node_id)?;
+        if !active_nodes.contains(&node_id)
+            || row.generated_at < collected_at - Duration::minutes(AGENT_FRESHNESS_MINUTES)
+        {
+            continue;
+        }
+        let report = serde_json::from_value::<AgentTelemetryReport>(row.report)
+            .map_err(|_| ApiError::internal())?;
+        summary.fresh_telemetry = summary.fresh_telemetry.saturating_add(1);
+        let mut established = false;
+        for peer in report
+            .peers
+            .into_iter()
+            .filter(|peer| peer.session_established)
+        {
+            match peer.path {
+                AgentPathKind::Direct => {
+                    established = true;
+                    summary.direct_paths = summary.direct_paths.saturating_add(1);
+                }
+                AgentPathKind::Relay => {
+                    established = true;
+                    summary.relay_paths = summary.relay_paths.saturating_add(1);
+                }
+                AgentPathKind::Disconnected => {}
+            }
+        }
+        if !established {
+            summary.disconnected_nodes = summary.disconnected_nodes.saturating_add(1);
+        }
+    }
+    Ok(summary)
+}
+
+fn summarize_relays(
+    state: &AppState,
+    collected_at: DateTime<Utc>,
+    latest: &[RelayLatestRow],
+    window: &[RelayWindowRow],
+) -> Result<RelaySummary, ApiError> {
+    let configured = relay_ids(state.relays.iter().map(|relay| &relay.relay_id_base64))?;
+    let unexpired = relay_ids(
+        state
+            .relays
+            .iter()
+            .filter(|relay| relay.expires_at > collected_at)
+            .map(|relay| &relay.relay_id_base64),
+    )?;
+    let mut fresh = 0_usize;
+    for row in latest {
+        if unexpired.contains(&decode_id(&row.relay_id)?)
+            && row.generated_at >= collected_at - Duration::minutes(RELAY_FRESHNESS_MINUTES)
+        {
+            fresh = fresh.saturating_add(1);
+        }
+    }
+    let totals = relay_totals(window, &unexpired)?;
+    Ok(RelaySummary {
+        configured: usize_u64(configured.len())?,
+        unexpired_configured: usize_u64(unexpired.len())?,
+        fresh: usize_u64(fresh)?,
+        telemetry_complete: fresh == unexpired.len(),
+        telemetry_relays_24h: totals.telemetry_relays,
+        packets_received_24h: totals.packets_received,
+        packets_forwarded_24h: totals.packets_forwarded,
+        registration_retries_24h: totals.registration_retries,
+        registrations_rejected_24h: totals.registrations_rejected,
+        invalid_drops_24h: totals.invalid_drops,
+        authentication_drops_24h: totals.authentication_drops,
+        replay_drops_24h: totals.replay_drops,
+        rate_limit_drops_24h: totals.rate_limit_drops,
+        queue_drops_24h: totals.queue_drops,
+        destination_drops_24h: totals.destination_drops,
+        send_drops_24h: totals.send_drops,
+        packets_dropped_24h: totals.packets_dropped,
+        io_errors_24h: totals.io_errors,
     })
 }
 

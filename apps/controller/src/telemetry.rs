@@ -27,6 +27,16 @@ struct TelemetryTotals {
     latency_microseconds: i64,
 }
 
+#[derive(Default)]
+struct PeerTelemetryTotals {
+    tx_bytes: u64,
+    rx_bytes: u64,
+    handshake_attempts: u64,
+    handshake_successes: u64,
+    latency_samples: u64,
+    latency_microseconds: u64,
+}
+
 #[allow(clippy::too_many_lines)]
 pub(crate) async fn record_agent_report(
     state: &AppState,
@@ -208,6 +218,33 @@ fn validate_report(
     authenticated: &AuthenticatedNode,
     report: &AgentTelemetryReport,
 ) -> Result<([u8; 16], TelemetryTotals, serde_json::Value), ApiError> {
+    validate_report_shape(authenticated, report)?;
+    let boot_id = decode_array::<16>(&report.boot_id_base64).ok_or_else(ApiError::validation)?;
+    if boot_id == [0_u8; 16] {
+        return Err(ApiError::validation());
+    }
+    let peer_totals = validate_report_peers(state, authenticated, report)?;
+    if !report_contains_peer_totals(report, &peer_totals) {
+        return Err(ApiError::validation());
+    }
+    let totals = TelemetryTotals {
+        tx_bytes: to_i64(report.tx_bytes_total)?,
+        rx_bytes: to_i64(report.rx_bytes_total)?,
+        handshake_attempts: to_i64(report.handshake_attempts_total)?,
+        handshake_successes: to_i64(report.handshake_successes_total)?,
+        acl_drops: to_i64(report.acl_drops_total)?,
+        replay_drops: to_i64(report.replay_drops_total)?,
+        latency_samples: to_i64(report.latency_samples_total)?,
+        latency_microseconds: to_i64(report.latency_microseconds_total)?,
+    };
+    let report_json = serde_json::to_value(report).map_err(|_| ApiError::validation())?;
+    Ok((boot_id, totals, report_json))
+}
+
+fn validate_report_shape(
+    authenticated: &AuthenticatedNode,
+    report: &AgentTelemetryReport,
+) -> Result<(), ApiError> {
     let now = Utc::now();
     if !matches!(report.schema_version, 1 | 2)
         || (report.schema_version == 1
@@ -226,22 +263,21 @@ fn validate_report(
     {
         return Err(ApiError::validation());
     }
-    let boot_id = decode_array::<16>(&report.boot_id_base64).ok_or_else(ApiError::validation)?;
-    if boot_id == [0_u8; 16] {
-        return Err(ApiError::validation());
-    }
+    Ok(())
+}
+
+fn validate_report_peers(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    report: &AgentTelemetryReport,
+) -> Result<PeerTelemetryTotals, ApiError> {
     let relay_ids = state
         .relays
         .iter()
         .filter_map(|relay| decode_array::<16>(&relay.relay_id_base64))
         .collect::<HashSet<_>>();
     let mut peer_ids = HashSet::with_capacity(report.peers.len());
-    let mut peer_tx = 0_u64;
-    let mut peer_rx = 0_u64;
-    let mut peer_attempts = 0_u64;
-    let mut peer_successes = 0_u64;
-    let mut peer_latency_samples = 0_u64;
-    let mut peer_latency_total = 0_u64;
+    let mut totals = PeerTelemetryTotals::default();
     for peer in &report.peers {
         let peer_id =
             decode_array::<16>(&peer.peer_node_id_base64).ok_or_else(ApiError::validation)?;
@@ -269,46 +305,40 @@ fn validate_report(
         {
             return Err(ApiError::validation());
         }
-        peer_tx = peer_tx
-            .checked_add(peer.tx_bytes_total)
-            .ok_or_else(ApiError::validation)?;
-        peer_rx = peer_rx
-            .checked_add(peer.rx_bytes_total)
-            .ok_or_else(ApiError::validation)?;
-        peer_attempts = peer_attempts
-            .checked_add(peer.handshake_attempts_total)
-            .ok_or_else(ApiError::validation)?;
-        peer_successes = peer_successes
-            .checked_add(peer.handshake_successes_total)
-            .ok_or_else(ApiError::validation)?;
-        peer_latency_samples = peer_latency_samples
-            .checked_add(peer.latency_samples_total)
-            .ok_or_else(ApiError::validation)?;
-        peer_latency_total = peer_latency_total
-            .checked_add(peer.latency_microseconds_total)
-            .ok_or_else(ApiError::validation)?;
+        checked_accumulate(&mut totals.tx_bytes, peer.tx_bytes_total)?;
+        checked_accumulate(&mut totals.rx_bytes, peer.rx_bytes_total)?;
+        checked_accumulate(
+            &mut totals.handshake_attempts,
+            peer.handshake_attempts_total,
+        )?;
+        checked_accumulate(
+            &mut totals.handshake_successes,
+            peer.handshake_successes_total,
+        )?;
+        checked_accumulate(&mut totals.latency_samples, peer.latency_samples_total)?;
+        checked_accumulate(
+            &mut totals.latency_microseconds,
+            peer.latency_microseconds_total,
+        )?;
     }
-    if report.tx_bytes_total < peer_tx
-        || report.rx_bytes_total < peer_rx
-        || report.handshake_attempts_total < peer_attempts
-        || report.handshake_successes_total < peer_successes
-        || report.latency_samples_total < peer_latency_samples
-        || report.latency_microseconds_total < peer_latency_total
-    {
-        return Err(ApiError::validation());
-    }
-    let totals = TelemetryTotals {
-        tx_bytes: to_i64(report.tx_bytes_total)?,
-        rx_bytes: to_i64(report.rx_bytes_total)?,
-        handshake_attempts: to_i64(report.handshake_attempts_total)?,
-        handshake_successes: to_i64(report.handshake_successes_total)?,
-        acl_drops: to_i64(report.acl_drops_total)?,
-        replay_drops: to_i64(report.replay_drops_total)?,
-        latency_samples: to_i64(report.latency_samples_total)?,
-        latency_microseconds: to_i64(report.latency_microseconds_total)?,
-    };
-    let report_json = serde_json::to_value(report).map_err(|_| ApiError::validation())?;
-    Ok((boot_id, totals, report_json))
+    Ok(totals)
+}
+
+const fn report_contains_peer_totals(
+    report: &AgentTelemetryReport,
+    peers: &PeerTelemetryTotals,
+) -> bool {
+    report.tx_bytes_total >= peers.tx_bytes
+        && report.rx_bytes_total >= peers.rx_bytes
+        && report.handshake_attempts_total >= peers.handshake_attempts
+        && report.handshake_successes_total >= peers.handshake_successes
+        && report.latency_samples_total >= peers.latency_samples
+        && report.latency_microseconds_total >= peers.latency_microseconds
+}
+
+fn checked_accumulate(total: &mut u64, value: u64) -> Result<(), ApiError> {
+    *total = total.checked_add(value).ok_or_else(ApiError::validation)?;
+    Ok(())
 }
 
 fn totals_decreased(row: &sqlx::postgres::PgRow, totals: TelemetryTotals) -> bool {
