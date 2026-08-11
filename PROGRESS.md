@@ -1,10 +1,10 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-09
-当前 Git 提交：以包含本记录的提交为准；Gate 23 实现基线为 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`
+最后更新时间：2026-08-12
+当前 Git 提交：以包含本记录的提交为准；Gate 20 实现候选为 `9291400ac030045e8ea2955ea137e7dc8be37a85`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
-当前总状态：`NO_GO`（Gate 16 已通过；Gate 23 可自行修复项已清零，但 Gate 02/13/14/23/25 及外部门禁仍未闭合）
-当前里程碑：`生产门禁修复 V2：Gate 23 内部整改完成，继续下一未闭合内部 Gate`
+当前总状态：`NO_GO`（Gate 20 仓库侧子矩阵通过，但 Gate 02/13/14/20/23/25 及外部门禁仍未闭合）
+当前里程碑：`生产门禁修复 V2：Gate 20 内部矩阵完成，进入 Gate 21 性能与容量`
 
 ---
 
@@ -515,3 +515,12 @@ make clean
 - 失败链完整保留：ShellCheck、真实双 POST、无效 pattern/trace 表面、CSRF tab rotation、API 契约断言、选择器歧义、托管包源、403 文案、Chromium 204 伪失败和 artifact 隐藏文件清单均按根因修复；没有 skip、allowed failure、重试掩盖或阈值降低。
 - 精确 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；Console job `93905489516`、artifact `9116327161`、GitHub/独立 ZIP 一致的 digest `f6d4903febab15e6c92bd46ee91451bfbea849fae84a166afd4aa1c0b67632d6`、139/139 文件清单和零发现无值扫描通过。
 - Gate 19 仍为 `PARTIAL`：计划域名 origin SNI/certificate/vhost、CDN、正式公网 Console/API/WebSocket、外部浏览器与当前分支部署仍无证据，由 Gate 13/`KI-025` 保持外部阻塞。本轮未连接或修改生产，最后已知运行 revision 仍为 `3d93656`，总体保持 `NO_GO`；下一步进入 Gate 20 及其他可自行完成的内部硬门禁。
+
+## 2026-08-12 Gate 20 生产可观测性与告警子矩阵
+
+- Agent/Relay 认证累计遥测扩展到 ACL、重放、分类丢弃、I/O、注册重试和转发；Controller 以有界窗口持久化，并提供认证、低基数、无主体标识的 `/v1/admin/observability` 聚合。schema 1 原签名字节保持兼容，schema 2 增量执行同 boot 单调检查，XSP/1 wire bytes 未改变。
+- 新增 root-only 五分钟 host collector，覆盖 `/proc`、磁盘/inode、FD/任务、网络、日志、精确 Docker 容器、loopback health、Controller、严格 TLS、密文备份年龄和私有复制/深度回执；Prometheus/JSON 与去重状态原子替换，无界历史不落本机。
+- Webhook 正式模式仅 HTTPS，关闭环境代理和重定向，令牌仅从 owner-matched `0600` 普通文件读取；告警状态机覆盖 firing、严重度变化、去重、resolved、有界重试、溢出和通知失败，通知失败不递归发送。
+- 失败链保留：run `31535053669` 暴露 migration/lint；`31537181594`、artifact `9119262890` 暴露 ShellCheck 和 unset 夹具；`31537531579`、artifact `9119401167` 暴露 Webhook fake 缺少 bounded read。所有问题按根因修复，没有 skip、suppress、allowed failure 或阈值降低。
+- 精确 revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 的 run `31537716553` 十个 job 全通过；专项 job `93932721320`、artifact `9119468792`、归档 SHA-256 `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79`、21/13 项两层清单和两次独立无值扫描通过。
+- Gate 20 保持 `PARTIAL/BLOCKED_EXTERNAL`：正式生产尚未部署本分支，也没有独立目的地的 warning/critical 真实送达、on-call 确认和 resolved closure；正式 TLS/备份持续数据与留存同样未形成生产证据。本轮未连接或修改生产，总体保持 `NO_GO`；下一步进入 Gate 21。

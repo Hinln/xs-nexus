@@ -588,3 +588,17 @@
 - [x] 精确证据：revision `5505893710ab1d15e06495603dff08bf5c1e035f`，run `31529393933` 全九 job，job `93905489516`，artifact `9116327161`；archive digest 和 139/139 内部文件 SHA-256 通过。
 - [ ] 公网硬门禁：计划域名严格 origin TLS/SNI、CDN、公开 Console/API/WebSocket、外部浏览器和当前分支生产部署未执行。
 - [x] 结论边界：内部生产形态子矩阵通过，但 Gate 19 保持 `PARTIAL`、Gate 13 保持 `FAIL`、总体保持 `NO_GO`。
+
+## 29. Gate 20 生产可观测性与告警矩阵（2026-08-12）
+
+- [x] 遥测契约：Agent schema 1 原签名兼容，schema 2 增加 ACL/重放累计值；Relay 分类累计值验签、单调和持久化；Controller 聚合不返回主体标识、地址、端点、载荷或秘密。
+- [x] 真实数据层：专项 CI 使用真实 PostgreSQL 完成节点注册、Agent/Relay 遥测、管理认证、聚合、新鲜度、完整性、Redis `not_applicable` 和负向边界。
+- [x] 主机采集：CPU、内存、网络、FD、任务、磁盘、inode、受限日志、Docker 状态/stats、HTTP health、Controller、TLS、备份年龄及两类回执均有失败关闭路径。
+- [x] TLS/文件安全：真实本地证书链与 hostname/SNI 通过；URL 凭据/query/fragment、非 loopback HTTP、链接/宽权限/异主私有文件、未来/陈旧/错误回执均拒绝。
+- [x] 告警生命周期：warning firing、同严重度去重、warning→critical、critical 非零、resolved、通知失败重试和 256 项队列上限通过。
+- [x] 外呼边界：Controller/Webhook 禁用环境代理和重定向；正式 Webhook 只允许 HTTPS；两个令牌分离且不进入 URL、环境示例、输出、日志或证据。
+- [x] systemd：hardened oneshot/timer 通过离线 `systemd-analyze verify`，四分钟超时、空 capability、私有目录和内核/命名空间保护保持。
+- [x] 失败链：`31535053669`、`31537181594`/`9119262890`、`31537531579`/`9119401167` 完整保留；没有删除失败、allowed failure、skip、suppress 或断言弱化。
+- [x] 精确证据：revision `9291400ac030045e8ea2955ea137e7dc8be37a85`，run `31537716553` 全十 job，job `93932721320`，artifact `9119468792`；archive/两层 SHA-256、场景矩阵和两次独立无值扫描通过。
+- [ ] 生产送达：独立目的地 warning/critical、on-call acknowledgement、故障解除后的 resolved closure、正式 TLS/备份持续采样与留存仍为 `BLOCKED_EXTERNAL`。
+- [x] 结论边界：仓库侧子矩阵通过，但 Gate 20 保持 `PARTIAL`，生产未变且总体保持 `NO_GO`。

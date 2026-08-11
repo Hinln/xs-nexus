@@ -131,3 +131,12 @@
 - Retained the complete workflow failure chain. Two failed trace-bearing artifacts were deleted for secret hygiene after diagnosis; immutable workflow logs remain and the successful artifact has a zero-finding no-value scan.
 - Exact revision `5505893710ab1d15e06495603dff08bf5c1e035f` passed all nine jobs in run `31529393933`; job `93905489516`, artifact `9116327161`, matching archive digest and exact 139/139 inner manifest pass.
 - Gate 19 remains `PARTIAL` because planned-domain strict origin TLS/SNI, CDN routing, the external public browser/API/WebSocket path and deployment of the current branch remain absent. Production was not changed and overall status remains `NO_GO`.
+
+### Gate 20 production observability submatrix
+
+- Added authenticated cumulative ACL/replay and detailed Relay telemetry with schema 1/2 rolling compatibility, monotonic persistence, bounded retention, and a low-cardinality authenticated Controller aggregate endpoint.
+- Replaced the shallow shell guard with a standard-library Python collector for host, Docker, HTTP, Controller, strict TLS, encrypted backup, and private verification receipts; added atomic Prometheus/JSON output and hardened systemd units.
+- Added firing, severity-change, deduplication, resolved, bounded retry, queue-overflow, and local notification-failure semantics. Production webhooks require HTTPS, disable redirects/environment proxies, and read a separate private token file.
+- Retained migration/lint and two dedicated matrix failures. Fixed unique migration numbering, strict function size, ShellCheck/evidence atomicity, an unset Docker fixture state, and an incomplete Webhook fake without skipping or weakening tests.
+- Exact revision `9291400ac030045e8ea2955ea137e7dc8be37a85` passed all ten jobs in run `31537716553`; job `93932721320`, artifact `9119468792`, archive digest `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79`, both inner manifests, eleven host scenarios, and two independent no-value scans pass.
+- Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL` because no production-independent destination/on-call has proved warning, critical, acknowledgement/escalation, and resolved closure, and the current branch is not deployed. Production was not changed and overall status remains `NO_GO`.

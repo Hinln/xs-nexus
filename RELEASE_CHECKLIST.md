@@ -64,6 +64,7 @@
 - [x] 防火墙最小开放（Gate 14：独立 nftables 表、默认拒绝、外部端口和 SSH 负向验证）
 - [x] 生产主机补丁与 reboot（157 个升级、0 pending、`6.8.0-137-generic`、one-shot fallback/watchdog、内外部回归）
 - [x] 有界磁盘治理（`83%`→`77%`；无 global prune/autoremove；`1panel-network` 和无关服务不变）
+- [x] Gate 20 仓库侧监控矩阵（认证聚合、主机/Docker/TLS/备份采集、systemd、告警生命周期和有界重试）
 - [ ] 外部磁盘 warning/critical 真实送达、on-call 确认和 recovery closure（`BLOCKED_EXTERNAL`）
 - [x] 开发和 RC 隔离
 
@@ -112,7 +113,7 @@
 
 必须三选一，并在 `FINAL_REPORT.md` 给出证据。
 
-当前生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；Gate 16 隔离和生产证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`，Gate 14 防火墙与维护证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` 和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`。未完成的 Windows 在线、NAS、计划域名 strict TLS、外部磁盘告警/on-call、正式密钥/异地恢复、全量凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
+当前生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`；Gate 16 隔离和生产证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-postgres-least-privilege-20260809T045131Z` 与 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate16-production-deployment-20260809T045813Z`，Gate 14 防火墙与维护证据分别为 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-host-hardening-20260809T071145Z` 和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`，Gate 20 仓库证据为 run `31537716553` 与 artifact `9119468792`。未完成的 Windows 在线、NAS、计划域名 strict TLS、独立外部告警/on-call/resolved、正式密钥/异地恢复、全量凭据轮换和第三方审计门禁禁止勾选 Release Candidate。
 
 ## Runtime image license closure checkpoint (2026-07-31)
 

@@ -395,3 +395,11 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0061`：Chromium 对成功 fetch `204` 同时发出 `requestfailed/net::ERR_ABORTED`。本地最小假后端稳定复现；observer 只在相同 Request 对象也收到真实 204 时消歧，真正无 response abort 仍失败。run `31525584275` 保留。
 - `XS-2026-0062`：run `31527592960` 全九 job 通过，但独立下载 artifact 后内部清单引用上传器默认过滤的 `.last-run.json`，证据完整性失败。清单现排除所有上传器同样排除的隐藏路径；最终下载 139 个 payload 与 139 个 manifest 项逐一匹配。
 - 精确 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `31529393933` 全九 job 通过；Console job `93905489516`、artifact `9116327161`、GitHub/独立 ZIP 一致 digest、139/139 内部 SHA-256、8 expected 测试、132 张截图和零发现无值扫描通过。没有 skip、allowed failure、断言弱化或生产变更；Gate 19 保持 `PARTIAL`，总体保持 `NO_GO`。
+
+## Gate 20 生产可观测性与告警子矩阵（2026-08-12）
+
+- `XS-2026-0063`：首个遥测实现复用已存在的 SQLx migration 版本 10，并触发 Controller/Agent 超长函数 Clippy。migration 改为唯一版本 11，函数按职责抽取；后续协议向量生成器 104 行同样只抽取写文件 helper，wire bytes、向量字节、事务和运行时默认值不变。失败 run `31535053669` 保留。
+- `XS-2026-0064`：首次主机告警 job 中，ShellCheck 拒绝掩盖返回值的声明和同 pipeline 读写清单；Docker fake 又只在比较时使用默认状态，随后在 `set -u` 下读取未设置变量。改为分离声明、在 evidence 外生成清单再原子移动，并先物化默认 fixture state。失败 run `31537181594`、artifact `9119262890` 和 archive digest 保留。
+- `XS-2026-0065`：Webhook 环境代理隔离回归的 fake response 没有实现生产客户端的有界 `read(1)`，导致功能路径全部通过后纯测试替身失败。fake 现显式断言该读取；没有删除 proxy isolation、响应读取或 Webhook 断言。失败 run `31537531579`、artifact `9119401167` 和 archive digest 保留。
+- 最终 revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 的 run `31537716553` 十个 job 全通过；job `93932721320`、artifact `9119468792`、archive digest `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79`、21/13 项两层 SHA-256、11 项 host 场景和两次独立无值扫描通过。
+- 仓库侧采集、阈值、状态机和通知客户端完成，但没有把 localhost Webhook 或 CI TLS 夹具称为生产告警。外部 warning/critical、on-call 和 resolved closure 保持 `PRV2-010`/`KI-024`，Gate 20 保持 `PARTIAL/BLOCKED_EXTERNAL`，总体保持 `NO_GO`。

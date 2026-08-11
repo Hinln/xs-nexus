@@ -271,6 +271,28 @@ Nine preceding workflow states retain the full diagnostic chain for ShellCheck, 
 
 Gate 19 remains `PARTIAL`. Internal hosted runtime and visual evidence cannot replace the owner-controlled planned-domain origin certificate/SNI/vhost, CDN strict routing, public browser/API/WebSocket path or deployment of the current branch. Production was not changed and overall status remains `NO_GO`.
 
+## Gate 20 Production Observability Evidence
+
+| Evidence | Path | Result |
+|---|---|---|
+| Exact current source | Git revision `9291400ac030045e8ea2955ea137e7dc8be37a85` | VERIFIED |
+| Exact-head CI | GitHub Actions run [`31537716553`](https://github.com/Hinln/xs-nexus/actions/runs/31537716553) | PASS, ALL 10 JOBS |
+| Dedicated observability job | GitHub Actions job [`93932721320`](https://github.com/Hinln/xs-nexus/actions/runs/31537716553/job/93932721320) | PASS |
+| Observability artifact | GitHub artifact `9119468792`, `production-observability-evidence` | PASS |
+| Artifact archive digest | `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79` | VERIFIED AGAINST INDEPENDENT ZIP DOWNLOAD |
+| Downloaded evidence | `C:\Users\panyo\Documents\Codex\2026-07-29\yue\evidence-31537716553-zip` | PASS |
+| Outer manifest | `SHA256SUMS` hash `d6d0b12763e7bd10e1e37e9cc1384db40f8b353a5e8bd8776e57d35ef1727f95` | PASS, 21 ENTRIES |
+| Host manifest | `host/SHA256SUMS` hash `b2713ff0203d14df272cb2c5fe43be00d93f30ba9f2ef15d5001855656ee7a88` | PASS, 13 ENTRIES |
+| Scenario matrices | Top 5 checks and host 11 scenarios | PASS, 0 SKIPPED/ALLOWED FAILURE |
+| Downloaded no-value scans | GitHub extraction and independent ZIP extraction | PASS, 0 FINDINGS |
+| Full Gate 20 mapping and failure chain | `audit/production-readiness-remediation-v2/OBSERVABILITY.md` | PARTIAL |
+
+The matrix uses real PostgreSQL and real local TLS, verifies the hardened systemd service/timer, and exercises host, Docker, HTTP, Controller, certificate, backup, warning, critical, deduplication, severity change, resolved, delivery failure, queue, private-file, proxy, credential non-persistence, and atomic-write boundaries. Agent/Relay reports are authenticated, cumulative, monotonic, bounded, and aggregated without subject identifiers.
+
+Failed run `31537181594`, artifact `9119262890`, and archive digest `929f20a399fe2bb61842b13291b6a70b4799015ca022723e512eb70acc0af264` retain the ShellCheck and unset-fixture failures. Failed run `31537531579`, artifact `9119401167`, and archive digest `96fba0425835127f992781e505ae5edd0cea70c4d0fce5dde366b1e6744c4aa8` retain the incomplete Webhook fake. Earlier run `31535053669` retains migration/lint failures. No product assertion or threshold was skipped, suppressed, allowed to fail, or weakened.
+
+Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a destination independent of the monitored production host, real warning/critical receipt, documented on-call acknowledgement/escalation, resolved closure, formal retention, or continuous production TLS/backup evidence. Production was not changed and overall remains `NO_GO`.
+
 ## V2 Evidence Rules
 
 - Every new run gets an immutable UTC timestamped directory outside Git.
@@ -286,5 +308,5 @@ Gate 19 remains `PARTIAL`. Internal hosted runtime and visual evidence cannot re
 - Gate 14 independent warning/critical disk-alert delivery and on-call acknowledgement. SSH/firewall, security-update/reboot regression, and bounded disk cleanup are now evidenced.
 - Gate 13 origin TLS chain, SNI, CDN mode, browser/API/WebSocket/Console E2E.
 - Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
-- Gates 20/21/22/25 current-revision regressions. Gate 19's repository runtime/visual matrix is complete, while its Gate 13 planned-domain strict TLS/CDN/public browser path remains external. Gate 18's repository-side failure matrix is complete, while formal keys/ceremony, authenticated production distribution, signed RC, real target-platform execution, and the production release chain remain open. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
+- Gates 21/22/25 current-revision regressions. Gate 20's repository metrics and alert matrix is complete, while independent production delivery/on-call/resolved closure and formal TLS/backup evidence remain external. Gate 19's repository runtime/visual matrix is complete, while its Gate 13 planned-domain strict TLS/CDN/public browser path remains external. Gate 18's repository-side failure matrix is complete, while formal keys/ceremony, authenticated production distribution, signed RC, real target-platform execution, and the production release chain remain open. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.

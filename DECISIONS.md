@@ -1136,3 +1136,12 @@
 - 聚合：认证的 `/v1/admin/observability` 只返回低基数总量、新鲜度和完整性，不返回任何主体标识、名称、地址、端点或秘密。无样本与陈旧样本不能等价为零故障；Redis 在当前 Controller 无依赖时明确为 `not_applicable`。控制认证失败使用进程单调计数，后续主机采集器负责形成跨采样趋势。
 - 兼容性：滚动顺序固定为 Controller-first、Agent-second。旧 Agent schema 1 的原签名继续通过；旧 Controller 不理解 schema 2，升级 Agent 前必须先完成 Controller 切换。XSP/1 wire bytes、向量字节和 corpus 中的协议消息不变；向量元数据、状态 Fuzz 断言和 corpus seed 已同步更新。
 - 边界：本 ADR 只建立可复现采集契约，不证明外部通知送达、真人值班确认、证书、公网、生产密钥或独立审计；Gate 20 与总体结论在这些证据完成前不得提升为 GO。
+
+## ADR-099：生产告警采用本机原子状态、有界重试与独立 HTTPS 目的地
+
+- 日期：2026-08-12
+- 背景：仅依赖 systemd 失败或 journal 会在主机失联时同时失去检测与通知；把每次采样直接发送又会形成重复风暴，通知自身失败若再次生成通知则可能递归。环境变量、URL query 或指标标签携带凭据还会扩大进程、日志和证据泄露面。
+- 决策：root oneshot 每五分钟读取受控宿主/容器状态和 loopback Controller 聚合，原子写入最新 Prometheus/JSON；只对首次 firing、严重度变化和 resolved 生成事件，同一状态去重。未送达事件按稳定 ID 保存在最多 256 项的本机私有队列，溢出和发送失败形成仅本机 critical，通知失败本身不进入通知转换。
+- 外呼边界：正式 Webhook 只允许 HTTPS、拒绝 URL 凭据/query/fragment/重定向并关闭环境代理；Controller 与 Webhook Token 分离，均只从 owner-matched `0600` 普通文件读取。Controller URL 必须 loopback，HTTP probe 也只能用于 loopback，远端探测要求 HTTPS。
+- 证据：revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 的专项 job `93932721320` 通过真实 PostgreSQL、真实本地 TLS、systemd verify、warning/critical/去重/严重度变化/resolved、容器/HTTP/通知失败、队列、私有文件、原子写和无值扫描；artifact `9119468792` 的归档和两层 SHA-256 已独立验证。
+- 边界：localhost Webhook 和 hosted Linux 只证明实现路径。只有独立于被监控主机的正式目的地真实收到 warning/critical、由 on-call 确认并在故障解除后关闭，Gate 20 才能 `PASS`；在此之前保持 `PARTIAL/BLOCKED_EXTERNAL`，总体保持 `NO_GO`。

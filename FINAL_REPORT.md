@@ -135,3 +135,10 @@
 - Gate 23 可自行修复项已在 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b` 关闭：通用 JSON 拒绝、PostgreSQL `10m`/`5` 日志、SQLx `0.9.0`/`rsa` 公告清除和完整 cargo-deny license policy。GitHub Actions run `31313868529` 与 clean-checkout evidence `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 全通过。
 - 九个失败/非权威 Gate 23 根均保留并封存；独立复核 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z` 通过，生产健康、临时 QA 资源为 0、`1panel-network` 和默认路由不变。
 - 生产未部署 `3bf8619`。全量凭据轮换、正式密钥仪式、第三方审计、计划域名、真实 Windows/NAS/WAN/子网路由、异地恢复、外部告警、当前 revision soak、main/signed RC 和正式部署演练仍开放。因此 Decision 仍为 `NO_GO`，不得标记 Release Candidate 或公网生产就绪。
+
+## 18. 2026-08-12 Gate 20 可观测性复核
+
+- 精确 revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 完成认证低基数 Agent/Relay/Controller 遥测、真实 PostgreSQL 聚合、宿主/Docker/HTTP/TLS/备份采集、hardened systemd、原子输出和有界告警状态机。
+- GitHub Actions run `31537716553` 十个 job 全通过；专项 job `93932721320` 与 artifact `9119468792` 覆盖 11 项 host 场景，archive/21 项外层/13 项内层 SHA-256 和两次独立无值扫描通过。失败 runs/artifacts 保留且没有 skip、suppress、allowed failure 或阈值弱化。
+- 该结果只关闭 Gate 20 的仓库侧子矩阵。生产仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，没有独立目的地的 warning/critical 真实送达、on-call acknowledgement/escalation、resolved closure 或正式 TLS/备份持续留存证据。
+- Gate 20 仍为 `PARTIAL/BLOCKED_EXTERNAL`，Gate 14 仍为 `PARTIAL`，总体 Decision 仍为 `NO_GO`。当前版本不得标记 Release Candidate 或投入公网生产。

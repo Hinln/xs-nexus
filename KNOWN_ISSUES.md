@@ -333,10 +333,10 @@
 - 严重度：高
 - 状态：外部阻塞（内部项已完成）
 - 首次发现：2026-08-09 Gate 14 生产基线。
-- 已完成：仅密钥 SSH、root/password/旧钥拒绝、最小 INPUT 默认拒绝、1Panel TCP `188` 公网关闭与受限 tunnel、路由/IP rule/nftables/`1panel-network` 不变量和回滚安全均已通过。全部 157 个升级和 9 个依赖已安装，新内核 `6.8.0-137-generic` 通过 one-shot/fallback/watchdog 和内外部回归；根分区从 `83%` 降至 `77%`，约 `14.15 GB` 可用。证据为 Gate 14 防火墙根和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate14-maintenance-20260809T081438Z`。
-- 影响：主机仍没有独立于被监控服务器的 warning/critical 磁盘通知目标、真实送达回执或 on-call acknowledgement。主机本地日志或静态状态不能证明通知路径可用，因此 Gate 14/20 不能因补丁和空间恢复而判定 `PASS`。
-- 计划：由所有者/SRE 提供并批准外部通知 provider、destination、凭据和 on-call；配置 warning/critical 阈值，分别触发真实告警，确认外部接收/确认，再清除条件并证明恢复通知。不得把模拟、本机 journal 或未送达事件计作通过。
-- 解除条件：warning 与 critical 事件均由独立目标真实收到并被记录的 on-call 确认，故障解除后 recovery/closure 也真实送达；证据无秘密且加入审计索引。完成前 Gate 14 保持 `PARTIAL`。
+- 已完成：Gate 14 主机硬化、补丁/reboot 和有界磁盘治理均通过。Gate 20 又在 exact revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 完成认证低基数 Controller 遥测、root-only 主机/Docker/TLS/备份采集、systemd hardening、warning/critical/去重/严重度变化/resolved、有界重试和 HTTPS Webhook 客户端；run `31537716553`、job `93932721320`、artifact `9119468792` 的归档/两层清单和无值扫描通过。
+- 影响：生产仍没有独立于被监控服务器的 warning/critical 通知目标、真实送达回执、on-call acknowledgement/escalation 或 resolved closure；当前分支也未部署并持续采集正式 TLS/备份状态。主机本地日志、CI localhost Webhook 或静态状态不能证明通知路径可用，因此 Gate 14/20 不能判定 `PASS`。
+- 计划：由所有者/SRE 提供并批准外部通知 provider、destination、凭据、留存和 on-call；在精确正式 release 上配置并部署采集器，分别触发真实 warning/critical，确认外部接收/确认/升级，再清除条件并证明 resolved。不得把模拟、本机 journal 或未送达事件计作通过。
+- 解除条件：warning 与 critical 事件均由独立目标真实收到并被记录的 on-call 确认，故障解除后 recovery/closure 也真实送达；正式 TLS/备份采样持续存在，证据无秘密且加入审计索引。完成前 Gate 14/20 保持 `PARTIAL/BLOCKED_EXTERNAL`。
 
 ---
 
