@@ -234,6 +234,7 @@ current_release() {
 }
 
 assert_active() {
+    local route_output
     [[ -f "$test_root/run/fake-systemctl/active" ]] || { printf 'fixture service is not active\n' >&2; exit 1; }
     [[ -f "$test_root/run/fake-systemctl/route" ]] || { printf 'fixture route is not active\n' >&2; exit 1; }
     [[ $(<"$test_root/run/fake-systemctl/route") == "$(current_release)" ]] || {
@@ -242,8 +243,9 @@ assert_active() {
     }
     if [[ -n ${XS_NEXUS_TEST_NETNS:-} ]]; then
         [[ $(ip -n "$XS_NEXUS_TEST_NETNS" -o route show exact 198.18.0.0/24 | wc -l) -eq 1 ]]
-        ip -n "$XS_NEXUS_TEST_NETNS" route show exact 198.18.0.0/24 \
-            | grep -Fx 'blackhole 198.18.0.0/24 metric 4242' >/dev/null
+        route_output=$(ip -n "$XS_NEXUS_TEST_NETNS" -o route show exact 198.18.0.0/24)
+        [[ "$route_output" == 'blackhole 198.18.0.0/24'* ]]
+        [[ " $route_output " == *' metric 4242 '* ]]
     fi
 }
 
