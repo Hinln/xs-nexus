@@ -27,7 +27,7 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     colorScheme: "light",
     reducedMotion: "reduce",
-    trace: "retain-on-failure",
+    trace: "off",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },

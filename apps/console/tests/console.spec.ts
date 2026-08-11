@@ -137,6 +137,19 @@ test("网络创建阻止快速重复提交", async ({ page }) => {
   expect(createRequests).toBe(1);
 });
 
+test("用户创建表单使用有效用户名约束", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  const errors = trackBrowserErrors(page);
+  await page.goto("/#/users");
+  await page.getByRole("button", { name: "创建用户" }).click();
+  const username = page.getByLabel("用户名");
+  await username.fill("gate19-auditor");
+  expect(await username.evaluate((input: HTMLInputElement) => input.checkValidity())).toBe(true);
+  await username.fill("Invalid User");
+  expect(await username.evaluate((input: HTMLInputElement) => input.checkValidity())).toBe(false);
+  expect(errors).toEqual([]);
+});
+
 test("更新页导入公开签名材料并以代次保护灰度策略", async ({ page }) => {
   await mockAuthenticatedApi(page);
   let importedBody: Record<string, unknown> | null = null;

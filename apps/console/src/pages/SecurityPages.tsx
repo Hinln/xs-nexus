@@ -148,7 +148,7 @@ export function UsersPage({
       {showForm ? (
         <form className="panel form-panel" onSubmit={(event) => void submit(event)}>
           <div className="form-grid">
-            <label>用户名<input name="username" required minLength={3} maxLength={64} pattern="[a-z0-9][a-z0-9._-]{2,63}" autoComplete="off" /></label>
+            <label>用户名<input name="username" required minLength={3} maxLength={64} pattern="[a-z0-9](?:[a-z0-9._]|-){2,63}" autoComplete="off" /></label>
             <label>显示名称<input name="display_name" required maxLength={80} autoComplete="off" /></label>
             <label>初始密码<input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label>
             <label>角色<select name="role" defaultValue="auditor"><option value="administrator">管理员</option><option value="operator">运维员</option><option value="auditor">审计员</option></select></label>
