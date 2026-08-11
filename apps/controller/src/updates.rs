@@ -307,23 +307,8 @@ pub(crate) async fn replace_policy(
     if !network_exists {
         return Err(ApiError::not_found());
     }
-    let release = sqlx::query_as::<_, ReleaseRow>(
-        "SELECT id, version, platform, architecture, target, archive_name,
-                archive_size, archive_sha256, archive_url, revoked_at,
-                revocation_reason, created_at
-         FROM update_releases WHERE id = $1",
-    )
-    .bind(request.release_id)
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(internal_database)?
-    .ok_or_else(ApiError::not_found)?;
-    if release.platform != platform
-        || release.architecture != architecture
-        || release.revoked_at.is_some()
-    {
-        return Err(ApiError::validation());
-    }
+    let release =
+        policy_release(&mut transaction, request.release_id, platform, architecture).await?;
     let target_version = release
         .version
         .parse::<ReleaseVersion>()
@@ -387,6 +372,32 @@ pub(crate) async fn replace_policy(
         },
         release,
     )
+}
+
+async fn policy_release(
+    transaction: &mut Transaction<'_, Postgres>,
+    release_id: Uuid,
+    platform: &str,
+    architecture: &str,
+) -> Result<ReleaseRow, ApiError> {
+    let release = sqlx::query_as::<_, ReleaseRow>(
+        "SELECT id, version, platform, architecture, target, archive_name,
+                archive_size, archive_sha256, archive_url, revoked_at,
+                revocation_reason, created_at
+         FROM update_releases WHERE id = $1",
+    )
+    .bind(release_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(internal_database)?
+    .ok_or_else(ApiError::not_found)?;
+    if release.platform != platform
+        || release.architecture != architecture
+        || release.revoked_at.is_some()
+    {
+        return Err(ApiError::validation());
+    }
+    Ok(release)
 }
 
 async fn persist_policy(
