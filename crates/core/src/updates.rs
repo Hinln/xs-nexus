@@ -533,7 +533,10 @@ mod tests {
                 ReleaseManifestError::ArchiveSize,
             ),
             (
-                &VALID_MANIFEST.replace("0123456789abcdef", "G123456789abcdef"),
+                &VALID_MANIFEST.replace(
+                    "archive_sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "archive_sha256=G123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                ),
                 ReleaseManifestError::ArchiveHash,
             ),
         ];
