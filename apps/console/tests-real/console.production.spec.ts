@@ -507,7 +507,7 @@ test.describe.serial("真实生产 Console 完整矩阵", () => {
     }, session.csrf_token);
     expect(bypass).toEqual({
       status: 403,
-      body: { error: { code: "forbidden", message: "request is not authorized" } },
+      body: { error: { code: "forbidden", message: "permission denied" } },
     });
 
     await page.getByRole("button", { name: "退出" }).click();
