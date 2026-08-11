@@ -510,7 +510,13 @@ test.describe.serial("真实生产 Console 完整矩阵", () => {
       body: { error: { code: "forbidden", message: "permission denied" } },
     });
 
+    const logoutResponsePromise = page.waitForResponse(
+      (response) =>
+        apiPath(response.url()) === "/v1/auth/logout" &&
+        response.request().method() === "POST",
+    );
     await page.getByRole("button", { name: "退出" }).click();
+    expect((await logoutResponsePromise).status()).toBe(204);
     await expect(page.getByRole("heading", { name: "进入管理控制台" })).toBeVisible();
     const sessionAfterLogout = await page.evaluate(async () =>
       (await fetch("/v1/auth/session", { headers: { Accept: "application/json" } })).status,
@@ -548,6 +554,8 @@ test.describe.serial("真实生产 Console 完整矩阵", () => {
 });
 
 function observePage(page: Page, label: string): BrowserObservation {
+  const successfulNoContentRequests = new WeakSet<Request>();
+  const pendingNoContentAborts = new Map<Request, RequestFailure>();
   const observation: BrowserObservation = {
     label,
     consoleErrors: [],
@@ -563,10 +571,20 @@ function observePage(page: Page, label: string): BrowserObservation {
   });
   page.on("pageerror", (error) => observation.pageErrors.push(error.name));
   page.on("response", (response) => {
+    const requestValue = response.request();
+    if (response.status() === 204) {
+      successfulNoContentRequests.add(requestValue);
+      const pendingFailure = pendingNoContentAborts.get(requestValue);
+      if (pendingFailure !== undefined) {
+        const index = observation.requestFailures.indexOf(pendingFailure);
+        if (index !== -1) observation.requestFailures.splice(index, 1);
+        pendingNoContentAborts.delete(requestValue);
+      }
+    }
     const path = apiPath(response.url());
     if (path.startsWith("/v1/") && response.status() >= 400) {
       observation.httpFailures.push({
-        method: response.request().method(),
+        method: requestValue.method(),
         path,
         status: response.status(),
       });
@@ -575,11 +593,21 @@ function observePage(page: Page, label: string): BrowserObservation {
   page.on("requestfailed", (requestValue) => {
     const path = apiPath(requestValue.url());
     if (path.startsWith("/v1/")) {
-      observation.requestFailures.push({
+      const failure = {
         method: requestValue.method(),
         path,
         error: classifyNetworkError(requestValue.failure()?.errorText ?? "unknown"),
-      });
+      };
+      if (
+        failure.error === "network_error_ERR_ABORTED" &&
+        successfulNoContentRequests.has(requestValue)
+      ) {
+        return;
+      }
+      observation.requestFailures.push(failure);
+      if (failure.error === "network_error_ERR_ABORTED") {
+        pendingNoContentAborts.set(requestValue, failure);
+      }
     }
   });
   return observation;
