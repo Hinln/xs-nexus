@@ -126,9 +126,12 @@ verify_release_signature() {
 }
 
 canonical_positive_u64() {
-    local value=$1
+    local value=$1 high low
     [[ $value =~ ^[1-9][0-9]{0,19}$ ]] || return 1
-    ((${#value} < 20)) || [[ $value < 18446744073709551616 ]]
+    ((${#value} < 20)) && return 0
+    high=${value:0:10}
+    low=${value:10:10}
+    ((10#$high < 1844674407 || (10#$high == 1844674407 && 10#$low <= 3709551615)))
 }
 
 verify_payload_manifest() {

@@ -212,6 +212,21 @@ assert_fails() {
     fi
 }
 
+assert_builder_rejects() {
+    local version=$1 source_date_epoch=$2
+    assert_fails env SOURCE_DATE_EPOCH="$source_date_epoch" "$BUILDER" \
+        --target x86_64-unknown-linux-gnu \
+        --signing-key "$private_key" \
+        --output "$artifacts" \
+        --version "$version" \
+        --binary-dir "$binaries"
+}
+
+assert_builder_rejects 01.0.0 1700000000
+assert_builder_rejects 4294967296.0.0 1700000000
+assert_builder_rejects 1.0.0 0
+assert_builder_rejects 1.0.0 18446744073709551616
+
 current_release() {
     basename "$(readlink "$test_root/usr/local/lib/xs-nexus/current")"
 }
