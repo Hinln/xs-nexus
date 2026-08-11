@@ -479,6 +479,10 @@ class FakeResponse:
     def __exit__(self, *_args):
         return False
 
+    def read(self, amount):
+        assert amount == 1
+        return b""
+
 
 class FakeOpener:
     def open(self, _request, timeout):
