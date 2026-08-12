@@ -1142,8 +1142,10 @@ printf '%s\n' "$SAMPLE_INTERVAL_SECONDS" >"$EVIDENCE_DIR/sample-interval-seconds
 printf '%s\n' "$CALIBRATION" >"$EVIDENCE_DIR/calibration.txt"
 printf '%s\n%s\n' "$UNDERLAY_SUBNET" "$LAN_SUBNET" >"$EVIDENCE_DIR/isolated-subnets.txt"
 
-cargo build --locked --release -p xs-agent --bin xs-agent -p xs-cli \
-    -p xs-protocol --example derive_ed25519_public >"$EVIDENCE_DIR/agent-build.log" 2>&1
+{
+    cargo build --locked --release -p xs-agent --bin xs-agent -p xs-cli --bin xs
+    cargo build --locked --release -p xs-protocol --example derive_ed25519_public
+} >"$EVIDENCE_DIR/agent-build.log" 2>&1
 for image in "$AGENT_RUNTIME_IMAGE" "$ALPINE_IMAGE" "$POSTGRES_IMAGE"; do
     docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >/dev/null
 done
