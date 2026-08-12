@@ -9,6 +9,7 @@ DURATION_SECONDS=${XS_SOAK_DURATION_SECONDS:-86400}
 SAMPLE_INTERVAL_SECONDS=${XS_SOAK_SAMPLE_INTERVAL_SECONDS:-60}
 CALIBRATION=${XS_SOAK_CALIBRATION:-0}
 EVIDENCE_DIR=${EVIDENCE_DIR:-"$ROOT_DIR/artifacts/qa/current-revision-soak-$(date -u +%Y%m%dT%H%M%SZ)"}
+AGENT_BUILDER_IMAGE=${XS_SOAK_AGENT_BUILDER_IMAGE:-rust:1.94.0-bookworm@sha256:365468470075493dc4583f47387001854321c5a8583ea9604b297e67f01c5a4f}
 AGENT_RUNTIME_IMAGE=${XS_SOAK_AGENT_RUNTIME_IMAGE:-gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e}
 ALPINE_IMAGE=${XS_SOAK_ALPINE_IMAGE:-alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce}
 POSTGRES_IMAGE=postgres:18-alpine3.22@sha256:774521500f4c22761b25a6bdb772a0a3c2e8dd32468210bdad9231c5752ea398
@@ -34,6 +35,7 @@ BACKUP_DIRECTORY="$TEMPORARY/backups"
 REPLICA_DIRECTORY="$TEMPORARY/replica"
 STATE_DIRECTORY="$TEMPORARY/state"
 BINARY_DIRECTORY="$TEMPORARY/bin"
+AGENT_BUILD_TARGET_DIRECTORY="$TEMPORARY/agent-target"
 AGENT_A_ROOT="$TEMPORARY/agent-a"
 AGENT_B_ROOT="$TEMPORARY/agent-b"
 AGENT_C_ROOT="$TEMPORARY/agent-c"
@@ -383,8 +385,8 @@ prepare_secrets() {
         "$RELAY_SECRETS" "$RELEASE_DIRECTORY" "$WINDOWS_RELEASE_DIRECTORY" \
         "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" "$STATE_DIRECTORY" "$BINARY_DIRECTORY"
     chmod 0700 "$CONTROLLER_SECRETS" "$DATABASE_SECRETS" "$POSTGRES_SECRETS" \
-        "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" "$STATE_DIRECTORY" "$BINARY_DIRECTORY"
-    chmod 0755 "$RELEASE_DIRECTORY" "$WINDOWS_RELEASE_DIRECTORY"
+        "$RELAY_SECRETS" "$BACKUP_DIRECTORY" "$REPLICA_DIRECTORY" "$STATE_DIRECTORY"
+    chmod 0755 "$RELEASE_DIRECTORY" "$WINDOWS_RELEASE_DIRECTORY" "$BINARY_DIRECTORY"
 
     openssl rand -hex 32 >"$POSTGRES_SECRETS/bootstrap-password"
     openssl rand -hex 32 >"$POSTGRES_SECRETS/app-password"
@@ -428,13 +430,13 @@ prepare_secrets() {
         >"$WINDOWS_RELEASE_DIRECTORY/xs-nexus-0.1.0-x86_64-pc-windows-msvc.zip"
     chmod 0644 "$RELEASE_DIRECTORY"/* "$WINDOWS_RELEASE_DIRECTORY"/*
 
-    "$ROOT_DIR/target/release/examples/derive_ed25519_public" \
+    "$BINARY_DIRECTORY/derive_ed25519_public" \
         "$CONTROLLER_SECRETS/credential-signing-key" \
         "$RELAY_SECRETS/controller-credential-public-key"
-    "$ROOT_DIR/target/release/examples/derive_ed25519_public" \
+    "$BINARY_DIRECTORY/derive_ed25519_public" \
         "$CONTROLLER_SECRETS/configuration-signing-key" \
         "$CONTROLLER_SECRETS/update-signing-public-key"
-    "$ROOT_DIR/target/release/examples/derive_ed25519_public" \
+    "$BINARY_DIRECTORY/derive_ed25519_public" \
         "$RELAY_SECRETS/identity-key" "$TEMPORARY/relay-public-key"
     RELAY_ID_BASE64=$(python3 -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode())')
     python3 - "$CONTROLLER_SECRETS/relay-catalog.json" "$RELAY_ID_BASE64" \
@@ -457,10 +459,6 @@ catalog = [{
 Path(sys.argv[1]).write_text(json.dumps(catalog), encoding="utf-8")
 PY
     rm -f "$TEMPORARY/relay-public-key"
-
-    cp "$ROOT_DIR/target/release/xs-agent" "$BINARY_DIRECTORY/xs-agent"
-    cp "$ROOT_DIR/target/release/xs" "$BINARY_DIRECTORY/xs"
-    chmod 0555 "$BINARY_DIRECTORY/xs-agent" "$BINARY_DIRECTORY/xs"
 
     local postgres_uid
     postgres_uid=$(docker run --rm --entrypoint id "$POSTGRES_IMAGE" -u postgres)
@@ -1156,13 +1154,48 @@ printf '%s\n' "$SAMPLE_INTERVAL_SECONDS" >"$EVIDENCE_DIR/sample-interval-seconds
 printf '%s\n' "$CALIBRATION" >"$EVIDENCE_DIR/calibration.txt"
 printf '%s\n%s\n' "$UNDERLAY_SUBNET" "$LAN_SUBNET" >"$EVIDENCE_DIR/isolated-subnets.txt"
 
-{
-    cargo build --locked --release -p xs-agent --bin xs-agent -p xs-cli --bin xs
-    cargo build --locked --release -p xs-protocol --example derive_ed25519_public
-} >"$EVIDENCE_DIR/agent-build.log" 2>&1
-for image in "$AGENT_RUNTIME_IMAGE" "$ALPINE_IMAGE" "$POSTGRES_IMAGE"; do
+for image in "$AGENT_BUILDER_IMAGE" "$AGENT_RUNTIME_IMAGE" "$ALPINE_IMAGE" "$POSTGRES_IMAGE"; do
     docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >/dev/null
 done
+
+source_date_epoch=$(git -c safe.directory="$ROOT_DIR" show -s --format=%ct HEAD)
+mkdir -p "$AGENT_BUILD_TARGET_DIRECTORY"
+docker run --rm \
+    --mount "type=bind,src=$ROOT_DIR,dst=/src,readonly" \
+    --mount "type=bind,src=$AGENT_BUILD_TARGET_DIRECTORY,dst=/target" \
+    --workdir /src \
+    --env CARGO_TARGET_DIR=/target \
+    --env "XS_BUILD_GIT_COMMIT=$revision" \
+    --env "XS_BUILD_DATE_EPOCH=$source_date_epoch" \
+    "$AGENT_BUILDER_IMAGE" \
+    sh -euc '
+        cargo build --locked --release -p xs-agent --bin xs-agent -p xs-cli --bin xs
+        cargo build --locked --release -p xs-protocol --example derive_ed25519_public
+    ' >"$EVIDENCE_DIR/agent-build.log" 2>&1
+
+{
+    for image in "$AGENT_BUILDER_IMAGE" "$AGENT_RUNTIME_IMAGE" "$ALPINE_IMAGE" "$POSTGRES_IMAGE"; do
+        docker image inspect "$image" --format '{{.Id}} {{json .RepoDigests}}'
+    done
+} >"$EVIDENCE_DIR/harness-images.txt"
+
+mkdir -p "$BINARY_DIRECTORY"
+chmod 0755 "$BINARY_DIRECTORY"
+cp "$AGENT_BUILD_TARGET_DIRECTORY/release/xs-agent" "$BINARY_DIRECTORY/xs-agent"
+cp "$AGENT_BUILD_TARGET_DIRECTORY/release/xs" "$BINARY_DIRECTORY/xs"
+cp "$AGENT_BUILD_TARGET_DIRECTORY/release/examples/derive_ed25519_public" \
+    "$BINARY_DIRECTORY/derive_ed25519_public"
+chmod 0555 "$BINARY_DIRECTORY/xs-agent" "$BINARY_DIRECTORY/xs" \
+    "$BINARY_DIRECTORY/derive_ed25519_public"
+
+{
+    docker run --rm \
+        --mount "type=bind,src=$BINARY_DIRECTORY,dst=/workspace,readonly" \
+        --entrypoint /workspace/xs-agent "$AGENT_RUNTIME_IMAGE" --version
+    docker run --rm \
+        --mount "type=bind,src=$BINARY_DIRECTORY,dst=/workspace,readonly" \
+        --entrypoint /workspace/xs "$AGENT_RUNTIME_IMAGE" --version
+} >"$EVIDENCE_DIR/agent-runtime-compatibility.log" 2>&1
 
 prepare_secrets
 write_environment
