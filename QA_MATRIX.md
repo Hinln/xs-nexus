@@ -615,3 +615,15 @@
 - [ ] 公网、多地域、多实例、volumetric/distributed abuse、小时/天级容量仍为 `BLOCKED_EXTERNAL`。
 - [ ] Gate 22 当前 revision 至少 24 小时采样及完整故障注入尚未执行，状态保持 `UNKNOWN`。
 - [x] 结论边界：Gate 21 仅内部单实例子矩阵完成，仍为 `PARTIAL`；生产未变，总体保持 `NO_GO`。
+
+## 31. Gate 22 当前 revision 长测校准（2026-08-13）
+
+- [x] harness 将 600 秒校准与至少 86400 秒正式模式显式分离；校准成功不能生成 Gate PASS。
+- [x] 六服务采样覆盖 CPU、RSS、线程、FD、连接、日志、路由/规则/接口、Direct/Relay 状态与错误计数；计划重启按进程代际分析，PostgreSQL 同时保留 FD 2048 和连接 32 的全局硬上限。
+- [x] Controller、Relay、PostgreSQL、Agent 重启，配置更新、Enrollment/Revocation、受控 loss/latency 与 subnet-route 更新八项事件均实际执行并 PASS。
+- [x] 并发路由更新只对真实 `409` 重新读取版本后有界重试；每次尝试留证，其他 HTTP 状态不重试。
+- [x] exact revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 的 run `31636558546` 全 12 job，Gate 22 job `94248221138`，artifact `9157671453` 和 GitHub digest `sha256:3c58a079e748dffb4f3e48d88d72f5bb8bd35072f665b991cbfecc1d78fb00ba` 通过。
+- [x] 独立下载校验 84/84 文件、零秘密发现、264 个服务样本、九类宿主不变量逐字节一致；无 namespace、TUN、容器、网络或卷残留。
+- [ ] 至少 24 小时的精确 revision 正式运行尚未执行；当前只有 600 秒校准，Gate 22 保持 `UNKNOWN`。
+- [ ] 正式运行环境为 `BLOCKED_EXTERNAL`：生产主机变化后的 SSH 指纹尚未带外确认，且没有另一台已批准特权 Linux QA 主机；不得绕过主机身份验证。
+- [x] 结论边界：生产未连接或修改，总体保持 `NO_GO`。

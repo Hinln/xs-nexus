@@ -1,9 +1,9 @@
 # PROGRESS.md — 当前项目状态
 
-最后更新时间：2026-08-12
-当前 Git 提交：以包含本记录的提交为准；Gate 21 精确代码与证据 revision 为 `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363`
+最后更新时间：2026-08-13
+当前 Git 提交：以包含本记录的提交为准；Gate 22 harness 与十分钟校准 revision 为 `92244eb4d386eba2c852682d8d2dadc7237b31da`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
-当前总状态：`NO_GO`（Gate 21 内部单实例容量矩阵完成；Gate 02/13/14/20/21/22/23/25 及外部门禁仍未闭合）
+当前总状态：`NO_GO`（Gate 22 harness 校准通过但正式 24 小时长测尚未开始；Gate 02/13/14/20/21/22/23/25 及外部门禁仍未闭合）
 当前里程碑：`生产门禁修复 V2：Gate 22 当前 revision 24 小时稳定性与故障注入`
 
 ---
@@ -535,3 +535,13 @@ make clean
 - Gate 21 保持 `PARTIAL/BLOCKED_EXTERNAL`：公网、跨地域、多实例、volumetric/distributed abuse 和小时/天级容量仍无证据。Gate 22 保持 `UNKNOWN`；历史 24 小时样本不能替代当前 revision soak。生产未变，总体保持 `NO_GO`。
 - 正在进行：增强 `scripts/test-runtime-stability.sh`，补齐当前 revision 的 Controller、Relay、PostgreSQL、Agent、Enrollment/Revocation、配置/路由与受控网络故障采样。
 - 下一条准确命令：`git diff --check`，随后 `python scripts/check-secrets.py --root .`；文档检查点完成后审查并实现 Gate 22 soak harness。
+
+## 2026-08-13 Gate 22 当前 revision 长测校准
+
+- 已实现 `scripts/test-current-revision-soak.sh`、`scripts/summarize-current-revision-soak.py`、汇总器回归和 CI 专项 job；正式模式固定要求至少 `86400` 秒，校准模式不能生成 Gate PASS。
+- 校准期间发现并修复路径恢复 backoff、手工探测 cooldown 隔离、Relay lease 恢复等待、预启用 gateway forwarding、计划重启后的进程代际资源分析，以及路由更新与 Agent 候选上报并发时的乐观锁重试。HTTP `409` 只在重新读取当前版本后有界重试，其他状态立即失败，每次尝试均写入证据。
+- 精确 revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 的 GitHub Actions run `31636558546` 全 12 job 通过；Gate 22 job `94248221138`、artifact `9157671453`、GitHub digest `sha256:3c58a079e748dffb4f3e48d88d72f5bb8bd35072f665b991cbfecc1d78fb00ba` 通过。
+- 独立下载验证 84/84 项 SHA-256、零秘密发现、六服务共 264 个资源样本、八项故障注入全部 PASS，且 Docker 网络/卷/容器、默认路由、规则、链路、nftables、failed units 与 `1panel-network` 九类前后基线逐字节一致。
+- 上述证据仅为 600 秒 harness 校准，不是 24 小时稳定性证据。Gate 22 保持 `UNKNOWN`，总体保持 `NO_GO`，生产最后已知仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，本轮未连接或修改生产。
+- 正式运行尚未开始：本机没有 Docker/可用 WSL Linux，旧开发服务器拒绝 SSH 握手；生产服务器当前呈现的 ED25519 指纹与受信记录不一致，且尚无云控制台等带外确认。严格主机密钥验证没有被关闭，未发送密码，未自动接受新密钥。
+- 下一条准确命令：在所有者通过云控制台确认主机 ED25519 指纹，或提供已批准的独立特权 Linux QA 主机后，从精确干净提交执行 `sudo env XS_SOAK_DURATION_SECONDS=86400 XS_SOAK_SAMPLE_INTERVAL_SECONDS=60 EVIDENCE_DIR=<outside-git-path> make test-current-revision-soak`；任一材料源代码、镜像、配置或 harness 变更都从零重跑。

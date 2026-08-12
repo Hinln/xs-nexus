@@ -148,3 +148,11 @@
 - Fixed a false-green cleanup trap and retained control-frame memory growth; Controller RSS fell from 490,496 KiB in the retained failing run to 66,668 KiB in the final run.
 - Exact revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` passed all 11 jobs in GitHub Actions run `31603852656`; artifact `9144433450` passed independent extracted manifests, revision binding, and zero-finding secret scan.
 - Gate 21 remains `PARTIAL/BLOCKED_EXTERNAL`; Gate 22 remains `UNKNOWN`; overall remains `NO_GO`. Production was not changed.
+
+## 2026-08-13 Gate 22 Soak Harness Calibration
+
+- Added a fail-closed current-revision soak harness with separate calibration/formal modes, six-service resource sampling, eight required fault events, host-invariant baselines, cleanup checks, manifests, and evidence secret scanning.
+- Fixed path-recovery backoff, manual-probe cooldown isolation, Relay lease recovery waiting, pre-enabled gateway forwarding, process-generation resource analysis, and version-aware bounded route-update retries. No product threshold, ACL, signature, identity, or security assertion was weakened.
+- Exact revision `92244eb4d386eba2c852682d8d2dadc7237b31da` passed all 12 jobs in run `31636558546`; job `94248221138` and artifact `9157671453` passed 84/84 independent hashes, zero secret findings, 264 resource rows, eight events, and nine invariant classes.
+- This is a 600-second calibration only. Gate 22 remains `UNKNOWN` until an exact-revision run reaches at least 86,400 seconds and independently passes all checks.
+- The formal run did not start because the production SSH host key changed and has no out-of-band confirmation, while no alternate approved privileged Linux QA host is available. Strict verification was preserved; no password was sent and production was not changed.

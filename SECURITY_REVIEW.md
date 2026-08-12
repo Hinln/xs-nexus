@@ -560,3 +560,12 @@ Current clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-202
 - Enrollment capacity is checked while holding the network lock and before consuming a token or allocating IP/credential state. Control-session capacity is checked before WebSocket upgrade. Overflow is observable through low-cardinality counters without exposing subjects or credentials.
 - Exact revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` passed all 11 jobs in run `31603852656`; performance artifact `9144433450` passed independent extracted manifests, revision binding, and zero-finding secret scan.
 - Residual High risk remains external: hosted single-instance loopback/namespace evidence does not prove public-WAN volumetric abuse resistance, distributed valid-credential pressure, multi-region/multi-instance behavior, cloud saturation controls, or long-duration operation. Gate 21 remains `PARTIAL/BLOCKED_EXTERNAL`; Gate 22 remains `UNKNOWN`; overall remains `NO_GO`.
+
+## 35. Gate 22 soak-harness security review (2026-08-13)
+
+- Calibration and formal modes are fail-closed and distinct. A run shorter than 86,400 seconds cannot satisfy the gate, and any material source, image, configuration, or harness change invalidates the elapsed duration.
+- Resource growth is evaluated within contiguous process generations so planned restarts cannot create false leak results or conceal continuing growth. PostgreSQL additionally retains global FD and connection ceilings.
+- Management-route writes preserve optimistic concurrency: only an observed `409` permits a bounded reread-and-retry, every attempt is recorded, and every other status fails immediately. No runtime default, ACL, identity, signature, or path-security assertion was relaxed.
+- Exact revision `92244eb4d386eba2c852682d8d2dadc7237b31da` passed all 12 jobs in run `31636558546`. Artifact `9157671453` passed 84/84 independent hashes, a zero-finding no-value scan, eight fault events, 264 resource rows, and byte-identical host invariants.
+- The result is a 600-second harness calibration only. It provides no 24-hour reliability claim, does not close public-WAN or multi-instance risk, and leaves Gate 22 `UNKNOWN` and the overall release `NO_GO`.
+- The changed production SSH host key is not accepted by TOFU. Strict verification stopped before authentication, no password was sent, and production was not modified. Formal execution remains externally blocked until the fingerprint is confirmed out of band or an approved isolated privileged Linux host is provided.

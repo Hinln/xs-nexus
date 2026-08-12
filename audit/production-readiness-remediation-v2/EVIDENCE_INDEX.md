@@ -320,3 +320,12 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 - Scope: 1,000 enrolled nodes, 1,000 authenticated control sessions, 1,001st enrollment/session fail-closed, bounded `chunked-v1` large-response transport, resource ceilings, XSP/1 throughput, and two-Agent namespace Direct/Relay RTT.
 - Detailed report: `audit/production-readiness-remediation-v2/PERFORMANCE_CAPACITY.md`.
 - Decision: `PARTIAL/BLOCKED_EXTERNAL`; public-WAN, multi-region/multi-instance, volumetric/distributed-abuse, and hours/days proof remains. Gate 22 remains `UNKNOWN`.
+
+## Gate 22 Soak Harness Calibration (2026-08-13)
+
+- Exact revision: `92244eb4d386eba2c852682d8d2dadc7237b31da`.
+- GitHub Actions run/job: `31636558546` / `94248221138`; workflow result 12/12 PASS.
+- Artifact: `9157671453`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:3c58a079e748dffb4f3e48d88d72f5bb8bd35072f665b991cbfecc1d78fb00ba`.
+- Independent extraction: `C:\Users\panyo\AppData\Local\Temp\xs-gate22-92244eb-92c70ca728f8415090ed279e089404eb`; 84/84 `SHA256SUMS` entries passed and the repository secret scanner reported zero findings.
+- Raw scope: 600 seconds, 44 samples for each of Controller, Relay, Console, PostgreSQL and two Agents; 264 rows total. Eight required fault events passed. Nine before/after Docker, route, rule, link, nftables, service and `1panel-network` invariants were byte-identical.
+- Decision: calibration PASS, Gate 22 `UNKNOWN`. No >=86,400-second evidence exists. Formal execution is externally blocked by an unverified changed SSH host key and lack of an alternate approved privileged Linux QA host; production was not changed.

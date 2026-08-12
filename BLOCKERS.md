@@ -116,3 +116,15 @@
 - 磁盘告警外部阻塞：没有批准的独立目的地和 on-call 时不能安全配置或证明真实送达；`external-disk-alert-status.txt` 明确为 `BLOCKED_EXTERNAL`，本机日志不计作通过。
 - 证据：`audit/production-readiness/GO_NO_GO_FINAL.md`、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-20260808T162300Z`、Gate 16 生产证据、Gate 14 防火墙/维护证据、`/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 和 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-evidence-seal-verification-20260809T141601Z`。
 - 解除后验证：旧凭据全部被拒绝；SSH/端口/防火墙回归；正式域名 API/WS/Console/health/TLS 通过；应用角色非 superuser；外部告警真实送达；第三方 findings 修复并 retest；重新执行全部 Hard Gate。
+
+---
+
+## BLK-009 Gate 22 正式长测执行主机身份与环境
+
+- 状态：`BLOCKED_EXTERNAL`（仅阻塞正式 24 小时运行；Gate 22 本身继续为 `UNKNOWN`）。
+- 首次发现：2026-08-13，在 revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 的 600 秒校准和独立证据复核完成后。
+- 已完成的不受阻塞工作：正式/校准模式分离的长测 harness、六服务资源采样、八项故障注入、进程代际增长分析、有界乐观锁重试、前后九类宿主不变量和 evidence secret scan 均已实现；run `31636558546` 全 12 job 通过，artifact `9157671453` 的 84/84 SHA-256 与零秘密扫描独立通过。
+- 阻塞事实：本机没有 Docker 或可用 WSL Linux，Hyper-V 管理权限不可用；旧开发服务器在 SSH 握手前主动关闭连接。生产服务器的当前 ED25519 指纹为 `SHA256:Iik0ptfRKPFebbyCP8hIEllx46zYgztne0QjAvc4JVY`，与本地受信记录不一致，且未通过云控制台等独立渠道确认。不得以关闭 `StrictHostKeyChecking`、覆盖受信记录或 TOFU 自动接受代替带外验证。
+- 安全结果：严格 SSH 连接在认证前终止，未发送密码，未修改 production、Docker、1Panel、网络、防火墙、路由或服务；正式长测没有启动。
+- 解除步骤：所有者通过腾讯云控制台在目标主机执行 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 并确认精确指纹，或提供独立、可重装、已批准且具有 Docker、`/dev/net/tun`、network namespace 与 nftables 的特权 Linux QA 主机。
+- 解除后验证：从精确干净提交启动至少 `86400` 秒运行，记录 revision、镜像、配置、UTC、样本、事件与清理；全部 SHA-256/秘密扫描/不变量独立复核通过后，才允许重新判断 Gate 22。
