@@ -299,7 +299,7 @@ mod tests {
         );
         assert!(INSTALL_SCRIPT.contains("IFS= read -r -s token </dev/tty"));
         assert!(!INSTALL_SCRIPT.contains("--token "));
-        assert!(!INSTALL_SCRIPT.contains("Liyunran"));
+        assert!(!INSTALL_SCRIPT.contains("temporary-password-marker"));
     }
 
     #[test]
