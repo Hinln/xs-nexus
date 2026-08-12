@@ -616,7 +616,6 @@ wait_agent_proxy() {
 agent_run_base() {
     local root=$1 netns=$2
     printf '%s\n' \
-        --user 65532:65532 \
         --network "container:$netns" \
         --mount "type=bind,src=$BINARY_DIRECTORY,dst=/workspace,readonly" \
         --mount "type=bind,src=$root,dst=/agent" \
@@ -630,7 +629,8 @@ enroll_agent() {
     chown 65532:65532 "$root/enrollment.token"
     local -a arguments
     mapfile -t arguments < <(agent_run_base "$root" "$netns")
-    docker run --rm "${arguments[@]}" --entrypoint /workspace/xs-agent "$AGENT_RUNTIME_IMAGE" \
+    docker run --rm --user 65532:65532 "${arguments[@]}" \
+        --entrypoint /workspace/xs-agent "$AGENT_RUNTIME_IMAGE" \
         enroll --config /agent/agent.json --token-file /agent/enrollment.token >/dev/null
     rm -f "$root/enrollment.token"
 }
@@ -641,19 +641,53 @@ start_agent() {
     mapfile -t arguments < <(agent_run_base "$root" "$netns")
     docker run -d --name "$container" \
         --label "com.xs-nexus.gate22.project=$PROJECT" \
-        --cap-drop ALL --cap-add NET_ADMIN \
+        --user 0:0 \
+        --cap-drop ALL \
+        --cap-add NET_ADMIN --cap-add SETGID --cap-add SETPCAP --cap-add SETUID \
         --security-opt no-new-privileges:true \
         --pids-limit 256 \
         --device /dev/net/tun:/dev/net/tun \
         "${arguments[@]}" \
-        --entrypoint /workspace/xs-agent "$AGENT_RUNTIME_IMAGE" \
-        run --config /agent/agent.json >/dev/null
+        --entrypoint /usr/bin/setpriv "$AGENT_BUILDER_IMAGE" \
+        --reuid 65532 --regid 65532 --clear-groups \
+        --bounding-set=-all,+net_admin \
+        --inh-caps=+net_admin --ambient-caps=+net_admin \
+        /workspace/xs-agent run --config /agent/agent.json >/dev/null
 }
 
 agent_cli() {
     local container=$1
     shift
-    docker exec "$container" /workspace/xs "$@" --socket /run/xs-agent/agent.sock --json
+    docker exec --user 65532:65532 "$container" \
+        /workspace/xs "$@" --socket /run/xs-agent/agent.sock --json
+}
+
+record_agent_process_contract() {
+    local container=$1 output=$2 pid=''
+    for _attempt in $(seq 1 60); do
+        pid=$(docker inspect "$container" --format '{{.State.Pid}}' 2>/dev/null || true)
+        [[ $pid =~ ^[0-9]+$ && $pid -gt 0 ]] && break
+        sleep 1
+    done
+    [[ $pid =~ ^[0-9]+$ && $pid -gt 0 ]]
+    awk '/^(Name|Uid|Gid|CapInh|CapPrm|CapEff|CapBnd|CapAmb|NoNewPrivs):/' \
+        "/proc/$pid/status" >"$output"
+    python3 - "$output" <<'PY'
+import sys
+from pathlib import Path
+
+fields = {}
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    key, value = line.split(":", 1)
+    fields[key] = value.strip()
+expected_identity = "65532\t65532\t65532\t65532"
+expected_capability = "0000000000001000"
+assert fields["Uid"] == expected_identity
+assert fields["Gid"] == expected_identity
+assert fields["NoNewPrivs"] == "1"
+for key in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"):
+    assert fields[key] == expected_capability
+PY
 }
 
 wait_agent_ready() {
@@ -739,6 +773,8 @@ prepare_agents() {
     enroll_agent "$AGENT_B_ROOT" "$AGENT_B_NETNS"
     start_agent "$AGENT_A" "$AGENT_A_ROOT" "$AGENT_A_NETNS"
     start_agent "$AGENT_B" "$AGENT_B_ROOT" "$AGENT_B_NETNS"
+    record_agent_process_contract "$AGENT_A" "$EVIDENCE_DIR/agent-a-process-contract-start.txt"
+    record_agent_process_contract "$AGENT_B" "$EVIDENCE_DIR/agent-b-process-contract-start.txt"
     docker network connect --ip "$LAN_GATEWAY_IP" "$LAN_NETWORK" "$AGENT_B_NETNS"
     docker run -d --rm --name "$LAN_TARGET" --network "$LAN_NETWORK" --ip "$LAN_TARGET_IP" \
         --user 65534:65534 --read-only --cap-drop ALL --security-opt no-new-privileges:true \
@@ -953,6 +989,7 @@ fault_agent_restart() {
     local output
     output=$(docker restart --timeout 20 "$AGENT_A")
     [[ $output == "$AGENT_A" ]]
+    record_agent_process_contract "$AGENT_A" "$EVIDENCE_DIR/agent-a-process-contract-restart.txt"
     wait_agent_ready "$AGENT_A"
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" direct
     ping_agent "$AGENT_A" "$VIRTUAL_IP_B"
@@ -1001,6 +1038,7 @@ fault_enrollment_revocation() {
     wait_agent_proxy "$AGENT_C_NETNS"
     enroll_agent "$AGENT_C_ROOT" "$AGENT_C_NETNS"
     start_agent "$AGENT_C" "$AGENT_C_ROOT" "$AGENT_C_NETNS"
+    record_agent_process_contract "$AGENT_C" "$EVIDENCE_DIR/agent-c-process-contract-start.txt"
     wait_agent_ready "$AGENT_C"
     NODE_ID_C=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["node_id_base64"])' \
         "$AGENT_C_ROOT/state/node-state.json")
@@ -1026,6 +1064,7 @@ raise SystemExit(0 if status["controller_connected"] and status["network_active"
     (( rejected == 1 ))
     docker rm -f "$AGENT_C" >/dev/null
     start_agent "$AGENT_C" "$AGENT_C_ROOT" "$AGENT_C_NETNS"
+    record_agent_process_contract "$AGENT_C" "$EVIDENCE_DIR/agent-c-process-contract-revoked.txt"
     for _attempt in $(seq 1 30); do
         output=$(agent_cli "$AGENT_C" status 2>/dev/null || true)
         if [[ -n $output ]] && python3 -c '
