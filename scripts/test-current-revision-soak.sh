@@ -947,6 +947,29 @@ print(json.dumps({"timestamp_utc": sys.argv[1], "snapshot": json.load(open(sys.a
 PY
 }
 
+capture_relay_transition() {
+    local label=$1 agent_a_pid agent_b_pid
+    docker run --rm --network "$NETWORK" \
+        --user 65534:65534 --read-only --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        "$ALPINE_IMAGE" wget -q -T 3 -O - "http://$RELAY_IP:8081/metrics" \
+        >"$EVIDENCE_DIR/relay-transition-$label-metrics.json"
+    agent_cli "$AGENT_A" peers >"$EVIDENCE_DIR/relay-transition-$label-agent-a-peers.json" \
+        2>&1 || true
+    agent_cli "$AGENT_B" peers >"$EVIDENCE_DIR/relay-transition-$label-agent-b-peers.json" \
+        2>&1 || true
+    agent_cli "$AGENT_A" path "$VIRTUAL_IP_B" \
+        >"$EVIDENCE_DIR/relay-transition-$label-agent-a-path.json" 2>&1 || true
+    agent_cli "$AGENT_B" path "$VIRTUAL_IP_A" \
+        >"$EVIDENCE_DIR/relay-transition-$label-agent-b-path.json" 2>&1 || true
+    agent_a_pid=$(docker inspect "$AGENT_A" --format '{{.State.Pid}}')
+    agent_b_pid=$(docker inspect "$AGENT_B" --format '{{.State.Pid}}')
+    nsenter -t "$agent_a_pid" -n nft -j list ruleset \
+        >"$EVIDENCE_DIR/relay-transition-$label-agent-a-nft.json"
+    nsenter -t "$agent_b_pid" -n nft -j list ruleset \
+        >"$EVIDENCE_DIR/relay-transition-$label-agent-b-nft.json"
+}
+
 restart_compose_service() {
     local service=$1
     local container output
@@ -987,9 +1010,14 @@ unblock_direct() {
 }
 
 fault_relay_restart() {
+    capture_relay_transition before
     block_direct "$AGENT_A" "$AGENT_B_IP" "$AGENT_B" "$AGENT_A_IP"
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" relay
-    ping_agent "$AGENT_A" "$VIRTUAL_IP_B"
+    capture_relay_transition fallback
+    if ! ping_agent "$AGENT_A" "$VIRTUAL_IP_B"; then
+        capture_relay_transition failed
+        return 1
+    fi
     restart_compose_service relay
     local relay_container
     relay_container=$(compose ps -q relay)
