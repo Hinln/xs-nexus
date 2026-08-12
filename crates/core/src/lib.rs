@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 mod acl;
+mod control_transfer;
 mod healthcheck;
 mod routes;
 mod telemetry;
@@ -19,6 +20,7 @@ pub use acl::{
     AclAction, AclDecision, AclDecisionReason, AclPolicy, AclProtocol, AclRule, AclSelector,
     AclValidationError, PortRange,
 };
+pub use control_transfer::{ControlTransferAssembler, ControlTransferError};
 pub use healthcheck::{HttpHealthcheckError, check_local_http_health};
 pub use routes::validate_subnet_route_suggestion;
 pub use routes::{ResolvedSubnetRoute, SubnetRoutePolicy, SubnetRouteValidationError};
@@ -136,6 +138,12 @@ pub struct SignedConfiguration {
     pub signature_base64: String,
     pub signer_key_id: u32,
 }
+
+pub const CONTROL_TRANSPORT_QUERY_NAME: &str = "transport";
+pub const CONTROL_CHUNKED_TRANSPORT_V1: &str = "chunked-v1";
+pub const CONTROL_MESSAGE_LIMIT_BYTES: usize = 512 * 1024;
+pub const CONTROL_TRANSFER_THRESHOLD_BYTES: usize = 8 * 1024;
+pub const CONTROL_TRANSFER_CHUNK_BYTES: usize = 6_000;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -490,6 +498,20 @@ pub enum ControlServerMessage {
     },
     TelemetryAccepted {
         sequence: u64,
+    },
+    TransferStart {
+        transfer_id_base64: String,
+        total_bytes: u32,
+        chunk_count: u16,
+        sha256_base64: String,
+    },
+    TransferChunk {
+        transfer_id_base64: String,
+        index: u16,
+        data_base64: String,
+    },
+    TransferEnd {
+        transfer_id_base64: String,
     },
     Error {
         code: String,

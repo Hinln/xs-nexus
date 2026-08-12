@@ -34,6 +34,9 @@ pub struct ControllerConfig {
     pub linux_release_directory: Option<PathBuf>,
     pub windows_release_directory: Option<PathBuf>,
     pub credential_ttl_seconds: u64,
+    pub max_nodes_per_network: u32,
+    pub max_control_sessions: usize,
+    pub configuration_send_concurrency: usize,
     pub relays: Vec<ConfigurationRelay>,
 }
 
@@ -66,6 +69,14 @@ pub enum ConfigError {
     ConsoleSessionTtl,
     #[error("invalid NODE_CREDENTIAL_TTL_SECONDS")]
     CredentialTtl,
+    #[error("MAX_NODES_PER_NETWORK must be between 1 and 1000")]
+    MaxNodesPerNetwork,
+    #[error("MAX_CONTROL_SESSIONS must be between 1 and 1000")]
+    MaxControlSessions,
+    #[error(
+        "CONFIGURATION_SEND_CONCURRENCY must be between 1 and 128 and not exceed MAX_CONTROL_SESSIONS"
+    )]
+    ConfigurationSendConcurrency,
     #[error("unable to inspect signing key file")]
     KeyMetadata,
     #[error("signing key file permissions must not grant group or other access")]
@@ -184,6 +195,29 @@ impl ControllerConfig {
         if !(3600..=31_536_000).contains(&credential_ttl_seconds) {
             return Err(ConfigError::CredentialTtl);
         }
+        let max_nodes_per_network = env::var("MAX_NODES_PER_NETWORK")
+            .unwrap_or_else(|_| "1000".to_owned())
+            .parse::<u32>()
+            .map_err(|_| ConfigError::MaxNodesPerNetwork)?;
+        if !(1..=1000).contains(&max_nodes_per_network) {
+            return Err(ConfigError::MaxNodesPerNetwork);
+        }
+        let max_control_sessions = env::var("MAX_CONTROL_SESSIONS")
+            .unwrap_or_else(|_| "1000".to_owned())
+            .parse::<usize>()
+            .map_err(|_| ConfigError::MaxControlSessions)?;
+        if !(1..=1000).contains(&max_control_sessions) {
+            return Err(ConfigError::MaxControlSessions);
+        }
+        let configuration_send_concurrency = env::var("CONFIGURATION_SEND_CONCURRENCY")
+            .unwrap_or_else(|_| "64".to_owned())
+            .parse::<usize>()
+            .map_err(|_| ConfigError::ConfigurationSendConcurrency)?;
+        if !(1..=128).contains(&configuration_send_concurrency)
+            || configuration_send_concurrency > max_control_sessions
+        {
+            return Err(ConfigError::ConfigurationSendConcurrency);
+        }
         let relays = env::var("RELAY_CATALOG_PATH")
             .ok()
             .map(|path| load_relay_catalog(Path::new(&path)))
@@ -208,6 +242,9 @@ impl ControllerConfig {
             linux_release_directory,
             windows_release_directory,
             credential_ttl_seconds,
+            max_nodes_per_network,
+            max_control_sessions,
+            configuration_send_concurrency,
             relays,
         })
     }

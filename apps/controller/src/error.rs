@@ -101,6 +101,15 @@ impl ApiError {
     }
 
     #[must_use]
+    pub const fn capacity_exhausted() -> Self {
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "capacity_exhausted",
+            "configured service capacity has been reached",
+        )
+    }
+
+    #[must_use]
     pub const fn internal() -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,

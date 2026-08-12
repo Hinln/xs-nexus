@@ -31,6 +31,12 @@ struct ControllerSummary {
     status: &'static str,
     build: BuildIdentity,
     control_auth_failures_since_start: u64,
+    active_control_sessions: u64,
+    maximum_control_sessions: u64,
+    rejected_control_sessions_since_start: u64,
+    active_configuration_sends: u64,
+    maximum_configuration_sends: u64,
+    maximum_nodes_per_network: u64,
 }
 
 #[derive(Serialize)]
@@ -42,6 +48,7 @@ struct DependencySummary {
 #[derive(Serialize)]
 struct NodeSummary {
     managed: u64,
+    largest_network_managed: u64,
     online: u64,
     fresh_telemetry: u64,
     unknown_path_nodes: u64,
@@ -167,6 +174,7 @@ struct OperationalRow {
 
 struct SnapshotRows {
     active_node_ids: Vec<Vec<u8>>,
+    largest_network_managed: i64,
     latest_nodes: Vec<NodeLatestRow>,
     node_window: NodeWindowRow,
     latest_relays: Vec<RelayLatestRow>,
@@ -190,6 +198,7 @@ pub(crate) async fn snapshot(state: &AppState) -> Result<ObservabilitySnapshot, 
         state,
         collected_at,
         rows.active_node_ids,
+        rows.largest_network_managed,
         rows.latest_nodes,
         rows.node_window,
     )
@@ -213,6 +222,12 @@ pub(crate) async fn snapshot(state: &AppState) -> Result<ObservabilitySnapshot, 
             status: "ok",
             build: BuildIdentity::current(Component::Controller),
             control_auth_failures_since_start: control_auth_failures,
+            active_control_sessions: usize_u64(state.active_control_sessions())?,
+            maximum_control_sessions: usize_u64(state.max_control_sessions)?,
+            rejected_control_sessions_since_start: state.rejected_control_sessions_total(),
+            active_configuration_sends: usize_u64(state.active_configuration_sends())?,
+            maximum_configuration_sends: usize_u64(state.configuration_send_concurrency)?,
+            maximum_nodes_per_network: u64::from(state.max_nodes_per_network),
         },
         database: DependencySummary {
             status: "ok",
@@ -243,6 +258,7 @@ pub(crate) async fn snapshot(state: &AppState) -> Result<ObservabilitySnapshot, 
 async fn load_snapshot_rows(state: &AppState) -> Result<SnapshotRows, ApiError> {
     Ok(SnapshotRows {
         active_node_ids: load_active_node_ids(state).await?,
+        largest_network_managed: load_largest_network_managed(state).await?,
         latest_nodes: load_latest_nodes(state).await?,
         node_window: load_node_window(state).await?,
         latest_relays: load_latest_relays(state).await?,
@@ -256,6 +272,7 @@ async fn summarize_nodes(
     state: &AppState,
     collected_at: DateTime<Utc>,
     active_node_ids: Vec<Vec<u8>>,
+    largest_network_managed: i64,
     latest_nodes: Vec<NodeLatestRow>,
     window: NodeWindowRow,
 ) -> Result<NodeSummary, ApiError> {
@@ -282,6 +299,7 @@ async fn summarize_nodes(
     let handshake_successes = nonnegative(window.handshake_successes)?;
     Ok(NodeSummary {
         managed,
+        largest_network_managed: nonnegative(largest_network_managed)?,
         online: usize_u64(online_nodes)?,
         fresh_telemetry: paths.fresh_telemetry,
         unknown_path_nodes: managed.saturating_sub(paths.fresh_telemetry),
@@ -394,6 +412,21 @@ async fn load_active_node_ids(state: &AppState) -> Result<Vec<Vec<u8>>, ApiError
         .fetch_all(&state.pool)
         .await
         .map_err(database_error)
+}
+
+async fn load_largest_network_managed(state: &AppState) -> Result<i64, ApiError> {
+    sqlx::query_scalar(
+        "SELECT COALESCE(max(node_count), 0)::bigint
+         FROM (
+             SELECT count(*)::bigint AS node_count
+             FROM nodes
+             WHERE revoked_at IS NULL
+             GROUP BY network_id
+         ) AS network_counts",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .map_err(database_error)
 }
 
 async fn load_latest_nodes(state: &AppState) -> Result<Vec<NodeLatestRow>, ApiError> {

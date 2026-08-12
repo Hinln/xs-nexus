@@ -110,6 +110,14 @@ assert report["load_generator_websocket"] == {
     "maximum_message_bytes": 524288,
 }
 assert [item["nodes"] for item in report["measurements"]] == [100, 500, 1000]
+enrollment_capacity = report["enrollment_capacity"]
+assert enrollment_capacity == {
+    "maximum_nodes_per_network": 1000,
+    "overflow_http_status": 503,
+    "overflow_error_code": "capacity_exhausted",
+    "token_use_count_after_rejection": 0,
+    "active_nodes_after_rejection": 1000,
+}
 envelope = report["safe_operating_envelope"]
 for measurement in report["measurements"]:
     assert measurement["active_nodes"] == measurement["nodes"]
@@ -125,6 +133,17 @@ for measurement in report["measurements"]:
     ]
 control = report["control"]
 assert control["connections"] == 1000
+assert control["chunked_authentications"] == 1000
+assert control["minimum_configuration_transfer_bytes"] > 8192
+assert control["maximum_configuration_transfer_bytes"] <= 524288
+assert control["maximum_configuration_transfer_chunks"] > 1
+assert control["legacy_large_message_rejected"] is True
+assert control["overflow_session_rejected"] is True
+assert control["capacity_snapshot"]["active_control_sessions"] == 1000
+assert control["capacity_snapshot"]["maximum_control_sessions"] == 1000
+assert control["capacity_snapshot"]["rejected_control_sessions_since_start"] == 1
+assert control["capacity_snapshot"]["maximum_nodes_per_network"] == 1000
+assert control["capacity_snapshot"]["maximum_configuration_sends"] == 64
 assert control["authentication_concurrency"] == 64
 assert control["synchronization_concurrency"] == 128
 assert control["authentications_per_second"] >= envelope[

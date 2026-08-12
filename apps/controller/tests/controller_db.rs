@@ -1420,6 +1420,9 @@ fn test_config(discovery_address: SocketAddr) -> ControllerConfig {
         linux_release_directory: None,
         windows_release_directory: None,
         credential_ttl_seconds: 86_400,
+        max_nodes_per_network: 1000,
+        max_control_sessions: 1000,
+        configuration_send_concurrency: 64,
         relays: vec![ConfigurationRelay {
             relay_id_base64: URL_SAFE_NO_PAD.encode([41_u8; 16]),
             endpoint: "127.0.0.1:42001".parse().expect("Relay endpoint"),
@@ -2020,10 +2023,24 @@ async fn assert_observability_snapshot(router: &Router) {
     .expect("observability JSON");
     assert_eq!(snapshot["schema_version"], 1);
     assert_eq!(snapshot["controller"]["status"], "ok");
+    assert_eq!(snapshot["controller"]["active_control_sessions"], 0);
+    assert_eq!(snapshot["controller"]["maximum_control_sessions"], 1000);
+    assert_eq!(
+        snapshot["controller"]["rejected_control_sessions_since_start"],
+        0
+    );
+    assert_eq!(snapshot["controller"]["active_configuration_sends"], 0);
+    assert_eq!(snapshot["controller"]["maximum_configuration_sends"], 64);
+    assert_eq!(snapshot["controller"]["maximum_nodes_per_network"], 1000);
     assert_eq!(snapshot["database"]["status"], "ok");
     assert_eq!(snapshot["redis"]["status"], "not_applicable");
     assert!(
         snapshot["nodes"]["managed"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
+    assert!(
+        snapshot["nodes"]["largest_network_managed"]
             .as_u64()
             .is_some_and(|value| value > 0)
     );

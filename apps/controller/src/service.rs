@@ -12,7 +12,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Postgres, Row, Transaction};
 use uuid::Uuid;
-use xs_core::{SubnetRoutePolicy, validate_subnet_route_suggestion};
+use xs_core::{CONTROL_MESSAGE_LIMIT_BYTES, SubnetRoutePolicy, validate_subnet_route_suggestion};
 use xs_protocol::{
     CredentialClaims, controller_key_id, node_id, role_set_digest, sign_credential,
     verify_credential,
@@ -1310,6 +1310,19 @@ pub(crate) async fn enroll_node(
         record_rejected_enrollment(&state.pool, Some(token.network_id), "duplicate").await;
         return Err(ApiError::conflict());
     }
+    let active_nodes: i64 = sqlx::query_scalar(
+        "SELECT count(*)::bigint FROM nodes
+         WHERE network_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(token.network_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(internal_database)?;
+    if active_nodes >= i64::from(state.max_nodes_per_network) {
+        transaction.rollback().await.map_err(internal_database)?;
+        record_rejected_enrollment(&state.pool, Some(token.network_id), "capacity").await;
+        return Err(ApiError::capacity_exhausted());
+    }
 
     let network = load_network_allocation(&mut transaction, token.network_id).await?;
     let virtual_ip = allocate_virtual_ip(
@@ -2258,6 +2271,23 @@ async fn publish_configuration(
     };
     AclPolicy::compile(&configuration_payload).map_err(|_| ApiError::internal())?;
     let (payload, signature, key_id) = encode_configuration(state, &configuration_payload)?;
+    let configuration = SignedConfiguration {
+        version: metadata.version,
+        payload_base64: URL_SAFE_NO_PAD.encode(&payload),
+        signature_base64: URL_SAFE_NO_PAD.encode(signature),
+        signer_key_id: key_id,
+    };
+    let maximum_control_message = crate::model::ControlServerMessage::Authenticated {
+        node_id_base64: URL_SAFE_NO_PAD.encode([u8::MAX; 16]),
+        configuration: configuration.clone(),
+    };
+    if serde_json::to_vec(&maximum_control_message)
+        .map_err(|_| ApiError::internal())?
+        .len()
+        > CONTROL_MESSAGE_LIMIT_BYTES
+    {
+        return Err(ApiError::capacity_exhausted());
+    }
     persist_configuration(
         transaction,
         network_id,
@@ -2268,12 +2298,7 @@ async fn publish_configuration(
     )
     .await?;
 
-    Ok(SignedConfiguration {
-        version: metadata.version,
-        payload_base64: URL_SAFE_NO_PAD.encode(payload),
-        signature_base64: URL_SAFE_NO_PAD.encode(signature),
-        signer_key_id: key_id,
-    })
+    Ok(configuration)
 }
 
 async fn next_configuration_metadata(

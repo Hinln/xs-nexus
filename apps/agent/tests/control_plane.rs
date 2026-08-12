@@ -287,6 +287,9 @@ fn controller_config() -> ControllerConfig {
         linux_release_directory: None,
         windows_release_directory: None,
         credential_ttl_seconds: 86_400,
+        max_nodes_per_network: 1000,
+        max_control_sessions: 1000,
+        configuration_send_concurrency: 64,
         relays: Vec::new(),
     }
 }

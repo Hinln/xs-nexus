@@ -570,6 +570,22 @@ class Collector:
                 "security",
                 "control_auth_failures_since_start",
             ),
+            "xs_nexus_control_sessions_active": ("controller", "active_control_sessions"),
+            "xs_nexus_control_sessions_maximum": ("controller", "maximum_control_sessions"),
+            "xs_nexus_control_sessions_rejected_since_start": (
+                "controller",
+                "rejected_control_sessions_since_start",
+            ),
+            "xs_nexus_configuration_sends_active": (
+                "controller",
+                "active_configuration_sends",
+            ),
+            "xs_nexus_configuration_sends_maximum": (
+                "controller",
+                "maximum_configuration_sends",
+            ),
+            "xs_nexus_network_nodes_maximum": ("controller", "maximum_nodes_per_network"),
+            "xs_nexus_largest_network_nodes": ("nodes", "largest_network_managed"),
             "xs_nexus_relays_configured": ("relays", "configured"),
             "xs_nexus_relays_unexpired_configured": ("relays", "unexpired_configured"),
             "xs_nexus_relays_fresh": ("relays", "fresh"),
@@ -635,6 +651,28 @@ class Collector:
         path_observations = values["xs_nexus_path_observations"]
         direct_paths = values["xs_nexus_direct_path_observations"]
         relay_paths = values["xs_nexus_relay_path_observations"]
+        self.capacity_observation(
+            "capacity.control_sessions",
+            values["xs_nexus_control_sessions_active"],
+            values["xs_nexus_control_sessions_maximum"],
+        )
+        self.capacity_observation(
+            "capacity.configuration_sends",
+            values["xs_nexus_configuration_sends_active"],
+            values["xs_nexus_configuration_sends_maximum"],
+        )
+        self.capacity_observation(
+            "capacity.network_nodes",
+            values["xs_nexus_largest_network_nodes"],
+            values["xs_nexus_network_nodes_maximum"],
+        )
+        rejected_sessions = values["xs_nexus_control_sessions_rejected_since_start"]
+        self.observe(
+            "capacity.control_sessions_rejected",
+            "critical" if rejected_sessions > 0 else "info",
+            "capacity",
+            f"rejected_since_start={rejected_sessions}",
+        )
         if direct_paths + relay_paths != path_observations:
             raise ValueError("inconsistent path observations")
         if path_observations > 0:
@@ -670,6 +708,7 @@ class Collector:
             self.configuration.handshake_failures,
             "",
         )
+
         management_auth = values["xs_nexus_management_auth_failures_24h"]
         self.threshold(
             "security.management_auth_failures",
@@ -731,6 +770,23 @@ class Collector:
             "critical" if failed_updates > 0 else "info",
             "updates",
             f"failed_nodes={failed_updates}",
+        )
+
+    def capacity_observation(self, key: str, used: int, maximum: int) -> None:
+        if maximum <= 0 or used < 0 or used > maximum:
+            raise ValueError("invalid capacity snapshot")
+        utilization_basis_points = used * 10_000 // maximum
+        if utilization_basis_points >= 9_500:
+            severity = "critical"
+        elif utilization_basis_points >= 8_000:
+            severity = "warning"
+        else:
+            severity = "info"
+        self.observe(
+            key,
+            severity,
+            "capacity",
+            f"used={used} maximum={maximum} utilization_basis_points={utilization_basis_points}",
         )
 
     def collect_notification_configuration(self) -> None:

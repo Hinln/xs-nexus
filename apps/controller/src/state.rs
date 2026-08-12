@@ -8,7 +8,8 @@ use std::sync::{
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use sqlx::PgPool;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore, broadcast};
+use tokio::time::{Duration, timeout};
 use xs_core::ConfigurationRelay;
 
 use crate::config::ControllerConfig;
@@ -25,10 +26,16 @@ pub struct AppState {
     pub linux_release_directory: Option<Arc<PathBuf>>,
     pub windows_release_directory: Option<Arc<PathBuf>>,
     pub credential_ttl_seconds: u64,
+    pub max_nodes_per_network: u32,
+    pub max_control_sessions: usize,
+    pub configuration_send_concurrency: usize,
     pub discovery_public_endpoints: Arc<Vec<SocketAddr>>,
     pub relays: Arc<Vec<ConfigurationRelay>>,
     online_nodes: Arc<RwLock<HashMap<[u8; 16], usize>>>,
     control_auth_failures: Arc<AtomicU64>,
+    rejected_control_sessions: Arc<AtomicU64>,
+    control_sessions: Arc<Semaphore>,
+    configuration_sends: Arc<Semaphore>,
     configuration_events: broadcast::Sender<uuid::Uuid>,
     update_events: broadcast::Sender<uuid::Uuid>,
 }
@@ -49,12 +56,18 @@ impl AppState {
             linux_release_directory: config.linux_release_directory.clone().map(Arc::new),
             windows_release_directory: config.windows_release_directory.clone().map(Arc::new),
             credential_ttl_seconds: config.credential_ttl_seconds,
+            max_nodes_per_network: config.max_nodes_per_network,
+            max_control_sessions: config.max_control_sessions,
+            configuration_send_concurrency: config.configuration_send_concurrency,
             discovery_public_endpoints: Arc::new(
                 config.discovery_public_endpoint.into_iter().collect(),
             ),
             relays: Arc::new(config.relays.clone()),
             online_nodes: Arc::new(RwLock::new(HashMap::new())),
             control_auth_failures: Arc::new(AtomicU64::new(0)),
+            rejected_control_sessions: Arc::new(AtomicU64::new(0)),
+            control_sessions: Arc::new(Semaphore::new(config.max_control_sessions)),
+            configuration_sends: Arc::new(Semaphore::new(config.configuration_send_concurrency)),
             configuration_events,
             update_events,
         }
@@ -93,6 +106,42 @@ impl AppState {
 
     pub(crate) fn control_auth_failures_total(&self) -> u64 {
         self.control_auth_failures.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn try_acquire_control_session(&self) -> Option<OwnedSemaphorePermit> {
+        self.control_sessions.clone().try_acquire_owned().ok()
+    }
+
+    pub(crate) async fn acquire_configuration_send(&self) -> Option<OwnedSemaphorePermit> {
+        timeout(
+            Duration::from_secs(10),
+            self.configuration_sends.clone().acquire_owned(),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok)
+    }
+
+    pub(crate) fn record_rejected_control_session(&self) {
+        let _ = self.rejected_control_sessions.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.saturating_add(1)),
+        );
+    }
+
+    pub(crate) fn rejected_control_sessions_total(&self) -> u64 {
+        self.rejected_control_sessions.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn active_control_sessions(&self) -> usize {
+        self.max_control_sessions
+            .saturating_sub(self.control_sessions.available_permits())
+    }
+
+    pub(crate) fn active_configuration_sends(&self) -> usize {
+        self.configuration_send_concurrency
+            .saturating_sub(self.configuration_sends.available_permits())
     }
 
     pub(crate) fn subscribe_configuration_events(&self) -> broadcast::Receiver<uuid::Uuid> {

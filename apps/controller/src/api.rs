@@ -1,8 +1,8 @@
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Path, State, WebSocketUpgrade},
+    extract::{DefaultBodyLimit, Path, RawQuery, State, WebSocketUpgrade},
     http::{HeaderMap, HeaderValue, StatusCode, header},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post, put},
 };
 use tower_http::{
@@ -325,14 +325,25 @@ async fn enroll(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
-async fn control(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
+async fn control(
+    State(state): State<AppState>,
+    RawQuery(query): RawQuery,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let Some(session_permit) = state.try_acquire_control_session() else {
+        state.record_rejected_control_session();
+        return ApiError::capacity_exhausted().into_response();
+    };
+    let chunked_transport = query.as_deref() == Some("transport=chunked-v1");
     upgrade
         .read_buffer_size(4 * 1024)
         .write_buffer_size(4 * 1024)
         .max_write_buffer_size(1024 * 1024)
         .max_message_size(512 * 1024)
         .max_frame_size(512 * 1024)
-        .on_upgrade(move |socket| crate::control::serve(socket, state))
+        .on_upgrade(move |socket| {
+            crate::control::serve(socket, state, session_permit, chunked_transport)
+        })
 }
 
 async fn record_relay_metrics(

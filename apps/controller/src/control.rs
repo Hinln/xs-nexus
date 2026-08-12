@@ -1,6 +1,11 @@
 use axum::extract::ws::{Message, WebSocket};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use sha2::{Digest, Sha256};
+use tokio::sync::OwnedSemaphorePermit;
 use tokio::time::{Duration, interval, timeout};
+use xs_core::{
+    CONTROL_MESSAGE_LIMIT_BYTES, CONTROL_TRANSFER_CHUNK_BYTES, CONTROL_TRANSFER_THRESHOLD_BYTES,
+};
 
 use crate::{
     model::{ControlClientMessage, ControlServerMessage},
@@ -8,9 +13,15 @@ use crate::{
     state::AppState,
 };
 
-const CONTROL_MESSAGE_LIMIT: usize = 512 * 1024;
+const CONTROL_MESSAGE_LIMIT: usize = CONTROL_MESSAGE_LIMIT_BYTES;
+const CONTROL_SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
+pub(crate) async fn serve(
+    mut socket: WebSocket,
+    state: AppState,
+    _session_permit: OwnedSemaphorePermit,
+    chunked_transport: bool,
+) {
     let mut challenge = [0_u8; 32];
     if getrandom::fill(&mut challenge).is_err() {
         send_error(&mut socket, "control_unavailable").await;
@@ -25,7 +36,7 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
     };
     let mut configuration_events = state.subscribe_configuration_events();
     let mut update_events = state.subscribe_update_events();
-    if send_initial_configuration(&mut socket, &state, &authenticated)
+    if send_initial_configuration(&mut socket, &state, &authenticated, chunked_transport)
         .await
         .is_err()
     {
@@ -42,6 +53,7 @@ pub(crate) async fn serve(mut socket: WebSocket, state: AppState) {
         &mut socket,
         &state,
         &authenticated,
+        chunked_transport,
         &mut configuration_events,
         &mut update_events,
     )
@@ -64,6 +76,7 @@ async fn send_challenge(socket: &mut WebSocket, challenge: &[u8; 32]) -> Result<
         &ControlServerMessage::Challenge {
             challenge_base64: URL_SAFE_NO_PAD.encode(challenge),
         },
+        false,
     )
     .await
 }
@@ -123,7 +136,12 @@ async fn send_initial_configuration(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    chunked_transport: bool,
 ) -> Result<(), axum::Error> {
+    let Some(_configuration_permit) = state.acquire_configuration_send().await else {
+        send_error(socket, "control_unavailable").await;
+        return Err(control_error("configuration transfer unavailable"));
+    };
     let Ok(configuration) =
         crate::service::latest_configuration(state, authenticated.network_id).await
     else {
@@ -138,6 +156,7 @@ async fn send_initial_configuration(
             node_id_base64: authenticated.node_id_base64.clone(),
             configuration,
         },
+        chunked_transport,
     )
     .await
 }
@@ -146,43 +165,74 @@ async fn serve_authenticated_loop(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    chunked_transport: bool,
     configuration_events: &mut tokio::sync::broadcast::Receiver<uuid::Uuid>,
     update_events: &mut tokio::sync::broadcast::Receiver<uuid::Uuid>,
 ) {
+    enum Event {
+        Heartbeat,
+        Configuration(Result<uuid::Uuid, tokio::sync::broadcast::error::RecvError>),
+        Update(Result<uuid::Uuid, tokio::sync::broadcast::error::RecvError>),
+        Incoming(Option<Result<Message, axum::Error>>),
+    }
+
     let mut heartbeat = interval(Duration::from_secs(30));
     heartbeat.tick().await;
     loop {
-        tokio::select! {
-            _ = heartbeat.tick() => {
+        let event = tokio::select! {
+            _ = heartbeat.tick() => Event::Heartbeat,
+            event = configuration_events.recv() => Event::Configuration(event),
+            event = update_events.recv() => Event::Update(event),
+            incoming = socket.recv() => Event::Incoming(incoming),
+        };
+        match event {
+            Event::Heartbeat => {
                 if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
                     return;
                 }
             }
-            event = configuration_events.recv() => {
+            Event::Configuration(event) => {
                 let Ok(network_id) = event else {
                     continue;
                 };
                 if network_id == authenticated.network_id
-                    && send_latest_configuration(socket, state, authenticated).await.is_err()
+                    && send_latest_configuration(socket, state, authenticated, chunked_transport)
+                        .await
+                        .is_err()
                 {
                     return;
                 }
             }
-            event = update_events.recv() => {
+            Event::Update(event) => {
                 let Ok(network_id) = event else {
                     continue;
                 };
                 if network_id == authenticated.network_id
-                    && send_current_update_directive(socket, state, authenticated).await.is_err()
+                    && send_current_update_directive(
+                        socket,
+                        state,
+                        authenticated,
+                        chunked_transport,
+                    )
+                    .await
+                    .is_err()
                 {
                     return;
                 }
             }
-            incoming = socket.recv() => {
+            Event::Incoming(incoming) => {
                 let Some(Ok(message)) = incoming else {
                     return;
                 };
-                if !handle_authenticated_message(socket, state, authenticated, message).await {
+                if !handle_authenticated_message(
+                    socket,
+                    state,
+                    authenticated,
+                    chunked_transport,
+                    message,
+                )
+                .await
+                {
                     return;
                 }
             }
@@ -194,24 +244,35 @@ async fn send_current_update_directive(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    chunked_transport: bool,
 ) -> Result<(), axum::Error> {
     let directive = crate::updates::current_update_directive(state, authenticated)
         .await
         .map_err(|_| axum::Error::new(std::io::Error::other("update directive unavailable")))?;
-    send_json(socket, &ControlServerMessage::UpdateDirective { directive }).await
+    send_json(
+        socket,
+        &ControlServerMessage::UpdateDirective { directive },
+        chunked_transport,
+    )
+    .await
 }
 
 async fn send_latest_configuration(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    chunked_transport: bool,
 ) -> Result<(), axum::Error> {
+    let Some(_configuration_permit) = state.acquire_configuration_send().await else {
+        return Err(control_error("configuration transfer unavailable"));
+    };
     let configuration = crate::service::latest_configuration(state, authenticated.network_id)
         .await
         .map_err(|_| axum::Error::new(std::io::Error::other("configuration unavailable")))?;
     send_json(
         socket,
         &ControlServerMessage::Configuration { configuration },
+        chunked_transport,
     )
     .await
 }
@@ -220,11 +281,12 @@ async fn handle_authenticated_message(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    chunked_transport: bool,
     message: Message,
 ) -> bool {
     match message {
         Message::Text(text) if text.len() <= CONTROL_MESSAGE_LIMIT => {
-            handle_authenticated_text(socket, state, authenticated, &text).await
+            handle_authenticated_text(socket, state, authenticated, chunked_transport, &text).await
         }
         Message::Ping(payload) => socket.send(Message::Pong(payload)).await.is_ok(),
         Message::Pong(_) => true,
@@ -240,14 +302,21 @@ async fn handle_authenticated_text(
     socket: &mut WebSocket,
     state: &AppState,
     authenticated: &AuthenticatedNode,
+    chunked_transport: bool,
     text: &str,
 ) -> bool {
     let Ok(message) = serde_json::from_str::<ControlClientMessage>(text) else {
         send_error(socket, "invalid_control_message").await;
         return false;
     };
+    let mut configuration_permit = None;
     let response = match message {
         ControlClientMessage::Sync { last_version } => {
+            configuration_permit = state.acquire_configuration_send().await;
+            if configuration_permit.is_none() {
+                send_error(socket, "control_unavailable").await;
+                return false;
+            }
             let Ok(configuration) =
                 crate::service::latest_configuration(state, authenticated.network_id).await
             else {
@@ -266,6 +335,11 @@ async fn handle_authenticated_text(
             advertisement,
             signature_base64,
         } => {
+            configuration_permit = state.acquire_configuration_send().await;
+            if configuration_permit.is_none() {
+                send_error(socket, "control_unavailable").await;
+                return false;
+            }
             let Ok(configuration) = crate::service::advertise_candidates(
                 state,
                 authenticated,
@@ -283,6 +357,11 @@ async fn handle_authenticated_text(
             advertisement,
             signature_base64,
         } => {
+            configuration_permit = state.acquire_configuration_send().await;
+            if configuration_permit.is_none() {
+                send_error(socket, "control_unavailable").await;
+                return false;
+            }
             let Ok(configuration) = crate::service::advertise_subnet_routes(
                 state,
                 authenticated,
@@ -335,15 +414,97 @@ async fn handle_authenticated_text(
             return false;
         }
     };
-    send_json(socket, &response).await.is_ok()
+    let sent = send_json(socket, &response, chunked_transport)
+        .await
+        .is_ok();
+    drop(configuration_permit);
+    sent
 }
 
 async fn send_json(
     socket: &mut WebSocket,
     message: &ControlServerMessage,
+    chunked_transport: bool,
 ) -> Result<(), axum::Error> {
-    let encoded = serde_json::to_string(message).map_err(axum::Error::new)?;
+    let encoded = serde_json::to_vec(message).map_err(axum::Error::new)?;
+    if encoded.len() > CONTROL_MESSAGE_LIMIT {
+        return Err(control_error("control message exceeds configured limit"));
+    }
+    timeout(
+        CONTROL_SEND_TIMEOUT,
+        send_encoded_json(socket, encoded, chunked_transport),
+    )
+    .await
+    .map_err(|_| control_error("control message send timed out"))?
+}
+
+async fn send_encoded_json(
+    socket: &mut WebSocket,
+    encoded: Vec<u8>,
+    chunked_transport: bool,
+) -> Result<(), axum::Error> {
+    if encoded.len() <= CONTROL_TRANSFER_THRESHOLD_BYTES {
+        return send_encoded(socket, encoded).await;
+    }
+    if !chunked_transport {
+        return Err(control_error("control transport upgrade required"));
+    }
+    send_chunked(socket, &encoded).await
+}
+
+async fn send_chunked(socket: &mut WebSocket, encoded: &[u8]) -> Result<(), axum::Error> {
+    let mut transfer_id = [0_u8; 16];
+    getrandom::fill(&mut transfer_id).map_err(axum::Error::new)?;
+    let transfer_id_base64 = URL_SAFE_NO_PAD.encode(transfer_id);
+    let chunk_count = encoded.len().div_ceil(CONTROL_TRANSFER_CHUNK_BYTES);
+    let start = ControlServerMessage::TransferStart {
+        transfer_id_base64: transfer_id_base64.clone(),
+        total_bytes: u32::try_from(encoded.len())
+            .map_err(|_| control_error("control transfer length overflow"))?,
+        chunk_count: u16::try_from(chunk_count)
+            .map_err(|_| control_error("control transfer chunk overflow"))?,
+        sha256_base64: URL_SAFE_NO_PAD.encode(Sha256::digest(encoded)),
+    };
+    send_single_json(socket, &start).await?;
+    for (index, chunk) in encoded.chunks(CONTROL_TRANSFER_CHUNK_BYTES).enumerate() {
+        send_single_json(
+            socket,
+            &ControlServerMessage::TransferChunk {
+                transfer_id_base64: transfer_id_base64.clone(),
+                index: u16::try_from(index)
+                    .map_err(|_| control_error("control transfer index overflow"))?,
+                data_base64: URL_SAFE_NO_PAD.encode(chunk),
+            },
+        )
+        .await?;
+    }
+    send_single_json(
+        socket,
+        &ControlServerMessage::TransferEnd { transfer_id_base64 },
+    )
+    .await
+}
+
+async fn send_single_json(
+    socket: &mut WebSocket,
+    message: &ControlServerMessage,
+) -> Result<(), axum::Error> {
+    let encoded = serde_json::to_vec(message).map_err(axum::Error::new)?;
+    if encoded.len() > CONTROL_TRANSFER_THRESHOLD_BYTES {
+        return Err(control_error(
+            "control transfer envelope exceeds configured limit",
+        ));
+    }
+    send_encoded(socket, encoded).await
+}
+
+async fn send_encoded(socket: &mut WebSocket, encoded: Vec<u8>) -> Result<(), axum::Error> {
+    let encoded = String::from_utf8(encoded).map_err(axum::Error::new)?;
     socket.send(Message::Text(encoded.into())).await
+}
+
+fn control_error(message: &'static str) -> axum::Error {
+    axum::Error::new(std::io::Error::other(message))
 }
 
 async fn send_error(socket: &mut WebSocket, code: &'static str) {
@@ -352,6 +513,7 @@ async fn send_error(socket: &mut WebSocket, code: &'static str) {
         &ControlServerMessage::Error {
             code: code.to_owned(),
         },
+        false,
     )
     .await;
     let _ = socket.send(Message::Close(None)).await;

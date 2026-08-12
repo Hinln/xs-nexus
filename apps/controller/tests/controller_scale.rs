@@ -25,11 +25,12 @@ use tokio::{
 };
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async_with_config,
-    tungstenite::{Message, protocol::WebSocketConfig},
+    tungstenite::{Error as WebSocketError, Message, protocol::WebSocketConfig},
 };
 use tower::ServiceExt;
 use url::Url;
 use xs_controller::config::{ControllerConfig, MigrationConfig};
+use xs_core::{ControlServerMessage, ControlTransferAssembler};
 
 const ADMIN_TOKEN: &str = "scale-admin-token-with-at-least-32-characters";
 const CHECKPOINTS: [usize; 3] = [100, 500, 1000];
@@ -64,6 +65,14 @@ struct AuthenticatedControl {
     socket: ControlSocket,
     version: u64,
     authentication_milliseconds: f64,
+    configuration_transfer_bytes: usize,
+    configuration_transfer_chunks: usize,
+}
+
+struct ReceivedControlMessage {
+    message: ControlServerMessage,
+    transfer_bytes: Option<usize>,
+    transfer_chunks: Option<usize>,
 }
 
 struct ControllerProcess {
@@ -114,6 +123,7 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
         );
         previous = checkpoint;
     }
+    let enrollment_capacity = assert_enrollment_capacity(&router, &state.pool, &nodes).await;
     drop(router);
     state.pool.close().await;
     drop(state);
@@ -132,6 +142,7 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
         },
         "measurements": measurements,
         "control": control,
+        "enrollment_capacity": enrollment_capacity,
         "safe_operating_envelope": {
             "minimum_registrations_per_second": MINIMUM_REGISTRATIONS_PER_SECOND,
             "minimum_control_authentications_per_second": MINIMUM_CONTROL_AUTHENTICATIONS_PER_SECOND,
@@ -289,8 +300,79 @@ async fn enroll_scale_node(router: Router, token: String, index: usize) -> Scale
     }
 }
 
+async fn assert_enrollment_capacity(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    nodes: &[ScaleNode],
+) -> Value {
+    let network_id = nodes[0].enrollment["network_id"]
+        .as_str()
+        .expect("scale network ID");
+    let token_response = request_json(
+        router,
+        Method::POST,
+        "/v1/admin/enrollment-tokens",
+        Some(json!({
+            "network_id": network_id,
+            "expires_in_seconds": 3600,
+            "max_uses": 1,
+            "default_role_bitmap": 1,
+            "default_tags": ["scale-overflow"]
+        })),
+        Some(ADMIN_TOKEN),
+    )
+    .await;
+    assert_eq!(token_response.0, StatusCode::CREATED);
+    let token_id = token_response.1["id"].as_str().expect("overflow token ID");
+    let overflow_seed: [u8; 32] = Sha256::digest(1001_usize.to_be_bytes()).into();
+    let overflow_identity = SigningKey::from_bytes(&overflow_seed);
+    let response = request_json(
+        router,
+        Method::POST,
+        "/v1/enroll",
+        Some(json!({
+            "token": token_response.1["token"],
+            "name": "scale-node-overflow",
+            "device_type": "linux",
+            "identity_public_key_base64": URL_SAFE_NO_PAD.encode(
+                overflow_identity.verifying_key().to_bytes()
+            )
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.1["error"]["code"], "capacity_exhausted");
+    let use_count: i32 =
+        sqlx::query_scalar("SELECT use_count FROM enrollment_tokens WHERE id = $1")
+            .bind(uuid::Uuid::parse_str(token_id).expect("parse overflow token ID"))
+            .fetch_one(pool)
+            .await
+            .expect("query overflow token use count");
+    let active_nodes: i64 = sqlx::query_scalar(
+        "SELECT count(*)::bigint FROM nodes WHERE network_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(uuid::Uuid::parse_str(network_id).expect("parse scale network ID"))
+    .fetch_one(pool)
+    .await
+    .expect("query active nodes after capacity rejection");
+    assert_eq!(use_count, 0);
+    assert_eq!(
+        active_nodes,
+        i64::try_from(CHECKPOINTS[2]).expect("node count")
+    );
+    json!({
+        "maximum_nodes_per_network": CHECKPOINTS[2],
+        "overflow_http_status": response.0.as_u16(),
+        "overflow_error_code": response.1["error"]["code"],
+        "token_use_count_after_rejection": use_count,
+        "active_nodes_after_rejection": active_nodes
+    })
+}
+
 async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]) -> Value {
     let mut controller = start_controller_process(config).await;
+    assert_large_legacy_transport_rejected(controller.address, &nodes[0]).await;
     let authentication_started = Instant::now();
     let authenticated = timeout(
         Duration::from_secs(300),
@@ -311,6 +393,25 @@ async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]
         .collect::<Vec<_>>();
     let authentication_rate = f64::from(authenticated_count) / authentication_elapsed.as_secs_f64();
     let authentication_p95 = percentile(&authentication_milliseconds, 95);
+    let chunked_authentications = authenticated
+        .iter()
+        .filter(|control| control.configuration_transfer_chunks > 1)
+        .count();
+    let minimum_configuration_transfer_bytes = authenticated
+        .iter()
+        .map(|control| control.configuration_transfer_bytes)
+        .min()
+        .expect("configuration transfer bytes");
+    let maximum_configuration_transfer_bytes = authenticated
+        .iter()
+        .map(|control| control.configuration_transfer_bytes)
+        .max()
+        .expect("configuration transfer bytes");
+    let maximum_configuration_transfer_chunks = authenticated
+        .iter()
+        .map(|control| control.configuration_transfer_chunks)
+        .max()
+        .expect("configuration transfer chunks");
 
     let online_convergence = wait_console_online_count(controller.address, expected_nodes).await;
     let ControlSynchronization {
@@ -322,6 +423,20 @@ async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]
     assert_eq!(
         console_online_count(controller.address).await,
         expected_nodes
+    );
+    assert_control_session_capacity_rejected(controller.address).await;
+    let capacity_snapshot = request_admin_json(controller.address, "/v1/admin/observability").await;
+    assert_eq!(
+        capacity_snapshot["controller"]["active_control_sessions"].as_u64(),
+        Some(u64::try_from(CHECKPOINTS[2]).expect("session count"))
+    );
+    assert_eq!(
+        capacity_snapshot["controller"]["maximum_control_sessions"].as_u64(),
+        Some(u64::try_from(CHECKPOINTS[2]).expect("session limit"))
+    );
+    assert_eq!(
+        capacity_snapshot["controller"]["rejected_control_sessions_since_start"].as_u64(),
+        Some(1)
     );
     let snapshot_milliseconds = snapshot_started.elapsed().as_secs_f64() * 1000.0;
     tokio::time::sleep(Duration::from_secs(CONTROL_HOLD_SECONDS)).await;
@@ -349,6 +464,13 @@ async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]
         "authentications_per_second": authentication_rate,
         "authentication_average_ms": average(&authentication_milliseconds),
         "authentication_p95_ms": authentication_p95,
+        "chunked_authentications": chunked_authentications,
+        "minimum_configuration_transfer_bytes": minimum_configuration_transfer_bytes,
+        "maximum_configuration_transfer_bytes": maximum_configuration_transfer_bytes,
+        "maximum_configuration_transfer_chunks": maximum_configuration_transfer_chunks,
+        "legacy_large_message_rejected": true,
+        "overflow_session_rejected": true,
+        "capacity_snapshot": capacity_snapshot["controller"],
         "online_convergence_ms": online_convergence.as_secs_f64() * 1000.0,
         "synchronization_concurrency": CONTROL_SYNC_CONCURRENCY,
         "synchronization_elapsed_ms": synchronization_elapsed.as_secs_f64() * 1000.0,
@@ -365,6 +487,37 @@ async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]
         "database_connections": database_connections,
         "offline_convergence_ms": offline_convergence.as_secs_f64() * 1000.0
     })
+}
+
+async fn assert_large_legacy_transport_rejected(address: SocketAddr, node: &ScaleNode) {
+    let (mut socket, _) = connect_async_with_config(
+        format!("ws://{address}/v1/control"),
+        Some(control_websocket_config()),
+        false,
+    )
+    .await
+    .expect("connect legacy control socket");
+    send_control_authentication(&mut socket, node).await;
+    let result = timeout(Duration::from_secs(30), socket.next())
+        .await
+        .expect("legacy control rejection completes");
+    match result {
+        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        Some(Ok(message)) => panic!("legacy client unexpectedly received {message:?}"),
+    }
+}
+
+async fn assert_control_session_capacity_rejected(address: SocketAddr) {
+    let result = connect_async_with_config(
+        format!("ws://{address}/v1/control?transport=chunked-v1"),
+        Some(control_websocket_config()),
+        false,
+    )
+    .await;
+    let Err(WebSocketError::Http(response)) = result else {
+        panic!("overflow control session was not rejected at HTTP upgrade");
+    };
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 async fn start_controller_process(config: &ControllerConfig) -> ControllerProcess {
@@ -394,6 +547,9 @@ async fn start_controller_process(config: &ControllerConfig) -> ControllerProces
         .env("CONFIG_SIGNING_KEY_PATH", &configuration_key)
         .env("CONSOLE_COOKIE_SECURE", "true")
         .env("NODE_CREDENTIAL_TTL_SECONDS", "86400")
+        .env("MAX_NODES_PER_NETWORK", "1000")
+        .env("MAX_CONTROL_SESSIONS", "1000")
+        .env("CONFIGURATION_SEND_CONCURRENCY", "64")
         .env("RUST_LOG", "warn")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -425,27 +581,19 @@ async fn start_controller_process(config: &ControllerConfig) -> ControllerProces
 
 async fn authenticate_control(address: SocketAddr, node: &ScaleNode) -> AuthenticatedControl {
     let started = Instant::now();
-    let websocket_config = WebSocketConfig::default()
-        .read_buffer_size(CONTROL_BUFFER_SIZE)
-        .write_buffer_size(CONTROL_BUFFER_SIZE)
-        .max_write_buffer_size(CONTROL_WRITE_BUFFER_LIMIT)
-        .max_message_size(Some(CONTROL_MESSAGE_LIMIT))
-        .max_frame_size(Some(CONTROL_MESSAGE_LIMIT));
     let (mut socket, _) = connect_async_with_config(
-        format!("ws://{address}/v1/control"),
-        Some(websocket_config),
+        format!("ws://{address}/v1/control?transport=chunked-v1"),
+        Some(control_websocket_config()),
         false,
     )
     .await
     .expect("connect control socket");
-    let challenge = next_text(&mut socket, "challenge").await;
-    let challenge: Value = serde_json::from_str(&challenge).expect("challenge JSON");
+    let challenge = next_control_message(&mut socket, "challenge").await;
+    let ControlServerMessage::Challenge { challenge_base64 } = challenge.message else {
+        panic!("challenge response had the wrong type");
+    };
     let challenge = URL_SAFE_NO_PAD
-        .decode(
-            challenge["challenge_base64"]
-                .as_str()
-                .expect("challenge value"),
-        )
+        .decode(challenge_base64)
         .expect("decode challenge");
     assert_eq!(challenge.len(), 32);
     let node_id = URL_SAFE_NO_PAD
@@ -455,29 +603,81 @@ async fn authenticate_control(address: SocketAddr, node: &ScaleNode) -> Authenti
     input.extend_from_slice(CONTROL_AUTHENTICATION_DOMAIN);
     input.extend_from_slice(&challenge);
     input.extend_from_slice(&node_id);
+    send_control_authentication_with_challenge(&mut socket, node, &input).await;
+    let authenticated = next_control_message(&mut socket, "authenticated response").await;
+    let transfer_bytes = authenticated
+        .transfer_bytes
+        .expect("large configuration uses chunked transport");
+    let transfer_chunks = authenticated
+        .transfer_chunks
+        .expect("large configuration chunk count");
+    let ControlServerMessage::Authenticated {
+        node_id_base64,
+        configuration,
+    } = authenticated.message
+    else {
+        panic!("authenticated response had the wrong type");
+    };
+    assert_eq!(
+        node_id_base64,
+        node.enrollment["node_id_base64"]
+            .as_str()
+            .expect("authenticated node ID")
+    );
+    AuthenticatedControl {
+        socket,
+        version: configuration.version,
+        authentication_milliseconds: started.elapsed().as_secs_f64() * 1000.0,
+        configuration_transfer_bytes: transfer_bytes,
+        configuration_transfer_chunks: transfer_chunks,
+    }
+}
+
+fn control_websocket_config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .read_buffer_size(CONTROL_BUFFER_SIZE)
+        .write_buffer_size(CONTROL_BUFFER_SIZE)
+        .max_write_buffer_size(CONTROL_WRITE_BUFFER_LIMIT)
+        .max_message_size(Some(CONTROL_MESSAGE_LIMIT))
+        .max_frame_size(Some(CONTROL_MESSAGE_LIMIT))
+}
+
+async fn send_control_authentication(socket: &mut ControlSocket, node: &ScaleNode) {
+    let challenge = next_control_message(socket, "legacy challenge").await;
+    let ControlServerMessage::Challenge { challenge_base64 } = challenge.message else {
+        panic!("legacy challenge response had the wrong type");
+    };
+    let challenge = URL_SAFE_NO_PAD
+        .decode(challenge_base64)
+        .expect("decode legacy challenge");
+    let node_id = URL_SAFE_NO_PAD
+        .decode(node.enrollment["node_id_base64"].as_str().expect("node ID"))
+        .expect("decode node ID");
+    let mut input = Vec::with_capacity(CONTROL_AUTHENTICATION_DOMAIN.len() + 48);
+    input.extend_from_slice(CONTROL_AUTHENTICATION_DOMAIN);
+    input.extend_from_slice(&challenge);
+    input.extend_from_slice(&node_id);
+    send_control_authentication_with_challenge(socket, node, &input).await;
+}
+
+async fn send_control_authentication_with_challenge(
+    socket: &mut ControlSocket,
+    node: &ScaleNode,
+    input: &[u8],
+) {
     socket
         .send(Message::Text(
             json!({
                 "type": "authenticate",
                 "node_id_base64": node.enrollment["node_id_base64"],
                 "credential_base64": node.enrollment["credential_base64"],
-                "signature_base64": URL_SAFE_NO_PAD.encode(node.identity.sign(&input).to_bytes())
+                "signature_base64": URL_SAFE_NO_PAD.encode(node.identity.sign(input).to_bytes())
             })
             .to_string()
             .into(),
         ))
         .await
         .expect("send control authentication");
-    let authenticated = next_text(&mut socket, "authenticated response").await;
-    let authenticated: Value = serde_json::from_str(&authenticated).expect("authenticated JSON");
-    assert_eq!(authenticated["type"], "authenticated");
-    AuthenticatedControl {
-        socket,
-        version: authenticated["configuration"]["version"]
-            .as_u64()
-            .expect("configuration version"),
-        authentication_milliseconds: started.elapsed().as_secs_f64() * 1000.0,
-    }
 }
 
 async fn next_text(socket: &mut ControlSocket, name: &str) -> String {
@@ -490,6 +690,36 @@ async fn next_text(socket: &mut ControlSocket, name: &str) -> String {
         panic!("{name} was not text");
     };
     text.to_string()
+}
+
+async fn next_control_message(socket: &mut ControlSocket, name: &str) -> ReceivedControlMessage {
+    let mut assembler = ControlTransferAssembler::default();
+    let mut transfer_bytes = None;
+    let mut transfer_chunks = None;
+    loop {
+        let text = next_text(socket, name).await;
+        let message = serde_json::from_str::<ControlServerMessage>(&text)
+            .unwrap_or_else(|error| panic!("{name} JSON failed: {error}"));
+        if let ControlServerMessage::TransferStart {
+            total_bytes,
+            chunk_count,
+            ..
+        } = &message
+        {
+            transfer_bytes = Some(usize::try_from(*total_bytes).expect("transfer byte count"));
+            transfer_chunks = Some(usize::from(*chunk_count));
+        }
+        if let Some(message) = assembler
+            .accept(message)
+            .unwrap_or_else(|error| panic!("{name} transfer failed: {error}"))
+        {
+            return ReceivedControlMessage {
+                message,
+                transfer_bytes,
+                transfer_chunks,
+            };
+        }
+    }
 }
 
 async fn synchronize_controls(controls: Vec<AuthenticatedControl>) -> ControlSynchronization {
@@ -528,10 +758,11 @@ async fn synchronize_control(mut control: AuthenticatedControl) -> (ControlSocke
         ))
         .await
         .expect("send control sync");
-    let response = next_text(&mut control.socket, "control sync response").await;
-    let response: Value = serde_json::from_str(&response).expect("control sync JSON");
-    assert_eq!(response["type"], "up_to_date");
-    assert_eq!(response["version"], control.version);
+    let response = next_control_message(&mut control.socket, "control sync response").await;
+    assert!(matches!(
+        response.message,
+        ControlServerMessage::UpToDate { version } if version == control.version
+    ));
     (control.socket, started.elapsed().as_secs_f64() * 1000.0)
 }
 
@@ -799,6 +1030,9 @@ fn test_config() -> ControllerConfig {
         linux_release_directory: None,
         windows_release_directory: None,
         credential_ttl_seconds: 86_400,
+        max_nodes_per_network: 1000,
+        max_control_sessions: 1000,
+        configuration_send_concurrency: 64,
         relays: Vec::new(),
     }
 }

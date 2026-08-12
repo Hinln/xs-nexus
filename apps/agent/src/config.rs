@@ -188,6 +188,10 @@ impl AgentConfig {
         };
         url.set_scheme(scheme)
             .map_err(|()| AgentError::Configuration)?;
+        url.query_pairs_mut().append_pair(
+            xs_core::CONTROL_TRANSPORT_QUERY_NAME,
+            xs_core::CONTROL_CHUNKED_TRANSPORT_V1,
+        );
         Ok(url)
     }
 
@@ -282,6 +286,14 @@ mod tests {
         assert!(insecure.validate().is_err());
         insecure.controller_url = "http://127.0.0.1:8080/".to_owned();
         assert!(insecure.validate().is_ok());
+    }
+
+    #[test]
+    fn control_url_negotiates_bounded_chunked_transport() {
+        assert_eq!(
+            fixture().control_url().expect("control URL").as_str(),
+            "wss://controller.example/v1/control?transport=chunked-v1"
+        );
     }
 
     #[test]

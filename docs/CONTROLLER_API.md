@@ -37,8 +37,13 @@
 | `UPDATE_SIGNING_PUBLIC_KEY_PATH` | 可选、权限不宽于 `0644` 的 32 字节原始 Ed25519 发布公钥；不配置时更新导入明确不可用 |
 | `WINDOWS_RELEASE_DIRECTORY` | 可选、绝对路径、非符号链接、只读 Windows 发布目录；目录必须只包含已校验的 `install.ps1`、manifest 和 ZIP |
 | `NODE_CREDENTIAL_TTL_SECONDS` | `3600..31536000`，默认 30 天 |
+| `MAX_NODES_PER_NETWORK` | `1..1000`，默认且最大 1000；在消耗 Enrollment Token 或分配地址前事务性拒绝超限节点 |
+| `MAX_CONTROL_SESSIONS` | `1..1000`，默认且最大 1000；HTTP Upgrade 前拒绝超限控制连接 |
+| `CONFIGURATION_SEND_CONCURRENCY` | `1..128` 且不得超过控制连接上限，默认 64；限制同时序列化和发送完整签名配置的任务数 |
 
 密钥文件和真实环境配置位于仓库外。Credential 与 Configuration key 复用会导致启动失败。
+
+Agent 在 `/v1/control?transport=chunked-v1` 显式协商有界控制传输。超过 8 KiB 的服务器消息按严格有序、SHA-256 校验的分块发送，每个分块不超过 6,000 原始字节，重组后总消息不得超过 512 KiB。小消息和未协商客户端继续使用单条 JSON；未协商客户端遇到大消息时连接失败关闭，防止每个长期 WebSocket 保留完整大帧缓冲区。Controller/Agent 升级应成对发布。
 
 `serve` 不创建 schema，也不执行迁移；它会校验 `_sqlx_migrations` 的版本、成功状态和 SHA-384 checksum，缺失、脏状态、额外版本或内容漂移均拒绝启动。`migrate` 使用独立 `DATABASE_URL`，可配置 `DATABASE_OWNER_ROLE` 后先 `SET ROLE`，不得复用长运行 Controller 的 app 凭据。
 

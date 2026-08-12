@@ -177,11 +177,21 @@ from pathlib import Path
 
 SNAPSHOT = {
     "schema_version": 1,
-    "controller": {"status": "ok", "control_auth_failures_since_start": 0},
+    "controller": {
+        "status": "ok",
+        "control_auth_failures_since_start": 0,
+        "active_control_sessions": 1,
+        "maximum_control_sessions": 1000,
+        "rejected_control_sessions_since_start": 0,
+        "active_configuration_sends": 0,
+        "maximum_configuration_sends": 64,
+        "maximum_nodes_per_network": 1000,
+    },
     "database": {"status": "ok", "reason": None},
     "redis": {"status": "not_applicable", "reason": "controller_has_no_redis_dependency"},
     "nodes": {
         "managed": 1,
+        "largest_network_managed": 1,
         "online": 1,
         "fresh_telemetry": 1,
         "unknown_path_nodes": 0,
@@ -332,6 +342,8 @@ python3 -m json.tool "${TEMPORARY}/output/snapshot.json" >/dev/null
 python3 -m json.tool "${TEMPORARY}/output/alerts.json" >/dev/null
 grep -Fq 'xs_nexus_host_cpu_usage_percent' "${TEMPORARY}/output/metrics.prom"
 grep -Fq 'xs_nexus_replay_drops_24h 0' "${TEMPORARY}/output/metrics.prom"
+grep -Fq 'xs_nexus_control_sessions_maximum 1000' "${TEMPORARY}/output/metrics.prom"
+grep -Fq 'level=info check=capacity' "${TEMPORARY}/healthy.log"
 [[ "$(stat -c '%a' "${TEMPORARY}/output/metrics.prom")" == 644 ]]
 [[ "$(stat -c '%a' "${TEMPORARY}/output/snapshot.json")" == 600 ]]
 [[ "$(stat -c '%a' "${TEMPORARY}/output/alerts.json")" == 600 ]]
@@ -468,6 +480,20 @@ assert module.alert_transitions(
     {},
     "2026-01-01T00:00:00Z",
 ) == []
+
+
+class CapacityFixture:
+    def __init__(self):
+        self.observations = []
+
+    def observe(self, *values):
+        self.observations.append(values)
+
+
+for used, expected in ((799, "info"), (800, "warning"), (950, "critical")):
+    fixture = CapacityFixture()
+    module.Collector.capacity_observation(fixture, "capacity.fixture", used, 1000)
+    assert fixture.observations[-1][1] == expected
 
 
 class FakeResponse:

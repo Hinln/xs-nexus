@@ -14,9 +14,9 @@ use tokio_tungstenite::{
 };
 use xs_core::{
     AgentPathKind, AgentPeerTelemetry, AgentRuntimeReport, AgentTelemetryReport, AgentUpdateState,
-    CandidateAdvertisement, ControlClientMessage, ControlServerMessage, EndpointCandidateKind,
-    MAX_AGENT_TELEMETRY_PEERS, ReleaseVersion, SignedConfiguration, SubnetRouteAdvertisement,
-    UpdateChannel, UpdateDirective, agent_runtime_report_signing_input,
+    CandidateAdvertisement, ControlClientMessage, ControlServerMessage, ControlTransferAssembler,
+    EndpointCandidateKind, MAX_AGENT_TELEMETRY_PEERS, ReleaseVersion, SignedConfiguration,
+    SubnetRouteAdvertisement, UpdateChannel, UpdateDirective, agent_runtime_report_signing_input,
     agent_telemetry_report_signing_input,
 };
 
@@ -154,6 +154,7 @@ async fn control_session(
 
     authenticate_control(config, &mut socket, identity, state).await?;
     health.set_controller_connected(true);
+    let mut transfer_assembler = ControlTransferAssembler::default();
     let mut update_status = RuntimeUpdateStatus::idle();
     let mut attempted_update = None;
     send_runtime_report(&mut socket, identity, config, state, &update_status).await?;
@@ -233,7 +234,7 @@ async fn control_session(
                     send_subnet_route_advertisement(&mut socket, identity, advertisement).await?;
                 }
             }
-            incoming = receive_json(&mut socket) => {
+            incoming = receive_json(&mut socket, &mut transfer_assembler) => {
                 match incoming? {
                     ControlServerMessage::Configuration { configuration } => {
                         apply_configuration(state, identity, configuration, &config.node_state_path()).await?;
@@ -266,6 +267,9 @@ async fn control_session(
                     ControlServerMessage::Error { .. }
                     | ControlServerMessage::Challenge { .. }
                     | ControlServerMessage::Authenticated { .. }
+                    | ControlServerMessage::TransferStart { .. }
+                    | ControlServerMessage::TransferChunk { .. }
+                    | ControlServerMessage::TransferEnd { .. }
                     | ControlServerMessage::UpToDate { .. }
                     | ControlServerMessage::TelemetryAccepted { .. } => {
                         return Err(AgentError::Control);
@@ -511,7 +515,13 @@ async fn authenticate_control<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    let challenge = match timeout(Duration::from_secs(10), receive_json(socket)).await {
+    let mut transfer_assembler = ControlTransferAssembler::default();
+    let challenge = match timeout(
+        Duration::from_secs(10),
+        receive_json(socket, &mut transfer_assembler),
+    )
+    .await
+    {
         Ok(Ok(ControlServerMessage::Challenge { challenge_base64 })) => {
             decode_fixed::<32>(&challenge_base64)?
         }
@@ -541,7 +551,12 @@ where
     )
     .await?;
 
-    let initial = match timeout(Duration::from_secs(10), receive_json(socket)).await {
+    let initial = match timeout(
+        Duration::from_secs(10),
+        receive_json(socket, &mut transfer_assembler),
+    )
+    .await
+    {
         Ok(Ok(ControlServerMessage::Authenticated {
             node_id_base64: authenticated_node_id,
             configuration,
@@ -631,6 +646,7 @@ where
 
 async fn receive_json<S>(
     socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    transfer_assembler: &mut ControlTransferAssembler,
 ) -> Result<ControlServerMessage>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -643,7 +659,13 @@ where
             .map_err(|_| AgentError::Control)?;
         match message {
             Message::Text(text) if text.len() <= CONTROL_MESSAGE_LIMIT => {
-                return serde_json::from_str(&text).map_err(|_| AgentError::Control);
+                let message = serde_json::from_str(&text).map_err(|_| AgentError::Control)?;
+                if let Some(message) = transfer_assembler
+                    .accept(message)
+                    .map_err(|_| AgentError::Control)?
+                {
+                    return Ok(message);
+                }
             }
             Message::Ping(payload) => socket
                 .send(Message::Pong(payload))

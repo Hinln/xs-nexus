@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
 ipnet.workspace = true
 serde.workspace = true
