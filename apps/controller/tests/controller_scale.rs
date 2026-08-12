@@ -2,6 +2,7 @@ use std::{
     fs,
     net::SocketAddr,
     path::PathBuf,
+    process::Stdio,
     time::{Duration, Instant},
 };
 
@@ -16,12 +17,18 @@ use futures_util::{SinkExt, StreamExt, stream};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tokio::{net::TcpStream, sync::oneshot, time::timeout};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    process::{Child, Command},
+    time::timeout,
+};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async_with_config,
     tungstenite::{Message, protocol::WebSocketConfig},
 };
 use tower::ServiceExt;
+use url::Url;
 use xs_controller::config::{ControllerConfig, MigrationConfig};
 
 const ADMIN_TOKEN: &str = "scale-admin-token-with-at-least-32-characters";
@@ -41,9 +48,9 @@ const MAXIMUM_DATABASE_QUERY_MILLISECONDS: f64 = 100.0;
 const MAXIMUM_CONTROL_AUTHENTICATION_P95_MILLISECONDS: f64 = 10_000.0;
 const MAXIMUM_CONTROL_SYNC_P95_MILLISECONDS: f64 = 5_000.0;
 const MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS: f64 = 30_000.0;
-const MAXIMUM_PROCESS_RSS_KIB: f64 = 1_048_576.0;
-const MAXIMUM_PROCESS_FILE_DESCRIPTORS: f64 = 5_000.0;
-const MAXIMUM_DATABASE_POOL_CONNECTIONS: u32 = 128;
+const MAXIMUM_CONTROLLER_RSS_KIB: f64 = 524_288.0;
+const MAXIMUM_CONTROLLER_FILE_DESCRIPTORS: f64 = 2_500.0;
+const MAXIMUM_DATABASE_CONNECTIONS: u32 = 16;
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 
 type ControlSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -59,10 +66,10 @@ struct AuthenticatedControl {
     authentication_milliseconds: f64,
 }
 
-struct ControlServer {
+struct ControllerProcess {
     address: SocketAddr,
-    shutdown: oneshot::Sender<()>,
-    task: tokio::task::JoinHandle<()>,
+    child: Child,
+    _directory: tempfile::TempDir,
 }
 
 struct ControlSynchronization {
@@ -107,7 +114,10 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
         );
         previous = checkpoint;
     }
-    let control = measure_control_capacity(&router, &state.pool, &nodes).await;
+    drop(router);
+    state.pool.close().await;
+    drop(state);
+    let control = measure_control_capacity(&config, &nodes).await;
 
     let report = json!({
         "package_version": env!("CARGO_PKG_VERSION"),
@@ -130,9 +140,9 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
             "maximum_control_authentication_p95_milliseconds": MAXIMUM_CONTROL_AUTHENTICATION_P95_MILLISECONDS,
             "maximum_control_sync_p95_milliseconds": MAXIMUM_CONTROL_SYNC_P95_MILLISECONDS,
             "maximum_presence_convergence_milliseconds": MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS,
-            "maximum_process_rss_kib": MAXIMUM_PROCESS_RSS_KIB,
-            "maximum_process_file_descriptors": MAXIMUM_PROCESS_FILE_DESCRIPTORS,
-            "maximum_database_pool_connections": MAXIMUM_DATABASE_POOL_CONNECTIONS
+            "maximum_controller_rss_kib": MAXIMUM_CONTROLLER_RSS_KIB,
+            "maximum_controller_file_descriptors": MAXIMUM_CONTROLLER_FILE_DESCRIPTORS,
+            "maximum_database_connections": MAXIMUM_DATABASE_CONNECTIONS
         }
     });
     if let Some(path) = std::env::var_os("XS_SCALE_REPORT_PATH") {
@@ -279,17 +289,13 @@ async fn enroll_scale_node(router: Router, token: String, index: usize) -> Scale
     }
 }
 
-async fn measure_control_capacity(
-    router: &Router,
-    pool: &sqlx::PgPool,
-    nodes: &[ScaleNode],
-) -> Value {
-    let server = start_control_server(router).await;
+async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]) -> Value {
+    let mut controller = start_controller_process(config).await;
     let authentication_started = Instant::now();
     let authenticated = timeout(
         Duration::from_secs(300),
         stream::iter(nodes)
-            .map(|node| authenticate_control(server.address, node))
+            .map(|node| authenticate_control(controller.address, node))
             .buffer_unordered(CONTROL_CONCURRENCY)
             .collect::<Vec<_>>(),
     )
@@ -306,28 +312,35 @@ async fn measure_control_capacity(
     let authentication_rate = f64::from(authenticated_count) / authentication_elapsed.as_secs_f64();
     let authentication_p95 = percentile(&authentication_milliseconds, 95);
 
-    let online_convergence = wait_console_online_count(router, expected_nodes).await;
+    let online_convergence = wait_console_online_count(controller.address, expected_nodes).await;
     let ControlSynchronization {
         sockets,
         elapsed: synchronization_elapsed,
         milliseconds: synchronization_milliseconds,
     } = synchronize_controls(authenticated).await;
     let snapshot_started = Instant::now();
-    assert_eq!(console_online_count(router).await, expected_nodes);
+    assert_eq!(
+        console_online_count(controller.address).await,
+        expected_nodes
+    );
     let snapshot_milliseconds = snapshot_started.elapsed().as_secs_f64() * 1000.0;
     tokio::time::sleep(Duration::from_secs(CONTROL_HOLD_SECONDS)).await;
-    assert_eq!(console_online_count(router).await, expected_nodes);
+    assert_eq!(
+        console_online_count(controller.address).await,
+        expected_nodes
+    );
 
-    let (rss_kib, file_descriptors) = process_resource_snapshot();
-    let database_pool_connections = pool.size();
+    let controller_process_id = controller.process_id();
+    let (controller_rss_kib, controller_file_descriptors) =
+        process_resource_snapshot(controller_process_id);
+    let current_process_id = std::process::id();
+    let (load_generator_rss_kib, load_generator_file_descriptors) =
+        process_resource_snapshot(current_process_id);
+    let database_connections = database_connection_count(config).await;
 
     close_controls(sockets).await;
-    let offline_convergence = wait_console_online_count(router, 0).await;
-    server
-        .shutdown
-        .send(())
-        .expect("request Controller shutdown");
-    server.task.await.expect("Controller server stops");
+    let offline_convergence = wait_console_online_count(controller.address, 0).await;
+    controller.stop().await;
 
     json!({
         "connections": CHECKPOINTS[2],
@@ -343,33 +356,71 @@ async fn measure_control_capacity(
         "synchronization_p95_ms": percentile(&synchronization_milliseconds, 95),
         "console_snapshot_ms": snapshot_milliseconds,
         "hold_seconds": CONTROL_HOLD_SECONDS,
-        "process_rss_kib": rss_kib,
-        "process_file_descriptors": file_descriptors,
-        "database_pool_connections": database_pool_connections,
+        "controller_process_id": controller_process_id,
+        "controller_process_rss_kib": controller_rss_kib,
+        "controller_process_file_descriptors": controller_file_descriptors,
+        "load_generator_process_id": current_process_id,
+        "load_generator_process_rss_kib": load_generator_rss_kib,
+        "load_generator_process_file_descriptors": load_generator_file_descriptors,
+        "database_connections": database_connections,
         "offline_convergence_ms": offline_convergence.as_secs_f64() * 1000.0
     })
 }
 
-async fn start_control_server(router: &Router) -> ControlServer {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .expect("bind scale Controller");
+async fn start_controller_process(config: &ControllerConfig) -> ControllerProcess {
+    let listener =
+        std::net::TcpListener::bind(("127.0.0.1", 0)).expect("reserve scale Controller address");
     let address = listener.local_addr().expect("scale Controller address");
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let application = router.clone();
-    let server = tokio::spawn(async move {
-        axum::serve(listener, application)
-            .with_graceful_shutdown(async {
-                let _shutdown_result = shutdown_rx.await;
-            })
-            .await
-            .expect("serve scale Controller");
-    });
-    ControlServer {
+    drop(listener);
+    let directory = tempfile::tempdir().expect("create Controller process directory");
+    let credential_key = directory.path().join("credential.key");
+    let configuration_key = directory.path().join("configuration.key");
+    write_private_file(&credential_key, &config.credential_signing_key.to_bytes());
+    write_private_file(&configuration_key, &config.config_signing_key.to_bytes());
+    let database_role = Url::parse(&config.database_url)
+        .expect("parse scale database URL")
+        .username()
+        .to_owned();
+    assert!(!database_role.is_empty());
+    let child = Command::new(env!("CARGO_BIN_EXE_xs-controller"))
+        .arg("serve")
+        .env_clear()
+        .env("CONTROLLER_LISTEN", address.to_string())
+        .env("DATABASE_URL", &config.database_url)
+        .env("DATABASE_SCHEMA", &config.database_schema)
+        .env("DATABASE_EXPECTED_ROLE", database_role)
+        .env("ADMIN_API_TOKEN", ADMIN_TOKEN)
+        .env("CREDENTIAL_SIGNING_KEY_PATH", &credential_key)
+        .env("CONFIG_SIGNING_KEY_PATH", &configuration_key)
+        .env("CONSOLE_COOKIE_SECURE", "true")
+        .env("NODE_CREDENTIAL_TTL_SECONDS", "86400")
+        .env("RUST_LOG", "warn")
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("start scale Controller binary");
+    let mut controller = ControllerProcess {
         address,
-        shutdown: shutdown_tx,
-        task: server,
+        child,
+        _directory: directory,
+    };
+    for _attempt in 0..300 {
+        if let Some(status) = controller
+            .child
+            .try_wait()
+            .expect("inspect scale Controller process")
+        {
+            panic!("scale Controller exited during startup with {status}");
+        }
+        if xs_core::check_local_http_health(address, "/health/ready", Duration::from_millis(500))
+            .is_ok()
+        {
+            return controller;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    panic!("scale Controller did not become ready");
 }
 
 async fn authenticate_control(address: SocketAddr, node: &ScaleNode) -> AuthenticatedControl {
@@ -484,11 +535,11 @@ async fn synchronize_control(mut control: AuthenticatedControl) -> (ControlSocke
     (control.socket, started.elapsed().as_secs_f64() * 1000.0)
 }
 
-async fn wait_console_online_count(router: &Router, expected: u64) -> Duration {
+async fn wait_console_online_count(address: SocketAddr, expected: u64) -> Duration {
     let started = Instant::now();
     timeout(Duration::from_secs(60), async {
         loop {
-            if console_online_count(router).await == expected {
+            if console_online_count(address).await == expected {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -499,23 +550,16 @@ async fn wait_console_online_count(router: &Router, expected: u64) -> Duration {
     started.elapsed()
 }
 
-async fn console_online_count(router: &Router) -> u64 {
-    let (status, snapshot) = request_json(
-        router,
-        Method::GET,
-        "/v1/admin/console",
-        None,
-        Some(ADMIN_TOKEN),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
+async fn console_online_count(address: SocketAddr) -> u64 {
+    let snapshot = request_admin_json(address, "/v1/admin/console").await;
     snapshot["dashboard"]["online_nodes"]
         .as_u64()
         .expect("online node count")
 }
 
-fn process_resource_snapshot() -> (u64, u64) {
-    let status = fs::read_to_string("/proc/self/status").expect("read process status");
+fn process_resource_snapshot(process_id: u32) -> (u64, u64) {
+    let process = PathBuf::from("/proc").join(process_id.to_string());
+    let status = fs::read_to_string(process.join("status")).expect("read process status");
     let rss_kib = status
         .lines()
         .find_map(|line| line.strip_prefix("VmRSS:"))
@@ -523,12 +567,95 @@ fn process_resource_snapshot() -> (u64, u64) {
         .and_then(|value| value.parse::<u64>().ok())
         .expect("process RSS");
     let file_descriptors = u64::try_from(
-        fs::read_dir("/proc/self/fd")
+        fs::read_dir(process.join("fd"))
             .expect("read process descriptors")
             .count(),
     )
     .expect("descriptor count fits u64");
     (rss_kib, file_descriptors)
+}
+
+async fn database_connection_count(config: &ControllerConfig) -> u32 {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&config.database_url)
+        .await
+        .expect("connect database capacity probe");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*)::bigint FROM pg_stat_activity
+         WHERE datname = current_database() AND usename = current_user",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count database connections");
+    pool.close().await;
+    u32::try_from(count).expect("database connection count fits u32")
+}
+
+async fn request_admin_json(address: SocketAddr, path: &str) -> Value {
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("connect Controller admin endpoint");
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {ADMIN_TOKEN}\r\nConnection: close\r\n\r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("send Controller admin request");
+    let mut response = Vec::new();
+    stream
+        .take(8 * 1024 * 1024)
+        .read_to_end(&mut response)
+        .await
+        .expect("read Controller admin response");
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("Controller admin response headers");
+    let headers = std::str::from_utf8(&response[..header_end]).expect("HTTP response headers");
+    assert!(
+        headers
+            .lines()
+            .next()
+            .is_some_and(|line| line.contains(" 200 ")),
+        "Controller admin request failed: {headers}"
+    );
+    serde_json::from_slice(&response[header_end + 4..]).expect("Controller admin JSON")
+}
+
+fn write_private_file(path: &std::path::Path, value: &[u8]) {
+    fs::write(path, value).expect("write private Controller file");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .expect("protect private Controller file");
+    }
+}
+
+impl ControllerProcess {
+    fn process_id(&self) -> u32 {
+        self.child.id().expect("scale Controller process ID")
+    }
+
+    async fn stop(&mut self) {
+        if self
+            .child
+            .try_wait()
+            .expect("inspect scale Controller shutdown")
+            .is_none()
+        {
+            self.child
+                .start_kill()
+                .expect("terminate scale Controller process");
+        }
+        self.child
+            .wait()
+            .await
+            .expect("reap scale Controller process");
+    }
 }
 
 fn assert_safe_operating_envelope(report: &Value) {
@@ -585,19 +712,19 @@ fn assert_safe_operating_envelope(report: &Value) {
         MAXIMUM_CONSOLE_SNAPSHOT_MILLISECONDS,
     );
     assert_maximum(
-        "combined Controller/load-generator RSS KiB",
-        report_number(control, "process_rss_kib"),
-        MAXIMUM_PROCESS_RSS_KIB,
+        "Controller RSS KiB",
+        report_number(control, "controller_process_rss_kib"),
+        MAXIMUM_CONTROLLER_RSS_KIB,
     );
     assert_maximum(
-        "combined Controller/load-generator file descriptors",
-        report_number(control, "process_file_descriptors"),
-        MAXIMUM_PROCESS_FILE_DESCRIPTORS,
+        "Controller file descriptors",
+        report_number(control, "controller_process_file_descriptors"),
+        MAXIMUM_CONTROLLER_FILE_DESCRIPTORS,
     );
     assert_maximum(
-        "Controller database pool connections",
-        report_number(control, "database_pool_connections"),
-        f64::from(MAXIMUM_DATABASE_POOL_CONNECTIONS),
+        "database connections",
+        report_number(control, "database_connections"),
+        f64::from(MAXIMUM_DATABASE_CONNECTIONS),
     );
 }
 

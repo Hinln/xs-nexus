@@ -139,13 +139,18 @@ assert control["synchronization_p95_ms"] <= envelope[
 assert control["console_snapshot_ms"] <= envelope[
     "maximum_console_snapshot_milliseconds"
 ]
-assert control["process_rss_kib"] <= envelope["maximum_process_rss_kib"]
-assert control["process_file_descriptors"] <= envelope[
-    "maximum_process_file_descriptors"
+assert control["controller_process_rss_kib"] <= envelope[
+    "maximum_controller_rss_kib"
 ]
-assert control["database_pool_connections"] <= envelope[
-    "maximum_database_pool_connections"
+assert control["controller_process_file_descriptors"] <= envelope[
+    "maximum_controller_file_descriptors"
 ]
+assert control["database_connections"] <= envelope[
+    "maximum_database_connections"
+]
+assert control["controller_process_id"] != control["load_generator_process_id"]
+assert control["load_generator_process_rss_kib"] > 0
+assert control["load_generator_process_file_descriptors"] > 0
 assert control["online_convergence_ms"] <= envelope[
     "maximum_presence_convergence_milliseconds"
 ]
