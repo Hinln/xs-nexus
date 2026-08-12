@@ -17,6 +17,7 @@ PROJECT="xs-nexus-gate22-$SUFFIX"
 DEPLOYMENT="gate22-$SUFFIX"
 NETWORK="xs-gate22-$SUFFIX"
 LAN_NETWORK="xs-gate22-lan-$SUFFIX"
+PRIME_NETWORK="xs-gate22-prime-$SUFFIX"
 AGENT_A="xs-gate22-agent-a-$SUFFIX"
 AGENT_B="xs-gate22-agent-b-$SUFFIX"
 AGENT_C="xs-gate22-agent-c-$SUFFIX"
@@ -179,6 +180,7 @@ remove_resources() {
     fi
     docker network rm "$LAN_NETWORK" >/dev/null 2>&1 || true
     docker network rm "$NETWORK" >/dev/null 2>&1 || true
+    docker network rm "$PRIME_NETWORK" >/dev/null 2>&1 || true
 }
 
 finalize_evidence() {
@@ -410,6 +412,15 @@ prepare_secrets() {
     printf '%s\n' 'age1wcd4cep4z26php4gteja7n2wgxyukpe4nc5xn8dr6zk85gg26chsy9qyj8' \
         >"$CONTROLLER_SECRETS/backup-recipient"
     printf '%s\n' 'gate22-public-key-placeholder' >"$RELEASE_DIRECTORY/release-public-key.pem"
+    for architecture in x86_64 aarch64; do
+        target="$architecture-unknown-linux-gnu"
+        printf '%s\n' 'gate22-manifest-placeholder' \
+            >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.manifest"
+        head -c 64 /dev/urandom \
+            >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.manifest.sig"
+        printf '%s\n' 'gate22-archive-placeholder' \
+            >"$RELEASE_DIRECTORY/xs-nexus-0.1.0-$target.tar.gz"
+    done
     printf '%s\n' 'Write-Output gate22-calibration' >"$WINDOWS_RELEASE_DIRECTORY/install.ps1"
     printf '%s\n' '{"schema_version":1}' \
         >"$WINDOWS_RELEASE_DIRECTORY/xs-nexus-0.1.0-x86_64-pc-windows-msvc.manifest.json"
@@ -1127,9 +1138,11 @@ run_event() {
     fi
 }
 
-capture_host_baseline "$EVIDENCE_DIR/host-before"
 select_subnets
 select_ports
+docker network create --label "com.xs-nexus.gate22.prime=$PROJECT" "$PRIME_NETWORK" >/dev/null
+docker network rm "$PRIME_NETWORK" >/dev/null
+capture_host_baseline "$EVIDENCE_DIR/host-before"
 docker network create --label "com.xs-nexus.gate22.project=$PROJECT" --subnet "$UNDERLAY_SUBNET" "$NETWORK" >/dev/null
 docker network create --label "com.xs-nexus.gate22.project=$PROJECT" --subnet "$LAN_SUBNET" "$LAN_NETWORK" >/dev/null
 
