@@ -261,6 +261,11 @@ source_head=$(git -c "safe.directory=$SOURCE_REPOSITORY" -C "$SOURCE_REPOSITORY"
     printf 'source repository must be clean before bundling\n' >&2
     exit 2
 }
+[[ $(git -c "safe.directory=$SOURCE_REPOSITORY" -C "$SOURCE_REPOSITORY" \
+    rev-parse --is-shallow-repository) == false ]] || {
+    printf 'source repository must contain complete history for a connected release bundle\n' >&2
+    exit 2
+}
 case "$CHECKOUT/" in
     "$EVIDENCE_DIR/"*)
         printf 'clean checkout must remain outside evidence\n' >&2
