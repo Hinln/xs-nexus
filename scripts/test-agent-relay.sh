@@ -41,8 +41,13 @@ PROXY_B_PID=
 CAPTURE_PID=
 COLLECT_PID=
 RTT_EVIDENCE_DIR=${RTT_EVIDENCE_DIR:-}
+RTT_SAMPLE_COUNT=${XS_AGENT_RTT_SAMPLE_COUNT:-100}
 
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
+    if [[ ! $RTT_SAMPLE_COUNT =~ ^[0-9]+$ || $RTT_SAMPLE_COUNT -lt 100 ]]; then
+        printf 'XS_AGENT_RTT_SAMPLE_COUNT must be an integer of at least 100\n' >&2
+        exit 2
+    fi
     mkdir -p "$RTT_EVIDENCE_DIR"
     chmod 0700 "$RTT_EVIDENCE_DIR"
 fi
@@ -852,7 +857,7 @@ if [[ -n $RTT_EVIDENCE_DIR ]]; then
         --destination "$virtual_ip_b" \
         --payload xs-m73-relay-rtt \
         --sequence 100 \
-        --count 30 \
+        --count "$RTT_SAMPLE_COUNT" \
         --interval 0.05 \
         --timeout 3 \
         --output "$RTT_EVIDENCE_DIR/relay.json"
@@ -945,9 +950,17 @@ wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     ip netns exec "$NETNS_A" "$PROBE" icmp \
         --destination "$virtual_ip_b" \
+        --payload xs-m73-direct-warmup \
+        --sequence 180 \
+        --count 10 \
+        --interval 0.05 \
+        --timeout 3 \
+        --output "$RTT_EVIDENCE_DIR/direct-warmup.json"
+    ip netns exec "$NETNS_A" "$PROBE" icmp \
+        --destination "$virtual_ip_b" \
         --payload xs-m73-direct-rtt \
         --sequence 200 \
-        --count 30 \
+        --count "$RTT_SAMPLE_COUNT" \
         --interval 0.05 \
         --timeout 3 \
         --output "$RTT_EVIDENCE_DIR/direct.json"
