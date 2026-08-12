@@ -971,10 +971,10 @@ block_direct() {
         shift 2
         pid=$(docker inspect "$container" --format '{{.State.Pid}}')
         nsenter -t "$pid" -n nft add table inet xs_gate22_direct
-        nsenter -t "$pid" -n nft add chain inet xs_gate22_direct output \
-            '{ type filter hook output priority 0; policy accept; }'
-        nsenter -t "$pid" -n nft add rule inet xs_gate22_direct output \
-            ip daddr "$peer_ip" meta l4proto udp drop
+        nsenter -t "$pid" -n nft add chain inet xs_gate22_direct input \
+            '{ type filter hook input priority 0; policy accept; }'
+        nsenter -t "$pid" -n nft add rule inet xs_gate22_direct input \
+            ip saddr "$peer_ip" meta l4proto udp drop
     done
 }
 
