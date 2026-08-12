@@ -302,7 +302,7 @@ wait_for_postgres() {
     local container
     container=$(compose ps -q postgres)
     for _attempt in $(seq 1 120); do
-        if docker exec "$container" pg_isready -q -U gate22_bootstrap -d gate22; then
+        if docker exec "$container" pg_isready -q -h 127.0.0.1 -U gate22_bootstrap -d gate22; then
             return
         fi
         sleep 1
