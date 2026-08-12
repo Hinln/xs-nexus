@@ -170,7 +170,7 @@ clear_agent_faults() {
             if [[ $pid =~ ^[0-9]+$ && $pid -gt 0 ]]; then
                 nsenter -t "$pid" -n nft delete table inet xs_gate22_direct >/dev/null 2>&1 || true
                 device=$(nsenter -t "$pid" -n ip -o route get "$CONTROLLER_IP" 2>/dev/null |
-                    awk '{for (index=1; index<=NF; index++) if ($index == "dev") {print $(index+1); exit}}')
+                    awk '{for (field_number=1; field_number<=NF; field_number++) if ($field_number == "dev") {print $(field_number+1); exit}}')
                 if [[ -n $device ]]; then
                     nsenter -t "$pid" -n tc qdisc del dev "$device" root >/dev/null 2>&1 || true
                 fi
@@ -1085,7 +1085,7 @@ fault_network_loss_latency() {
     local pid device successes=0
     pid=$(docker inspect "$AGENT_A" --format '{{.State.Pid}}')
     device=$(nsenter -t "$pid" -n ip -o route get "$CONTROLLER_IP" |
-        awk '{for (index=1; index<=NF; index++) if ($index == "dev") {print $(index+1); exit}}')
+        awk '{for (field_number=1; field_number<=NF; field_number++) if ($field_number == "dev") {print $(field_number+1); exit}}')
     [[ -n $device ]]
     nsenter -t "$pid" -n tc qdisc replace dev "$device" root netem loss 20% delay 100ms 20ms
     nsenter -t "$pid" -n tc -s qdisc show dev "$device" >"$EVIDENCE_DIR/network-fault-active.txt"
