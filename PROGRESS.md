@@ -555,3 +555,4 @@ make clean
 - exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 的 run `31649030446` 全 13 job 通过。Gate 25 job `94289075249`、artifact `9162246723`、GitHub digest `sha256:d69d7ff0d24195f629a5032152b1c1851f0cab8d79048ae90ca00af5fa9659fe`、111/111 清单和零秘密扫描通过；10/10 阶段、10/10 夹具不变量和 10/10 最终不变量 PASS。
 - 同一精确 HEAD 的性能 job `94289075182`/artifact `9161977864` 与 600 秒校准 job `94289075250`/artifact `9162201059` 也完成独立清单、revision 和秘密扫描复核。Gate 22 仍为 `UNKNOWN`，Gate 25 仍为 `FAIL`：正式 owner-signed RC/main、独立操作者、新鲜非托管主机、正式秘密和当前生产升级/回滚均未完成。
 - 本轮未连接或修改生产，最后已知运行 revision 仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，总体保持 `NO_GO`。下一步只可在 `BLK-006`、`BLK-009`、`BLK-010` 等外部条件解除后执行正式长测/签名/独立发布演练，不能把当前 hosted 子矩阵升级为生产 PASS。
+- 最终剩余项审计确认 `PRV2-001` 的仓库侧无值清单、runtime 隔离与验证规则已完成，但真实轮换需要所有者控制的生产/NAS/CI/设备权限、secret channel、维护窗口和独立旧值拒绝；现准确改为 `BLOCKED_EXTERNAL` 并新增 `BLK-011`。Gate 02 仍为 `FAIL`，没有伪造轮换结果。

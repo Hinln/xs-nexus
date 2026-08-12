@@ -2,7 +2,7 @@
 
 | ID | Severity | Gate | Finding | Status |
 |---|---|---:|---|---|
-| PRV2-001 | Critical | 02 | Previously disclosed infrastructure, application, enrollment, and recovery credentials lack complete rotation and old-value rejection evidence | OPEN |
+| PRV2-001 | Critical | 02 | Previously disclosed infrastructure, application, enrollment, and recovery credentials lack complete rotation and old-value rejection evidence | BLOCKED_EXTERNAL |
 | PRV2-002 | Critical | 03/18 | Repository revocation enforcement is complete, but no formal offline release/recovery key ceremony, authenticated production key/revocation distribution, or restore exercise exists | BLOCKED_EXTERNAL |
 | PRV2-003 | High | 14 | SSH/firewall, protected security updates, new-kernel reboot regression, and bounded disk cleanup are closed; independently delivered and acknowledged warning/critical disk alerts remain open | BLOCKED_EXTERNAL |
 | PRV2-004 | High | 16 | Long-running Controller database access depended on a bootstrap superuser; production now uses separated owner/app/migrator roles | CLOSED |
@@ -43,3 +43,5 @@ The four closed Gate 23 findings were independently revalidated at exact commit 
 `PRV2-011` now has current exact-head calibration evidence at revision `6e63424298e491c0035e1d138de5d03b0ab83c27`, run `31649030446`, job `94289075250`, and artifact `9162201059`. The 600-second run, 84-file manifest, eight faults, six-service sampling, cleanup invariants and secret scan pass, but the mandatory >=86,400-second run cannot start without an approved identity-verified privileged Linux QA host. The finding is therefore `BLOCKED_EXTERNAL`, not closed; Gate 22 remains `UNKNOWN`.
 
 `PRV2-012` now has complete repository-side rehearsal evidence at the same revision, run `31649030446`, job `94289075249`, and artifact `9162246723`. The clean checkout, test-only tag, image reproducibility, real network paths, update/lifecycle matrix and cleanup pass, but the artifact explicitly denies formal signing, independent operation and production mutation. An owner-controlled signed RC/main chain, independent fresh server and current production upgrade/rollback remain external; Gate 01 and Gate 25 stay `FAIL` and overall stays `NO_GO`.
+
+`PRV2-001` is `BLOCKED_EXTERNAL`, not closed. The no-value register now classifies every incomplete credential as requiring an owner-controlled secret channel, current production/NAS/CI inventory, controlled devices or cloud-console access, and independent old-value rejection. Test credentials, repository changes, a stale password, or bypassing the unverified production SSH host key cannot satisfy the finding. Gate 02 remains `FAIL` until every row is independently complete.

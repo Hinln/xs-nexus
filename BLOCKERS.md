@@ -140,3 +140,15 @@
 - 安全结果：生产未连接或修改；没有把临时 key、hosted runner 或历史 `3d93656` 部署当作当前正式发布证据。当前生产 SSH host key 仍需带外确认。
 - 解除步骤：先完成 `BLK-006` 的 owner key ceremony/public-key distribution 和 formal RC；由独立操作者在身份验证的新鲜服务器复演；批准生产窗口、带外确认 host identity、配置定时回滚后执行 upgrade、独立反向验证、rollback 与 restored release。
 - 解除后验证：正式 tag/bundle、operator receipt、fresh-host baseline/cleanup、生产 revision/image/data/identity/ACL/route/1Panel、rollback/restored-release、证据 SHA-256 和无值秘密扫描全部通过后，才能重新判断 Gate 01/25。
+
+---
+
+## BLK-011 Gate 02 全量生产凭据轮换与旧值拒绝
+
+- 状态：`BLOCKED_EXTERNAL`（Gate 02 保持 `FAIL`，Critical finding `PRV2-001` 未关闭）。
+- 首次发现：2026-08-08 正式生产审计；2026-08-13 在全部可自行完成仓库工作结束后重新定界。
+- 已完成的不受阻塞工作：无值 credential register、仓库外 secret 约束、应用/迁移数据库角色分离、bootstrap 从长驻 runtime 移除、SSH password path 禁用、更新/recovery key 的只公钥与撤销机制、秘密扫描和证据无值规则均已实现并验证。
+- 阻塞事实：剩余 SSH/bootstrap/历史 Redis/MySQL/Console/Controller/enrollment/node/TLS/backup/update/recovery/CI/NAS 凭据需要所有者控制的当前 inventory、云/组织/NAS/真实设备权限、不可回显 secret channel、维护窗口和独立旧值拒绝验证。生产 SSH host key 仍未通过带外渠道确认。
+- 安全结果：未用聊天中的历史值尝试认证，未关闭 SSH 严格校验，未生成并冒充正式秘密，未修改 production、NAS、GitHub organization、DNS/CDN 或 CI secrets。
+- 解除步骤：所有者指定每类 secret owner/系统/轮换窗口和独立验证者，通过批准的不回显渠道生成并激活新值；撤销/revoke all 或重置旧值；真实客户端/设备逐项迁移；独立证明旧值被拒绝。
+- 解除后验证：`CREDENTIAL_ROTATION.md` 每一行均为 rotated/old rejected 的真实结果，完整扫描 surfaces 无残留，生产/API/Agent/NAS/CI/backup/update/recovery 功能回归通过且证据不包含值，才能重新判断 Gate 02。

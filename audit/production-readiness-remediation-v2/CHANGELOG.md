@@ -165,3 +165,10 @@
 - Current RTT evidence uses 10 Direct warm-up packets plus 100 formal samples per path with unchanged average/p95 bounds and retained maximum outliers. PostgreSQL requires the final-init marker, readiness, and a real SQL query.
 - Exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`. Job `94289075249` and artifact `9162246723` passed 111/111 hashes, zero secret findings, 10/10 phases, and 20/20 fixture/final invariants.
 - Gate 25 remains `FAIL`: the evidence explicitly records test-only signing, non-independent operation and no production mutation. Formal owner-signed RC/main, independent fresh-host rehearsal and current production upgrade/rollback remain external; overall remains `NO_GO`.
+
+## 2026-08-13 Gate 02 External Rotation Boundary
+
+- Rechecked every no-value credential-register row after all self-solvable repository work and exact-head CI completed.
+- Reclassified `PRV2-001` and `KI-023` from generic `OPEN` to `BLOCKED_EXTERNAL`; no credential is marked rotated or rejected without real evidence, and Gate 02 remains `FAIL`.
+- Added `BLK-011` for owner-controlled production/NAS/CI/device inventory, secret channels, maintenance windows, replacement activation and independent old-value rejection.
+- No historical credential was reused, no SSH host-key check was bypassed, and no production, NAS, organization, DNS/CDN or CI secret was changed.

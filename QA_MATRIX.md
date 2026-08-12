@@ -640,3 +640,11 @@
 - [x] 六轮失败链全部保留并按根因修复；没有 skip、allowed failure、阈值降低、全局 Docker prune 或生产变更。
 - [ ] owner-controlled signed RC/main、独立操作者、新鲜非托管主机、正式 secrets、当前生产升级/回滚/恢复发布尚未执行，均为正式硬门禁。
 - [x] 结论边界：仓库子矩阵完成，但 artifact 明确 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`；Gate 25 保持 `FAIL`，总体保持 `NO_GO`。
+
+## 33. Gate 02 凭据轮换外部边界复核（2026-08-13）
+
+- [x] `CREDENTIAL_ROTATION.md` 不记录任何值，逐类列出 rotated、old rejected、证据和状态；新建 app/migrator 身份与旧身份不存在的边界明确。
+- [x] bootstrap 已从长驻 Controller runtime 移除，SSH password path 已禁用，仓库/证据 secret scanner 与仓库外 secret 规则通过；这些缓解不等于轮换完成。
+- [x] 每个未完成条目均准确标记 `BLOCKED_EXTERNAL`，并由 `BLK-011` 映射到 owner inventory、secret channel、云/NAS/CI/设备权限、维护窗口和独立验证者。
+- [x] 未尝试历史聊天凭据、未绕过变化后的 SSH host key、未使用生成测试值冒充正式新值、未把“服务未使用”当作旧值拒绝。
+- [ ] 所有者激活每个真实新值并从独立主体证明旧值拒绝尚未完成；Gate 02 保持 `FAIL`，`PRV2-001` 保持 `BLOCKED_EXTERNAL`。
