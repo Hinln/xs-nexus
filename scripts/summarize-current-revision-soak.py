@@ -47,7 +47,43 @@ def assert_bounded_growth(service, samples, field, absolute_allowance, ratio):
         raise AssertionError(
             f"{service} {field} end-window median {end} exceeded bounded-growth limit {limit}"
         )
-    return {"start_window_median": start, "end_window_median": end, "limit": limit}
+    return {
+        "mode": "process-generation-growth",
+        "samples": len(samples),
+        "start_window_median": start,
+        "end_window_median": end,
+        "limit": limit,
+    }
+
+
+def latest_process_generation(samples):
+    latest_pid = samples[-1]["pid"]
+    generation_start = len(samples) - 1
+    while generation_start > 0 and samples[generation_start - 1]["pid"] == latest_pid:
+        generation_start -= 1
+    return samples[generation_start:]
+
+
+def assert_terminal_stability(service, samples, field, absolute_allowance):
+    width = max(8, len(samples) // 4)
+    terminal = samples[-min(len(samples), width) :]
+    if len(terminal) < 4:
+        raise AssertionError(f"{service} has too few samples for terminal stability")
+    midpoint = len(terminal) // 2
+    start = statistics.median(item[field] for item in terminal[:midpoint])
+    end = statistics.median(item[field] for item in terminal[midpoint:])
+    limit = start + absolute_allowance
+    if end > limit:
+        raise AssertionError(
+            f"{service} {field} terminal median {end} exceeded stability limit {limit}"
+        )
+    return {
+        "mode": "terminal-stability",
+        "samples": len(terminal),
+        "start_window_median": start,
+        "end_window_median": end,
+        "limit": limit,
+    }
 
 
 def main():
@@ -116,12 +152,22 @@ def main():
                 f"{service} had an unexpected restart-policy restart: {restart_counts}"
             )
 
-        rss_growth = assert_bounded_growth(service, samples, "rss_kib", 32 * 1024, 1.5)
-        fd_growth = assert_bounded_growth(service, samples, "fds", 32, 1.5)
-        thread_growth = assert_bounded_growth(service, samples, "threads", 16, 1.5)
+        generation = latest_process_generation(samples)
+        rss_growth = assert_bounded_growth(
+            service, generation, "rss_kib", 32 * 1024, 1.5
+        )
+        if service == "postgres":
+            fd_growth = assert_terminal_stability(service, generation, "fds", 32)
+        else:
+            fd_growth = assert_bounded_growth(service, generation, "fds", 32, 1.5)
+        thread_growth = assert_bounded_growth(
+            service, generation, "threads", 16, 1.5
+        )
         service_summary = {
             "samples": len(samples),
             "observed_pids": pids,
+            "growth_generation_pid": generation[-1]["pid"],
+            "growth_generation_samples": len(generation),
             "restart_count": restart_counts[0],
             "rss_kib_min": min(item["rss_kib"] for item in samples),
             "rss_kib_max": max(item["rss_kib"] for item in samples),

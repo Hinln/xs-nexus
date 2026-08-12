@@ -654,6 +654,7 @@ jobs:
         run: |
           shellcheck scripts/test-current-revision-soak.sh
           python3 -m py_compile scripts/summarize-current-revision-soak.py
+          python3 scripts/test-summarize-current-revision-soak.py
           docker compose --env-file deploy/docker/gate22.compose.env.example \
             -f deploy/docker/compose.yaml -f deploy/docker/compose.soak.yaml config --quiet
       - name: Run current-revision soak calibration
