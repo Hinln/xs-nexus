@@ -947,13 +947,37 @@ print(json.dumps({"timestamp_utc": sys.argv[1], "snapshot": json.load(open(sys.a
 PY
 }
 
-capture_relay_transition() {
-    local label=$1 agent_a_pid agent_b_pid
+relay_metrics() {
     docker run --rm --network "$NETWORK" \
         --user 65534:65534 --read-only --cap-drop ALL \
         --security-opt no-new-privileges:true \
-        "$ALPINE_IMAGE" wget -q -T 3 -O - "http://$RELAY_IP:8081/metrics" \
-        >"$EVIDENCE_DIR/relay-transition-$label-metrics.json"
+        "$ALPINE_IMAGE" wget -q -T 3 -O - "http://$RELAY_IP:8081/metrics"
+}
+
+wait_relay_active_leases() {
+    local expected=$1 evidence_file=$2 output=''
+    for _attempt in $(seq 1 120); do
+        output=$(relay_metrics 2>/dev/null || true)
+        if [[ -n $output ]] && python3 -c '
+import json
+import sys
+
+metrics = json.load(sys.stdin)
+raise SystemExit(0 if metrics.get("active_leases", 0) >= int(sys.argv[1]) else 1)
+' "$expected" <<<"$output"; then
+            printf '%s\n' "$output" >"$evidence_file"
+            return
+        fi
+        sleep 1
+    done
+    printf '%s\n' "$output" >"$evidence_file"
+    printf 'Relay did not restore %s active leases\n' "$expected" >&2
+    return 1
+}
+
+capture_relay_transition() {
+    local label=$1 agent_a_pid agent_b_pid
+    relay_metrics >"$EVIDENCE_DIR/relay-transition-$label-metrics.json"
     agent_cli "$AGENT_A" peers >"$EVIDENCE_DIR/relay-transition-$label-agent-a-peers.json" \
         2>&1 || true
     agent_cli "$AGENT_B" peers >"$EVIDENCE_DIR/relay-transition-$label-agent-b-peers.json" \
@@ -1028,8 +1052,12 @@ fault_relay_restart() {
         sleep 1
     done
     docker exec "$relay_container" /usr/local/bin/xs-relay healthcheck >/dev/null
+    wait_relay_active_leases 2 "$EVIDENCE_DIR/relay-transition-restarted-metrics.json"
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" relay
-    ping_agent "$AGENT_A" "$VIRTUAL_IP_B" 45
+    if ! ping_agent "$AGENT_A" "$VIRTUAL_IP_B" 45; then
+        capture_relay_transition restart-failed
+        return 1
+    fi
     unblock_direct
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" direct
     ping_agent "$AGENT_A" "$VIRTUAL_IP_B" 45
