@@ -56,7 +56,7 @@ jobs:
       - run: make security-check
       - run: make dependency-check
       - run: make test-production-health
-      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh scripts/test-agent-systemd.sh scripts/test-agent-acl.sh scripts/test-agent-relay.sh scripts/test-agent-subnet-route.sh scripts/test-relay-throughput.sh installers/linux/xs-nexus-installer.sh installers/linux/xs-nexus-one-click.sh scripts/test-linux-installer.sh scripts/test-linux-one-click.sh scripts/test-update-supply-chain.sh
+      - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh scripts/test-controller-scale.sh scripts/test-protocol-throughput.sh scripts/test-agent-rtt.sh scripts/test-agent-systemd.sh scripts/test-agent-acl.sh scripts/test-agent-relay.sh scripts/test-agent-subnet-route.sh scripts/test-relay-throughput.sh installers/linux/xs-nexus-installer.sh installers/linux/xs-nexus-one-click.sh scripts/test-linux-installer.sh scripts/test-linux-one-click.sh scripts/test-update-supply-chain.sh
 
   production-observability:
     runs-on: ubuntu-24.04
@@ -153,6 +153,117 @@ jobs:
         with:
           name: production-observability-evidence
           path: artifacts/production-observability
+          if-no-files-found: error
+
+  performance-capacity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      XS_TEST_DATABASE_URL: postgresql://xs_test@127.0.0.1:5432/xs_nexus_test
+      XS_TEST_DATABASE_SCHEMA: xs_nexus_test
+    services:
+      postgres:
+        image: postgres:18-alpine3.22@sha256:774521500f4c22761b25a6bdb772a0a3c2e8dd32468210bdad9231c5752ea398
+        env:
+          POSTGRES_USER: xs_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: xs_nexus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xs_test -d xs_nexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.94.0
+      - name: Run current-revision capacity matrix
+        run: |
+          set -o pipefail
+          evidence="$GITHUB_WORKSPACE/artifacts/performance-capacity"
+          mkdir -p "$evidence"
+          chmod 0700 "$evidence"
+          status=0
+          set +e
+
+          shellcheck scripts/test-controller-scale.sh \
+            scripts/test-protocol-throughput.sh \
+            scripts/test-agent-rtt.sh \
+            >"$evidence/shellcheck.log" 2>&1
+          shellcheck_status=$?
+          ((shellcheck_status == 0)) || status=1
+
+          EVIDENCE_DIR="$evidence/protocol" make test-protocol-throughput \
+            2>&1 | tee "$evidence/protocol-wrapper.log"
+          protocol_status=${PIPESTATUS[0]}
+          ((protocol_status == 0)) || status=1
+
+          EVIDENCE_DIR="$evidence/controller" make test-controller-scale \
+            2>&1 | tee "$evidence/controller-wrapper.log"
+          controller_status=${PIPESTATUS[0]}
+          ((controller_status == 0)) || status=1
+
+          sudo env \
+            "PATH=$PATH" \
+            "CARGO_HOME=$HOME/.cargo" \
+            "RUSTUP_HOME=$HOME/.rustup" \
+            "XS_TEST_DATABASE_URL=$XS_TEST_DATABASE_URL" \
+            "XS_EVIDENCE_GIT_REVISION=$GITHUB_SHA" \
+            "EVIDENCE_DIR=$evidence/agent-rtt" \
+            make test-agent-rtt 2>&1 | tee "$evidence/agent-rtt-wrapper.log"
+          agent_status=${PIPESTATUS[0]}
+          ownership_status=0
+          if [[ -d $evidence/agent-rtt ]]; then
+            sudo chown -R "$(id -u):$(id -g)" "$evidence/agent-rtt" || ownership_status=$?
+          fi
+          ((agent_status == 0 && ownership_status == 0)) || status=1
+
+          {
+            date -u +%Y-%m-%dT%H:%M:%SZ
+            uname -a
+            rustc --version --verbose
+            cargo --version
+            python3 --version
+            shellcheck --version
+            ip -Version
+          } >"$evidence/environment.txt" 2>&1
+
+          secret_log=$(mktemp)
+          python3 scripts/check-secrets.py --root "$evidence" >"$secret_log" 2>&1
+          secret_status=$?
+          mv -- "$secret_log" "$evidence/secret-scan.log"
+          ((secret_status == 0)) || status=1
+
+          set -e
+          {
+            printf 'revision=%s\n' "$GITHUB_SHA"
+            printf 'status=%s\n' "$([[ $status == 0 ]] && printf PASS || printf FAIL)"
+          } >"$evidence/summary.txt"
+          {
+            printf 'scenario\tstatus\n'
+            printf 'shellcheck\t%s\n' "$([[ $shellcheck_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'protocol_crypto_throughput\t%s\n' "$([[ $protocol_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'controller_1000_nodes_websockets\t%s\n' "$([[ $controller_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'agent_direct_relay_rtt_resources\t%s\n' "$([[ $agent_status == 0 && $ownership_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'evidence_secret_scan\t%s\n' "$([[ $secret_status == 0 ]] && printf PASS || printf FAIL)"
+          } >"$evidence/scenario-matrix.tsv"
+          (
+            cd "$evidence"
+            find . -type f ! -path './SHA256SUMS' -print0 |
+              sort -z |
+              xargs -0 sha256sum >SHA256SUMS
+          )
+          exit "$status"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: performance-capacity-evidence
+          path: artifacts/performance-capacity
           if-no-files-found: error
 
   update-supply-chain:
