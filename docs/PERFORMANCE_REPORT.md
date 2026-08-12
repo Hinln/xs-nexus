@@ -1,10 +1,10 @@
 # XS Nexus 性能与稳定性报告
 
-状态：`COMPLETE_FOR_CURRENT_LINUX_BASELINE`  
-报告日期：2026-08-10  
+状态：`CURRENT_INTERNAL_ENVELOPE_COMPLETE; PUBLIC_WAN_PARTIAL; CURRENT_REVISION_SOAK_OPEN`  
+报告日期：2026-08-12  
 适用范围：当前 Linux 测试服务器、GitHub hosted Linux、loopback/namespace 网络与真实外部 PostgreSQL。
 
-本报告记录可复现的工程基线，不是公网容量承诺。24 小时 Linux 容器稳定性已经完成；Windows 实机、运营商网络和 NAS 门禁仍未完成，因此不得据此描述为生产就绪。
+本报告记录可复现的工程基线，不是公网容量承诺。历史 24 小时 Linux 容器稳定性已经完成，但不是当前 revision 的 Gate 22 soak；Windows 实机、运营商网络、NAS 和当前 revision 24 小时故障注入门禁仍未完成，因此不得据此描述为生产就绪。
 
 ## 1. 测试原则
 
@@ -84,3 +84,15 @@ make test-docker-deployment
 - 真实公网、运营商 NAT、跨地域 Relay 容量和 RTT；
 - 多核/多实例水平扩展、小时/天级连接风暴和第三方容量复核；
 - 正式 RC 构建与签名后的性能复验。
+
+## 6. 2026-08-12 Gate 21 当前版本容量矩阵
+
+精确 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 的 GitHub Actions run `31603852656` 全 11 个 job 通过。专项 job `94137661764` 与 artifact `9144433450` 证明单实例 1,000 节点、1,000 个认证控制会话、1,001st 节点/会话失败关闭、512 KiB 有界控制消息、64 并发配置发送和旧客户端大消息拒绝。独立下载后验证 41/41 外层文件、Agent 11/11、Controller 8/8、Protocol 8/8、精确 revision 绑定和零发现秘密扫描。
+
+Controller 在 1,000 会话下 RSS 为 66,668 KiB、FD 为 1,022、PostgreSQL 连接为 11；认证 p95 为 461.39 ms，同步 p95 为 63.99 ms，1,000 节点 Console 快照为 63.57 ms。保留失败 run 中的 RSS 为 490,496 KiB；修复 retained control frames 后下降 86.4%。XSP/1 为 188,340.94 seal+open/s、215.54 MiB/s；两个 release Agent 的 Direct/Relay RTT p95 分别为 0.3054/0.4611 ms。
+
+详细证据见 `audit/production-readiness-remediation-v2/PERFORMANCE_CAPACITY.md`。Gate 21 仍为 `PARTIAL/BLOCKED_EXTERNAL`：公网、跨地域、多实例、volumetric/distributed abuse 和小时/天级容量尚无真实证据。
+
+## 7. Gate 22 当前版本边界
+
+`/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z` 是历史 revision 的有效长样本，但不能关闭当前 revision Gate 22。当前版本仍需至少 24 小时连续采样，并覆盖 Controller/Relay/PostgreSQL/Agent、Enrollment/Revocation、配置与路由更新、受控丢包/延迟、服务和数据库重启恢复。若 revision、镜像、配置或测试 harness 发生实质变化，soak 必须从零重新开始。

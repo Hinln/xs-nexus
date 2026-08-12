@@ -403,3 +403,12 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0065`：Webhook 环境代理隔离回归的 fake response 没有实现生产客户端的有界 `read(1)`，导致功能路径全部通过后纯测试替身失败。fake 现显式断言该读取；没有删除 proxy isolation、响应读取或 Webhook 断言。失败 run `31537531579`、artifact `9119401167` 和 archive digest 保留。
 - 最终 revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 的 run `31537716553` 十个 job 全通过；job `93932721320`、artifact `9119468792`、archive digest `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79`、21/13 项两层 SHA-256、11 项 host 场景和两次独立无值扫描通过。
 - 仓库侧采集、阈值、状态机和通知客户端完成，但没有把 localhost Webhook 或 CI TLS 夹具称为生产告警。外部 warning/critical、on-call 和 resolved closure 保持 `PRV2-010`/`KI-024`，Gate 20 保持 `PARTIAL/BLOCKED_EXTERNAL`，总体保持 `NO_GO`。
+
+## Gate 21 性能与容量子矩阵（2026-08-12）
+
+- `XS-2026-0066`：容量脚本 cleanup trap 覆盖了测试进程非零状态，run `31550700862` 形成 false-green。修复后 cleanup 只清理资源并保留原始状态；artifact `9124266819` 保留。
+- `XS-2026-0067`：Controller 在 1,000 控制会话下保留已发送 frame，RSS 达 490,496 KiB。runs `31551651020`、`31552305120` 与 artifacts `9124595037`、`9124815539` 保留；修复 send 生命周期后最终 RSS 66,668 KiB，下降 86.4%。
+- `XS-2026-0068`：为大签名配置实现协商式有界 `chunked-v1`、持久 assembler、旧客户端失败关闭、节点/会话/发送并发限制以及 pre-allocation/pre-upgrade overflow 拒绝；没有抬高到无界 frame 或弱化认证。
+- `XS-2026-0069`：严格 Clippy 在最终收口依次发现三处超长函数、`needless_pass_by_value`、`unnested_or_patterns` 和容量测试超长函数。runs `31558236452`、`31602351182`、`31603038239` 保留；仅按职责抽取和修正借用/模式，不改变测试语义。
+- 最终 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 的 run `31603852656` 全 11 job 通过；job `94137661764`、artifact `9144433450`、外层 41/41、Agent 11/11、Controller 8/8、Protocol 8/8、revision 绑定和零发现无值扫描通过。
+- Gate 21 仍为 `PARTIAL/BLOCKED_EXTERNAL`，Gate 22 仍为 `UNKNOWN`，总体保持 `NO_GO`；生产未改变。

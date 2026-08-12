@@ -57,3 +57,10 @@ Move XS Nexus from the independently audited `NO_GO / CRITICAL` state to a state
 ## Exit Condition
 
 This work may pause only when every remaining item is an accurately documented `BLOCKED_EXTERNAL` gate. Formal production `GO` requires all hard gates to be `PASS`.
+
+## Gate 21 Current Progress (2026-08-12)
+
+- Exact revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` passed all 11 jobs in run `31603852656`.
+- The internal single-instance 1,000-node and 1,000-control-session matrix is complete with fail-closed overflow admission, bounded large-message transport, current protocol/Agent measurements, and independently verified evidence artifact `9144433450`.
+- `PRV2-018` remains `BLOCKED_EXTERNAL` for public-WAN, multi-region/multi-instance, volumetric/distributed-abuse, and hours/days capacity proof.
+- Proceed to Gate 22 by implementing a current-revision 24-hour soak harness that samples all required resources and executes Controller, Relay, PostgreSQL, Agent, enrollment/revocation, and controlled network-fault recovery without changing production resources.

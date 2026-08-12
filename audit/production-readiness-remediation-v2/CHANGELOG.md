@@ -140,3 +140,11 @@
 - Retained migration/lint and two dedicated matrix failures. Fixed unique migration numbering, strict function size, ShellCheck/evidence atomicity, an unset Docker fixture state, and an incomplete Webhook fake without skipping or weakening tests.
 - Exact revision `9291400ac030045e8ea2955ea137e7dc8be37a85` passed all ten jobs in run `31537716553`; job `93932721320`, artifact `9119468792`, archive digest `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79`, both inner manifests, eleven host scenarios, and two independent no-value scans pass.
 - Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL` because no production-independent destination/on-call has proved warning, critical, acknowledgement/escalation, and resolved closure, and the current branch is not deployed. Production was not changed and overall status remains `NO_GO`.
+
+## 2026-08-12 Gate 21 Internal Capacity Matrix
+
+- Added authenticated bounded `chunked-v1` control transport for large signed configurations, with strict canonical framing, ordering, length, digest, nesting, and legacy-client fail-closed checks.
+- Added enforced 1,000-node and 1,000-control-session limits, bounded configuration-send concurrency, pre-allocation enrollment rejection, pre-upgrade WebSocket rejection, and low-cardinality capacity observability.
+- Fixed a false-green cleanup trap and retained control-frame memory growth; Controller RSS fell from 490,496 KiB in the retained failing run to 66,668 KiB in the final run.
+- Exact revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` passed all 11 jobs in GitHub Actions run `31603852656`; artifact `9144433450` passed independent extracted manifests, revision binding, and zero-finding secret scan.
+- Gate 21 remains `PARTIAL/BLOCKED_EXTERNAL`; Gate 22 remains `UNKNOWN`; overall remains `NO_GO`. Production was not changed.

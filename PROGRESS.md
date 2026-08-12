@@ -1,10 +1,10 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-08-12
-当前 Git 提交：以包含本记录的提交为准；Gate 20 实现候选为 `9291400ac030045e8ea2955ea137e7dc8be37a85`
+当前 Git 提交：以包含本记录的提交为准；Gate 21 精确代码与证据 revision 为 `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
-当前总状态：`NO_GO`（Gate 20 仓库侧子矩阵通过，但 Gate 02/13/14/20/23/25 及外部门禁仍未闭合）
-当前里程碑：`生产门禁修复 V2：Gate 20 内部矩阵完成，进入 Gate 21 性能与容量`
+当前总状态：`NO_GO`（Gate 21 内部单实例容量矩阵完成；Gate 02/13/14/20/21/22/23/25 及外部门禁仍未闭合）
+当前里程碑：`生产门禁修复 V2：Gate 22 当前 revision 24 小时稳定性与故障注入`
 
 ---
 
@@ -524,3 +524,14 @@ make clean
 - 失败链保留：run `31535053669` 暴露 migration/lint；`31537181594`、artifact `9119262890` 暴露 ShellCheck 和 unset 夹具；`31537531579`、artifact `9119401167` 暴露 Webhook fake 缺少 bounded read。所有问题按根因修复，没有 skip、suppress、allowed failure 或阈值降低。
 - 精确 revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 的 run `31537716553` 十个 job 全通过；专项 job `93932721320`、artifact `9119468792`、归档 SHA-256 `7b5fadda34a612716a6176767b465006a5e6e4175a61464e6959f4ec64fd5c79`、21/13 项两层清单和两次独立无值扫描通过。
 - Gate 20 保持 `PARTIAL/BLOCKED_EXTERNAL`：正式生产尚未部署本分支，也没有独立目的地的 warning/critical 真实送达、on-call 确认和 resolved closure；正式 TLS/备份持续数据与留存同样未形成生产证据。本轮未连接或修改生产，总体保持 `NO_GO`；下一步进入 Gate 21。
+
+## 2026-08-12 Gate 21 性能与容量内部矩阵
+
+- 新增认证、有界 `chunked-v1` 控制传输：512 KiB 最大逻辑消息、8 KiB 分块阈值、严格 canonical base64/顺序/计数/长度/SHA-256/nesting 校验；旧客户端对大响应失败关闭，Agent 持久 assembler 不因 select 取消丢失半传输。
+- Controller 强制每网络最多 1,000 节点、最多 1,000 控制会话、最多 64 并发签名配置发送；第 1,001 个 Enrollment 在 token/IP/credential 分配前返回 `capacity_exhausted`，第 1,001 个 WebSocket 在 upgrade 前拒绝。
+- 1,000 个真实 WebSocket 全部认证并同步 434,580 字节签名配置；认证 p95 461.39 ms、同步 p95 63.99 ms、Console 快照 63.57 ms、Controller RSS 66,668 KiB、FD 1,022、PostgreSQL 连接 11，均满足书面安全下限。
+- 修复容量脚本 cleanup trap 吞掉失败以及 Controller 保留 frame 导致 RSS 490,496 KiB 的根因；最终 RSS 下降 86.4%。严格 Clippy 的三轮失败也全部保留并按根因修复，没有 skip、allowed failure、阈值或安全断言弱化。
+- 精确 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 的 GitHub Actions run `31603852656` 全 11 job 通过；job `94137661764`、artifact `9144433450`、GitHub digest、41/41 外层清单、Agent 11/11、Controller 8/8、Protocol 8/8、revision 绑定和零发现秘密扫描通过。
+- Gate 21 保持 `PARTIAL/BLOCKED_EXTERNAL`：公网、跨地域、多实例、volumetric/distributed abuse 和小时/天级容量仍无证据。Gate 22 保持 `UNKNOWN`；历史 24 小时样本不能替代当前 revision soak。生产未变，总体保持 `NO_GO`。
+- 正在进行：增强 `scripts/test-runtime-stability.sh`，补齐当前 revision 的 Controller、Relay、PostgreSQL、Agent、Enrollment/Revocation、配置/路由与受控网络故障采样。
+- 下一条准确命令：`git diff --check`，随后 `python scripts/check-secrets.py --root .`；文档检查点完成后审查并实现 Gate 22 soak harness。

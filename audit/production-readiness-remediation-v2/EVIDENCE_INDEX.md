@@ -310,3 +310,13 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 - Gate 06 ordinary-host reboot, disk-full, DHCP/address-churn, competing-VPN and arm64 matrix; its hosted real-systemd crash/restart and isolated link-change submatrix is complete.
 - Gates 21/22/25 current-revision regressions. Gate 20's repository metrics and alert matrix is complete, while independent production delivery/on-call/resolved closure and formal TLS/backup evidence remain external. Gate 19's repository runtime/visual matrix is complete, while its Gate 13 planned-domain strict TLS/CDN/public browser path remains external. Gate 18's repository-side failure matrix is complete, while formal keys/ceremony, authenticated production distribution, signed RC, real target-platform execution, and the production release chain remain open. Gates 09 and 15 are complete. Gate 08 hosted resource/capacity/restart evidence is complete, while its public-WAN/multi-region/long-duration matrix remains external. Gate 04 internal evidence is complete, while Gate 05 independent review remains external. Gate 23 self-fixable exact-head checks are complete, but the gate remains failed until all global Critical/High findings are closed; Gate 24 has completed the dated `paste` review but still requires formal release/deployment and bounded glibc disposition closure.
 - External Gate evidence for Windows, NAS, WAN, subnet router, offsite restore, key ceremony, and independent audit.
+
+## Gate 21 Performance and Capacity (2026-08-12)
+
+- Exact revision: `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363`.
+- GitHub Actions run: `31603852656`; performance job: `94137661764`.
+- Artifact: `9144433450`, `performance-capacity-evidence`; GitHub digest `sha256:d0c05972b353476362cd1e62ff86f4bfc77fa027371bc5e67977131ab686f0b8`.
+- Independent extracted verification: outer manifest hash `9f6590bc3b586652c4b8d9346a5d274f68cc184e80c171f8242ec459f88550f5`, 41/41 files; Agent 11/11, Controller 8/8, Protocol 8/8; exact revision bindings matched; zero secret-scan findings.
+- Scope: 1,000 enrolled nodes, 1,000 authenticated control sessions, 1,001st enrollment/session fail-closed, bounded `chunked-v1` large-response transport, resource ceilings, XSP/1 throughput, and two-Agent namespace Direct/Relay RTT.
+- Detailed report: `audit/production-readiness-remediation-v2/PERFORMANCE_CAPACITY.md`.
+- Decision: `PARTIAL/BLOCKED_EXTERNAL`; public-WAN, multi-region/multi-instance, volumetric/distributed-abuse, and hours/days proof remains. Gate 22 remains `UNKNOWN`.

@@ -379,12 +379,12 @@
 
 ---
 
-## KI-028 Relay 真实公网对抗与水平容量矩阵尚未闭合
+## KI-028 Relay/Controller 真实公网对抗与水平容量矩阵尚未闭合
 
 - 严重度：高
 - 状态：外部阻塞（可安全自动化子矩阵已完成）
-- 首次发现：2026-08-08 正式生产审计；2026-08-10 Gate 08 重新验证。
-- 已完成：精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 在 GitHub Actions run `31358498444` 通过全局注册验签预算、每 Lease/全局 packet+byte 队列、拒绝事务性和 cleanup 释放单测；5,000,000 个认证帧在短期 Lease 周期续租下以 71,212.14 包/s、14.67 MiB/s 完成，零 Relay 丢弃且最终队列为零；双 Agent/双 Relay namespace 完成停止、切换、重启、重新注册、恢复和 Direct 回切。job `93362562136`、artifact `9051561308` 的归档、原始相对内部 SHA-256 和无值秘密扫描均通过。
-- 影响：hosted loopback/namespace 不能证明公网 UDP 丢失/重排、跨运营商与跨地域 RTT、分布式合法凭据滥用、云侧 volumetric DDoS、多个 Relay 实例的水平扩展、资源隔离或小时/天级连接风暴。当前安全 operating envelope 不能据此扩张到正式公网容量承诺，Gate 08 仍为 `PARTIAL`。
+- 首次发现：2026-08-08 正式生产审计；2026-08-10 Gate 08、2026-08-12 Gate 21 重新验证。
+- 已完成：精确 revision `bad114e9bea46531fcfb23ad871dc5fab7ed8c1e` 在 GitHub Actions run `31358498444` 通过 Relay 全局注册验签预算、每 Lease/全局 packet+byte 队列、5,000,000 个认证帧和双 Relay namespace 恢复。精确 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 在 run `31603852656` 通过 1,000 节点、1,000 控制会话、1,001st 失败关闭、有界 `chunked-v1`、配置发送并发、资源阈值、当前 XSP/1 与 Agent RTT；job `94137661764`、artifact `9144433450` 的外层/内部清单、revision 绑定和无值秘密扫描通过。
+- 影响：hosted loopback/namespace 不能证明公网 UDP 丢失/重排、跨运营商与跨地域 RTT、分布式合法凭据滥用、云侧 volumetric DDoS、Controller/Relay 多实例水平扩展、资源隔离或小时/天级连接风暴。当前安全 operating envelope 不能据此扩张到正式公网容量承诺，Gate 08 与 Gate 21 仍为 `PARTIAL`。
 - 计划：由所有者提供至少两个独立公网地域、受控流量发生器、云侧流量/费用保护和回滚窗口；执行匿名/伪造/重放/来源喷洒、有效凭据分布式速率、丢包/乱序/延迟、实例停止/替换、水平扩展与长时容量矩阵，关联主机、Relay、Controller 和外部链路指标。
 - 解除条件：所有公开网络对抗项失败关闭，在书面 safe operating envelope 内无未解释丢弃、无界内存/CPU/FD/队列、身份或密文泄露；故障切换/恢复满足 SLO，超限行为和云侧缓解经过独立复核，原始证据秘密扫描并加入索引。

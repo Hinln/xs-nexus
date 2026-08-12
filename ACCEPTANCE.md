@@ -207,6 +207,8 @@ Gate 15 在 exact revision `8a9174866ebdf4ff76e7d987e006acb64312e3b6` 完成正�
 
 Gate 23 当前精确回归基线为 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`：JSON parser detail、PostgreSQL 无界 Docker 日志、`rsa`/`RUSTSEC-2023-0071` 和缺失 license policy 四项可自行修复 finding 已关闭；源 SBOM 预期计数为 Cargo 296、npm 110、总计 406。GitHub Actions run `31313868529` 与 clean-checkout 证据 `/srv/xs-nexus-qa/artifacts/production-readiness-remediation-v2/gate23-final-20260809T134042Z` 通过。上述勾选是项目内部验收，不代表生产 Hard Gate 23 已 PASS；全局 Critical/High、外部门禁、正式签名发布和当前 revision soak 未关闭，Gate 23 仍为 `FAIL`、Gate 24 为 `PARTIAL`、总体为 `NO_GO`。
 
+Gate 21 当前精确内部证据为 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363`、run `31603852656`、job `94137661764` 和 artifact `9144433450`，覆盖 1,000 节点/控制会话、失败关闭容量、资源阈值、协议吞吐与 namespace Agent RTT。该证据不覆盖公网、多地域、多实例或长时容量，因此 Gate 21 为 `PARTIAL`。上面的历史 24 小时验收勾选也不关闭当前 revision Gate 22；至少 24 小时完整采样与故障注入仍为 `UNKNOWN`，总体继续 `NO_GO`。
+
 ---
 
 ## M. 最终文档
@@ -225,7 +227,7 @@ Gate 23 当前精确回归基线为 `3bf861922c8b3cc62c3bfd1617835565fd86fc6b`�
 - [x] MUST：最终真实报告。
 - [x] MUST：明确当前是否适合生产。
 
-证据：`docs/ARCHITECTURE.md`、`docs/XSP1_PROTOCOL.md`、`docs/CONTROLLER_API.md`、`docs/LINUX_INSTALLATION.md`、`docs/UPDATE_SYSTEM.md`、`RECOVERY_RUNBOOK.md`、`docs/SECURITY_ASSUMPTIONS.md`、`docs/THREAT_MODEL.md`、`QA_MATRIX.md`、`THIRD_PARTY.md` 与 `FINAL_REPORT.md`。性能报告 `docs/PERFORMANCE_REPORT.md` 已纳入 24 小时长样本与修正后的真实重启回归。
+证据：`docs/ARCHITECTURE.md`、`docs/XSP1_PROTOCOL.md`、`docs/CONTROLLER_API.md`、`docs/LINUX_INSTALLATION.md`、`docs/UPDATE_SYSTEM.md`、`RECOVERY_RUNBOOK.md`、`docs/SECURITY_ASSUMPTIONS.md`、`docs/THREAT_MODEL.md`、`QA_MATRIX.md`、`THIRD_PARTY.md` 与 `FINAL_REPORT.md`。性能报告 `docs/PERFORMANCE_REPORT.md` 已纳入 Gate 21 当前版本内部容量矩阵、历史 24 小时长样本与当前 revision Gate 22 未完成边界。
 
 ---
 

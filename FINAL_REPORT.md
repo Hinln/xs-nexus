@@ -142,3 +142,12 @@
 - GitHub Actions run `31537716553` 十个 job 全通过；专项 job `93932721320` 与 artifact `9119468792` 覆盖 11 项 host 场景，archive/21 项外层/13 项内层 SHA-256 和两次独立无值扫描通过。失败 runs/artifacts 保留且没有 skip、suppress、allowed failure 或阈值弱化。
 - 该结果只关闭 Gate 20 的仓库侧子矩阵。生产仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，没有独立目的地的 warning/critical 真实送达、on-call acknowledgement/escalation、resolved closure 或正式 TLS/备份持续留存证据。
 - Gate 20 仍为 `PARTIAL/BLOCKED_EXTERNAL`，Gate 14 仍为 `PARTIAL`，总体 Decision 仍为 `NO_GO`。当前版本不得标记 Release Candidate 或投入公网生产。
+
+## 19. 2026-08-12 Gate 21 性能与容量复核
+
+- 精确 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 完成有界 `chunked-v1` 控制传输、每网络 1,000 节点、1,000 控制会话、64 并发配置发送、1,001st Enrollment/会话失败关闭和低基数容量观测。
+- GitHub Actions run `31603852656` 全 11 job 通过；专项 job `94137661764`、artifact `9144433450`、GitHub artifact digest、41/41 外层文件、三份内部 manifest、精确 revision 绑定和零发现秘密扫描通过。
+- 1,000 会话下 Controller RSS 66,668 KiB、FD 1,022、PostgreSQL 连接 11；认证 p95 461.39 ms、同步 p95 63.99 ms、Console 快照 63.57 ms。retained-frame 根因修复使 RSS 从失败证据的 490,496 KiB 下降 86.4%。
+- Gate 21 只完成 hosted 单实例内部矩阵。公网、跨地域、多实例、volumetric/distributed abuse 和小时/天级容量仍为 `BLOCKED_EXTERNAL`，因此保持 `PARTIAL`。
+- Gate 22 保持 `UNKNOWN`：2026-07-31 的 24 小时样本不是当前 revision，且当前 harness 尚未完整覆盖 PostgreSQL、Agent、Enrollment/Revocation、配置/路由更新和受控网络故障注入。
+- 生产仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，本轮未修改生产。总体 Decision 仍为 `NO_GO`，不得标记 Release Candidate 或投入公网生产。

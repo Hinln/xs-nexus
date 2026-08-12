@@ -602,3 +602,16 @@
 - [x] 精确证据：revision `9291400ac030045e8ea2955ea137e7dc8be37a85`，run `31537716553` 全十 job，job `93932721320`，artifact `9119468792`；archive/两层 SHA-256、场景矩阵和两次独立无值扫描通过。
 - [ ] 生产送达：独立目的地 warning/critical、on-call acknowledgement、故障解除后的 resolved closure、正式 TLS/备份持续采样与留存仍为 `BLOCKED_EXTERNAL`。
 - [x] 结论边界：仓库侧子矩阵通过，但 Gate 20 保持 `PARTIAL`，生产未变且总体保持 `NO_GO`。
+
+## 30. Gate 21 性能与容量矩阵（2026-08-12）
+
+- [x] 1,000 节点通过真实 Controller Router、Enrollment、认证、签名配置、IPAM 和 PostgreSQL 注册；不使用批量数据库插入代替产品路径。
+- [x] 1,000 个真实 WebSocket 完成认证和大配置同步；1,001st Enrollment 与控制会话分别在凭据分配和 upgrade 前失败关闭。
+- [x] `chunked-v1` 覆盖 canonical base64、transfer ID、顺序、数量、长度、精确 chunk size、SHA-256、嵌套拒绝、错误清理与旧客户端大消息拒绝。
+- [x] Controller 限制为 1,000 节点、1,000 会话和 64 并发配置发送；资源、速率、p95、DB 查询/连接、Console 和 presence 均有明确阈值并通过。
+- [x] XSP/1 release 吞吐与两个 release Agent 的真实 namespace Direct/Relay RTT、CPU、RSS、线程和 FD 完成。
+- [x] 失败链 `31550700862`、`31551651020`、`31552305120`、`31558236452`、`31602351182`、`31603038239` 保留；cleanup false-green、retained frames 和 strict Clippy 根因均修复。
+- [x] 精确 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363`，run `31603852656` 全 11 job，job `94137661764`，artifact `9144433450`；外层 41/41 与三份内部 manifest、revision 绑定及零发现秘密扫描通过。
+- [ ] 公网、多地域、多实例、volumetric/distributed abuse、小时/天级容量仍为 `BLOCKED_EXTERNAL`。
+- [ ] Gate 22 当前 revision 至少 24 小时采样及完整故障注入尚未执行，状态保持 `UNKNOWN`。
+- [x] 结论边界：Gate 21 仅内部单实例子矩阵完成，仍为 `PARTIAL`；生产未变，总体保持 `NO_GO`。

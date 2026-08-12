@@ -160,3 +160,13 @@ The first three items are preparation and diagnosis only. The unchecked producti
 - [ ] All global P0/P1/Critical/High findings, external hard gates, formal signed RC/main provenance, and deployment of the exact release revision complete.
 
 The checked items close four self-fixable findings and one bounded P2 dependency review only. Production still runs `3d93656`, Gate 23 remains `FAIL`, Gate 24 remains `PARTIAL`, Release Candidate remains unchecked, and the overall result remains `NO_GO`.
+
+## Gate 21/22 performance and soak checkpoint (2026-08-12)
+
+- [x] Exact revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` passes all 11 GitHub Actions jobs in run `31603852656`.
+- [x] Internal single-instance 1,000-node and 1,000-control-session matrix, fail-closed overflow, bounded large-message transport, resource limits, current protocol throughput, and namespace Agent RTT complete.
+- [x] Artifact `9144433450` independently verified through extracted outer and nested manifests, exact revision binding, and zero-finding secret scan.
+- [ ] Public-WAN, multi-region/multi-instance, volumetric/distributed-abuse, horizontal saturation, and hours/days capacity evidence complete.
+- [ ] Current revision and exact images/configuration complete at least 24 hours of sampled Controller/Relay/PostgreSQL/Agent operation with required service, database, enrollment/revocation, route/configuration, and controlled network-fault recovery.
+
+Gate 21 remains `PARTIAL/BLOCKED_EXTERNAL`, Gate 22 remains `UNKNOWN`, Release Candidate remains unchecked, and the overall result remains `NO_GO`.

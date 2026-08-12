@@ -1145,3 +1145,12 @@
 - 外呼边界：正式 Webhook 只允许 HTTPS、拒绝 URL 凭据/query/fragment/重定向并关闭环境代理；Controller 与 Webhook Token 分离，均只从 owner-matched `0600` 普通文件读取。Controller URL 必须 loopback，HTTP probe 也只能用于 loopback，远端探测要求 HTTPS。
 - 证据：revision `9291400ac030045e8ea2955ea137e7dc8be37a85` 的专项 job `93932721320` 通过真实 PostgreSQL、真实本地 TLS、systemd verify、warning/critical/去重/严重度变化/resolved、容器/HTTP/通知失败、队列、私有文件、原子写和无值扫描；artifact `9119468792` 的归档和两层 SHA-256 已独立验证。
 - 边界：localhost Webhook 和 hosted Linux 只证明实现路径。只有独立于被监控主机的正式目的地真实收到 warning/critical、由 on-call 确认并在故障解除后关闭，Gate 20 才能 `PASS`；在此之前保持 `PARTIAL/BLOCKED_EXTERNAL`，总体保持 `NO_GO`。
+
+## ADR-100：控制通道采用协商式有界分块并在状态分配前强制容量
+
+- 日期：2026-08-12
+- 背景：1,000 节点签名配置超过旧 WebSocket 单消息边界；无界提升 frame 限制会扩大内存和拒绝服务面，先分配 Enrollment/会话状态再判断容量又会消耗一次性 Token、IP 或凭据。
+- 决策：新增协商的 `chunked-v1` JSON envelope，最大逻辑消息 512 KiB、8 KiB 分块阈值、6,000 原始字节 chunk；严格校验 canonical base64、transfer ID、顺序、总数、总长度、精确非末块大小、SHA-256 和禁止嵌套。旧客户端不能接收大消息时失败关闭。
+- 容量：每网络节点上限 1,000、控制会话上限 1,000、配置发送并发默认 64 且限制在 1..128 和会话上限内。Enrollment 在网络锁内、Token/IP/credential 分配前拒绝；WebSocket 在 upgrade 前拒绝；发送有 10 秒边界并在完整 transfer 结束后才回到事件选择。
+- 证据：revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 的 run `31603852656` 全 11 job 通过；专项 job `94137661764`、artifact `9144433450` 证明 1,000 节点/会话、大配置、旧客户端和 1,001st 拒绝、资源阈值与 manifest/secret scan。
+- 边界：该设计建立 hosted 单实例安全下限，不证明公网、多地域、多实例、volumetric/distributed abuse 或长时容量。Gate 21 保持 `PARTIAL/BLOCKED_EXTERNAL`，Gate 22 保持 `UNKNOWN`，总体保持 `NO_GO`。
