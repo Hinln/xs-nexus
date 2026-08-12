@@ -22,6 +22,9 @@ PRIME_NETWORK="xs-gate22-prime-$SUFFIX"
 AGENT_A="xs-gate22-agent-a-$SUFFIX"
 AGENT_B="xs-gate22-agent-b-$SUFFIX"
 AGENT_C="xs-gate22-agent-c-$SUFFIX"
+AGENT_A_NETNS="xs-gate22-agent-a-netns-$SUFFIX"
+AGENT_B_NETNS="xs-gate22-agent-b-netns-$SUFFIX"
+AGENT_C_NETNS="xs-gate22-agent-c-netns-$SUFFIX"
 LAN_TARGET="xs-gate22-lan-target-$SUFFIX"
 TEMPORARY=$(mktemp -d /tmp/xs-gate22.XXXXXX)
 ENVIRONMENT_FILE="$TEMPORARY/gate22.compose.env"
@@ -36,6 +39,7 @@ REPLICA_DIRECTORY="$TEMPORARY/replica"
 STATE_DIRECTORY="$TEMPORARY/state"
 BINARY_DIRECTORY="$TEMPORARY/bin"
 AGENT_BUILD_TARGET_DIRECTORY="$TEMPORARY/agent-target"
+AGENT_PROXY_SCRIPT="$TEMPORARY/controller-loopback-proxy.sh"
 AGENT_A_ROOT="$TEMPORARY/agent-a"
 AGENT_B_ROOT="$TEMPORARY/agent-b"
 AGENT_C_ROOT="$TEMPORARY/agent-c"
@@ -150,7 +154,8 @@ record_logs() {
             docker logs "$container" >"$EVIDENCE_DIR/$service.log" 2>&1 || true
         fi
     done
-    for container in "$AGENT_A" "$AGENT_B" "$AGENT_C" "$LAN_TARGET"; do
+    for container in "$AGENT_A" "$AGENT_B" "$AGENT_C" \
+        "$AGENT_A_NETNS" "$AGENT_B_NETNS" "$AGENT_C_NETNS" "$LAN_TARGET"; do
         if docker inspect "$container" >/dev/null 2>&1; then
             docker logs "$container" >"$EVIDENCE_DIR/$container.log" 2>&1 || true
         fi
@@ -176,7 +181,9 @@ clear_agent_faults() {
 
 remove_resources() {
     clear_agent_faults
-    docker rm -f "$AGENT_A" "$AGENT_B" "$AGENT_C" "$LAN_TARGET" >/dev/null 2>&1 || true
+    docker rm -f "$AGENT_A" "$AGENT_B" "$AGENT_C" >/dev/null 2>&1 || true
+    docker rm -f "$AGENT_A_NETNS" "$AGENT_B_NETNS" "$AGENT_C_NETNS" "$LAN_TARGET" \
+        >/dev/null 2>&1 || true
     if [[ -f $ENVIRONMENT_FILE ]]; then
         compose down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
@@ -551,18 +558,18 @@ PY
 write_agent_config() {
     local root=$1 name=$2 interface=$3
     mkdir -p "$root/state"
-    python3 - "$root/agent.json" "$CONTROLLER_IP" "$name" "$interface" <<'PY'
+    python3 - "$root/agent.json" "$name" "$interface" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 Path(sys.argv[1]).write_text(json.dumps({
-    "controller_url": f"http://{sys.argv[2]}:8080/",
-    "node_name": sys.argv[3],
+    "controller_url": "http://127.0.0.1:8080/",
+    "node_name": sys.argv[2],
     "device_type": "linux",
     "state_directory": "/agent/state",
     "runtime_directory": "/run/xs-agent",
-    "interface_name": sys.argv[4],
+    "interface_name": sys.argv[3],
     "mtu": 1280,
     "control_sync_interval_seconds": 5,
 }), encoding="utf-8")
@@ -572,11 +579,45 @@ PY
     chmod 0400 "$root/agent.json"
 }
 
+prepare_agent_proxy() {
+    cat >"$AGENT_PROXY_SCRIPT" <<EOF
+#!/bin/sh
+exec nc "$CONTROLLER_IP" 8080
+EOF
+    chmod 0555 "$AGENT_PROXY_SCRIPT"
+}
+
+start_agent_netns() {
+    local container=$1 address=$2
+    docker run -d --rm --name "$container" \
+        --label "com.xs-nexus.gate22.project=$PROJECT" \
+        --network "$NETWORK" --ip "$address" \
+        --user 65532:65532 \
+        --read-only --cap-drop ALL \
+        --security-opt no-new-privileges:true \
+        --pids-limit 64 \
+        --mount "type=bind,src=$AGENT_PROXY_SCRIPT,dst=/proxy-upstream,readonly" \
+        "$ALPINE_IMAGE" nc -ll -p 8080 -e /proxy-upstream >/dev/null
+}
+
+wait_agent_proxy() {
+    local container=$1
+    for _attempt in $(seq 1 60); do
+        if docker exec "$container" wget -q -T 2 -O /dev/null \
+            http://127.0.0.1:8080/health/live; then
+            return
+        fi
+        sleep 1
+    done
+    printf 'Agent loopback Controller proxy did not become ready: %s\n' "$container" >&2
+    return 1
+}
+
 agent_run_base() {
-    local root=$1
+    local root=$1 netns=$2
     printf '%s\n' \
         --user 65532:65532 \
-        --network "$NETWORK" \
+        --network "container:$netns" \
         --mount "type=bind,src=$BINARY_DIRECTORY,dst=/workspace,readonly" \
         --mount "type=bind,src=$root,dst=/agent" \
         --tmpfs /run/xs-agent:rw,noexec,nosuid,nodev,uid=65532,gid=65532,mode=0700 \
@@ -584,23 +625,22 @@ agent_run_base() {
 }
 
 enroll_agent() {
-    local root=$1
+    local root=$1 netns=$2
     create_enrollment_token "$root/enrollment.token"
     chown 65532:65532 "$root/enrollment.token"
     local -a arguments
-    mapfile -t arguments < <(agent_run_base "$root")
+    mapfile -t arguments < <(agent_run_base "$root" "$netns")
     docker run --rm "${arguments[@]}" --entrypoint /workspace/xs-agent "$AGENT_RUNTIME_IMAGE" \
         enroll --config /agent/agent.json --token-file /agent/enrollment.token >/dev/null
     rm -f "$root/enrollment.token"
 }
 
 start_agent() {
-    local container=$1 root=$2 address=$3
+    local container=$1 root=$2 netns=$3
     local -a arguments
-    mapfile -t arguments < <(agent_run_base "$root")
+    mapfile -t arguments < <(agent_run_base "$root" "$netns")
     docker run -d --rm --name "$container" \
         --label "com.xs-nexus.gate22.project=$PROJECT" \
-        --ip "$address" \
         --cap-drop ALL --cap-add NET_ADMIN \
         --security-opt no-new-privileges:true \
         --pids-limit 256 \
@@ -686,13 +726,18 @@ raise SystemExit(0 if path["session_established"] and matches else 1)
 }
 
 prepare_agents() {
+    prepare_agent_proxy
     write_agent_config "$AGENT_A_ROOT" gate22-agent-a xsga0
     write_agent_config "$AGENT_B_ROOT" gate22-agent-b xsgb0
-    enroll_agent "$AGENT_A_ROOT"
-    enroll_agent "$AGENT_B_ROOT"
-    start_agent "$AGENT_A" "$AGENT_A_ROOT" "$AGENT_A_IP"
-    start_agent "$AGENT_B" "$AGENT_B_ROOT" "$AGENT_B_IP"
-    docker network connect --ip "$LAN_GATEWAY_IP" "$LAN_NETWORK" "$AGENT_B"
+    start_agent_netns "$AGENT_A_NETNS" "$AGENT_A_IP"
+    start_agent_netns "$AGENT_B_NETNS" "$AGENT_B_IP"
+    wait_agent_proxy "$AGENT_A_NETNS"
+    wait_agent_proxy "$AGENT_B_NETNS"
+    enroll_agent "$AGENT_A_ROOT" "$AGENT_A_NETNS"
+    enroll_agent "$AGENT_B_ROOT" "$AGENT_B_NETNS"
+    start_agent "$AGENT_A" "$AGENT_A_ROOT" "$AGENT_A_NETNS"
+    start_agent "$AGENT_B" "$AGENT_B_ROOT" "$AGENT_B_NETNS"
+    docker network connect --ip "$LAN_GATEWAY_IP" "$LAN_NETWORK" "$AGENT_B_NETNS"
     docker run -d --rm --name "$LAN_TARGET" --network "$LAN_NETWORK" --ip "$LAN_TARGET_IP" \
         --user 65534:65534 --read-only --cap-drop ALL --security-opt no-new-privileges:true \
         "$ALPINE_IMAGE" sleep 172800 >/dev/null
@@ -950,8 +995,10 @@ EOF
 
 fault_enrollment_revocation() {
     write_agent_config "$AGENT_C_ROOT" gate22-agent-c xsgc0
-    enroll_agent "$AGENT_C_ROOT"
-    start_agent "$AGENT_C" "$AGENT_C_ROOT" "$AGENT_C_IP"
+    start_agent_netns "$AGENT_C_NETNS" "$AGENT_C_IP"
+    wait_agent_proxy "$AGENT_C_NETNS"
+    enroll_agent "$AGENT_C_ROOT" "$AGENT_C_NETNS"
+    start_agent "$AGENT_C" "$AGENT_C_ROOT" "$AGENT_C_NETNS"
     wait_agent_ready "$AGENT_C"
     NODE_ID_C=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["node_id_base64"])' \
         "$AGENT_C_ROOT/state/node-state.json")
@@ -976,7 +1023,7 @@ raise SystemExit(0 if status["controller_connected"] and status["network_active"
     done
     (( rejected == 1 ))
     docker rm -f "$AGENT_C" >/dev/null
-    start_agent "$AGENT_C" "$AGENT_C_ROOT" "$AGENT_C_IP"
+    start_agent "$AGENT_C" "$AGENT_C_ROOT" "$AGENT_C_NETNS"
     for _attempt in $(seq 1 30); do
         output=$(agent_cli "$AGENT_C" status 2>/dev/null || true)
         if [[ -n $output ]] && python3 -c '
@@ -1138,7 +1185,16 @@ run_event() {
 
 select_subnets
 select_ports
+for image in "$AGENT_BUILDER_IMAGE" "$AGENT_RUNTIME_IMAGE" "$ALPINE_IMAGE" "$POSTGRES_IMAGE"; do
+    docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >/dev/null
+done
 docker network create --label "com.xs-nexus.gate22.prime=$PROJECT" "$PRIME_NETWORK" >/dev/null
+docker run --rm \
+    --label "com.xs-nexus.gate22.prime=$PROJECT" \
+    --network "$PRIME_NETWORK" \
+    --user 65534:65534 --read-only --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    "$ALPINE_IMAGE" true
 docker network rm "$PRIME_NETWORK" >/dev/null
 capture_host_baseline "$EVIDENCE_DIR/host-before"
 docker network create --label "com.xs-nexus.gate22.project=$PROJECT" --subnet "$UNDERLAY_SUBNET" "$NETWORK" >/dev/null
@@ -1153,10 +1209,6 @@ printf '%s\n' "$DURATION_SECONDS" >"$EVIDENCE_DIR/duration-seconds.txt"
 printf '%s\n' "$SAMPLE_INTERVAL_SECONDS" >"$EVIDENCE_DIR/sample-interval-seconds.txt"
 printf '%s\n' "$CALIBRATION" >"$EVIDENCE_DIR/calibration.txt"
 printf '%s\n%s\n' "$UNDERLAY_SUBNET" "$LAN_SUBNET" >"$EVIDENCE_DIR/isolated-subnets.txt"
-
-for image in "$AGENT_BUILDER_IMAGE" "$AGENT_RUNTIME_IMAGE" "$ALPINE_IMAGE" "$POSTGRES_IMAGE"; do
-    docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >/dev/null
-done
 
 source_date_epoch=$(git -c safe.directory="$ROOT_DIR" show -s --format=%ct HEAD)
 mkdir -p "$AGENT_BUILD_TARGET_DIRECTORY"
