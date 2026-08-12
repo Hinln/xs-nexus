@@ -129,6 +129,7 @@ capture_onepanel() {
 capture_host_baseline() {
     local prefix=$1
     docker network ls --format '{{.ID}} {{.Name}} {{.Driver}} {{.Scope}}' | sort >"$prefix-docker-networks.txt"
+    docker volume ls --format '{{.Name}} {{.Driver}}' | sort >"$prefix-docker-volumes.txt"
     docker ps -a --format '{{.ID}} {{.Names}} {{.Image}} {{.Status}}' | sort >"$prefix-docker-containers.txt"
     ip -json route show default >"$prefix-default-routes.json"
     ip -json rule show >"$prefix-rules.json"
@@ -213,7 +214,7 @@ cleanup() {
     record_logs
     remove_resources
     capture_host_baseline "$EVIDENCE_DIR/host-after"
-    for suffix in docker-networks.txt docker-containers.txt default-routes.json rules.json links.txt nftables.json failed-services.txt onepanel-network.txt; do
+    for suffix in docker-networks.txt docker-volumes.txt docker-containers.txt default-routes.json rules.json links.txt nftables.json failed-services.txt onepanel-network.txt; do
         if ! cmp -s "$EVIDENCE_DIR/host-before-$suffix" "$EVIDENCE_DIR/host-after-$suffix"; then
             printf 'host baseline changed: %s\n' "$suffix" >&2
             status=1
@@ -1215,7 +1216,7 @@ compose ps --format json >"$EVIDENCE_DIR/containers-end.json"
 record_logs
 remove_resources
 capture_host_baseline "$EVIDENCE_DIR/host-after"
-for suffix in docker-networks.txt docker-containers.txt default-routes.json rules.json links.txt nftables.json failed-services.txt onepanel-network.txt; do
+for suffix in docker-networks.txt docker-volumes.txt docker-containers.txt default-routes.json rules.json links.txt nftables.json failed-services.txt onepanel-network.txt; do
     cmp "$EVIDENCE_DIR/host-before-$suffix" "$EVIDENCE_DIR/host-after-$suffix"
 done
 finalize_evidence 0

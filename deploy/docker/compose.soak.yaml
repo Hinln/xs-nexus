@@ -19,7 +19,7 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      - gate22-postgres-data:/var/lib/postgresql/data
+      - gate22-postgres-data:/var/lib/postgresql
     tmpfs:
       - /tmp:size=32m,mode=1777
     healthcheck:
