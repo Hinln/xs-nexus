@@ -104,6 +104,7 @@ struct Peer {
     cached_server_finish: Option<CachedServerFinish>,
     pending_path_probe: Option<PendingPathProbe>,
     path_probe_retry_after: Instant,
+    manual_path_probe_retry_after: Instant,
     next_latency_probe_at: Instant,
     next_proactive_handshake_at: Instant,
     handshake_failures: u8,
@@ -458,12 +459,12 @@ impl UdpDataPlane {
             if !matches!(peer.state, PeerState::Established(_)) {
                 return Err(ManualProbeError::SessionUnavailable);
             }
-            if peer.pending_path_probe.is_some() || now < peer.path_probe_retry_after {
+            if manual_path_probe_is_busy(peer, now) {
                 return Err(ManualProbeError::Busy);
             }
             let encoded =
                 create_path_probe(peer, endpoint, now).map_err(|_| ManualProbeError::SendFailed)?;
-            peer.path_probe_retry_after = now + MANUAL_PATH_PROBE_COOLDOWN;
+            peer.manual_path_probe_retry_after = now + MANUAL_PATH_PROBE_COOLDOWN;
             (endpoint, peer.node_id, encoded)
         };
         let sent = self
@@ -514,6 +515,7 @@ impl UdpDataPlane {
                     if candidates_changed {
                         existing.pending_path_probe = None;
                         existing.path_probe_retry_after = now;
+                        existing.manual_path_probe_retry_after = now;
                         if !matches!(existing.state, PeerState::Established(_)) {
                             existing.state = PeerState::Idle;
                             existing.handshake_candidate_attempts = 0;
@@ -1134,6 +1136,7 @@ fn build_peer_directory(
                 cached_server_finish: None,
                 pending_path_probe: None,
                 path_probe_retry_after: now,
+                manual_path_probe_retry_after: now,
                 next_latency_probe_at: now,
                 next_proactive_handshake_at: now,
                 handshake_failures: 0,
@@ -1530,6 +1533,10 @@ fn create_path_probe(peer: &mut Peer, endpoint: SocketAddr, now: Instant) -> Res
     });
     peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
     Ok(encoded)
+}
+
+fn manual_path_probe_is_busy(peer: &Peer, now: Instant) -> bool {
+    peer.pending_path_probe.is_some() || now < peer.manual_path_probe_retry_after
 }
 
 fn best_probe_target(peer: &Peer) -> Option<SocketAddr> {
@@ -2342,6 +2349,7 @@ mod tests {
             cached_server_finish: None,
             pending_path_probe: None,
             path_probe_retry_after: now,
+            manual_path_probe_retry_after: now,
             next_latency_probe_at: now,
             next_proactive_handshake_at: now,
             handshake_failures: 0,
@@ -2401,6 +2409,18 @@ mod tests {
         assert!(install_session(&mut client_peer, client_session).is_empty());
         assert!(install_session(&mut server_peer, server_session).is_empty());
         (client_peer, server_peer, client_endpoint, server_endpoint)
+    }
+
+    fn advance_path_probe_to_expiry(peer: &mut Peer, started_at: Instant) {
+        for attempt in 2..=PATH_PROBE_MAX_ATTEMPTS {
+            let retry_at =
+                started_at + PATH_PROBE_RETRY_INTERVAL * u32::from(attempt.saturating_sub(1));
+            assert!(
+                maintain_path_probe(peer, retry_at)
+                    .expect("path probe retry maintenance")
+                    .is_some()
+            );
+        }
     }
 
     #[test]
@@ -2503,6 +2523,7 @@ mod tests {
             cached_server_finish: None,
             pending_path_probe: None,
             path_probe_retry_after: now,
+            manual_path_probe_retry_after: now,
             next_latency_probe_at: now,
             next_proactive_handshake_at: now,
             handshake_failures: 0,
@@ -2574,6 +2595,7 @@ mod tests {
         ];
         peer.active_endpoint = Some(direct_endpoint);
         create_path_probe(&mut peer, direct_endpoint, now).expect("direct path probe");
+        advance_path_probe_to_expiry(&mut peer, now);
 
         let expired = now + PATH_PROBE_RETRY_INTERVAL * u32::from(PATH_PROBE_MAX_ATTEMPTS);
         let (fallback_endpoint, _) = maintain_path_probe(&mut peer, expired)
@@ -2611,6 +2633,7 @@ mod tests {
         ];
         peer.active_endpoint = Some(direct_endpoint);
         create_path_probe(&mut peer, alternate_endpoint, now).expect("promotion probe");
+        advance_path_probe_to_expiry(&mut peer, now);
 
         let expired = now + PATH_PROBE_RETRY_INTERVAL * u32::from(PATH_PROBE_MAX_ATTEMPTS);
         assert!(
@@ -2620,6 +2643,22 @@ mod tests {
         );
         assert_eq!(peer.active_endpoint, Some(direct_endpoint));
         assert!(peer.pending_path_probe.is_none());
+    }
+
+    #[test]
+    fn automatic_path_backoff_does_not_block_manual_probe() {
+        let now = Instant::now();
+        let (mut peer, _, _, active_endpoint) = established_test_peers(now);
+        peer.path_probe_retry_after = now + PATH_PROBE_COOLDOWN;
+
+        assert!(!manual_path_probe_is_busy(&peer, now));
+
+        peer.manual_path_probe_retry_after = now + MANUAL_PATH_PROBE_COOLDOWN;
+        assert!(manual_path_probe_is_busy(&peer, now));
+
+        peer.manual_path_probe_retry_after = now;
+        create_path_probe(&mut peer, active_endpoint, now).expect("path probe");
+        assert!(manual_path_probe_is_busy(&peer, now));
     }
 
     #[test]
