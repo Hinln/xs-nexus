@@ -143,7 +143,7 @@ cleanup_fixtures() {
             label=$(docker container inspect "$container" \
                 --format '{{index .Config.Labels "xs-nexus.qa.gate25"}}')
             if [[ $label == "$RUN_TOKEN" ]]; then
-                docker rm -f "$container" >/dev/null || status=1
+                docker rm -fv "$container" >/dev/null || status=1
             else
                 printf 'refusing to remove container without exact Gate 25 label: %s\n' \
                     "$container" >&2
@@ -337,7 +337,6 @@ chmod 0400 "$DATABASE_SECRETS"/*
 postgres_uid=$(docker run --rm --entrypoint id "$POSTGRES_IMAGE" -u postgres)
 chown -R "$postgres_uid:$postgres_uid" "$DATABASE_SECRETS"
 docker run -d --name "$POSTGRES_CONTAINER" --network 1panel-network \
-    --publish 127.0.0.1::5432 \
     --label "xs-nexus.qa.gate25=$RUN_TOKEN" \
     --mount "type=bind,src=$DATABASE_SECRETS,dst=/run/test-secrets,readonly" \
     --mount "type=bind,src=$CHECKOUT,dst=/workspace,readonly" \
@@ -356,14 +355,16 @@ docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
     export PGPASSWORD=$(cat /run/test-secrets/bootstrap-password)
     export XS_DATABASE_APP_PASSWORD=$(cat /run/test-secrets/app-password)
     export XS_DATABASE_MIGRATOR_PASSWORD=$(cat /run/test-secrets/migrator-password)
-    psql -q -h 127.0.0.1 -U gate25_bootstrap -d gate25 \
+    psql -q -U gate25_bootstrap -d gate25 \
         -v schema=gate25_role_seed -v owner_role=gate25_owner \
         -v app_role=gate25_app -v migrator_role=gate25_migrator \
         -f /workspace/deploy/docker/postgres-role-hardening.sql
 ' >"$EVIDENCE_DIR/postgres-role-hardening.log" 2>&1
 
-host_port=$(docker port "$POSTGRES_CONTAINER" 5432/tcp | awk -F: 'END {print $NF}')
-python3 - "$DATABASE_SECRETS" "$POSTGRES_CONTAINER" "$host_port" \
+database_host=$(docker inspect "$POSTGRES_CONTAINER" \
+    --format '{{(index .NetworkSettings.Networks "1panel-network").IPAddress}}')
+[[ $database_host =~ ^172\.18\.[0-9]{1,3}\.[0-9]{1,3}$ ]]
+python3 - "$DATABASE_SECRETS" "$POSTGRES_CONTAINER" "$database_host" \
     "$EXTERNAL_ENVIRONMENT" <<'PY'
 import sys
 from pathlib import Path
@@ -371,7 +372,7 @@ from urllib.parse import quote, urlunsplit
 
 secrets = Path(sys.argv[1])
 container = sys.argv[2]
-host_port = sys.argv[3]
+database_host = sys.argv[3]
 output = Path(sys.argv[4])
 
 
@@ -385,7 +386,7 @@ def database_url(username, password, host, port):
 
 
 bootstrap_url = database_url(
-    "gate25_bootstrap", value("bootstrap-password"), "127.0.0.1", host_port
+    "gate25_bootstrap", value("bootstrap-password"), database_host, "5432"
 )
 app_url = database_url("gate25_app", value("app-password"), container, "5432")
 migrator_url = database_url(
