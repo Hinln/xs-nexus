@@ -42,11 +42,10 @@ cleanup_schema() {
 }
 
 cleanup() {
-    local cleanup_status status
-    status=$?
+    local status=$1
+    local cleanup_status=0
     trap - EXIT INT TERM
     set +e
-    cleanup_status=0
     if ((SCHEMA_CLEAN == 0)); then
         cleanup_schema || cleanup_status=$?
     fi
@@ -66,7 +65,7 @@ export XS_TEST_DATABASE_SCHEMA=$SCHEMA
 export XS_SCALE_REPORT_PATH="$EVIDENCE_DIR/report.json"
 
 cd "$ROOT_DIR"
-trap cleanup EXIT
+trap 'cleanup "$?"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 revision=$(git rev-parse HEAD)

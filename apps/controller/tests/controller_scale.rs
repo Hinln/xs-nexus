@@ -35,8 +35,8 @@ const MAXIMUM_DATABASE_QUERY_MILLISECONDS: f64 = 100.0;
 const MAXIMUM_CONTROL_AUTHENTICATION_P95_MILLISECONDS: f64 = 10_000.0;
 const MAXIMUM_CONTROL_SYNC_P95_MILLISECONDS: f64 = 5_000.0;
 const MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS: f64 = 30_000.0;
-const MAXIMUM_PROCESS_RSS_KIB: u64 = 1_048_576;
-const MAXIMUM_PROCESS_FILE_DESCRIPTORS: u64 = 5_000;
+const MAXIMUM_PROCESS_RSS_KIB: f64 = 1_048_576.0;
+const MAXIMUM_PROCESS_FILE_DESCRIPTORS: f64 = 5_000.0;
 const MAXIMUM_DATABASE_POOL_CONNECTIONS: u32 = 128;
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 
@@ -138,6 +138,7 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
         "{}",
         serde_json::to_string_pretty(&report).expect("report JSON")
     );
+    assert_safe_operating_envelope(&report);
 }
 
 async fn create_scale_network_and_tokens(router: &Router) -> Vec<String> {
@@ -229,10 +230,6 @@ async fn register_and_measure(
     let registrations_per_second = f64::from(batch_nodes) / batch_elapsed.as_secs_f64();
     let snapshot_milliseconds = snapshot_elapsed.as_secs_f64() * 1000.0;
     let query_milliseconds = query_elapsed.as_secs_f64() * 1000.0;
-    assert!(registrations_per_second >= MINIMUM_REGISTRATIONS_PER_SECOND);
-    assert!(snapshot_milliseconds <= MAXIMUM_CONSOLE_SNAPSHOT_MILLISECONDS);
-    assert!(query_milliseconds <= MAXIMUM_DATABASE_QUERY_MILLISECONDS);
-
     json!({
         "nodes": checkpoint,
         "batch_nodes": batch_nodes,
@@ -296,11 +293,8 @@ async fn measure_control_capacity(
         .collect::<Vec<_>>();
     let authentication_rate = f64::from(authenticated_count) / authentication_elapsed.as_secs_f64();
     let authentication_p95 = percentile(&authentication_milliseconds, 95);
-    assert!(authentication_rate >= MINIMUM_CONTROL_AUTHENTICATIONS_PER_SECOND);
-    assert!(authentication_p95 <= MAXIMUM_CONTROL_AUTHENTICATION_P95_MILLISECONDS);
 
     let online_convergence = wait_console_online_count(router, expected_nodes).await;
-    assert!(online_convergence.as_secs_f64() * 1000.0 <= MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS);
     let ControlSynchronization {
         sockets,
         elapsed: synchronization_elapsed,
@@ -309,21 +303,14 @@ async fn measure_control_capacity(
     let snapshot_started = Instant::now();
     assert_eq!(console_online_count(router).await, expected_nodes);
     let snapshot_milliseconds = snapshot_started.elapsed().as_secs_f64() * 1000.0;
-    assert!(snapshot_milliseconds <= MAXIMUM_CONSOLE_SNAPSHOT_MILLISECONDS);
     tokio::time::sleep(Duration::from_secs(CONTROL_HOLD_SECONDS)).await;
     assert_eq!(console_online_count(router).await, expected_nodes);
 
     let (rss_kib, file_descriptors) = process_resource_snapshot();
     let database_pool_connections = pool.size();
-    assert!(rss_kib <= MAXIMUM_PROCESS_RSS_KIB);
-    assert!(file_descriptors <= MAXIMUM_PROCESS_FILE_DESCRIPTORS);
-    assert!(database_pool_connections <= MAXIMUM_DATABASE_POOL_CONNECTIONS);
 
     close_controls(sockets).await;
     let offline_convergence = wait_console_online_count(router, 0).await;
-    assert!(
-        offline_convergence.as_secs_f64() * 1000.0 <= MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS
-    );
     server
         .shutdown
         .send(())
@@ -450,7 +437,6 @@ async fn synchronize_controls(controls: Vec<AuthenticatedControl>) -> ControlSyn
         sockets.push(socket);
         milliseconds.push(value);
     }
-    assert!(percentile(&milliseconds, 95) <= MAXIMUM_CONTROL_SYNC_P95_MILLISECONDS);
     ControlSynchronization {
         sockets,
         elapsed,
@@ -521,6 +507,96 @@ fn process_resource_snapshot() -> (u64, u64) {
     )
     .expect("descriptor count fits u64");
     (rss_kib, file_descriptors)
+}
+
+fn assert_safe_operating_envelope(report: &Value) {
+    for measurement in report["measurements"]
+        .as_array()
+        .expect("scale measurements")
+    {
+        let nodes = measurement["nodes"].as_u64().expect("measurement nodes");
+        assert_minimum(
+            &format!("{nodes}-node registration rate"),
+            report_number(measurement, "batch_registrations_per_second"),
+            MINIMUM_REGISTRATIONS_PER_SECOND,
+        );
+        assert_maximum(
+            &format!("{nodes}-node Console snapshot"),
+            report_number(measurement, "console_snapshot_ms"),
+            MAXIMUM_CONSOLE_SNAPSHOT_MILLISECONDS,
+        );
+        assert_maximum(
+            &format!("{nodes}-node database count query"),
+            report_number(measurement, "database_count_query_ms"),
+            MAXIMUM_DATABASE_QUERY_MILLISECONDS,
+        );
+    }
+    let control = &report["control"];
+    assert_minimum(
+        "control authentication rate",
+        report_number(control, "authentications_per_second"),
+        MINIMUM_CONTROL_AUTHENTICATIONS_PER_SECOND,
+    );
+    assert_maximum(
+        "control authentication p95",
+        report_number(control, "authentication_p95_ms"),
+        MAXIMUM_CONTROL_AUTHENTICATION_P95_MILLISECONDS,
+    );
+    assert_maximum(
+        "control synchronization p95",
+        report_number(control, "synchronization_p95_ms"),
+        MAXIMUM_CONTROL_SYNC_P95_MILLISECONDS,
+    );
+    assert_maximum(
+        "online presence convergence",
+        report_number(control, "online_convergence_ms"),
+        MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS,
+    );
+    assert_maximum(
+        "offline presence convergence",
+        report_number(control, "offline_convergence_ms"),
+        MAXIMUM_PRESENCE_CONVERGENCE_MILLISECONDS,
+    );
+    assert_maximum(
+        "control Console snapshot",
+        report_number(control, "console_snapshot_ms"),
+        MAXIMUM_CONSOLE_SNAPSHOT_MILLISECONDS,
+    );
+    assert_maximum(
+        "combined Controller/load-generator RSS KiB",
+        report_number(control, "process_rss_kib"),
+        MAXIMUM_PROCESS_RSS_KIB,
+    );
+    assert_maximum(
+        "combined Controller/load-generator file descriptors",
+        report_number(control, "process_file_descriptors"),
+        MAXIMUM_PROCESS_FILE_DESCRIPTORS,
+    );
+    assert_maximum(
+        "Controller database pool connections",
+        report_number(control, "database_pool_connections"),
+        f64::from(MAXIMUM_DATABASE_POOL_CONNECTIONS),
+    );
+}
+
+fn report_number(report: &Value, name: &str) -> f64 {
+    report[name]
+        .as_f64()
+        .unwrap_or_else(|| panic!("missing numeric report field {name}"))
+}
+
+fn assert_minimum(name: &str, actual: f64, minimum: f64) {
+    assert!(
+        actual >= minimum,
+        "{name} {actual:.3} is below minimum {minimum:.3}"
+    );
+}
+
+fn assert_maximum(name: &str, actual: f64, maximum: f64) {
+    assert!(
+        actual <= maximum,
+        "{name} {actual:.3} exceeds maximum {maximum:.3}"
+    );
 }
 
 fn average(values: &[f64]) -> f64 {

@@ -94,6 +94,29 @@ jobs:
           status=0
           set +e
 
+          verify_evidence() {
+            local directory=$1
+            [[ -s $directory/report.json ]]
+            [[ -s $directory/status.txt ]]
+            [[ -s $directory/revision.txt ]]
+            [[ -s $directory/SHA256SUMS ]]
+            grep -Fqx 'status=PASS' "$directory/status.txt"
+            grep -Fqx "revision=$GITHUB_SHA" "$directory/status.txt"
+            [[ $(cat "$directory/revision.txt") == "$GITHUB_SHA" ]]
+            python3 - "$directory/report.json" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert report["git_revision"] == sys.argv[2]
+          PY
+            (
+              cd "$directory"
+              sha256sum -c SHA256SUMS
+            )
+          }
+
           shellcheck scripts/check-production-health.sh scripts/test-production-health.sh \
             >"$evidence/shellcheck.log" 2>&1
           shellcheck_status=$?
@@ -201,12 +224,18 @@ jobs:
           EVIDENCE_DIR="$evidence/protocol" make test-protocol-throughput \
             2>&1 | tee "$evidence/protocol-wrapper.log"
           protocol_status=${PIPESTATUS[0]}
-          ((protocol_status == 0)) || status=1
+          protocol_integrity_status=0
+          verify_evidence "$evidence/protocol" \
+            >"$evidence/protocol-integrity.log" 2>&1 || protocol_integrity_status=$?
+          ((protocol_status == 0 && protocol_integrity_status == 0)) || status=1
 
           EVIDENCE_DIR="$evidence/controller" make test-controller-scale \
             2>&1 | tee "$evidence/controller-wrapper.log"
           controller_status=${PIPESTATUS[0]}
-          ((controller_status == 0)) || status=1
+          controller_integrity_status=0
+          verify_evidence "$evidence/controller" \
+            >"$evidence/controller-integrity.log" 2>&1 || controller_integrity_status=$?
+          ((controller_status == 0 && controller_integrity_status == 0)) || status=1
 
           sudo env \
             "PATH=$PATH" \
@@ -221,7 +250,10 @@ jobs:
           if [[ -d $evidence/agent-rtt ]]; then
             sudo chown -R "$(id -u):$(id -g)" "$evidence/agent-rtt" || ownership_status=$?
           fi
-          ((agent_status == 0 && ownership_status == 0)) || status=1
+          agent_integrity_status=0
+          verify_evidence "$evidence/agent-rtt" \
+            >"$evidence/agent-rtt-integrity.log" 2>&1 || agent_integrity_status=$?
+          ((agent_status == 0 && ownership_status == 0 && agent_integrity_status == 0)) || status=1
 
           {
             date -u +%Y-%m-%dT%H:%M:%SZ
@@ -247,9 +279,9 @@ jobs:
           {
             printf 'scenario\tstatus\n'
             printf 'shellcheck\t%s\n' "$([[ $shellcheck_status == 0 ]] && printf PASS || printf FAIL)"
-            printf 'protocol_crypto_throughput\t%s\n' "$([[ $protocol_status == 0 ]] && printf PASS || printf FAIL)"
-            printf 'controller_1000_nodes_websockets\t%s\n' "$([[ $controller_status == 0 ]] && printf PASS || printf FAIL)"
-            printf 'agent_direct_relay_rtt_resources\t%s\n' "$([[ $agent_status == 0 && $ownership_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'protocol_crypto_throughput\t%s\n' "$([[ $protocol_status == 0 && $protocol_integrity_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'controller_1000_nodes_websockets\t%s\n' "$([[ $controller_status == 0 && $controller_integrity_status == 0 ]] && printf PASS || printf FAIL)"
+            printf 'agent_direct_relay_rtt_resources\t%s\n' "$([[ $agent_status == 0 && $ownership_status == 0 && $agent_integrity_status == 0 ]] && printf PASS || printf FAIL)"
             printf 'evidence_secret_scan\t%s\n' "$([[ $secret_status == 0 ]] && printf PASS || printf FAIL)"
           } >"$evidence/scenario-matrix.tsv"
           (
