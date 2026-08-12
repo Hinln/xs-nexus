@@ -47,6 +47,19 @@ pub struct MigrationConfig {
     pub database_app_role: Option<String>,
 }
 
+struct ConsoleSettings {
+    bootstrap_username: Option<String>,
+    bootstrap_password: Option<Zeroizing<String>>,
+    cookie_secure: bool,
+    session_ttl_seconds: u64,
+}
+
+struct CapacitySettings {
+    max_nodes_per_network: u32,
+    max_control_sessions: usize,
+    configuration_send_concurrency: usize,
+}
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("missing required environment variable {0}")]
@@ -143,36 +156,7 @@ impl ControllerConfig {
         let admin_token_hash = Sha256::digest(admin_token.as_bytes()).into();
         drop(admin_token);
 
-        let console_bootstrap_password = optional_secret("CONSOLE_BOOTSTRAP_PASSWORD")?;
-        let configured_console_username = env::var("CONSOLE_BOOTSTRAP_USERNAME")
-            .ok()
-            .filter(|username| !username.is_empty());
-        let console_bootstrap_username = match (
-            configured_console_username,
-            console_bootstrap_password.as_ref(),
-        ) {
-            (Some(username), Some(password))
-                if valid_console_username(&username) && valid_console_password(password) =>
-            {
-                Some(username)
-            }
-            (None, Some(password)) if valid_console_password(password) => Some("admin".to_owned()),
-            (None, None) => None,
-            _ => return Err(ConfigError::ConsoleBootstrap),
-        };
-        let console_cookie_secure =
-            env::var("CONSOLE_COOKIE_SECURE").map_or(Ok(true), |value| match value.as_str() {
-                "true" => Ok(true),
-                "false" => Ok(false),
-                _ => Err(ConfigError::ConsoleCookieSecure),
-            })?;
-        let console_session_ttl_seconds = env::var("CONSOLE_SESSION_TTL_SECONDS")
-            .unwrap_or_else(|_| "28800".to_owned())
-            .parse::<u64>()
-            .map_err(|_| ConfigError::ConsoleSessionTtl)?;
-        if !(900..=86_400).contains(&console_session_ttl_seconds) {
-            return Err(ConfigError::ConsoleSessionTtl);
-        }
+        let console = load_console_settings()?;
 
         let credential_signing_key =
             load_signing_key(Path::new(&required("CREDENTIAL_SIGNING_KEY_PATH")?))?;
@@ -195,29 +179,7 @@ impl ControllerConfig {
         if !(3600..=31_536_000).contains(&credential_ttl_seconds) {
             return Err(ConfigError::CredentialTtl);
         }
-        let max_nodes_per_network = env::var("MAX_NODES_PER_NETWORK")
-            .unwrap_or_else(|_| "1000".to_owned())
-            .parse::<u32>()
-            .map_err(|_| ConfigError::MaxNodesPerNetwork)?;
-        if !(1..=1000).contains(&max_nodes_per_network) {
-            return Err(ConfigError::MaxNodesPerNetwork);
-        }
-        let max_control_sessions = env::var("MAX_CONTROL_SESSIONS")
-            .unwrap_or_else(|_| "1000".to_owned())
-            .parse::<usize>()
-            .map_err(|_| ConfigError::MaxControlSessions)?;
-        if !(1..=1000).contains(&max_control_sessions) {
-            return Err(ConfigError::MaxControlSessions);
-        }
-        let configuration_send_concurrency = env::var("CONFIGURATION_SEND_CONCURRENCY")
-            .unwrap_or_else(|_| "64".to_owned())
-            .parse::<usize>()
-            .map_err(|_| ConfigError::ConfigurationSendConcurrency)?;
-        if !(1..=128).contains(&configuration_send_concurrency)
-            || configuration_send_concurrency > max_control_sessions
-        {
-            return Err(ConfigError::ConfigurationSendConcurrency);
-        }
+        let capacity = load_capacity_settings()?;
         let relays = env::var("RELAY_CATALOG_PATH")
             .ok()
             .map(|path| load_relay_catalog(Path::new(&path)))
@@ -232,22 +194,89 @@ impl ControllerConfig {
             database_schema,
             database_expected_role: Some(database_expected_role),
             admin_token_hash,
-            console_bootstrap_username,
-            console_bootstrap_password,
-            console_cookie_secure,
-            console_session_ttl_seconds,
+            console_bootstrap_username: console.bootstrap_username,
+            console_bootstrap_password: console.bootstrap_password,
+            console_cookie_secure: console.cookie_secure,
+            console_session_ttl_seconds: console.session_ttl_seconds,
             credential_signing_key,
             config_signing_key,
             update_signing_public_key,
             linux_release_directory,
             windows_release_directory,
             credential_ttl_seconds,
-            max_nodes_per_network,
-            max_control_sessions,
-            configuration_send_concurrency,
+            max_nodes_per_network: capacity.max_nodes_per_network,
+            max_control_sessions: capacity.max_control_sessions,
+            configuration_send_concurrency: capacity.configuration_send_concurrency,
             relays,
         })
     }
+}
+
+fn load_console_settings() -> Result<ConsoleSettings, ConfigError> {
+    let bootstrap_password = optional_secret("CONSOLE_BOOTSTRAP_PASSWORD")?;
+    let configured_username = env::var("CONSOLE_BOOTSTRAP_USERNAME")
+        .ok()
+        .filter(|username| !username.is_empty());
+    let bootstrap_username = match (configured_username, bootstrap_password.as_ref()) {
+        (Some(username), Some(password))
+            if valid_console_username(&username) && valid_console_password(password) =>
+        {
+            Some(username)
+        }
+        (None, Some(password)) if valid_console_password(password) => Some("admin".to_owned()),
+        (None, None) => None,
+        _ => return Err(ConfigError::ConsoleBootstrap),
+    };
+    let cookie_secure =
+        env::var("CONSOLE_COOKIE_SECURE").map_or(Ok(true), |value| match value.as_str() {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(ConfigError::ConsoleCookieSecure),
+        })?;
+    let session_ttl_seconds = env::var("CONSOLE_SESSION_TTL_SECONDS")
+        .unwrap_or_else(|_| "28800".to_owned())
+        .parse::<u64>()
+        .map_err(|_| ConfigError::ConsoleSessionTtl)?;
+    if !(900..=86_400).contains(&session_ttl_seconds) {
+        return Err(ConfigError::ConsoleSessionTtl);
+    }
+    Ok(ConsoleSettings {
+        bootstrap_username,
+        bootstrap_password,
+        cookie_secure,
+        session_ttl_seconds,
+    })
+}
+
+fn load_capacity_settings() -> Result<CapacitySettings, ConfigError> {
+    let max_nodes_per_network = env::var("MAX_NODES_PER_NETWORK")
+        .unwrap_or_else(|_| "1000".to_owned())
+        .parse::<u32>()
+        .map_err(|_| ConfigError::MaxNodesPerNetwork)?;
+    if !(1..=1000).contains(&max_nodes_per_network) {
+        return Err(ConfigError::MaxNodesPerNetwork);
+    }
+    let max_control_sessions = env::var("MAX_CONTROL_SESSIONS")
+        .unwrap_or_else(|_| "1000".to_owned())
+        .parse::<usize>()
+        .map_err(|_| ConfigError::MaxControlSessions)?;
+    if !(1..=1000).contains(&max_control_sessions) {
+        return Err(ConfigError::MaxControlSessions);
+    }
+    let configuration_send_concurrency = env::var("CONFIGURATION_SEND_CONCURRENCY")
+        .unwrap_or_else(|_| "64".to_owned())
+        .parse::<usize>()
+        .map_err(|_| ConfigError::ConfigurationSendConcurrency)?;
+    if !(1..=128).contains(&configuration_send_concurrency)
+        || configuration_send_concurrency > max_control_sessions
+    {
+        return Err(ConfigError::ConfigurationSendConcurrency);
+    }
+    Ok(CapacitySettings {
+        max_nodes_per_network,
+        max_control_sessions,
+        configuration_send_concurrency,
+    })
 }
 
 impl MigrationConfig {

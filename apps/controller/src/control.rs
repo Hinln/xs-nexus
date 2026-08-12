@@ -309,116 +309,141 @@ async fn handle_authenticated_text(
         send_error(socket, "invalid_control_message").await;
         return false;
     };
-    let mut configuration_permit = None;
-    let response = match message {
+    let prepared = match prepare_authenticated_response(state, authenticated, message).await {
+        Ok(prepared) => prepared,
+        Err(error_code) => {
+            send_error(socket, error_code).await;
+            return false;
+        }
+    };
+    send_json(socket, &prepared.message, chunked_transport)
+        .await
+        .is_ok()
+}
+
+struct PreparedControlResponse {
+    message: ControlServerMessage,
+    _configuration_permit: Option<OwnedSemaphorePermit>,
+}
+
+async fn prepare_authenticated_response(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    message: ControlClientMessage,
+) -> Result<PreparedControlResponse, &'static str> {
+    match message {
         ControlClientMessage::Sync { last_version } => {
-            configuration_permit = state.acquire_configuration_send().await;
-            if configuration_permit.is_none() {
-                send_error(socket, "control_unavailable").await;
-                return false;
-            }
-            let Ok(configuration) =
-                crate::service::latest_configuration(state, authenticated.network_id).await
-            else {
-                send_error(socket, "control_unavailable").await;
-                return false;
-            };
-            if configuration.version > last_version {
-                ControlServerMessage::Configuration { configuration }
-            } else {
-                ControlServerMessage::UpToDate {
-                    version: configuration.version,
-                }
-            }
+            prepare_synchronization_response(state, authenticated, last_version).await
         }
         ControlClientMessage::AdvertiseCandidates {
             advertisement,
             signature_base64,
         } => {
-            configuration_permit = state.acquire_configuration_send().await;
-            if configuration_permit.is_none() {
-                send_error(socket, "control_unavailable").await;
-                return false;
-            }
-            let Ok(configuration) = crate::service::advertise_candidates(
+            prepare_candidate_advertisement_response(
                 state,
                 authenticated,
                 advertisement,
                 &signature_base64,
             )
             .await
-            else {
-                send_error(socket, "candidate_advertisement_rejected").await;
-                return false;
-            };
-            ControlServerMessage::Configuration { configuration }
         }
         ControlClientMessage::AdvertiseSubnetRoutes {
             advertisement,
             signature_base64,
         } => {
-            configuration_permit = state.acquire_configuration_send().await;
-            if configuration_permit.is_none() {
-                send_error(socket, "control_unavailable").await;
-                return false;
-            }
-            let Ok(configuration) = crate::service::advertise_subnet_routes(
+            prepare_subnet_route_advertisement_response(
                 state,
                 authenticated,
                 advertisement,
                 &signature_base64,
             )
             .await
-            else {
-                send_error(socket, "subnet_route_advertisement_rejected").await;
-                return false;
-            };
-            ControlServerMessage::Configuration { configuration }
         }
         ControlClientMessage::ReportRuntime {
             report,
             signature_base64,
-        } => {
-            let Ok(directive) = crate::updates::record_runtime_report(
-                state,
-                authenticated,
-                report,
-                &signature_base64,
-            )
+        } => crate::updates::record_runtime_report(state, authenticated, report, &signature_base64)
             .await
-            else {
-                send_error(socket, "runtime_report_rejected").await;
-                return false;
-            };
-            ControlServerMessage::UpdateDirective { directive }
-        }
+            .map(|directive| PreparedControlResponse {
+                message: ControlServerMessage::UpdateDirective { directive },
+                _configuration_permit: None,
+            })
+            .map_err(|_| "runtime_report_rejected"),
         ControlClientMessage::ReportTelemetry {
             report,
             signature_base64,
-        } => {
-            let Ok(sequence) = crate::telemetry::record_agent_report(
-                state,
-                authenticated,
-                report,
-                &signature_base64,
-            )
+        } => crate::telemetry::record_agent_report(state, authenticated, report, &signature_base64)
             .await
-            else {
-                send_error(socket, "telemetry_report_rejected").await;
-                return false;
-            };
-            ControlServerMessage::TelemetryAccepted { sequence }
-        }
-        ControlClientMessage::Authenticate { .. } => {
-            send_error(socket, "invalid_control_message").await;
-            return false;
+            .map(|sequence| PreparedControlResponse {
+                message: ControlServerMessage::TelemetryAccepted { sequence },
+                _configuration_permit: None,
+            })
+            .map_err(|_| "telemetry_report_rejected"),
+        ControlClientMessage::Authenticate { .. } => Err("invalid_control_message"),
+    }
+}
+
+async fn prepare_synchronization_response(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    last_version: u64,
+) -> Result<PreparedControlResponse, &'static str> {
+    let permit = state
+        .acquire_configuration_send()
+        .await
+        .ok_or("control_unavailable")?;
+    let configuration = crate::service::latest_configuration(state, authenticated.network_id)
+        .await
+        .map_err(|_| "control_unavailable")?;
+    let message = if configuration.version > last_version {
+        ControlServerMessage::Configuration { configuration }
+    } else {
+        ControlServerMessage::UpToDate {
+            version: configuration.version,
         }
     };
-    let sent = send_json(socket, &response, chunked_transport)
+    Ok(PreparedControlResponse {
+        message,
+        _configuration_permit: Some(permit),
+    })
+}
+
+async fn prepare_candidate_advertisement_response(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    advertisement: crate::model::CandidateAdvertisement,
+    signature_base64: &str,
+) -> Result<PreparedControlResponse, &'static str> {
+    let permit = state
+        .acquire_configuration_send()
         .await
-        .is_ok();
-    drop(configuration_permit);
-    sent
+        .ok_or("control_unavailable")?;
+    crate::service::advertise_candidates(state, authenticated, advertisement, signature_base64)
+        .await
+        .map(|configuration| PreparedControlResponse {
+            message: ControlServerMessage::Configuration { configuration },
+            _configuration_permit: Some(permit),
+        })
+        .map_err(|_| "candidate_advertisement_rejected")
+}
+
+async fn prepare_subnet_route_advertisement_response(
+    state: &AppState,
+    authenticated: &AuthenticatedNode,
+    advertisement: crate::model::SubnetRouteAdvertisement,
+    signature_base64: &str,
+) -> Result<PreparedControlResponse, &'static str> {
+    let permit = state
+        .acquire_configuration_send()
+        .await
+        .ok_or("control_unavailable")?;
+    crate::service::advertise_subnet_routes(state, authenticated, advertisement, signature_base64)
+        .await
+        .map(|configuration| PreparedControlResponse {
+            message: ControlServerMessage::Configuration { configuration },
+            _configuration_permit: Some(permit),
+        })
+        .map_err(|_| "subnet_route_advertisement_rejected")
 }
 
 async fn send_json(

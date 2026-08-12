@@ -1310,14 +1310,7 @@ pub(crate) async fn enroll_node(
         record_rejected_enrollment(&state.pool, Some(token.network_id), "duplicate").await;
         return Err(ApiError::conflict());
     }
-    let active_nodes: i64 = sqlx::query_scalar(
-        "SELECT count(*)::bigint FROM nodes
-         WHERE network_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(token.network_id)
-    .fetch_one(&mut *transaction)
-    .await
-    .map_err(internal_database)?;
+    let active_nodes = active_node_count(&mut transaction, token.network_id).await?;
     if active_nodes >= i64::from(state.max_nodes_per_network) {
         transaction.rollback().await.map_err(internal_database)?;
         record_rejected_enrollment(&state.pool, Some(token.network_id), "capacity").await;
@@ -1382,9 +1375,41 @@ pub(crate) async fn enroll_node(
     transaction.commit().await.map_err(internal_database)?;
     state.notify_configuration_changed(token.network_id);
 
-    Ok(EnrollResponse {
-        network_id: token.network_id,
-        node_id_base64: URL_SAFE_NO_PAD.encode(enrollment.node_id),
+    Ok(build_enrollment_response(
+        state,
+        token.network_id,
+        enrollment.node_id,
+        virtual_ip,
+        issued,
+        configuration,
+    ))
+}
+
+async fn active_node_count(
+    transaction: &mut Transaction<'_, Postgres>,
+    network_id: Uuid,
+) -> Result<i64, ApiError> {
+    sqlx::query_scalar(
+        "SELECT count(*)::bigint FROM nodes
+         WHERE network_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(network_id)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(internal_database)
+}
+
+fn build_enrollment_response(
+    state: &AppState,
+    network_id: Uuid,
+    node_id: [u8; 16],
+    virtual_ip: Ipv4Addr,
+    issued: IssuedCredential,
+    configuration: SignedConfiguration,
+) -> EnrollResponse {
+    EnrollResponse {
+        network_id,
+        node_id_base64: URL_SAFE_NO_PAD.encode(node_id),
         virtual_ip: virtual_ip.to_string(),
         credential_base64: URL_SAFE_NO_PAD.encode(issued.credential),
         credential_key_id: issued.credential_key_id,
@@ -1393,7 +1418,7 @@ pub(crate) async fn enroll_node(
         configuration_signing_public_key_base64: URL_SAFE_NO_PAD
             .encode(state.config_signing_key.verifying_key().as_bytes()),
         configuration,
-    })
+    }
 }
 
 struct ValidatedEnrollment {
