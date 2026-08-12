@@ -16,6 +16,7 @@ SIGNING_SECRETS=$TEMPORARY/signing-secrets
 EXTERNAL_ENVIRONMENT=$TEMPORARY/controller.env
 POSTGRES_CONTAINER=xs-gate25-postgres-$RUN_TOKEN
 SENTINEL_CONTAINER=xs-gate25-sentinel-$RUN_TOKEN
+PRIME_CONTAINER=xs-gate25-prime-$RUN_TOKEN
 NETWORK_CREATED=0
 ORIGINAL_CAPTURED=0
 FIXTURE_CAPTURED=0
@@ -138,7 +139,7 @@ run_phase() {
 
 cleanup_fixtures() {
     local status=0 container label members
-    for container in "$SENTINEL_CONTAINER" "$POSTGRES_CONTAINER"; do
+    for container in "$SENTINEL_CONTAINER" "$POSTGRES_CONTAINER" "$PRIME_CONTAINER"; do
         if docker container inspect "$container" >/dev/null 2>&1; then
             label=$(docker container inspect "$container" \
                 --format '{{index .Config.Labels "xs-nexus.qa.gate25"}}')
@@ -278,6 +279,17 @@ if docker network inspect 1panel-network >/dev/null 2>&1; then
     exit 2
 fi
 
+docker pull "$ALPINE_IMAGE" >"$EVIDENCE_DIR/alpine-image-pull.log" 2>&1
+docker run -d --name "$PRIME_CONTAINER" \
+    --publish 127.0.0.1::8080 \
+    --label "xs-nexus.qa.gate25=$RUN_TOKEN" \
+    "$ALPINE_IMAGE" sleep 120 >"$EVIDENCE_DIR/firewall-prime-container-id.txt"
+[[ $(docker container inspect "$PRIME_CONTAINER" \
+    --format '{{index .Config.Labels "xs-nexus.qa.gate25"}}') == "$RUN_TOKEN" ]]
+docker rm -fv "$PRIME_CONTAINER" >/dev/null
+printf 'docker_loopback_port_firewall_initialized=PASS\n' \
+    >"$EVIDENCE_DIR/firewall-prime.txt"
+
 capture_inventory original
 ORIGINAL_CAPTURED=1
 
@@ -321,7 +333,6 @@ run_phase image-reproducibility make test-image-reproducibility \
     EVIDENCE_DIR="$EVIDENCE_DIR/image-reproducibility"
 
 docker pull "$POSTGRES_IMAGE" >"$EVIDENCE_DIR/postgres-image-pull.log" 2>&1
-docker pull "$ALPINE_IMAGE" >"$EVIDENCE_DIR/alpine-image-pull.log" 2>&1
 docker network create --driver bridge --subnet 172.18.0.0/16 \
     --label "xs-nexus.qa.gate25=$RUN_TOKEN" 1panel-network \
     >"$EVIDENCE_DIR/fixture-network-id.txt"
