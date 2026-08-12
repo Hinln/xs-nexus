@@ -184,6 +184,7 @@ finalize() {
         compare_inventories original final cleanup || status=1
     fi
 
+    cd "$SOURCE_REPOSITORY" || status=1
     if [[ $TEMPORARY == /tmp/xs-gate25.* && -d $TEMPORARY ]]; then
         rm -rf -- "$TEMPORARY"
     else

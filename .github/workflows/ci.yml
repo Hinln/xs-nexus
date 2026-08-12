@@ -667,6 +667,8 @@ jobs:
             "PATH=$PATH" \
             "CARGO_HOME=$HOME/.cargo" \
             "RUSTUP_HOME=$HOME/.rustup" \
+            "DOCKER_CONFIG=$HOME/.docker" \
+            "BUILDX_BUILDER=$BUILDX_BUILDER" \
             SOURCE_REPOSITORY="$GITHUB_WORKSPACE" \
             EXPECTED_REVISION="$GITHUB_SHA" \
             EVIDENCE_DIR="$evidence" \
