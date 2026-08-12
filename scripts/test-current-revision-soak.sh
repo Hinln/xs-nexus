@@ -729,13 +729,44 @@ raise SystemExit(0 if status["configuration_version"] >= int(sys.argv[1]) else 1
 }
 
 ping_agent() {
-    local container=$1 virtual_ip=$2 output
-    output=$(agent_cli "$container" ping "$virtual_ip")
-    python3 -c '
-import json,sys
-result=json.load(sys.stdin)["result"]
-raise SystemExit(0 if result["reachable"] and result["error_code"] is None else 1)
-' <<<"$output"
+    local container=$1 virtual_ip=$2 output classification
+    for _attempt in $(seq 1 5); do
+        output=''
+        if output=$(agent_cli "$container" ping "$virtual_ip" 2>/dev/null); then
+            :
+        fi
+        if [[ -z $output ]]; then
+            printf 'Agent ping IPC failed: %s\n' "$container" >&2
+            return 1
+        fi
+        if ! classification=$(python3 -c '
+import json
+import sys
+
+result = json.load(sys.stdin).get("result")
+if not isinstance(result, dict):
+    raise SystemExit(1)
+if result.get("reachable") is True and result.get("error_code") is None:
+    print("reachable")
+else:
+    print(result.get("error_code") or "agent_ping_failed")
+' <<<"$output" 2>/dev/null); then
+            printf 'Agent ping returned an invalid response: %s\n' "$container" >&2
+            return 1
+        fi
+        if [[ $classification == reachable ]]; then
+            return
+        fi
+        if [[ $classification != agent_path_probe_busy ]]; then
+            printf 'Agent ping failed: %s error=%s\n' "$container" "$classification" >&2
+            return 1
+        fi
+        printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$container" \
+            "$virtual_ip" "$classification" >>"$EVIDENCE_DIR/ping-transients.tsv"
+        sleep 1
+    done
+    printf 'Agent ping remained busy: %s\n' "$container" >&2
+    return 1
 }
 
 wait_path_kind() {
@@ -1300,6 +1331,7 @@ compose build controller relay console db-tools >"$EVIDENCE_DIR/image-build.log"
 initialize_database
 start_application
 create_network_and_acl
+printf 'timestamp_utc\tcontainer\tvirtual_ip\treason\n' >"$EVIDENCE_DIR/ping-transients.tsv"
 prepare_agents
 
 compose ps --format json >"$EVIDENCE_DIR/containers-start.json"
