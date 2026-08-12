@@ -1291,6 +1291,40 @@ fn promote_path(peer: &mut Peer, endpoint: SocketAddr, reason: PathSelectionReas
     peer.pending_path_probe = None;
 }
 
+fn advance_failed_established_path(peer: &mut Peer, failed_endpoint: SocketAddr) -> bool {
+    let failed_is_relay = peer.candidates.iter().any(|candidate| {
+        candidate.endpoint == failed_endpoint && candidate.kind == EndpointCandidateKind::Relay
+    });
+    let next_index = peer
+        .candidates
+        .iter()
+        .position(|candidate| candidate.endpoint == failed_endpoint)
+        .map_or(0, |index| index.saturating_add(1));
+    let Some((next_endpoint, next_kind)) = peer
+        .candidates
+        .iter()
+        .skip(next_index)
+        .find(|candidate| candidate.endpoint != failed_endpoint)
+        .or_else(|| {
+            peer.candidates
+                .iter()
+                .find(|candidate| candidate.endpoint != failed_endpoint)
+        })
+        .map(|candidate| (candidate.endpoint, candidate.kind))
+    else {
+        return false;
+    };
+    peer.active_endpoint = Some(next_endpoint);
+    peer.path_reason = Some(if failed_is_relay {
+        PathSelectionReason::RelayFailover
+    } else if next_kind == EndpointCandidateKind::Relay {
+        PathSelectionReason::RelayFallback
+    } else {
+        PathSelectionReason::HandshakeFallback
+    });
+    true
+}
+
 fn authenticated_handshake_reason(peer: &Peer, source: SocketAddr) -> PathSelectionReason {
     if peer.path_reason == Some(PathSelectionReason::HandshakeFallback) {
         return PathSelectionReason::HandshakeFallback;
@@ -1437,7 +1471,18 @@ fn maintain_path_probe(peer: &mut Peer, now: Instant) -> Result<Option<(SocketAd
                 Ok(Some((endpoint, encoded)))
             }
             RetryDecision::Expired => {
-                peer.pending_path_probe = None;
+                let pending = peer
+                    .pending_path_probe
+                    .take()
+                    .ok_or(AgentError::DataPlane)?;
+                if !pending.promotes_path
+                    && peer.active_endpoint == Some(pending.endpoint)
+                    && advance_failed_established_path(peer, pending.endpoint)
+                {
+                    let endpoint = peer.active_endpoint.ok_or(AgentError::DataPlane)?;
+                    let encoded = create_path_probe(peer, endpoint, now)?;
+                    return Ok(Some((endpoint, encoded)));
+                }
                 peer.path_probe_retry_after = now + PATH_PROBE_COOLDOWN;
                 peer.next_latency_probe_at = now + LATENCY_PROBE_INTERVAL;
                 Ok(None)
@@ -2505,6 +2550,76 @@ mod tests {
             ),
             PathSelectionReason::RelayFallback
         );
+    }
+
+    #[test]
+    fn expired_active_path_probe_advances_an_established_session_to_relay() {
+        let now = Instant::now();
+        let (mut peer, _, _, direct_endpoint) = established_test_peers(now);
+        let relay_endpoint = "192.0.2.30:443".parse().expect("relay endpoint");
+        let expires_at = Utc::now() + chrono::Duration::minutes(5);
+        peer.candidates = vec![
+            EndpointCandidate {
+                kind: EndpointCandidateKind::Local,
+                endpoint: direct_endpoint,
+                priority: 200,
+                expires_at,
+            },
+            EndpointCandidate {
+                kind: EndpointCandidateKind::Relay,
+                endpoint: relay_endpoint,
+                priority: 100,
+                expires_at,
+            },
+        ];
+        peer.active_endpoint = Some(direct_endpoint);
+        create_path_probe(&mut peer, direct_endpoint, now).expect("direct path probe");
+
+        let expired = now + PATH_PROBE_RETRY_INTERVAL * u32::from(PATH_PROBE_MAX_ATTEMPTS);
+        let (fallback_endpoint, _) = maintain_path_probe(&mut peer, expired)
+            .expect("path maintenance")
+            .expect("relay fallback challenge");
+
+        assert_eq!(fallback_endpoint, relay_endpoint);
+        assert_eq!(peer.active_endpoint, Some(relay_endpoint));
+        assert_eq!(peer.path_reason, Some(PathSelectionReason::RelayFallback));
+        assert!(matches!(peer.state, PeerState::Established(_)));
+        assert!(peer.pending_path_probe.as_ref().is_some_and(|pending| {
+            pending.endpoint == relay_endpoint && !pending.promotes_path
+        }));
+    }
+
+    #[test]
+    fn expired_promotion_probe_preserves_the_authenticated_active_path() {
+        let now = Instant::now();
+        let (mut peer, _, _, direct_endpoint) = established_test_peers(now);
+        let alternate_endpoint = "192.0.2.40:42001".parse().expect("alternate endpoint");
+        let expires_at = Utc::now() + chrono::Duration::minutes(5);
+        peer.candidates = vec![
+            EndpointCandidate {
+                kind: EndpointCandidateKind::Local,
+                endpoint: alternate_endpoint,
+                priority: 300,
+                expires_at,
+            },
+            EndpointCandidate {
+                kind: EndpointCandidateKind::Local,
+                endpoint: direct_endpoint,
+                priority: 200,
+                expires_at,
+            },
+        ];
+        peer.active_endpoint = Some(direct_endpoint);
+        create_path_probe(&mut peer, alternate_endpoint, now).expect("promotion probe");
+
+        let expired = now + PATH_PROBE_RETRY_INTERVAL * u32::from(PATH_PROBE_MAX_ATTEMPTS);
+        assert!(
+            maintain_path_probe(&mut peer, expired)
+                .expect("path maintenance")
+                .is_none()
+        );
+        assert_eq!(peer.active_endpoint, Some(direct_endpoint));
+        assert!(peer.pending_path_probe.is_none());
     }
 
     #[test]
