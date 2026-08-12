@@ -103,6 +103,12 @@ report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert report["git_revision"] == sys.argv[2]
 assert report["registration_concurrency"] == 32
 assert report["token_count"] == 20
+assert report["load_generator_websocket"] == {
+    "read_buffer_bytes": 4096,
+    "write_buffer_bytes": 4096,
+    "maximum_write_buffer_bytes": 1048576,
+    "maximum_message_bytes": 524288,
+}
 assert [item["nodes"] for item in report["measurements"]] == [100, 500, 1000]
 envelope = report["safe_operating_envelope"]
 for measurement in report["measurements"]:

@@ -17,7 +17,10 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::{net::TcpStream, sync::oneshot, time::timeout};
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, connect_async_with_config,
+    tungstenite::{Message, protocol::WebSocketConfig},
+};
 use tower::ServiceExt;
 use xs_controller::config::{ControllerConfig, MigrationConfig};
 
@@ -28,6 +31,9 @@ const REGISTRATION_CONCURRENCY: usize = 32;
 const CONTROL_CONCURRENCY: usize = 64;
 const CONTROL_SYNC_CONCURRENCY: usize = 128;
 const CONTROL_HOLD_SECONDS: u64 = 5;
+const CONTROL_BUFFER_SIZE: usize = 4 * 1024;
+const CONTROL_MESSAGE_LIMIT: usize = 512 * 1024;
+const CONTROL_WRITE_BUFFER_LIMIT: usize = 1024 * 1024;
 const MINIMUM_REGISTRATIONS_PER_SECOND: f64 = 5.0;
 const MINIMUM_CONTROL_AUTHENTICATIONS_PER_SECOND: f64 = 5.0;
 const MAXIMUM_CONSOLE_SNAPSHOT_MILLISECONDS: f64 = 2_000.0;
@@ -108,6 +114,12 @@ async fn controller_registers_and_queries_one_thousand_nodes() {
         "git_revision": std::env::var("XS_SCALE_GIT_REVISION").ok(),
         "registration_concurrency": REGISTRATION_CONCURRENCY,
         "token_count": TOKEN_COUNT,
+        "load_generator_websocket": {
+            "read_buffer_bytes": CONTROL_BUFFER_SIZE,
+            "write_buffer_bytes": CONTROL_BUFFER_SIZE,
+            "maximum_write_buffer_bytes": CONTROL_WRITE_BUFFER_LIMIT,
+            "maximum_message_bytes": CONTROL_MESSAGE_LIMIT
+        },
         "measurements": measurements,
         "control": control,
         "safe_operating_envelope": {
@@ -362,9 +374,19 @@ async fn start_control_server(router: &Router) -> ControlServer {
 
 async fn authenticate_control(address: SocketAddr, node: &ScaleNode) -> AuthenticatedControl {
     let started = Instant::now();
-    let (mut socket, _) = connect_async(format!("ws://{address}/v1/control"))
-        .await
-        .expect("connect control socket");
+    let websocket_config = WebSocketConfig::default()
+        .read_buffer_size(CONTROL_BUFFER_SIZE)
+        .write_buffer_size(CONTROL_BUFFER_SIZE)
+        .max_write_buffer_size(CONTROL_WRITE_BUFFER_LIMIT)
+        .max_message_size(Some(CONTROL_MESSAGE_LIMIT))
+        .max_frame_size(Some(CONTROL_MESSAGE_LIMIT));
+    let (mut socket, _) = connect_async_with_config(
+        format!("ws://{address}/v1/control"),
+        Some(websocket_config),
+        false,
+    )
+    .await
+    .expect("connect control socket");
     let challenge = next_text(&mut socket, "challenge").await;
     let challenge: Value = serde_json::from_str(&challenge).expect("challenge JSON");
     let challenge = URL_SAFE_NO_PAD

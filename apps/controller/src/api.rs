@@ -327,6 +327,9 @@ async fn enroll(
 
 async fn control(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
     upgrade
+        .read_buffer_size(4 * 1024)
+        .write_buffer_size(4 * 1024)
+        .max_write_buffer_size(1024 * 1024)
         .max_message_size(512 * 1024)
         .max_frame_size(512 * 1024)
         .on_upgrade(move |socket| crate::control::serve(socket, state))

@@ -33,7 +33,9 @@ use crate::{
 const CONTROL_AUTHENTICATION_DOMAIN: &[u8] = b"XS Nexus control authentication v1";
 const CANDIDATE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus candidate advertisement v1";
 const SUBNET_ROUTE_ADVERTISEMENT_DOMAIN: &[u8] = b"XS Nexus subnet route advertisement v1";
+const CONTROL_BUFFER_SIZE: usize = 4 * 1024;
 const CONTROL_MESSAGE_LIMIT: usize = 512 * 1024;
+const CONTROL_WRITE_BUFFER_LIMIT: usize = 1024 * 1024;
 const TELEMETRY_REPORT_INTERVAL: Duration = Duration::from_mins(1);
 
 #[derive(Clone, Debug)]
@@ -136,6 +138,9 @@ async fn control_session(
     let data_plane_status = &context.data_plane_status;
     let telemetry_boot_id_base64 = context.telemetry_boot_id_base64.as_str();
     let websocket_config = WebSocketConfig::default()
+        .read_buffer_size(CONTROL_BUFFER_SIZE)
+        .write_buffer_size(CONTROL_BUFFER_SIZE)
+        .max_write_buffer_size(CONTROL_WRITE_BUFFER_LIMIT)
         .max_message_size(Some(CONTROL_MESSAGE_LIMIT))
         .max_frame_size(Some(CONTROL_MESSAGE_LIMIT));
     let control_url = config.control_url()?.to_string();

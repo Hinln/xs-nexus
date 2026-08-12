@@ -94,29 +94,6 @@ jobs:
           status=0
           set +e
 
-          verify_evidence() {
-            local directory=$1
-            [[ -s $directory/report.json ]]
-            [[ -s $directory/status.txt ]]
-            [[ -s $directory/revision.txt ]]
-            [[ -s $directory/SHA256SUMS ]]
-            grep -Fqx 'status=PASS' "$directory/status.txt"
-            grep -Fqx "revision=$GITHUB_SHA" "$directory/status.txt"
-            [[ $(cat "$directory/revision.txt") == "$GITHUB_SHA" ]]
-            python3 - "$directory/report.json" "$GITHUB_SHA" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          assert report["git_revision"] == sys.argv[2]
-          PY
-            (
-              cd "$directory"
-              sha256sum -c SHA256SUMS
-            )
-          }
-
           shellcheck scripts/check-production-health.sh scripts/test-production-health.sh \
             >"$evidence/shellcheck.log" 2>&1
           shellcheck_status=$?
@@ -213,6 +190,29 @@ jobs:
           chmod 0700 "$evidence"
           status=0
           set +e
+
+          verify_evidence() {
+            local directory=$1
+            [[ -s $directory/report.json ]]
+            [[ -s $directory/status.txt ]]
+            [[ -s $directory/revision.txt ]]
+            [[ -s $directory/SHA256SUMS ]]
+            grep -Fqx 'status=PASS' "$directory/status.txt"
+            grep -Fqx "revision=$GITHUB_SHA" "$directory/status.txt"
+            [[ $(cat "$directory/revision.txt") == "$GITHUB_SHA" ]]
+            python3 - "$directory/report.json" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert report["git_revision"] == sys.argv[2]
+          PY
+            (
+              cd "$directory"
+              sha256sum -c SHA256SUMS
+            )
+          }
 
           shellcheck scripts/test-controller-scale.sh \
             scripts/test-protocol-throughput.sh \
