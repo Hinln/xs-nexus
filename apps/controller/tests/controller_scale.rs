@@ -87,6 +87,18 @@ struct ControlSynchronization {
     milliseconds: Vec<f64>,
 }
 
+struct ControlAuthenticationMeasurement {
+    authenticated: Vec<AuthenticatedControl>,
+    elapsed: Duration,
+    milliseconds: Vec<f64>,
+    rate: f64,
+    p95_milliseconds: f64,
+    chunked_count: usize,
+    minimum_transfer_bytes: usize,
+    maximum_transfer_bytes: usize,
+    maximum_transfer_chunks: usize,
+}
+
 #[tokio::test]
 async fn controller_registers_and_queries_one_thousand_nodes() {
     let config = test_config();
@@ -373,45 +385,18 @@ async fn assert_enrollment_capacity(
 async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]) -> Value {
     let mut controller = start_controller_process(config).await;
     assert_large_legacy_transport_rejected(controller.address, &nodes[0]).await;
-    let authentication_started = Instant::now();
-    let authenticated = timeout(
-        Duration::from_secs(300),
-        stream::iter(nodes)
-            .map(|node| authenticate_control(controller.address, node))
-            .buffer_unordered(CONTROL_CONCURRENCY)
-            .collect::<Vec<_>>(),
-    )
-    .await
-    .expect("one thousand control sockets authenticate within five minutes");
-    let authentication_elapsed = authentication_started.elapsed();
-    assert_eq!(authenticated.len(), CHECKPOINTS[2]);
+    let ControlAuthenticationMeasurement {
+        authenticated,
+        elapsed: authentication_elapsed,
+        milliseconds: authentication_milliseconds,
+        rate: authentication_rate,
+        p95_milliseconds: authentication_p95,
+        chunked_count: chunked_authentications,
+        minimum_transfer_bytes: minimum_configuration_transfer_bytes,
+        maximum_transfer_bytes: maximum_configuration_transfer_bytes,
+        maximum_transfer_chunks: maximum_configuration_transfer_chunks,
+    } = authenticate_controls(controller.address, nodes).await;
     let expected_nodes = u64::try_from(nodes.len()).expect("node count fits u64");
-    let authenticated_count = u32::try_from(authenticated.len()).expect("node count fits u32");
-    let authentication_milliseconds = authenticated
-        .iter()
-        .map(|control| control.authentication_milliseconds)
-        .collect::<Vec<_>>();
-    let authentication_rate = f64::from(authenticated_count) / authentication_elapsed.as_secs_f64();
-    let authentication_p95 = percentile(&authentication_milliseconds, 95);
-    let chunked_authentications = authenticated
-        .iter()
-        .filter(|control| control.configuration_transfer_chunks > 1)
-        .count();
-    let minimum_configuration_transfer_bytes = authenticated
-        .iter()
-        .map(|control| control.configuration_transfer_bytes)
-        .min()
-        .expect("configuration transfer bytes");
-    let maximum_configuration_transfer_bytes = authenticated
-        .iter()
-        .map(|control| control.configuration_transfer_bytes)
-        .max()
-        .expect("configuration transfer bytes");
-    let maximum_configuration_transfer_chunks = authenticated
-        .iter()
-        .map(|control| control.configuration_transfer_chunks)
-        .max()
-        .expect("configuration transfer chunks");
 
     let online_convergence = wait_console_online_count(controller.address, expected_nodes).await;
     let ControlSynchronization {
@@ -489,6 +474,57 @@ async fn measure_control_capacity(config: &ControllerConfig, nodes: &[ScaleNode]
     })
 }
 
+async fn authenticate_controls(
+    address: SocketAddr,
+    nodes: &[ScaleNode],
+) -> ControlAuthenticationMeasurement {
+    let started = Instant::now();
+    let authenticated = timeout(
+        Duration::from_secs(300),
+        stream::iter(nodes)
+            .map(|node| authenticate_control(address, node))
+            .buffer_unordered(CONTROL_CONCURRENCY)
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .expect("one thousand control sockets authenticate within five minutes");
+    let elapsed = started.elapsed();
+    assert_eq!(authenticated.len(), CHECKPOINTS[2]);
+    let authenticated_count = u32::try_from(authenticated.len()).expect("node count fits u32");
+    let milliseconds = authenticated
+        .iter()
+        .map(|control| control.authentication_milliseconds)
+        .collect::<Vec<_>>();
+    let minimum_transfer_bytes = authenticated
+        .iter()
+        .map(|control| control.configuration_transfer_bytes)
+        .min()
+        .expect("configuration transfer bytes");
+    let maximum_transfer_bytes = authenticated
+        .iter()
+        .map(|control| control.configuration_transfer_bytes)
+        .max()
+        .expect("configuration transfer bytes");
+    ControlAuthenticationMeasurement {
+        rate: f64::from(authenticated_count) / elapsed.as_secs_f64(),
+        p95_milliseconds: percentile(&milliseconds, 95),
+        chunked_count: authenticated
+            .iter()
+            .filter(|control| control.configuration_transfer_chunks > 1)
+            .count(),
+        minimum_transfer_bytes,
+        maximum_transfer_bytes,
+        maximum_transfer_chunks: authenticated
+            .iter()
+            .map(|control| control.configuration_transfer_chunks)
+            .max()
+            .expect("configuration transfer chunks"),
+        authenticated,
+        elapsed,
+        milliseconds,
+    }
+}
+
 async fn assert_large_legacy_transport_rejected(address: SocketAddr, node: &ScaleNode) {
     let (mut socket, _) = connect_async_with_config(
         format!("ws://{address}/v1/control"),
@@ -502,7 +538,7 @@ async fn assert_large_legacy_transport_rejected(address: SocketAddr, node: &Scal
         .await
         .expect("legacy control rejection completes");
     match result {
-        None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {}
+        None | Some(Ok(Message::Close(_)) | Err(_)) => {}
         Some(Ok(message)) => panic!("legacy client unexpectedly received {message:?}"),
     }
 }
