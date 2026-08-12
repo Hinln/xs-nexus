@@ -91,8 +91,78 @@ print(json.dumps({
     fi
 }
 
+compare_link_inventories() {
+    local before=$1 after=$2 label=$3 interface device status=0
+    local before_file="$EVIDENCE_DIR/$before-links.txt"
+    local after_file="$EVIDENCE_DIR/$after-links.txt"
+    local added_file="$EVIDENCE_DIR/$label-links-added.txt"
+    local removed_file="$EVIDENCE_DIR/$label-links-removed.txt"
+    if cmp -s "$before_file" "$after_file"; then
+        printf 'PASS\n'
+        return 0
+    fi
+
+    diff -u "$before_file" "$after_file" \
+        >"$EVIDENCE_DIR/$label-links.txt.diff" || true
+    comm -13 "$before_file" "$after_file" >"$added_file"
+    comm -23 "$before_file" "$after_file" >"$removed_file"
+    : >"$EVIDENCE_DIR/$label-hardware-hotplug.tsv"
+    printf 'interface\tdevice\taddress_count\tipv4_route_count\tipv6_route_count\n' \
+        >>"$EVIDENCE_DIR/$label-hardware-hotplug.tsv"
+
+    if [[ -s $removed_file || ! -s $added_file ]]; then
+        printf 'FAIL\n'
+        return 1
+    fi
+    while IFS= read -r interface; do
+        if [[ -z $interface || ! -e /sys/class/net/$interface/device ]]; then
+            status=1
+            continue
+        fi
+        device=$(readlink -f "/sys/class/net/$interface/device")
+        ip -json -details link show dev "$interface" \
+            >"$EVIDENCE_DIR/$label-hotplug-$interface-link.json" || status=1
+        ip -json address show dev "$interface" \
+            >"$EVIDENCE_DIR/$label-hotplug-$interface-addresses.json" || status=1
+        ip -json route show table all dev "$interface" \
+            >"$EVIDENCE_DIR/$label-hotplug-$interface-ipv4-routes.json" || status=1
+        ip -json -6 route show table all dev "$interface" \
+            >"$EVIDENCE_DIR/$label-hotplug-$interface-ipv6-routes.json" || status=1
+        if ! python3 - \
+            "$EVIDENCE_DIR/$label-hotplug-$interface-addresses.json" \
+            "$EVIDENCE_DIR/$label-hotplug-$interface-ipv4-routes.json" \
+            "$EVIDENCE_DIR/$label-hotplug-$interface-ipv6-routes.json" \
+            "$EVIDENCE_DIR/$label-hardware-hotplug.tsv" "$interface" "$device" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+addresses = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+ipv4_routes = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+ipv6_routes = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+address_count = sum(len(link.get("addr_info", [])) for link in addresses)
+with Path(sys.argv[4]).open("a", encoding="utf-8") as report:
+    report.write(
+        f"{sys.argv[5]}\t{sys.argv[6]}\t{address_count}\t"
+        f"{len(ipv4_routes)}\t{len(ipv6_routes)}\n"
+    )
+if address_count != 0 or ipv4_routes or ipv6_routes:
+    raise SystemExit(1)
+PY
+        then
+            status=1
+        fi
+    done <"$added_file"
+    if ((status == 0)); then
+        printf 'PASS_EXTERNAL_HARDWARE_HOTPLUG\n'
+        return 0
+    fi
+    printf 'FAIL\n'
+    return 1
+}
+
 compare_inventories() {
-    local before=$1 after=$2 label=$3 item status=0
+    local before=$1 after=$2 label=$3 item result status=0
     local -a items=(
         docker-containers.txt
         docker-networks.txt
@@ -108,6 +178,16 @@ compare_inventories() {
     : >"$EVIDENCE_DIR/$label-invariants.tsv"
     printf 'invariant\tresult\n' >>"$EVIDENCE_DIR/$label-invariants.tsv"
     for item in "${items[@]}"; do
+        if [[ $item == links.txt ]]; then
+            if result=$(compare_link_inventories "$before" "$after" "$label"); then
+                printf '%s\t%s\n' "$item" "$result" \
+                    >>"$EVIDENCE_DIR/$label-invariants.tsv"
+            else
+                printf '%s\tFAIL\n' "$item" >>"$EVIDENCE_DIR/$label-invariants.tsv"
+                status=1
+            fi
+            continue
+        fi
         if cmp -s "$EVIDENCE_DIR/$before-$item" "$EVIDENCE_DIR/$after-$item"; then
             printf '%s\tPASS\n' "$item" >>"$EVIDENCE_DIR/$label-invariants.tsv"
         else
@@ -220,8 +300,8 @@ finalize() {
     exit "$status"
 }
 
-for command in awk cargo cmp curl diff docker find git grep ip make nft openssl python3 \
-    rustc sed sha256sum shellcheck ssh-keygen systemctl tee; do
+for command in awk cargo comm cmp curl diff docker find git grep ip make nft openssl \
+    python3 readlink rustc sed sha256sum shellcheck ssh-keygen systemctl tee; do
     require_command "$command"
 done
 [[ $(id -u) -eq 0 ]] || {
