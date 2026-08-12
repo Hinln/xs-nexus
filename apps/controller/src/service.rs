@@ -1380,7 +1380,7 @@ pub(crate) async fn enroll_node(
         token.network_id,
         enrollment.node_id,
         virtual_ip,
-        issued,
+        &issued,
         configuration,
     ))
 }
@@ -1404,7 +1404,7 @@ fn build_enrollment_response(
     network_id: Uuid,
     node_id: [u8; 16],
     virtual_ip: Ipv4Addr,
-    issued: IssuedCredential,
+    issued: &IssuedCredential,
     configuration: SignedConfiguration,
 ) -> EnrollResponse {
     EnrollResponse {
