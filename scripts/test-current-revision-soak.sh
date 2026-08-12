@@ -334,6 +334,69 @@ admin_request() {
     curl "${arguments[@]}"
 }
 
+admin_request_status() {
+    local method=$1 path=$2 output=$3 data_file=${4:-}
+    local -a arguments=(
+        --silent --show-error
+        --config "$CONTROLLER_SECRETS/admin-curl.conf"
+        -X "$method"
+        "http://127.0.0.1:$CONTROLLER_PORT$path"
+        -H 'Content-Type: application/json'
+        -o "$output"
+        --write-out '%{http_code}'
+    )
+    if [[ -n $data_file ]]; then
+        arguments+=(--data-binary "@$data_file")
+    fi
+    curl "${arguments[@]}"
+}
+
+replace_subnet_routes_with_retry() {
+    local routes_file=$1 response_file=$2 attempts_file=$3
+    local networks_file="$TEMPORARY/networks.json"
+    local request_file="$TEMPORARY/subnet-routes-request.json"
+    local attempt version status
+    printf 'attempt\tconfiguration_version\thttp_status\n' >"$attempts_file"
+    for attempt in $(seq 1 30); do
+        admin_request GET /v1/admin/networks "$networks_file"
+        version=$(python3 - "$networks_file" "$NETWORK_ID" <<'PY'
+import json
+import sys
+
+for network in json.load(open(sys.argv[1], encoding="utf-8")):
+    if network["id"] == sys.argv[2]:
+        print(network["config_version"])
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+        )
+        python3 - "$routes_file" "$request_file" "$version" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+routes = json.load(open(sys.argv[1], encoding="utf-8"))
+Path(sys.argv[2]).write_text(json.dumps({
+    "expected_configuration_version": int(sys.argv[3]),
+    "routes": routes,
+}), encoding="utf-8")
+PY
+        status=$(admin_request_status PUT "/v1/admin/networks/$NETWORK_ID/subnet-routes" \
+            "$response_file" "$request_file")
+        printf '%s\t%s\t%s\n' "$attempt" "$version" "$status" >>"$attempts_file"
+        if [[ $status == 200 ]]; then
+            return
+        fi
+        if [[ $status != 409 ]]; then
+            printf 'subnet route replacement returned HTTP %s\n' "$status" >&2
+            return 1
+        fi
+        sleep 1
+    done
+    printf 'subnet route replacement did not win optimistic lock\n' >&2
+    return 1
+}
+
 write_environment() {
     local revision source_epoch
     revision=$(git -c safe.directory="$ROOT_DIR" -C "$ROOT_DIR" rev-parse HEAD)
@@ -1273,31 +1336,27 @@ wait_gateway_ready() {
 
 fault_subnet_route_update() {
     wait_for_route_suggestion
-    local gateway interface version
+    local gateway interface
     gateway=$(sed -n '1p' "$TEMPORARY/route-selection.txt")
     interface=$(sed -n '2p' "$TEMPORARY/route-selection.txt")
     prepare_gateway_forwarding "$interface" "$gateway"
-    version=$(agent_cli "$AGENT_A" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["configuration_version"])')
-    python3 - "$TEMPORARY/route-enable.json" "$version" "$gateway" "$LAN_SUBNET" "$interface" <<'PY'
+    python3 - "$TEMPORARY/route-enable-routes.json" "$gateway" "$LAN_SUBNET" "$interface" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-Path(sys.argv[1]).write_text(json.dumps({
-    "expected_configuration_version": int(sys.argv[2]),
-    "routes": [{
+Path(sys.argv[1]).write_text(json.dumps([{
         "route_id": "gate22-lan",
-        "gateway_node_id_base64": sys.argv[3],
-        "prefix": sys.argv[4],
-        "interface_name": sys.argv[5],
+        "gateway_node_id_base64": sys.argv[2],
+        "prefix": sys.argv[3],
+        "interface_name": sys.argv[4],
         "mode": "nat",
         "priority": 100,
         "enabled": True,
-    }],
-}), encoding="utf-8")
+    }]), encoding="utf-8")
 PY
-    admin_request PUT "/v1/admin/networks/$NETWORK_ID/subnet-routes" \
-        "$TEMPORARY/route-enable-response.json" "$TEMPORARY/route-enable.json"
+    replace_subnet_routes_with_retry "$TEMPORARY/route-enable-routes.json" \
+        "$TEMPORARY/route-enable-response.json" "$EVIDENCE_DIR/route-enable-attempts.tsv"
     local enabled_version
     enabled_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["configuration_version"])' \
         "$TEMPORARY/route-enable-response.json")
@@ -1312,10 +1371,9 @@ PY
     local agent_a_pid
     agent_a_pid=$(docker inspect "$AGENT_A" --format '{{.State.Pid}}')
     nsenter -t "$agent_a_pid" -n ping -c 3 -W 3 "$LAN_TARGET_IP" >"$EVIDENCE_DIR/subnet-route-ping.txt"
-    printf '{"expected_configuration_version":%s,"routes":[]}\n' "$enabled_version" \
-        >"$TEMPORARY/route-disable.json"
-    admin_request PUT "/v1/admin/networks/$NETWORK_ID/subnet-routes" \
-        "$TEMPORARY/route-disable-response.json" "$TEMPORARY/route-disable.json"
+    printf '[]\n' >"$TEMPORARY/route-disable-routes.json"
+    replace_subnet_routes_with_retry "$TEMPORARY/route-disable-routes.json" \
+        "$TEMPORARY/route-disable-response.json" "$EVIDENCE_DIR/route-disable-attempts.tsv"
     local disabled_version
     disabled_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["configuration_version"])' \
         "$TEMPORARY/route-disable-response.json")
