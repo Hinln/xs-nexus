@@ -178,6 +178,9 @@ finalize() {
         capture_inventory fixture-after
         compare_inventories fixture-before fixture-after fixture || status=1
     fi
+    if docker container inspect "$POSTGRES_CONTAINER" >/dev/null 2>&1; then
+        docker logs "$POSTGRES_CONTAINER" >"$EVIDENCE_DIR/postgres-final.log" 2>&1 || true
+    fi
     cleanup_fixtures || cleanup_status=$?
     ((cleanup_status == 0)) || status=1
     if ((ORIGINAL_CAPTURED == 1)); then
@@ -217,7 +220,7 @@ finalize() {
     exit "$status"
 }
 
-for command in awk cargo cmp curl diff docker find git ip make nft openssl python3 \
+for command in awk cargo cmp curl diff docker find git grep ip make nft openssl python3 \
     rustc sed sha256sum shellcheck ssh-keygen systemctl tee; do
     require_command "$command"
 done
@@ -355,13 +358,21 @@ docker run -d --name "$POSTGRES_CONTAINER" --network 1panel-network \
     -e POSTGRES_DB=gate25 \
     -e POSTGRES_PASSWORD_FILE=/run/test-secrets/bootstrap-password \
     "$POSTGRES_IMAGE" >"$EVIDENCE_DIR/postgres-container-id.txt"
-for _attempt in $(seq 1 60); do
-    if docker exec "$POSTGRES_CONTAINER" pg_isready -q -U gate25_bootstrap -d gate25; then
+for _attempt in $(seq 1 90); do
+    docker logs "$POSTGRES_CONTAINER" >"$EVIDENCE_DIR/postgres-startup.log" 2>&1 || true
+    if grep -Fq 'PostgreSQL init process complete; ready for start up.' \
+        "$EVIDENCE_DIR/postgres-startup.log" &&
+        docker exec "$POSTGRES_CONTAINER" pg_isready -q -U gate25_bootstrap -d gate25 &&
+        docker exec -u postgres "$POSTGRES_CONTAINER" \
+            psql -qAt -U gate25_bootstrap -d gate25 -c 'SELECT 1' | grep -Fxq 1; then
         break
     fi
     sleep 1
 done
 docker exec "$POSTGRES_CONTAINER" pg_isready -q -U gate25_bootstrap -d gate25
+docker exec -u postgres "$POSTGRES_CONTAINER" \
+    psql -qAt -U gate25_bootstrap -d gate25 -c 'SELECT 1' | grep -Fxq 1
+docker logs "$POSTGRES_CONTAINER" >"$EVIDENCE_DIR/postgres-startup.log" 2>&1
 docker exec -u postgres "$POSTGRES_CONTAINER" sh -eu -c '
     export PGPASSWORD=$(cat /run/test-secrets/bootstrap-password)
     export XS_DATABASE_APP_PASSWORD=$(cat /run/test-secrets/app-password)
