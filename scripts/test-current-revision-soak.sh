@@ -261,7 +261,7 @@ select_subnets() {
     AGENT_A_IP="${underlay_prefix}21"
     AGENT_B_IP="${underlay_prefix}22"
     AGENT_C_IP="${underlay_prefix}23"
-    LAN_GATEWAY_IP="${lan_prefix}1"
+    LAN_GATEWAY_IP="${lan_prefix}10"
     LAN_TARGET_IP="${lan_prefix}2"
 }
 
@@ -1192,6 +1192,7 @@ docker network create --label "com.xs-nexus.gate22.prime=$PROJECT" "$PRIME_NETWO
 docker run --rm \
     --label "com.xs-nexus.gate22.prime=$PROJECT" \
     --network "$PRIME_NETWORK" \
+    --publish "127.0.0.1:$CONTROLLER_PORT:8080" \
     --user 65534:65534 --read-only --cap-drop ALL \
     --security-opt no-new-privileges:true \
     "$ALPINE_IMAGE" true
