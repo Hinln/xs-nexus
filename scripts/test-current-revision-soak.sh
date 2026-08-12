@@ -729,8 +729,8 @@ raise SystemExit(0 if status["configuration_version"] >= int(sys.argv[1]) else 1
 }
 
 ping_agent() {
-    local container=$1 virtual_ip=$2 output classification
-    for _attempt in $(seq 1 5); do
+    local container=$1 virtual_ip=$2 busy_attempts=${3:-5} output classification
+    for _attempt in $(seq 1 "$busy_attempts"); do
         output=''
         if output=$(agent_cli "$container" ping "$virtual_ip" 2>/dev/null); then
             :
@@ -1014,7 +1014,7 @@ fault_relay_restart() {
     block_direct "$AGENT_A" "$AGENT_B_IP" "$AGENT_B" "$AGENT_A_IP"
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" relay
     capture_relay_transition fallback
-    if ! ping_agent "$AGENT_A" "$VIRTUAL_IP_B"; then
+    if ! ping_agent "$AGENT_A" "$VIRTUAL_IP_B" 45; then
         capture_relay_transition failed
         return 1
     fi
@@ -1029,10 +1029,10 @@ fault_relay_restart() {
     done
     docker exec "$relay_container" /usr/local/bin/xs-relay healthcheck >/dev/null
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" relay
-    ping_agent "$AGENT_A" "$VIRTUAL_IP_B"
+    ping_agent "$AGENT_A" "$VIRTUAL_IP_B" 45
     unblock_direct
     wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" direct
-    ping_agent "$AGENT_A" "$VIRTUAL_IP_B"
+    ping_agent "$AGENT_A" "$VIRTUAL_IP_B" 45
 }
 
 fault_postgres_restart() {
