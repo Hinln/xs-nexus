@@ -396,8 +396,21 @@
 - 严重度：高
 - 状态：外部阻塞（harness 与 600 秒校准已完成）
 - 首次发现：2026-08-08 正式生产审计；2026-08-13 Gate 22 校准后精确定界。
-- 已完成：exact revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 在 run `31636558546` 全 12 job 通过。专项 job `94248221138`、artifact `9157671453` 证明六服务 264 个样本、八项故障注入、进程代际增长检查、路由乐观锁重试、84/84 SHA-256、零秘密发现和九类宿主不变量。
+- 已完成：最新 exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 在 run `31649030446` 全 13 job 通过。专项 job `94289075250`、artifact `9162201059` 证明六服务 264 个样本、八项故障注入、进程代际增长检查、路由乐观锁重试、84/84 SHA-256、零秘密发现和九类宿主不变量。
 - 影响：600 秒校准不能证明当前 revision 在至少 24 小时内无资源泄漏、重连风暴、无界日志增长或长期恢复退化。历史 revision 的 24 小时证据不能替代当前 Gate 22，项目不能据此进入生产。
 - 阻塞：本机无可用特权 Linux 容器环境，旧开发服务器不可达；生产主机 SSH 指纹变化尚未通过云控制台等带外渠道确认。严格 SSH 已在认证前停止，未发送密码、未修改生产。
 - 计划：确认目标主机指纹或提供独立可重装 QA 主机，从精确干净提交运行至少 86400 秒；材料源代码、镜像、配置或 harness 变更时从零重跑。
 - 解除条件：完整原始样本、事件、日志、revision/image/config、前后不变量、清理状态、SHA-256 和无值秘密扫描均独立通过，且没有未解释趋势或安全 fail-open，才重新判断 Gate 22。
+
+---
+
+## KI-030 Gate 25 正式签名与独立生产演练尚未执行
+
+- 严重度：高
+- 状态：外部阻塞（可安全自动化仓库子矩阵已完成）
+- 首次发现：2026-08-08 正式生产审计；2026-08-13 Gate 25 子矩阵精确定界。
+- 已完成：exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 在 run `31649030446` 全 13 job 通过。job `94289075249`、artifact `9162246723` 证明完整历史 clean checkout、test-only tag、五镜像双 no-cache、外部 secrets/最小权限 PostgreSQL、真实 Direct/Relay/subnet、更新失败矩阵、两次 Docker 生命周期、111/111 SHA-256、零秘密发现和全部前后不变量。
+- 影响：同一项目 CI、临时 signing key 和 hosted runner 不能证明 owner-controlled RC、独立操作者、新鲜非托管环境、正式 secrets 或 production upgrade/rollback。历史 `ff9551d3 -> 3d93656` 证据也不能自动覆盖当前 revision，Gate 01/25 不能通过。
+- 阻塞：需要所有者完成离线签名仪式/认证公钥分发并批准 formal RC；需要独立操作者、身份验证的新鲜服务器和生产维护窗口。生产 SSH host key 仍未带外确认，因此当前不能安全执行生产链。
+- 计划：正式 RC 合并 `main` 后，由独立操作者从认证 tag/bundle 在新鲜服务器完整重演；随后用定时回滚保护执行当前生产升级、反向验证、真实 rollback 与恢复批准 release。
+- 解除条件：formal signing/key/main provenance、fresh-host raw evidence、independent operator receipt、production backup/migration/identity/data/ACL/route checks、rollback/restored-release 和全部 SHA-256/secret scan 独立通过，Gate 25 才可重新判定。

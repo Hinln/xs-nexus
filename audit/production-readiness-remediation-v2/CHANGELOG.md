@@ -153,6 +153,15 @@
 
 - Added a fail-closed current-revision soak harness with separate calibration/formal modes, six-service resource sampling, eight required fault events, host-invariant baselines, cleanup checks, manifests, and evidence secret scanning.
 - Fixed path-recovery backoff, manual-probe cooldown isolation, Relay lease recovery waiting, pre-enabled gateway forwarding, process-generation resource analysis, and version-aware bounded route-update retries. No product threshold, ACL, signature, identity, or security assertion was weakened.
-- Exact revision `92244eb4d386eba2c852682d8d2dadc7237b31da` passed all 12 jobs in run `31636558546`; job `94248221138` and artifact `9157671453` passed 84/84 independent hashes, zero secret findings, 264 resource rows, eight events, and nine invariant classes.
+- Latest exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`; job `94289075250` and artifact `9162201059` passed 84/84 independent hashes, zero secret findings, 264 resource rows, eight events, and nine invariant classes.
 - This is a 600-second calibration only. Gate 22 remains `UNKNOWN` until an exact-revision run reaches at least 86,400 seconds and independently passes all checks.
 - The formal run did not start because the production SSH host key changed and has no out-of-band confirmation, while no alternate approved privileged Linux QA host is available. Strict verification was preserved; no password was sent and production was not changed.
+
+## 2026-08-13 Gate 25 Clean Release Rehearsal Submatrix
+
+- Added a root-only disposable-host harness that builds a full-history bundle, verifies an exact detached clean checkout and test-only signed tag, generates secrets outside Git, reproduces five no-cache images, and runs real Direct ACL, Relay, subnet, update and double deployment lifecycles.
+- Added exact fixture and final invariants for Docker resources, routes, rules, links, namespaces, normalized nftables, failed services and the temporary external `1panel-network`; cleanup is restricted to exact per-run labels and safe temporary paths.
+- Retained six failed runs covering shallow history, Buildx context, PostgreSQL volume/network/startup behavior, Docker firewall initialization, performance path-transition sampling, and hosted-runner hardware hot-plug. No phase, threshold or security assertion was skipped or reduced.
+- Current RTT evidence uses 10 Direct warm-up packets plus 100 formal samples per path with unchanged average/p95 bounds and retained maximum outliers. PostgreSQL requires the final-init marker, readiness, and a real SQL query.
+- Exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`. Job `94289075249` and artifact `9162246723` passed 111/111 hashes, zero secret findings, 10/10 phases, and 20/20 fixture/final invariants.
+- Gate 25 remains `FAIL`: the evidence explicitly records test-only signing, non-independent operation and no production mutation. Formal owner-signed RC/main, independent fresh-host rehearsal and current production upgrade/rollback remain external; overall remains `NO_GO`.

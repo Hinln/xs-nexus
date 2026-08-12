@@ -30,6 +30,8 @@ No production container, host network, firewall, route, service, or `1panel-netw
 
 The GitHub API digest binds the uploaded artifact. The independently downloaded extracted payload, nested manifests, revision files, summaries, and reports were separately verified. This report does not claim an independently computed ZIP digest.
 
+Current exact-head regression revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`. Performance job `94289075182` and artifact `9161977864` have GitHub digest `sha256:da6b88b6d3b8f87f6c94a1dd86103c9e495843840aa7ebe0f55268ce4b7b95c1`; all 42 extracted manifest entries, three nested status/revision bindings, and a new independent secret scan pass.
+
 ## Bounded Controller Envelope
 
 The validated hard bounds are 1,000 enrolled nodes per network, 1,000 simultaneous control sessions, 64 concurrent signed-configuration sends, a 512 KiB logical control message limit, and authenticated `chunked-v1` transport for large configuration responses. Admission of the 1,001st node and 1,001st control session fails closed before allocating a credential or admitting a WebSocket.
@@ -59,10 +61,12 @@ The retained-frame root-cause fix reduced Controller RSS from 490,496 KiB in the
 | Area | Result |
 |---|---|
 | XSP/1, 50,000 iterations, 1,200-byte payload | 188,340.94 seal+open operations/s; 215.54 MiB/s |
-| Direct Agent RTT, 30 samples | average 0.2495 ms; p95 0.3054 ms; maximum 0.3117 ms |
-| Relay Agent RTT, 30 samples | average 0.3763 ms; p95 0.4611 ms; maximum 1.8858 ms |
-| Relay increment | average 0.1267 ms; p95 0.1557 ms |
-| Agent idle resources | average 0.3500% of one core; 8,490 KiB RSS; 5 threads; 15 FDs per Agent |
+| Direct Agent RTT, 100 steady-state samples after 10 warm-up packets | average 1.8324 ms; p95 0.6138 ms; maximum 105.4797 ms |
+| Relay Agent RTT, 100 samples | average 0.3281 ms; p95 0.6151 ms; maximum 4.1320 ms |
+| Relay increment | average -1.5043 ms; p95 0.0013 ms |
+| Agent idle resources | average 0.3000% of one core; 8,560 KiB RSS; 5 threads; 15 FDs per Agent |
+
+The unchanged enforced bounds remain Direct average/p95 at most 5/10 ms, Relay average/p95 at most 10/20 ms, and Relay p95 increment at most 15 ms. The retained 105.4797 ms Direct maximum is not hidden; one maximum outlier does not change the 100-sample p95, while the larger sample set prevents two path-transition outliers from dominating a 30-sample p95.
 
 ## Retained Failure Chain
 

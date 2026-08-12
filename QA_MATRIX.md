@@ -622,8 +622,21 @@
 - [x] 六服务采样覆盖 CPU、RSS、线程、FD、连接、日志、路由/规则/接口、Direct/Relay 状态与错误计数；计划重启按进程代际分析，PostgreSQL 同时保留 FD 2048 和连接 32 的全局硬上限。
 - [x] Controller、Relay、PostgreSQL、Agent 重启，配置更新、Enrollment/Revocation、受控 loss/latency 与 subnet-route 更新八项事件均实际执行并 PASS。
 - [x] 并发路由更新只对真实 `409` 重新读取版本后有界重试；每次尝试留证，其他 HTTP 状态不重试。
-- [x] exact revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 的 run `31636558546` 全 12 job，Gate 22 job `94248221138`，artifact `9157671453` 和 GitHub digest `sha256:3c58a079e748dffb4f3e48d88d72f5bb8bd35072f665b991cbfecc1d78fb00ba` 通过。
+- [x] 最新 exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 的 run `31649030446` 全 13 job，Gate 22 job `94289075250`，artifact `9162201059` 和 GitHub digest `sha256:73918119786fe5d25dcceb7f8cdb9509ff3a1ac5439780e1972c4201e8d08e59` 通过。
 - [x] 独立下载校验 84/84 文件、零秘密发现、264 个服务样本、九类宿主不变量逐字节一致；无 namespace、TUN、容器、网络或卷残留。
 - [ ] 至少 24 小时的精确 revision 正式运行尚未执行；当前只有 600 秒校准，Gate 22 保持 `UNKNOWN`。
 - [ ] 正式运行环境为 `BLOCKED_EXTERNAL`：生产主机变化后的 SSH 指纹尚未带外确认，且没有另一台已批准特权 Linux QA 主机；不得绕过主机身份验证。
 - [x] 结论边界：生产未连接或修改，总体保持 `NO_GO`。
+
+## 32. Gate 25 干净发布与部署演练矩阵（2026-08-13）
+
+- [x] 完整 Git 历史 bundle、detached clean checkout、精确 revision/tree、空工作树和 `git fsck` 通过；浅克隆输入失败关闭。
+- [x] 临时 SSH 签名 tag 验证通过且证据明确标记 test-only；不冒充 owner-controlled 正式 RC。
+- [x] 五个 runtime 镜像执行两轮 no-cache OCI 构建并逐镜像匹配；workspace 从 clean checkout 重新构建。
+- [x] PostgreSQL 密码在仓库外生成，bootstrap/application 分离；等待最终 init marker、`pg_isready` 与真实 `SELECT 1` 后才继续，不接受临时初始化服务。
+- [x] 真实 namespace Direct ACL、Relay fallback/recovery、子网路由与签名更新失败矩阵通过；首次安装和重装两次 Docker 生命周期通过。
+- [x] 10/10 阶段、10/10 夹具不变量和 10/10 最终不变量 PASS；容器、网络、卷、默认路由、规则、链路、namespace、nftables、failed services 和 `1panel-network` 无残留。
+- [x] exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27`、run `31649030446` 全 13 job、Gate 25 job `94289075249`、artifact `9162246723`、GitHub digest `sha256:d69d7ff0d24195f629a5032152b1c1851f0cab8d79048ae90ca00af5fa9659fe`；111/111 清单和零秘密扫描通过。
+- [x] 六轮失败链全部保留并按根因修复；没有 skip、allowed failure、阈值降低、全局 Docker prune 或生产变更。
+- [ ] owner-controlled signed RC/main、独立操作者、新鲜非托管主机、正式 secrets、当前生产升级/回滚/恢复发布尚未执行，均为正式硬门禁。
+- [x] 结论边界：仓库子矩阵完成，但 artifact 明确 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`；Gate 25 保持 `FAIL`，总体保持 `NO_GO`。

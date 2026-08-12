@@ -323,9 +323,20 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 
 ## Gate 22 Soak Harness Calibration (2026-08-13)
 
-- Exact revision: `92244eb4d386eba2c852682d8d2dadc7237b31da`.
-- GitHub Actions run/job: `31636558546` / `94248221138`; workflow result 12/12 PASS.
-- Artifact: `9157671453`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:3c58a079e748dffb4f3e48d88d72f5bb8bd35072f665b991cbfecc1d78fb00ba`.
-- Independent extraction: `C:\Users\panyo\AppData\Local\Temp\xs-gate22-92244eb-92c70ca728f8415090ed279e089404eb`; 84/84 `SHA256SUMS` entries passed and the repository secret scanner reported zero findings.
+- Exact revision: `6e63424298e491c0035e1d138de5d03b0ab83c27`.
+- GitHub Actions run/job: `31649030446` / `94289075250`; workflow result 13/13 PASS.
+- Artifact: `9162201059`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:73918119786fe5d25dcceb7f8cdb9509ff3a1ac5439780e1972c4201e8d08e59`.
+- Independent extraction: 84/84 `SHA256SUMS` entries passed and the repository secret scanner reported zero findings.
 - Raw scope: 600 seconds, 44 samples for each of Controller, Relay, Console, PostgreSQL and two Agents; 264 rows total. Eight required fault events passed. Nine before/after Docker, route, rule, link, nftables, service and `1panel-network` invariants were byte-identical.
 - Decision: calibration PASS, Gate 22 `UNKNOWN`. No >=86,400-second evidence exists. Formal execution is externally blocked by an unverified changed SSH host key and lack of an alternate approved privileged Linux QA host; production was not changed.
+
+## Gate 25 Clean Release Rehearsal Submatrix (2026-08-13)
+
+- Exact revision: `6e63424298e491c0035e1d138de5d03b0ab83c27`.
+- GitHub Actions run/job: `31649030446` / `94289075249`; workflow result 13/13 PASS.
+- Artifact: `9162246723`, `clean-release-rehearsal-evidence`; GitHub digest `sha256:d69d7ff0d24195f629a5032152b1c1851f0cab8d79048ae90ca00af5fa9659fe`.
+- Independent extraction: 111/111 `SHA256SUMS` entries passed and the repository secret scanner reported zero findings.
+- Raw scope: full-history Git bundle and exact detached checkout, ephemeral test-only signed tag, five-image double no-cache reproducibility, external generated secrets and least-privilege PostgreSQL roles, real namespace Direct ACL/Relay/subnet, signed update matrix, and two complete Docker lifecycles.
+- Cleanup scope: 10/10 phases, 10/10 fixture invariants and 10/10 final invariants passed; Docker containers/networks/volumes, default route, rules, links, namespaces, nftables, failed services and `1panel-network` returned to baseline.
+- Formal boundary: artifact values are `formal_signed_rc=false`, `independent_operator=false`, and `production_mutation=false`. Gate 25 stays `FAIL` until an owner-signed RC is rehearsed by an independent operator on a fresh non-hosted server and the current production upgrade/rollback chain passes.
+- Detailed report: `audit/production-readiness-remediation-v2/RELEASE_REHEARSAL.md`.
