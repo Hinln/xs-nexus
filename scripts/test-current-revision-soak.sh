@@ -589,7 +589,7 @@ EOF
 
 start_agent_netns() {
     local container=$1 address=$2
-    docker run -d --rm --name "$container" \
+    docker run -d --name "$container" \
         --label "com.xs-nexus.gate22.project=$PROJECT" \
         --network "$NETWORK" --ip "$address" \
         --user 65532:65532 \
@@ -639,7 +639,7 @@ start_agent() {
     local container=$1 root=$2 netns=$3
     local -a arguments
     mapfile -t arguments < <(agent_run_base "$root" "$netns")
-    docker run -d --rm --name "$container" \
+    docker run -d --name "$container" \
         --label "com.xs-nexus.gate22.project=$PROJECT" \
         --cap-drop ALL --cap-add NET_ADMIN \
         --security-opt no-new-privileges:true \
@@ -670,6 +670,8 @@ raise SystemExit(0 if status["controller_connected"] and status["network_active"
         sleep 1
     done
     printf 'Agent did not become ready: %s\n' "$container" >&2
+    docker inspect "$container" --format '{{json .State}}' >&2 || true
+    docker logs "$container" >&2 || true
     return 1
 }
 
