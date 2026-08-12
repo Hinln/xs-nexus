@@ -206,6 +206,9 @@ pub(crate) fn set_forwarding(interface_name: &str, value: u8) -> Result<()> {
     if value > 1 {
         return Err(AgentError::Network);
     }
+    if forwarding_value(interface_name)? == value {
+        return Ok(());
+    }
     std::fs::write(forwarding_path(interface_name), value.to_string())
         .map_err(|_| AgentError::Network)
 }

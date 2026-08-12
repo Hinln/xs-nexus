@@ -83,7 +83,7 @@ require_command() {
     }
 }
 
-for command in cargo curl docker find git ip nft nsenter openssl ping python3 sha256sum ss systemctl tc; do
+for command in cargo curl docker find git ip nft nsenter openssl ping python3 sha256sum ss sysctl systemctl tc; do
     require_command "$command"
 done
 docker compose version >/dev/null
@@ -1229,11 +1229,54 @@ raise SystemExit(0 if any(route["prefix"] == sys.argv[1] for route in routes) el
 ' "$expected" <<<"$output"
 }
 
+prepare_gateway_forwarding() {
+    local interface=$1 gateway=$2 expected_gateway agent_b_pid candidate before after
+    [[ $interface =~ ^[A-Za-z0-9_.-]{1,15}$ ]]
+    expected_gateway=$(python3 -c \
+        'import json,sys; print(json.load(open(sys.argv[1]))["node_id_base64"])' \
+        "$AGENT_B_ROOT/state/node-state.json")
+    [[ $gateway == "$expected_gateway" ]]
+    agent_b_pid=$(docker inspect "$AGENT_B" --format '{{.State.Pid}}')
+    printf 'interface\tbefore\tafter\n' >"$EVIDENCE_DIR/gateway-forwarding-prepared.tsv"
+    for candidate in xsgb0 "$interface"; do
+        before=$(nsenter -t "$agent_b_pid" -n sysctl -n "net.ipv4.conf.$candidate.forwarding")
+        nsenter -t "$agent_b_pid" -n sysctl -q -w "net.ipv4.conf.$candidate.forwarding=1"
+        after=$(nsenter -t "$agent_b_pid" -n sysctl -n "net.ipv4.conf.$candidate.forwarding")
+        [[ $after == 1 ]]
+        printf '%s\t%s\t%s\n' "$candidate" "$before" "$after" \
+            >>"$EVIDENCE_DIR/gateway-forwarding-prepared.tsv"
+    done
+}
+
+wait_gateway_ready() {
+    local interface=$1 agent_b_pid table=xs_nexus_xsgb0
+    agent_b_pid=$(docker inspect "$AGENT_B" --format '{{.State.Pid}}')
+    for _attempt in $(seq 1 120); do
+        if [[ $(nsenter -t "$agent_b_pid" -n sysctl -n net.ipv4.conf.xsgb0.forwarding) == 1 \
+            && $(nsenter -t "$agent_b_pid" -n sysctl -n "net.ipv4.conf.$interface.forwarding") == 1 ]] \
+            && nsenter -t "$agent_b_pid" -n nft list table ip "$table" >/dev/null 2>&1; then
+            nsenter -t "$agent_b_pid" -n nft -j list table ip "$table" \
+                >"$EVIDENCE_DIR/gateway-nat-ready.json"
+            nsenter -t "$agent_b_pid" -n ip -j -4 route show table all \
+                >"$EVIDENCE_DIR/gateway-routes-ready.json"
+            return
+        fi
+        sleep 1
+    done
+    nsenter -t "$agent_b_pid" -n nft -j list ruleset \
+        >"$EVIDENCE_DIR/gateway-nft-failed.json" 2>&1 || true
+    nsenter -t "$agent_b_pid" -n ip -j -4 route show table all \
+        >"$EVIDENCE_DIR/gateway-routes-failed.json" 2>&1 || true
+    printf 'Gateway forwarding and NAT did not become ready\n' >&2
+    return 1
+}
+
 fault_subnet_route_update() {
     wait_for_route_suggestion
     local gateway interface version
     gateway=$(sed -n '1p' "$TEMPORARY/route-selection.txt")
     interface=$(sed -n '2p' "$TEMPORARY/route-selection.txt")
+    prepare_gateway_forwarding "$interface" "$gateway"
     version=$(agent_cli "$AGENT_A" status | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["configuration_version"])')
     python3 - "$TEMPORARY/route-enable.json" "$version" "$gateway" "$LAN_SUBNET" "$interface" <<'PY'
 import json
@@ -1265,6 +1308,7 @@ PY
         sleep 1
     done
     route_present "$LAN_SUBNET"
+    wait_gateway_ready "$interface"
     local agent_a_pid
     agent_a_pid=$(docker inspect "$AGENT_A" --format '{{.State.Pid}}')
     nsenter -t "$agent_a_pid" -n ping -c 3 -W 3 "$LAN_TARGET_IP" >"$EVIDENCE_DIR/subnet-route-ping.txt"
@@ -1285,6 +1329,18 @@ PY
     done
     if route_present "$LAN_SUBNET"; then
         printf 'subnet route remained after removal\n' >&2
+        return 1
+    fi
+    local agent_b_pid
+    agent_b_pid=$(docker inspect "$AGENT_B" --format '{{.State.Pid}}')
+    for _attempt in $(seq 1 120); do
+        if ! nsenter -t "$agent_b_pid" -n nft list table ip xs_nexus_xsgb0 >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    if nsenter -t "$agent_b_pid" -n nft list table ip xs_nexus_xsgb0 >/dev/null 2>&1; then
+        printf 'Gateway NAT table remained after route removal\n' >&2
         return 1
     fi
     if nsenter -t "$agent_a_pid" -n ping -c 1 -W 1 "$LAN_TARGET_IP" >/dev/null 2>&1; then

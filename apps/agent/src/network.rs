@@ -469,7 +469,11 @@ mod platform {
             self.gateway_routes.clone_from(&desired);
             self.persist_manifest()?;
 
-            for record in &self.forwarding {
+            for record in self
+                .forwarding
+                .iter()
+                .filter(|record| record.previous_value == 0)
+            {
                 set_forwarding(&record.interface_name, 0)?;
             }
             if let Some(table) = previous_table.as_ref().or(desired_table.as_ref()) {
@@ -499,7 +503,7 @@ mod platform {
         fn cleanup_gateway(&mut self) -> Result<()> {
             let records = self.forwarding.clone();
             let mut cleaned = true;
-            for record in &records {
+            for record in records.iter().filter(|record| record.previous_value == 0) {
                 if set_forwarding(&record.interface_name, 0).is_err() {
                     cleaned = false;
                 }
@@ -724,7 +728,10 @@ mod platform {
             .filter(|record| forwarding_path_exists(&record.interface_name))
             .cloned()
             .collect::<Vec<_>>();
-        for record in &active_records {
+        for record in active_records
+            .iter()
+            .filter(|record| record.previous_value == 0)
+        {
             if set_forwarding(&record.interface_name, 0).is_err() {
                 cleaned = false;
             }
