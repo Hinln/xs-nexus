@@ -151,6 +151,7 @@ test-onepanel-boundary:
 >python3 scripts/validate-onepanel-boundary.py
 
 test-independent-implementation:
+>python3 scripts/test-independent-implementation-validator.py
 >./scripts/validate-independent-implementation.py
 
 test-source-sbom:

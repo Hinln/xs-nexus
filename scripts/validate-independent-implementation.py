@@ -34,12 +34,22 @@ APPROVED_WINTUN_ROOTS = (
     "crates/windows-wintun/",
     "installers/windows/",
 )
+APPROVED_WINTUN_TOOL_FILES = {
+    "scripts/windows/test-native-agent.ps1",
+}
 SELF = Path(__file__).resolve()
 POLICY_TOOLS = {
     SELF,
     (ROOT / "scripts" / "generate-source-sbom.py").resolve(),
+    (ROOT / "scripts" / "test-independent-implementation-validator.py").resolve(),
     (ROOT / "scripts" / "test-source-sbom.py").resolve(),
 }
+
+
+def is_approved_reference(relative: str, name: str) -> bool:
+    if name == "wintun":
+        return relative.startswith(APPROVED_WINTUN_ROOTS) or relative in APPROVED_WINTUN_TOOL_FILES
+    return name == "wireguard" and relative.startswith("installers/windows/")
 
 
 def source_files():
@@ -62,9 +72,7 @@ def main():
             if count == 0:
                 continue
             key = (relative, name)
-            if name == "wintun" and relative.startswith(APPROVED_WINTUN_ROOTS):
-                continue
-            if name == "wireguard" and relative.startswith("installers/windows/"):
+            if is_approved_reference(relative, name):
                 continue
             observed[key] = count
             if key not in ALLOWED_NEGATIVE_REFERENCES:
