@@ -1179,6 +1179,8 @@ EOF
         "$TEMPORARY/acl-update-response.json")
     wait_configuration_version "$AGENT_A" "$version"
     wait_configuration_version "$AGENT_B" "$version"
+    wait_path_kind "$AGENT_A" "$VIRTUAL_IP_B" direct
+    wait_path_kind "$AGENT_B" "$VIRTUAL_IP_A" direct
     ping_agent "$AGENT_A" "$VIRTUAL_IP_B"
 }
 
