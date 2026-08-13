@@ -648,3 +648,12 @@
 - [x] 每个未完成条目均准确标记 `BLOCKED_EXTERNAL`，并由 `BLK-011` 映射到 owner inventory、secret channel、云/NAS/CI/设备权限、维护窗口和独立验证者。
 - [x] 未尝试历史聊天凭据、未绕过变化后的 SSH host key、未使用生成测试值冒充正式新值、未把“服务未使用”当作旧值拒绝。
 - [ ] 所有者激活每个真实新值并从独立主体证明旧值拒绝尚未完成；Gate 02 保持 `FAIL`，`PRV2-001` 保持 `BLOCKED_EXTERNAL`。
+
+## 34. Exact-head Relay 双端收敛回归（2026-08-13）
+
+- [x] 失败保留：revision `f4c87074a65cf8e8b8df41664700a3f81131a40c` 的 run `31652099523` 为 12/13；Relay job `94298488921` 与 artifact `9163073115` 保留首个 failover ICMP 超时和完整进程日志。
+- [x] 根因验证：旧 harness 只等待发送端备用路径；修复在 primary、backup、restart 和 Direct 四个边界同时验证两个 Agent 的 exact endpoint、允许原因和 established session。
+- [x] 断言保持：产品故障/保活定时器、每端路径等待上限、ICMP 成功、ACL 绕过拒绝、Relay 密文、指标和 namespace/进程清理均未放宽。
+- [x] 精确回归：revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` 的 run `31653564044` 全 13 job 通过；Relay job `94302909276`、artifact `9163588782` 外层 8/8、容量层 4/4 与零秘密扫描通过。
+- [x] 受影响 Gate 25：artifact `9163844194` 通过 110/110 外层、8/8 嵌套清单、10/10 阶段与两组 10/10 不变量。
+- [x] 结论边界：这是 hosted 仓库回归，不是正式独立发布或生产演练；Gate 25 保持 `FAIL`，总体保持 `NO_GO`。

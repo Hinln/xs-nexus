@@ -556,3 +556,11 @@ make clean
 - 同一精确 HEAD 的性能 job `94289075182`/artifact `9161977864` 与 600 秒校准 job `94289075250`/artifact `9162201059` 也完成独立清单、revision 和秘密扫描复核。Gate 22 仍为 `UNKNOWN`，Gate 25 仍为 `FAIL`：正式 owner-signed RC/main、独立操作者、新鲜非托管主机、正式秘密和当前生产升级/回滚均未完成。
 - 本轮未连接或修改生产，最后已知运行 revision 仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，总体保持 `NO_GO`。下一步只可在 `BLK-006`、`BLK-009`、`BLK-010` 等外部条件解除后执行正式长测/签名/独立发布演练，不能把当前 hosted 子矩阵升级为生产 PASS。
 - 最终剩余项审计确认 `PRV2-001` 的仓库侧无值清单、runtime 隔离与验证规则已完成，但真实轮换需要所有者控制的生产/NAS/CI/设备权限、secret channel、维护窗口和独立旧值拒绝；现准确改为 `BLOCKED_EXTERNAL` 并新增 `BLK-011`。Gate 02 仍为 `FAIL`，没有伪造轮换结果。
+
+## 2026-08-13 Exact-head Relay 收敛回归
+
+- 文档与凭据边界提交 `f4c87074a65cf8e8b8df41664700a3f81131a40c` 的 run `31652099523` 为 12/13，通过项没有替代失败项；`relay-resilience` 在主 Relay 停止后的首个 ICMP 样本超时，失败 job `94298488921` 与 artifact `9163073115` 保留。
+- 根因是 harness 只等待发送端报告备用 Relay，未等待接收端独立故障检测和路径状态收敛。修复后四个路径边界均要求两个 Agent 的 exact endpoint、允许原因和 established session；没有调整产品超时、每端等待上限或流量/安全断言。
+- 精确 revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` 的 run `31653564044` 全 13 job 通过。Relay job `94302909276`、artifact `9163588782`、digest `sha256:8b6495407a822ebefaa6259e5c64f43effa61628250550705648b2f217c05803`，外层 8/8、容量层 4/4 清单与零秘密扫描通过。
+- 同 revision 的 Gate 25 artifact `9163844194`、digest `sha256:376e136188c0782b2af3797395c0b871fb39747c007475c4241c58075ce84a08` 独立通过 110/110 外层、8/8 更新清单、10/10 阶段及 20/20 前后不变量。它仍是 hosted、test-only、非独立、无生产变更的仓库子矩阵。
+- 生产未连接或修改，最后已知运行 revision 仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。Gate 02=`FAIL/BLOCKED_EXTERNAL`、Gate 22=`UNKNOWN/BLOCKED_EXTERNAL`、Gate 25=`FAIL/BLOCKED_EXTERNAL`，总体严格保持 `NO_GO`。

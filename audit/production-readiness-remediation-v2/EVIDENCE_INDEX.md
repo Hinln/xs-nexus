@@ -340,3 +340,12 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 - Cleanup scope: 10/10 phases, 10/10 fixture invariants and 10/10 final invariants passed; Docker containers/networks/volumes, default route, rules, links, namespaces, nftables, failed services and `1panel-network` returned to baseline.
 - Formal boundary: artifact values are `formal_signed_rc=false`, `independent_operator=false`, and `production_mutation=false`. Gate 25 stays `FAIL` until an owner-signed RC is rehearsed by an independent operator on a fresh non-hosted server and the current production upgrade/rollback chain passes.
 - Detailed report: `audit/production-readiness-remediation-v2/RELEASE_REHEARSAL.md`.
+
+## Exact-Head Relay Convergence Regression (2026-08-13)
+
+- Failed exact-head revision/run: `f4c87074a65cf8e8b8df41664700a3f81131a40c` / `31652099523`; 12/13 jobs passed and Relay job `94298488921` failed on the first ICMP sample after primary-Relay loss. Failed artifact `9163073115` and its raw logs remain retained.
+- Root cause: the harness verified only the sending Agent's failover state before asserting a bidirectional exchange, while Relay failure detection is independent on both Agents. The fix requires both Agents to report the exact established Relay or Direct path at every transition; product timers, per-Agent wait bounds, packet success, ACL, encryption, and cleanup assertions are unchanged.
+- Passing exact revision/run: `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` / [`31653564044`](https://github.com/Hinln/xs-nexus/actions/runs/31653564044), all 13 jobs PASS.
+- Relay job/artifact: [`94302909276`](https://github.com/Hinln/xs-nexus/actions/runs/31653564044/job/94302909276) / `9163588782`; GitHub digest `sha256:8b6495407a822ebefaa6259e5c64f43effa61628250550705648b2f217c05803`. Independent extraction passed 8/8 outer and 4/4 capacity hashes plus a zero-finding secret scan.
+- Gate 25 affected artifact: `9163844194`; GitHub digest `sha256:376e136188c0782b2af3797395c0b871fb39747c007475c4241c58075ce84a08`. Independent extraction passed 110/110 outer and 8/8 nested hashes, all 10 phases, both sets of 10 invariants, and a zero-finding secret scan.
+- Formal boundary is unchanged: the artifact records `formal_signed_rc=false`, `independent_operator=false`, and `production_mutation=false`. Gate 25 remains `FAIL`, Gate 22 remains `UNKNOWN`, and overall status remains `NO_GO`.

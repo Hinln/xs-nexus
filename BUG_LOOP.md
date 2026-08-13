@@ -412,3 +412,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0069`：严格 Clippy 在最终收口依次发现三处超长函数、`needless_pass_by_value`、`unnested_or_patterns` 和容量测试超长函数。runs `31558236452`、`31602351182`、`31603038239` 保留；仅按职责抽取和修正借用/模式，不改变测试语义。
 - 最终 revision `f4a39c2c74b6f75e6f5284cff1b8599de9aeb363` 的 run `31603852656` 全 11 job 通过；job `94137661764`、artifact `9144433450`、外层 41/41、Agent 11/11、Controller 8/8、Protocol 8/8、revision 绑定和零发现无值扫描通过。
 - Gate 21 仍为 `PARTIAL/BLOCKED_EXTERNAL`，Gate 22 仍为 `UNKNOWN`，总体保持 `NO_GO`；生产未改变。
+
+## Gate 25 最终 Relay 收敛竞态（2026-08-13）
+
+- `XS-2026-0070`：文档与凭据边界更新后的 exact-head run `31652099523` 有 12/13 job 通过，但 `relay-resilience` 在停止主 Relay 后的首个 ICMP 样本超时。失败证据 `9163073115` 保留；主、备 Relay 均已实际转发，暴露的是测试只等待发送端路径状态、可能在接收端独立故障检测尚未收敛时立即发起往返断言。
+- 修复：测试现在保存两端 Direct 候选，并在初始 Relay、主 Relay 故障切换、重启主 Relay 接管和最终 Direct 恢复四个边界都要求两个 Agent 的端点、路径原因和 established session 同时收敛。没有修改产品故障超时、每端等待上限、流量成功条件、ACL、密文或清理断言。
+- 精确 revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` 的 run `31653564044` 全 13 job 通过；Relay job `94302909276`、artifact `9163588782`、GitHub digest `sha256:8b6495407a822ebefaa6259e5c64f43effa61628250550705648b2f217c05803` 通过。独立下载复核外层 8/8、容量层 4/4 SHA-256 和零秘密发现。
+- 同一 revision 的 Gate 25 artifact `9163844194` 通过 110/110 外层、8/8 更新供应链清单、10/10 阶段及两组各 10/10 不变量；仍明确记录 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。Gate 25 保持 `FAIL`，总体保持 `NO_GO`。

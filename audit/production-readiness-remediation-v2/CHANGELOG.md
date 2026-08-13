@@ -172,3 +172,10 @@
 - Reclassified `PRV2-001` and `KI-023` from generic `OPEN` to `BLOCKED_EXTERNAL`; no credential is marked rotated or rejected without real evidence, and Gate 02 remains `FAIL`.
 - Added `BLK-011` for owner-controlled production/NAS/CI/device inventory, secret channels, maintenance windows, replacement activation and independent old-value rejection.
 - No historical credential was reused, no SSH host-key check was bypassed, and no production, NAS, organization, DNS/CDN or CI secret was changed.
+
+## 2026-08-13 Exact-Head Relay Convergence Regression
+
+- Preserved run `31652099523`, where 12/13 jobs passed but Relay recovery failed on the first ICMP sample after the primary Relay stopped; the failure was not rerun away or replaced with an older green revision.
+- Fixed the harness to require both Agents to converge on the exact established primary Relay, backup Relay, restarted Relay, and restored Direct path before each bidirectional assertion. Product timers, per-Agent bounds, packet/ACL/encryption checks, and cleanup requirements remain unchanged.
+- Exact revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` passed all 13 jobs in run `31653564044`. Relay artifact `9163588782` and Gate 25 artifact `9163844194` passed independent manifests and zero-finding secret scans.
+- Production was not connected or changed. Gate 02 remains `FAIL`, Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, and the overall decision remains `NO_GO`.
