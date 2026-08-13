@@ -58,6 +58,27 @@ jobs:
       - run: make test-production-health
       - run: shellcheck scripts/check-rust-advisories.sh scripts/run-protocol-fuzz.sh scripts/check-production-health.sh scripts/test-production-health.sh scripts/test-windows-xsnet-transport.sh scripts/test-image-reproducibility.sh scripts/sign-release-provenance.sh scripts/test-release-provenance.sh scripts/audit-production-secret-surfaces.sh scripts/test-postgres-least-privilege.sh scripts/test-controller-scale.sh scripts/test-protocol-throughput.sh scripts/test-agent-rtt.sh scripts/test-agent-systemd.sh scripts/test-agent-acl.sh scripts/test-agent-relay.sh scripts/test-agent-subnet-route.sh scripts/test-relay-throughput.sh scripts/test-current-revision-soak.sh scripts/test-clean-release-rehearsal.sh installers/linux/xs-nexus-installer.sh installers/linux/xs-nexus-one-click.sh scripts/test-linux-installer.sh scripts/test-linux-one-click.sh scripts/test-update-supply-chain.sh
 
+  windows-native:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.94.0
+          components: clippy
+      - name: Run native Windows Agent and boundary matrix
+        shell: pwsh
+        run: ./scripts/windows/test-native-agent.ps1 -EvidenceDirectory artifacts/windows-native
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: windows-native-evidence
+          path: artifacts/windows-native
+          if-no-files-found: error
+
   production-observability:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

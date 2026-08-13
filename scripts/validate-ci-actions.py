@@ -17,6 +17,47 @@ REVIEWED_NODE24_ACTIONS = {
     "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7.0.1"),
     "docker/setup-buildx-action": ("bb05f3f5519dd87d3ba754cc423b652a5edd6d2c", "v4.2.0"),
 }
+WINDOWS_NATIVE_JOB_FRAGMENTS = (
+    "    runs-on: windows-2025",
+    "    timeout-minutes: 30",
+    "          toolchain: 1.94.0",
+    "          components: clippy",
+    "        run: ./scripts/windows/test-native-agent.ps1 -EvidenceDirectory artifacts/windows-native",
+    "        if: always()",
+    "          name: windows-native-evidence",
+    "          path: artifacts/windows-native",
+    "          if-no-files-found: error",
+)
+
+
+def job_block(lines: list[str], job_name: str) -> list[str] | None:
+    heading = f"  {job_name}:"
+    try:
+        start = lines.index(heading)
+    except ValueError:
+        return None
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        if re.fullmatch(r"  [A-Za-z0-9_-]+:", lines[index]):
+            end = index
+            break
+    return lines[start:end]
+
+
+def validate_ci_contract(path: Path, text: str) -> list[str]:
+    if not re.search(r"(?m)^name:\s*ci\s*$", text):
+        return []
+    failures: list[str] = []
+    block = job_block(text.splitlines(), "windows-native")
+    if block is None:
+        return [f"{path}: missing required windows-native job"]
+    rendered = "\n".join(block)
+    for fragment in WINDOWS_NATIVE_JOB_FRAGMENTS:
+        if fragment not in rendered:
+            failures.append(
+                f"{path}: windows-native job is missing required fragment {fragment.strip()!r}"
+            )
+    return failures
 
 
 def validate_workflow(path: Path, text: str) -> list[str]:
@@ -66,6 +107,7 @@ def validate_workflow(path: Path, text: str) -> list[str]:
                 failures.append(
                     f"{path}:{line_number}: actions/checkout must set persist-credentials: false"
                 )
+    failures.extend(validate_ci_contract(path, text))
     return failures
 
 

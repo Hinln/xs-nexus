@@ -16,7 +16,7 @@ Current value: `NO`
 - [x] PostgreSQL Gate 16 is `PASS` with production reverse verification and retained rollback evidence.
 - [x] Gate 23 self-fixable findings pass exact-head CI and clean-checkout validation at `3bf8619`; failed evidence is dispositioned and sealed.
 - [x] Gate 20 repository observability submatrix passes at `9291400` with authenticated aggregation, real PostgreSQL/TLS/systemd, complete alert lifecycle, and independently verified evidence; the gate remains `PARTIAL` pending production-independent delivery/on-call/closure.
-- [x] Gate 25 repository clean-release submatrix passes at `6e63424` with an exact detached checkout, test-only tag, reproducible images, real Direct/Relay/subnet/update/deployment lifecycles, exact cleanup, and independently verified evidence; the gate remains `FAIL` pending a formal owner-signed RC and independent production rehearsal.
+- [x] Gate 25 repository clean-release submatrix passes at `6715242` with an exact detached checkout, test-only tag, reproducible images, real Direct/Relay/subnet/update/deployment lifecycles, exact cleanup, and independently verified evidence; the gate remains `FAIL` pending a formal owner-signed RC and independent production rehearsal.
 - [ ] Host, planned-domain TLS, observability, defects, dependency, and deployment gates are `PASS`.
 - [ ] Linux recovery, Relay, and performance gates are `PASS`; Console's repository matrix is complete but Gate 19 remains `PARTIAL` pending Gate 13's public strict-TLS path; ACL and 1Panel coexistence are complete.
 - [ ] Real WAN, Windows, NAS, subnet router, and offsite restore gates are `PASS`.

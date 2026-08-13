@@ -25,10 +25,10 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 19 | Web Console | PARTIAL | PARTIAL | Owner-authorized planned-domain strict TLS/public browser path; current-source real PostgreSQL/Controller/production-build E2E and visual matrix is complete |
 | 20 | Production observability | PARTIAL | PARTIAL | Independent production delivery/on-call/resolved closure and continuous formal TLS/backup evidence; repository metrics and alert matrix is complete |
 | 21 | Performance and capacity | PARTIAL | PARTIAL | Internal 1,000-node/session envelope complete; public-WAN, multi-region/multi-instance, volumetric, and hours/days evidence remains |
-| 22 | Current-revision soak | UNKNOWN | UNKNOWN | Latest 600-second harness calibration passed at `6e63424`; still requires at least 24 hours on an approved identity-verified privileged Linux host |
+| 22 | Current-revision soak | UNKNOWN | UNKNOWN | Latest 600-second harness calibration passed at `6715242`; still requires at least 24 hours on an approved identity-verified privileged Linux host |
 | 23 | Defects and security findings | FAIL | FAIL | Exact-head self-fixable checks pass at `3bf8619`; all remaining P0/P1/Critical/High findings, including external findings, must reach zero and P2 dispositions must remain current |
 | 24 | Dependencies and image supply chain | PARTIAL | PARTIAL | Formal signed/deployed release and bounded glibc disposition closure; dated `paste` topology review completed |
-| 25 | Clean deployment rehearsal | FAIL | FAIL | Repository clean-checkout/full-lifecycle submatrix passes at `6e63424`; still requires owner-signed RC, independent operator/fresh server, and production upgrade/rollback |
+| 25 | Clean deployment rehearsal | FAIL | FAIL | Repository clean-checkout/full-lifecycle submatrix passes at `6715242`; still requires owner-signed RC, independent operator/fresh server, and production upgrade/rollback |
 
 ## Initial Counts
 
