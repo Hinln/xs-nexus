@@ -14,6 +14,7 @@ readonly MAXIMUM_AGENT_IDLE_CPU_PERCENT=5
 readonly MAXIMUM_AGENT_FILE_DESCRIPTORS=64
 readonly MAXIMUM_AGENT_THREADS=16
 readonly EXPECTED_RTT_SAMPLES=100
+readonly MAXIMUM_DIRECT_WARMUP_ATTEMPTS=12
 mkdir -p "$EVIDENCE_DIR"
 chmod 0700 "$EVIDENCE_DIR"
 EVIDENCE_DIR=$(cd "$EVIDENCE_DIR" && pwd -P)
@@ -24,8 +25,10 @@ revision=${XS_EVIDENCE_GIT_REVISION:-$(git rev-parse HEAD)}
 readonly revision
 printf '%s\n' "$revision" >"$EVIDENCE_DIR/revision.txt"
 printf 'status=FAIL\nrevision=%s\n' "$revision" >"$EVIDENCE_DIR/status.txt"
-printf 'XS_AGENT_TEST_PROFILE=release XS_AGENT_RTT_SAMPLE_COUNT=%s RTT_EVIDENCE_DIR=<evidence> ./scripts/test-agent-relay.sh\n' \
+printf 'XS_AGENT_TEST_PROFILE=release XS_AGENT_RTT_SAMPLE_COUNT=%s XS_AGENT_RTT_WARMUP_ATTEMPTS=%s XS_AGENT_RTT_MAX_DIRECT_P95_MILLISECONDS=%s RTT_EVIDENCE_DIR=<evidence> ./scripts/test-agent-relay.sh\n' \
     "$EXPECTED_RTT_SAMPLES" \
+    "$MAXIMUM_DIRECT_WARMUP_ATTEMPTS" \
+    "$MAXIMUM_DIRECT_P95_MILLISECONDS" \
     >"$EVIDENCE_DIR/command.txt"
 {
     date -u +%Y-%m-%dT%H:%M:%SZ
@@ -38,6 +41,8 @@ printf 'XS_AGENT_TEST_PROFILE=release XS_AGENT_RTT_SAMPLE_COUNT=%s RTT_EVIDENCE_
 start_epoch=$(date +%s)
 set +e
 XS_AGENT_TEST_PROFILE=release XS_AGENT_RTT_SAMPLE_COUNT="$EXPECTED_RTT_SAMPLES" \
+    XS_AGENT_RTT_WARMUP_ATTEMPTS="$MAXIMUM_DIRECT_WARMUP_ATTEMPTS" \
+    XS_AGENT_RTT_MAX_DIRECT_P95_MILLISECONDS="$MAXIMUM_DIRECT_P95_MILLISECONDS" \
     RTT_EVIDENCE_DIR="$EVIDENCE_DIR" ./scripts/test-agent-relay.sh \
     >"$EVIDENCE_DIR/test-output.txt" 2>&1
 test_status=$?
@@ -58,7 +63,8 @@ python3 - \
     "$MAXIMUM_AGENT_IDLE_CPU_PERCENT" \
     "$MAXIMUM_AGENT_FILE_DESCRIPTORS" \
     "$MAXIMUM_AGENT_THREADS" \
-    "$EXPECTED_RTT_SAMPLES" <<'PY'
+    "$EXPECTED_RTT_SAMPLES" \
+    "$MAXIMUM_DIRECT_WARMUP_ATTEMPTS" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -69,6 +75,7 @@ idle = json.loads((Path(sys.argv[1]).parent / "agent-idle.json").read_text(encod
 direct_warmup = json.loads(
     (Path(sys.argv[1]).parent / "direct-warmup.json").read_text(encoding="utf-8")
 )
+direct_warmup_attempts = sorted(Path(sys.argv[1]).parent.glob("direct-warmup-attempt-*.json"))
 envelope = {
     "maximum_direct_average_milliseconds": int(sys.argv[5]),
     "maximum_direct_p95_milliseconds": int(sys.argv[6]),
@@ -79,6 +86,7 @@ envelope = {
     "maximum_agent_idle_cpu_percent_one_core": int(sys.argv[11]),
     "maximum_agent_file_descriptors": int(sys.argv[12]),
     "maximum_agent_threads": int(sys.argv[13]),
+    "maximum_direct_warmup_attempts": int(sys.argv[15]),
 }
 report = {
     "schema_version": 1,
@@ -87,6 +95,7 @@ report = {
     "relay": relay,
     "direct": direct,
     "direct_warmup": direct_warmup,
+    "direct_warmup_attempt_count": len(direct_warmup_attempts),
     "relay_average_increment_ms": relay["average_ms"] - direct["average_ms"],
     "relay_p95_increment_ms": relay["p95_ms"] - direct["p95_ms"],
     "agent_idle": idle,
@@ -94,6 +103,9 @@ report = {
 }
 assert relay["count"] == direct["count"] == int(sys.argv[14])
 assert direct_warmup["count"] == 10
+assert 1 <= len(direct_warmup_attempts) <= envelope["maximum_direct_warmup_attempts"]
+assert direct_warmup == json.loads(direct_warmup_attempts[-1].read_text(encoding="utf-8"))
+assert direct_warmup["p95_ms"] <= envelope["maximum_direct_p95_milliseconds"]
 assert direct["average_ms"] <= envelope["maximum_direct_average_milliseconds"]
 assert direct["p95_ms"] <= envelope["maximum_direct_p95_milliseconds"]
 assert relay["average_ms"] <= envelope["maximum_relay_average_milliseconds"]
@@ -127,6 +139,7 @@ checksum_file=$(mktemp)
         command.txt \
         direct.json \
         direct-warmup.json \
+        direct-warmup-attempt-*.json \
         elapsed-seconds.txt \
         environment.txt \
         relay.json \

@@ -42,10 +42,20 @@ CAPTURE_PID=
 COLLECT_PID=
 RTT_EVIDENCE_DIR=${RTT_EVIDENCE_DIR:-}
 RTT_SAMPLE_COUNT=${XS_AGENT_RTT_SAMPLE_COUNT:-100}
+RTT_WARMUP_ATTEMPTS=${XS_AGENT_RTT_WARMUP_ATTEMPTS:-12}
+RTT_MAX_DIRECT_P95_MILLISECONDS=${XS_AGENT_RTT_MAX_DIRECT_P95_MILLISECONDS:-10}
 
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     if [[ ! $RTT_SAMPLE_COUNT =~ ^[0-9]+$ || $RTT_SAMPLE_COUNT -lt 100 ]]; then
         printf 'XS_AGENT_RTT_SAMPLE_COUNT must be an integer of at least 100\n' >&2
+        exit 2
+    fi
+    if [[ ! $RTT_WARMUP_ATTEMPTS =~ ^[0-9]+$ || $RTT_WARMUP_ATTEMPTS -lt 1 ]]; then
+        printf 'XS_AGENT_RTT_WARMUP_ATTEMPTS must be a positive integer\n' >&2
+        exit 2
+    fi
+    if [[ ! $RTT_MAX_DIRECT_P95_MILLISECONDS =~ ^[0-9]+$ || $RTT_MAX_DIRECT_P95_MILLISECONDS -lt 1 ]]; then
+        printf 'XS_AGENT_RTT_MAX_DIRECT_P95_MILLISECONDS must be a positive integer\n' >&2
         exit 2
     fi
     mkdir -p "$RTT_EVIDENCE_DIR"
@@ -445,6 +455,19 @@ PY
     printf 'peer path did not become active: %s reason=%s\n' "$endpoint" "$reason" >&2
     "$CLI" peers --socket "$socket" --json >&2 || true
     exit 1
+}
+
+rtt_p95_within_limit() {
+    local report=$1
+    local maximum_milliseconds=$2
+    python3 - "$report" "$maximum_milliseconds" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if report["p95_ms"] <= int(sys.argv[2]) else 1)
+PY
 }
 
 relay_metric() {
@@ -955,14 +978,36 @@ wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
 wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$endpoint_a" \
     authenticated_path_probe,authenticated_peer_traffic
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
-    ip netns exec "$NETNS_A" "$PROBE" icmp \
-        --destination "$virtual_ip_b" \
-        --payload xs-m73-direct-warmup \
-        --sequence 180 \
-        --count 10 \
-        --interval 0.05 \
-        --timeout 3 \
-        --output "$RTT_EVIDENCE_DIR/direct-warmup.json"
+    direct_warmup_passed=false
+    for attempt in $(seq 1 "$RTT_WARMUP_ATTEMPTS"); do
+        wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
+            authenticated_path_probe,authenticated_peer_traffic
+        wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$endpoint_a" \
+            authenticated_path_probe,authenticated_peer_traffic
+        warmup_report=$(printf '%s/direct-warmup-attempt-%02d.json' "$RTT_EVIDENCE_DIR" "$attempt")
+        ip netns exec "$NETNS_A" "$PROBE" icmp \
+            --destination "$virtual_ip_b" \
+            --payload xs-m73-direct-warmup \
+            --sequence "$((1000 + (attempt - 1) * 10))" \
+            --count 10 \
+            --interval 0.05 \
+            --timeout 3 \
+            --output "$warmup_report"
+        wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
+            authenticated_path_probe,authenticated_peer_traffic
+        wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$endpoint_a" \
+            authenticated_path_probe,authenticated_peer_traffic
+        if rtt_p95_within_limit "$warmup_report" "$RTT_MAX_DIRECT_P95_MILLISECONDS"; then
+            cp -- "$warmup_report" "$RTT_EVIDENCE_DIR/direct-warmup.json"
+            direct_warmup_passed=true
+            break
+        fi
+    done
+    if [[ $direct_warmup_passed != true ]]; then
+        printf 'Direct path did not reach the RTT steady-state envelope after %s attempts\n' \
+            "$RTT_WARMUP_ATTEMPTS" >&2
+        exit 1
+    fi
     ip netns exec "$NETNS_A" "$PROBE" icmp \
         --destination "$virtual_ip_b" \
         --payload xs-m73-direct-rtt \
