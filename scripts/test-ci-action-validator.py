@@ -83,7 +83,13 @@ jobs:
           components: clippy
       - name: Run native Windows Agent and boundary matrix
         shell: pwsh
-        run: ./scripts/windows/test-native-agent.ps1 -EvidenceDirectory artifacts/windows-native
+        run: |
+          Push-Location $env:RUNNER_TEMP
+          try {
+            & "$env:GITHUB_WORKSPACE/scripts/windows/test-native-agent.ps1" -EvidenceDirectory artifacts/windows-native
+          } finally {
+            Pop-Location
+          }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -98,7 +104,7 @@ jobs:
     )
     expect_failure(
         valid_ci.replace(
-            "./scripts/windows/test-native-agent.ps1 -EvidenceDirectory artifacts/windows-native",
+            '& "$env:GITHUB_WORKSPACE/scripts/windows/test-native-agent.ps1" -EvidenceDirectory artifacts/windows-native',
             "cargo check --workspace",
         ),
         "test-native-agent.ps1",

@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$secretScanner = Join-Path $root 'scripts\check-secrets.py'
 $evidence = [System.IO.Path]::GetFullPath((Join-Path $root $EvidenceDirectory))
 if (-not $evidence.StartsWith($root + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw 'evidence directory must remain inside the repository checkout'
@@ -90,7 +91,7 @@ try {
     }
     Set-Content -LiteralPath (Join-Path $evidence 'binary-sha256.txt') -Value $binaryHashes -Encoding utf8NoBOM
 
-    $sourceScan = & python scripts/check-secrets.py --root . 2>&1
+    $sourceScan = & python $secretScanner --root $root 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw 'repository secret scan failed'
     }
