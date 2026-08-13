@@ -81,6 +81,7 @@ jobs:
         with:
           toolchain: 1.94.0
           components: clippy
+      - run: python scripts/validate-windows-native-agent.py
       - name: Run native Windows Agent and boundary matrix
         shell: pwsh
         run: |
@@ -98,6 +99,13 @@ jobs:
           if-no-files-found: error
 """
     assert validate_fixture(valid_ci) == []
+    expect_failure(
+        valid_ci.replace(
+            "      - run: python scripts/validate-windows-native-agent.py\n",
+            "",
+        ),
+        "validate-windows-native-agent.py",
+    )
     expect_failure(
         valid_ci.replace("runs-on: windows-2025", "runs-on: windows-latest"),
         "runs-on: windows-2025",

@@ -22,6 +22,7 @@ WINDOWS_NATIVE_JOB_FRAGMENTS = (
     "    timeout-minutes: 30",
     "          toolchain: 1.94.0",
     "          components: clippy",
+    "      - run: python scripts/validate-windows-native-agent.py",
     "          Push-Location $env:RUNNER_TEMP",
     '            & "$env:GITHUB_WORKSPACE/scripts/windows/test-native-agent.ps1" -EvidenceDirectory artifacts/windows-native',
     "            Pop-Location",

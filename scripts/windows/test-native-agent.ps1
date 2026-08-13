@@ -97,7 +97,7 @@ try {
     }
     Set-Content -LiteralPath (Join-Path $evidence 'source-secret-scan.log') -Value $sourceScan -Encoding utf8NoBOM
 
-    $evidenceScan = & python scripts/check-secrets.py --root $evidence 2>&1
+    $evidenceScan = & python $secretScanner --root $evidence 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw 'evidence secret scan failed'
     }

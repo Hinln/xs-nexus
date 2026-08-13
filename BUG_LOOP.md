@@ -450,3 +450,4 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 精确修复 revision `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 run `31671264821` 全 14 job 通过。全部 13 artifacts 独立通过 18 份 manifest、1,027 个 SHA-256 条目、revision/status 边界和整包零发现秘密扫描。
 - 两项均为测试真实性缺陷，不改变正式 Gate 计数。Gate 22=`UNKNOWN`、Gate 25=`FAIL`、总体=`NO_GO`，生产未认证或修改。
 - 2026-08-14 实体 Windows 目标首次从管理员默认目录调用 `scripts/windows/test-native-agent.ps1` 时，Release 构建、51 个 Agent 测试、CLI、23 个 Windows 边界测试和 Clippy 均通过，但脚本最终以“repository secret scan failed”退出。保留失败后独立复跑扫描通过，定位为脚本把 `scripts/check-secrets.py` 和 `--root .` 错误绑定到调用者当前目录；GitHub runner 恰好从仓库根调用，长期掩盖了缺陷。修复为从 `$PSScriptRoot` 解析仓库根与扫描器绝对路径，并让 CI 显式从 `$RUNNER_TEMP` 调用脚本，防止重新引入当前目录依赖。失败测试没有跳过或改写为通过；候选变化后 Linux 正式长测从零重启。
+- 候选 `68831abfc422ef02799fd385bafc43afb9f4fa76` 的实体机复测证明源码扫描绝对路径已生效，但随后在同一脚本的 evidence scan 暴露第二处 `scripts/check-secrets.py` 相对路径并失败。立即取消该候选 CI；再次没有把编译、测试和 Clippy 的局部通过写成矩阵通过。两处扫描现统一使用 `$secretScanner` 绝对路径，并新增 `scripts/validate-windows-native-agent.py`，同时让 Windows CI 从非仓库目录执行，静态与动态双重防止调用目录依赖。

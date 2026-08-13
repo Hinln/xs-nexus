@@ -619,3 +619,4 @@ make clean
 - 当前正在进行：完成定向回归、秘密扫描、提交/推送和 CI 后，在 Linux QA 主机检出新候选并从零重启正式长测；Windows Gate 11 仍等待实体机恢复材料，整体仍为 `NO_GO`。
 - 2026-08-13 已带外核对实体笔记本 OpenSSH ED25519 host identity，并以专用公钥完成管理员只读认证；Windows build、Secure Boot、TPM、系统盘保护、PowerShell 7、Windows Kits 和物理网卡基线满足后续门禁起点。主机名、局域网地址和完整指纹仅进入仓库外证据，不提交公开仓库。Gate 11 现仅等待已验证的外置完整系统镜像、可启动恢复介质、磁盘恢复材料与现场恢复人员回执。
 - 精确候选 `70d727b76b8ed953308f51e32bc0ec9e63e0fae9` 的 14 个 GitHub Actions jobs 全部通过；实体机使用两端 SHA-256 一致的完整 Git bundle、Rust 1.94.0 和独立 `D:` 目录执行无驱动原生矩阵。Release 构建、51 个 Agent 测试、CLI、23 个 Windows 边界测试和 Clippy 均通过，但脚本最终秘密扫描因依赖调用者当前目录而失败。该失败未忽略；已停止尚未产生 `start-utc.txt` 的 Linux 正式长测，确认无 Gate22 容器/网络残留且 `1panel-network` 不变。修复后必须生成新提交、重跑 exact-head CI、实体机矩阵和完整 86400 秒长测。
+- 第一轮修复候选 `68831abfc422ef02799fd385bafc43afb9f4fa76` 在实体机上通过源码秘密扫描后，又在 evidence secret scan 暴露第二处相同的调用目录依赖；其 CI 已取消。现已把两个扫描都固定到从 `$PSScriptRoot` 解析的绝对扫描器路径，并加入专用源码门禁；整体和 Windows Gate 11 保持 `NO_GO`/`IN_PROGRESS`。

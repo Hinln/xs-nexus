@@ -69,6 +69,7 @@ jobs:
         with:
           toolchain: 1.94.0
           components: clippy
+      - run: python scripts/validate-windows-native-agent.py
       - name: Run native Windows Agent and boundary matrix
         shell: pwsh
         run: |
