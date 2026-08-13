@@ -815,7 +815,8 @@ wait_relay_metric "$RELAY_HEALTH_1" active_leases 2
 wait_relay_metric "$RELAY_HEALTH_2" active_leases 2
 wait_controller_relay_reports
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_fallback
-wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_fallback
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" \
+    relay_fallback,relay_failover
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     measure_agent_idle "$RTT_EVIDENCE_DIR/agent-idle.json"
 fi
