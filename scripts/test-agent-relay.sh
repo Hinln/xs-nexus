@@ -809,12 +809,13 @@ wait_controller_connected "$TEMPORARY/node-b/run/agent.sock"
 wait_configuration_version "$TEMPORARY/node-a/run/agent.sock" "$ACL_CONFIGURATION_VERSION"
 wait_configuration_version "$TEMPORARY/node-b/run/agent.sock" "$ACL_CONFIGURATION_VERSION"
 
-candidate_endpoint "$TEMPORARY/node-a/run/agent.sock" "$CONTROL_IP_A" >/dev/null
+endpoint_a=$(candidate_endpoint "$TEMPORARY/node-a/run/agent.sock" "$CONTROL_IP_A")
 endpoint_b=$(candidate_endpoint "$TEMPORARY/node-b/run/agent.sock" "$CONTROL_IP_B")
 wait_relay_metric "$RELAY_HEALTH_1" active_leases 2
 wait_relay_metric "$RELAY_HEALTH_2" active_leases 2
 wait_controller_relay_reports
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_fallback
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" relay_fallback
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     measure_agent_idle "$RTT_EVIDENCE_DIR/agent-idle.json"
 fi
@@ -920,6 +921,7 @@ kill "$RELAY_1_PID"
 wait "$RELAY_1_PID"
 RELAY_1_PID=
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_2" relay_failover
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_2" relay_failover
 ip netns exec "$NETNS_A" "$PROBE" icmp \
     --destination "$virtual_ip_b" \
     --payload xs-m23-relay-failover \
@@ -937,6 +939,8 @@ wait "$RELAY_2_PID"
 RELAY_2_PID=
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" \
     relay_fallback,relay_failover
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$BRIDGE_IP:$RELAY_PORT_1" \
+    relay_fallback,relay_failover
 ip netns exec "$NETNS_A" "$PROBE" icmp \
     --destination "$virtual_ip_b" \
     --payload xs-m23-relay-restart-recovery \
@@ -946,6 +950,8 @@ wait_relay_metric "$RELAY_HEALTH_1" packets_forwarded 1
 
 unblock_direct
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
+    authenticated_path_probe,authenticated_peer_traffic
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$endpoint_a" \
     authenticated_path_probe,authenticated_peer_traffic
 if [[ -n $RTT_EVIDENCE_DIR ]]; then
     ip netns exec "$NETNS_A" "$PROBE" icmp \
@@ -976,6 +982,8 @@ ip netns exec "$NETNS_B" "$PROBE" icmp \
     --sequence 26 \
     --timeout 5
 wait_peer_path "$TEMPORARY/node-a/run/agent.sock" "$endpoint_b" \
+    authenticated_path_probe,authenticated_peer_traffic
+wait_peer_path "$TEMPORARY/node-b/run/agent.sock" "$endpoint_a" \
     authenticated_path_probe,authenticated_peer_traffic
 
 kill -0 "$AGENT_A_PID"
