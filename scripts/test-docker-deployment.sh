@@ -340,12 +340,25 @@ fi
 cp -- "$ENVIRONMENT_FILE" "$BAD_PORT_ENVIRONMENT"
 sed -i "s/^XS_CONTROLLER_HTTP_PORT=.*/XS_CONTROLLER_HTTP_PORT=$OCCUPIED_PORT/" "$BAD_PORT_ENVIRONMENT"
 chmod 0600 "$BAD_PORT_ENVIRONMENT"
+if ss -H -ltn "sport = :$OCCUPIED_PORT" | grep -q .; then
+    printf 'Controller HTTP port fixture is already occupied before setup\n' >&2
+    exit 1
+fi
 python3 -m http.server "$OCCUPIED_PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
 OCCUPIED_PID=$!
+occupied_listener_ready=false
 for _attempt in $(seq 1 20); do
-    ss -H -ltn "sport = :$OCCUPIED_PORT" | grep -q . && break
+    if kill -0 "$OCCUPIED_PID" 2>/dev/null && \
+        ss -H -ltn "sport = :$OCCUPIED_PORT" | grep -q .; then
+        occupied_listener_ready=true
+        break
+    fi
     sleep 0.1
 done
+if [[ $occupied_listener_ready != true ]]; then
+    printf 'Controller HTTP port fixture did not begin listening\n' >&2
+    exit 1
+fi
 if "$STACK" --env-file "$BAD_PORT_ENVIRONMENT" preflight >/dev/null 2>&1; then
     printf 'occupied Controller HTTP port unexpectedly passed preflight\n' >&2
     exit 1
