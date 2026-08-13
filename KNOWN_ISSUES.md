@@ -397,7 +397,7 @@
 - 严重度：高
 - 状态：外部阻塞（harness 与 600 秒校准已完成）
 - 首次发现：2026-08-08 正式生产审计；2026-08-13 Gate 22 校准后精确定界。
-- 已完成：最新 exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` 在 run `31658778589` 全 13 job 通过。专项 job `94318968217`、artifact `9165687987` 证明六服务各 43 个样本、八项故障注入、进程代际增长检查、配置更新后双端 Direct 恢复、84/84 SHA-256、零秘密发现和九类宿主不变量。
+- 已完成：最新 exact revision `67152427acc197deca49443a8527c74b18d71098` 在 run `31661323846` 全 13 job 通过。专项 job `94326567469`、artifact `9166550402` 证明六服务各 43 个样本、八项故障注入、进程代际增长检查、配置更新后双端 Direct 恢复、84/84 SHA-256、零秘密发现和九类宿主不变量。
 - 影响：600 秒校准不能证明当前 revision 在至少 24 小时内无资源泄漏、重连风暴、无界日志增长或长期恢复退化。历史 revision 的 24 小时证据不能替代当前 Gate 22，项目不能据此进入生产。
 - 阻塞：本机无可用特权 Linux 容器环境，旧开发服务器不可达；生产主机 SSH 指纹变化尚未通过云控制台等带外渠道确认。严格 SSH 已在认证前停止，未发送密码、未修改生产。
 - 计划：确认目标主机指纹或提供独立可重装 QA 主机，从精确干净提交运行至少 86400 秒；材料源代码、镜像、配置或 harness 变更时从零重跑。
@@ -410,7 +410,7 @@
 - 严重度：高
 - 状态：外部阻塞（可安全自动化仓库子矩阵已完成）
 - 首次发现：2026-08-08 正式生产审计；2026-08-13 Gate 25 子矩阵精确定界。
-- 已完成：exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` 在 run `31658778589` 全 13 job 通过。job `94318968293`、artifact `9165661918` 证明完整历史 clean checkout、test-only tag、五镜像双 no-cache、外部 secrets/最小权限 PostgreSQL、真实 Direct/Relay/subnet、更新失败矩阵、两次 Docker 生命周期、110+8 SHA-256、零秘密发现和全部前后不变量。
+- 已完成：exact revision `67152427acc197deca49443a8527c74b18d71098` 在 run `31661323846` 全 13 job 通过。job `94326567391`、artifact `9166570284` 证明完整历史 clean checkout、test-only tag、五镜像双 no-cache、外部 secrets/最小权限 PostgreSQL、真实 Direct/Relay/subnet、更新失败矩阵、两次 Docker 生命周期、110+8 SHA-256、零秘密发现和全部前后不变量。
 - 影响：同一项目 CI、临时 signing key 和 hosted runner 不能证明 owner-controlled RC、独立操作者、新鲜非托管环境、正式 secrets 或 production upgrade/rollback。历史 `ff9551d3 -> 3d93656` 证据也不能自动覆盖当前 revision，Gate 01/25 不能通过。
 - 阻塞：需要所有者完成离线签名仪式/认证公钥分发并批准 formal RC；需要独立操作者、身份验证的新鲜服务器和生产维护窗口。生产 SSH host key 仍未带外确认，因此当前不能安全执行生产链。
 - 计划：正式 RC 合并 `main` 后，由独立操作者从认证 tag/bundle 在新鲜服务器完整重演；随后用定时回滚保护执行当前生产升级、反向验证、真实 rollback 与恢复批准 release。

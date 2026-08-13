@@ -123,7 +123,7 @@
 
 - 状态：`BLOCKED_EXTERNAL`（仅阻塞正式 24 小时运行；Gate 22 本身继续为 `UNKNOWN`）。
 - 首次发现：2026-08-13，在 revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 的 600 秒校准和独立证据复核完成后。
-- 已完成的不受阻塞工作：正式/校准模式分离的长测 harness、六服务资源采样、八项故障注入、进程代际增长分析、有界乐观锁重试、配置更新后双端 Direct 恢复、前后九类宿主不变量和 evidence secret scan 均已实现；最新 exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 run `31658778589` 全 13 job 通过，artifact `9165687987` 的 84/84 SHA-256 与零秘密扫描独立通过。
+- 已完成的不受阻塞工作：正式/校准模式分离的长测 harness、六服务资源采样、八项故障注入、进程代际增长分析、有界乐观锁重试、配置更新后双端 Direct 恢复、前后九类宿主不变量和 evidence secret scan 均已实现；最新 exact revision `67152427acc197deca49443a8527c74b18d71098` 的 run `31661323846` 全 13 job 通过，artifact `9166550402` 的 84/84 SHA-256 与零秘密扫描独立通过。
 - 阻塞事实：本机没有 Docker 或可用 WSL Linux，Hyper-V 管理权限不可用；旧开发服务器在 SSH 握手前主动关闭连接。生产服务器的当前 ED25519 指纹为 `SHA256:Iik0ptfRKPFebbyCP8hIEllx46zYgztne0QjAvc4JVY`，与本地受信记录不一致，且未通过云控制台等独立渠道确认。不得以关闭 `StrictHostKeyChecking`、覆盖受信记录或 TOFU 自动接受代替带外验证。
 - 安全结果：严格 SSH 连接在认证前终止，未发送密码，未修改 production、Docker、1Panel、网络、防火墙、路由或服务；正式长测没有启动。
 - 解除步骤：所有者通过腾讯云控制台在目标主机执行 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 并确认精确指纹，或提供独立、可重装、已批准且具有 Docker、`/dev/net/tun`、network namespace 与 nftables 的特权 Linux QA 主机。
@@ -134,8 +134,8 @@
 ## BLK-010 Gate 25 owner-signed RC 与独立生产演练
 
 - 状态：`BLOCKED_EXTERNAL`（仓库侧 clean release/deployment 子矩阵已完成，Gate 25 保持 `FAIL`）。
-- 首次发现：2026-08-13，在仓库侧自动化演练和独立证据复核完成后；最新 exact revision 为 `795b1ea461a179958aed27e6935faba8f36e43ce`。
-- 已完成的不受阻塞工作：run `31658778589` 全 13 job 通过；job `94318968293`、artifact `9165661918` 完成 full-history clean checkout、test-only 签名、五镜像双 no-cache、仓库外 secrets、Direct/Relay/subnet、更新和双 Docker 生命周期，110+8 hashes、零秘密、10/10 阶段和 20/20 不变量通过。
+- 首次发现：2026-08-13，在仓库侧自动化演练和独立证据复核完成后；最新 exact revision 为 `67152427acc197deca49443a8527c74b18d71098`。
+- 已完成的不受阻塞工作：run `31661323846` 全 13 job 通过；job `94326567391`、artifact `9166570284` 完成 full-history clean checkout、test-only 签名、五镜像双 no-cache、仓库外 secrets、Direct/Relay/subnet、更新和双 Docker 生命周期，110+8 hashes、零秘密、10/10 阶段和 20/20 不变量通过。
 - 阻塞事实：没有 owner-controlled offline release key ceremony、认证公钥、合并 `main` 的 formal signed RC；没有与项目实现者独立的操作者和新鲜非托管服务器；没有当前正式 release 的生产 upgrade/rollback 窗口。artifact 明确标记 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。
 - 安全结果：生产未连接或修改；没有把临时 key、hosted runner 或历史 `3d93656` 部署当作当前正式发布证据。当前生产 SSH host key 仍需带外确认。
 - 解除步骤：先完成 `BLK-006` 的 owner key ceremony/public-key distribution 和 formal RC；由独立操作者在身份验证的新鲜服务器复演；批准生产窗口、带外确认 host identity、配置定时回滚后执行 upgrade、独立反向验证、rollback 与 restored release。

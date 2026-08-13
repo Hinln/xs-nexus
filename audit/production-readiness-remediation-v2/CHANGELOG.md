@@ -187,3 +187,10 @@
 - Added bounded evidence-bearing steady-state measurement: at most 12 ten-packet attempts, exact established Direct paths before and after every attempt, and warm-up p95 at most 10 ms before formal sampling. Exhaustion fails and retains every attempt.
 - Exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` passed all 13 jobs in run `31658778589`. Performance, Gate 22, Relay and Gate 25 artifacts `9165514010`, `9165687987`, `9165498146` and `9165661918` passed independent manifests, revision/status binding and zero-finding secret scans.
 - Production was not connected or changed. Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, and overall remains `NO_GO` because formal duration, owner-controlled signed RC, independent operation and production upgrade/rollback are still external.
+
+## 2026-08-13 Docker Occupied-Port Fixture Closure
+
+- Preserved exact-head run `31660307047`, where 12/13 jobs passed and Gate 25 failed after eight successful phases because the occupied-port negative fixture did not prove its local listener had started.
+- Fixed the fixture to prove the chosen port is initially free, then require the exact child process to remain alive and the port to be listening before exercising the unchanged product preflight rejection. Timeout fails the fixture; no product condition was relaxed.
+- Exact revision `67152427acc197deca49443a8527c74b18d71098` passed all 13 jobs in run `31661323846`. Performance, Gate 22, Relay and Gate 25 artifacts `9166384854`, `9166550402`, `9166363481` and `9166570284` passed 72/84/12/118 independently verified hashes and zero-finding secret scans.
+- Production was not connected or changed. Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, and overall remains `NO_GO`.

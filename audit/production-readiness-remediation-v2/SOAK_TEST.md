@@ -2,7 +2,7 @@
 
 ## Status
 
-`UNKNOWN`. No 24-hour raw evidence exists for the current remediation revision. The latest 600-second calibration passed at revision `795b1ea461a179958aed27e6935faba8f36e43ce`, but calibration is not Gate 22 evidence.
+`UNKNOWN`. No 24-hour raw evidence exists for the current remediation revision. The latest 600-second calibration passed at code revision `67152427acc197deca49443a8527c74b18d71098`, but calibration is not Gate 22 evidence.
 
 ## Minimum Run
 
@@ -27,9 +27,9 @@ The run must restart from zero if the revision, image, configuration, or test ha
 
 ## Harness Calibration
 
-- Exact revision: `795b1ea461a179958aed27e6935faba8f36e43ce`.
-- GitHub Actions run/job: `31658778589` / `94318968217`; all 13 workflow jobs passed.
-- Artifact: `9165687987`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:7387b961dc813b033cc6b80cfe9e23ebec5fb858c858f4ecc1c4cfbef5d298f9`.
+- Exact code revision: `67152427acc197deca49443a8527c74b18d71098`.
+- GitHub Actions run/job: `31661323846` / `94326567469`; all 13 workflow jobs passed.
+- Artifact: `9166550402`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:a24e372d230ed2b48decac796838189f5bd78f951bed0c81359dc4f171b2d91e`.
 - Independent verification: 84/84 manifest entries, zero secret-scan findings, 258 service resource rows, eight PASS fault events, and nine byte-identical before/after Docker/network/system invariants.
 - Duration: 600 seconds with explicit calibration mode. It cannot satisfy the mandatory duration.
 

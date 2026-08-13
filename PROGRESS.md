@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-08-13
-当前 Git 提交：以包含本记录的提交为准；最新精确代码证据 revision 为 `795b1ea461a179958aed27e6935faba8f36e43ce`
+当前 Git 提交：以包含本记录的提交为准；最新精确代码证据 revision 为 `67152427acc197deca49443a8527c74b18d71098`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
 当前总状态：`NO_GO`（Gate 22 harness 校准通过但正式 24 小时长测尚未开始；Gate 02/13/14/20/21/22/23/25 及外部门禁仍未闭合）
 当前里程碑：`生产门禁修复 V2：Gate 22 当前 revision 24 小时稳定性与故障注入`
@@ -573,3 +573,11 @@ make clean
 - 精确 revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 run `31658778589` 全 13 job 通过。性能 artifact `9165514010`、Gate 22 artifact `9165687987`、Relay artifact `9165498146`、Gate 25 artifact `9165661918` 均完成独立 SHA-256、revision、状态和零秘密发现复核。
 - 最终性能 Direct 平均/p95 为 `0.344`/`0.408` ms，Relay 为 `0.387`/`0.465` ms；Gate 22 校准为 600 秒、六服务各 43 个样本、八项事件和九类宿主不变量；Gate 25 为 10/10 阶段与两组 10/10 不变量。Gate 22 仍缺至少 86400 秒，Gate 25 仍明确 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。
 - 生产未连接或修改，最后已知 revision 仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。Gate 02=`FAIL/BLOCKED_EXTERNAL`、Gate 22=`UNKNOWN/BLOCKED_EXTERNAL`、Gate 25=`FAIL/BLOCKED_EXTERNAL`，总体保持 `NO_GO`。
+
+## 2026-08-13 Docker 端口负向夹具闭环
+
+- 文档检查点 revision `999b420cbf274e47bf28d3a4f86600e4f81f72c4` 的 run `31660307047` 为 12/13；唯一失败为 Gate 25 job `94323554733`、artifact `9166162670`。`docker-lifecycle-install` 报告占用端口预检意外通过，而前八个阶段及同一 run 的其余 12 个 job 均通过。
+- 根因是负向夹具启动本地 HTTP listener 后虽轮询端口，但未在循环结束后证明 listener 已就绪，也未证明子进程仍存活；慢启动时测试会对实际空闲端口执行预检并生成假失败。修复先证明端口原本空闲，再要求精确子进程存活且端口已监听；未修改产品端口冲突预检或放宽拒绝条件。
+- 精确 revision `67152427acc197deca49443a8527c74b18d71098` 的 run `31661323846` 全 13 job 通过。最终性能/Gate 22/Relay/Gate 25 jobs 为 `94326567382`/`94326567469`/`94326567416`/`94326567391`，artifacts 为 `9166384854`/`9166550402`/`9166363481`/`9166570284`。
+- 独立复核四个 artifact 的 72/84/12/118 个 SHA-256 清单项、精确 revision/status、零秘密扫描通过；Direct/Relay 平均/p95 为 `0.322`/`0.385` 与 `0.365`/`0.431` ms，Gate 22 为 600 秒/258 资源行/8 事件/9 宿主不变量，Gate 25 为 10/10 阶段和两组 10/10 不变量。
+- 生产未连接或修改。Gate 22 仍缺至少 86400 秒，Gate 25 仍明确 test-only、非独立且无生产变更，总体严格保持 `NO_GO`。

@@ -6,7 +6,7 @@
 
 ## Repository-Side Rehearsal
 
-Exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` passed all 13 jobs in GitHub Actions run `31658778589`. Dedicated job `94318968293` and artifact `9165661918` (`clean-release-rehearsal-evidence`, GitHub digest `sha256:08a9a05c09a827b8d4cfc35c0eb0d4a5ae086be125b24e0c17ac45b83f7e6ffa`) prove:
+Exact revision `67152427acc197deca49443a8527c74b18d71098` passed all 13 jobs in GitHub Actions run `31661323846`. Dedicated job `94326567391` and artifact `9166570284` (`clean-release-rehearsal-evidence`, GitHub digest `sha256:b19a27070227992de3c5440fae4377d67e58351f4b012fdd9b3129fdee954825`) prove:
 
 1. A full-history Git bundle and detached clean checkout exactly match the requested revision and pass `git fsck`.
 2. An explicitly test-only ephemeral SSH-signed tag verifies, while evidence records `formal_signed_rc=false` and `independent_operator=false`.
@@ -31,8 +31,9 @@ The artifact records 10 of 10 phases, 10 of 10 fixture invariants, and 10 of 10 
 | `31654905139` | The receiver authenticated the exact primary Relay with legitimate `relay_failover`, while the old harness allowed only `relay_fallback`. |
 | `31655990346` | The separate soak calibration applied the new configuration but sampled before both Direct sessions recovered. |
 | `31657413129` | The separate performance matrix began formal Direct sampling while the single warm-up batch still exceeded the p95 envelope. |
+| `31660307047` | The occupied-port negative fixture did not prove its local listener was ready before invoking preflight. |
 
-The final implementation waits for PostgreSQL's completed-init marker and a real SQL query, measures 100 steady-state RTT samples only after a bounded, evidence-bearing ten-packet Direct attempt meets the unchanged p95 envelope, initializes Docker firewall state before the baseline, and permits only an added kernel hardware-backed interface with no address or route. At most 12 warm-up attempts are allowed; exhaustion fails and every attempt remains in the artifact. Virtual-interface additions, interface removals, or any route/rule/nftables/Docker drift still fail closed. The passing run required no hot-plug exception; link inventories were byte-identical.
+The final implementation waits for PostgreSQL's completed-init marker and a real SQL query, measures 100 steady-state RTT samples only after a bounded, evidence-bearing ten-packet Direct attempt meets the unchanged p95 envelope, initializes Docker firewall state before the baseline, and permits only an added kernel hardware-backed interface with no address or route. At most 12 warm-up attempts are allowed; exhaustion fails and every attempt remains in the artifact. The occupied-port fixture also proves the port is initially free, then requires the exact child process and listener before testing product rejection. Virtual-interface additions, interface removals, or any route/rule/nftables/Docker drift still fail closed. The passing run required no hot-plug exception; link inventories were byte-identical.
 
 ## Required Formal Rehearsal
 

@@ -361,3 +361,13 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 - Relay job/artifact: `94318968289` / `9165498146`; GitHub digest `sha256:1494e05a86be00a75fc51eb9be751dcc50349b6e2a9b84eb12132aa69657088b`. Independent extraction passed 8 outer paths after deterministic upload-root normalization and 4/4 capacity hashes.
 - Gate 25 job/artifact: `94318968293` / `9165661918`; GitHub digest `sha256:08a9a05c09a827b8d4cfc35c0eb0d4a5ae086be125b24e0c17ac45b83f7e6ffa`. Independent extraction passed 110 outer and 8 nested hashes, 10/10 phases, 10/10 fixture invariants, 10/10 cleanup invariants and the no-value scan.
 - Formal boundary is unchanged: Gate 22 has only 600 seconds, while Gate 25 still records `formal_signed_rc=false`, `independent_operator=false`, and `production_mutation=false`. Production was not contacted or changed; overall remains `NO_GO`.
+
+## Docker Occupied-Port Fixture Closure (2026-08-13)
+
+- Retained failed revision/run/job/artifact: `999b420cbf274e47bf28d3a4f86600e4f81f72c4` / `31660307047` / `94323554733` / `9166162670`; GitHub digest `sha256:51cffde14a0d1f74e498b76032336ed04147bb6b512c760e5bdb1f1bb56f4206`. The first eight Gate 25 phases passed, then the Docker lifecycle negative fixture ran preflight before proving its listener was ready.
+- Passing exact revision/run: `67152427acc197deca49443a8527c74b18d71098` / [`31661323846`](https://github.com/Hinln/xs-nexus/actions/runs/31661323846), all 13 jobs PASS.
+- Performance job/artifact: `94326567382` / `9166384854`; GitHub digest `sha256:0596b994919de5f083006ee4f4093dab4c0cdf5dfbdb649656b9b9e06a5708a3`. Independent extraction passed 72 manifest entries; Direct/Relay p95 was `0.385`/`0.431` ms and the no-value scan passed.
+- Gate 22 job/artifact: `94326567469` / `9166550402`; GitHub digest `sha256:a24e372d230ed2b48decac796838189f5bd78f951bed0c81359dc4f171b2d91e`. Independent extraction passed 84/84 hashes, 600 seconds, 258 resource rows, eight events, nine byte-identical host invariants and the no-value scan.
+- Relay job/artifact: `94326567416` / `9166363481`; GitHub digest `sha256:17b4fd8f12fb6b39b205465261b0e502f159741d4d06c085b4a2b46ec52cc458`. Independent extraction passed 8 normalized outer paths and 4/4 nested capacity hashes.
+- Gate 25 job/artifact: `94326567391` / `9166570284`; GitHub digest `sha256:b19a27070227992de3c5440fae4377d67e58351f4b012fdd9b3129fdee954825`. Independent extraction passed 110 outer and 8 nested hashes, 10/10 phases, 10/10 fixture invariants, 10/10 cleanup invariants and the no-value scan.
+- Formal boundary is unchanged: this closes a hosted test-fixture defect only. Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, production was not contacted or changed, and overall remains `NO_GO`.

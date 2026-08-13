@@ -30,7 +30,7 @@ No production container, host network, firewall, route, service, or `1panel-netw
 
 The GitHub API digest binds the uploaded artifact. The independently downloaded extracted payload, nested manifests, revision files, summaries, and reports were separately verified. This report does not claim an independently computed ZIP digest.
 
-Current exact-head regression revision `795b1ea461a179958aed27e6935faba8f36e43ce` passed all 13 jobs in run `31658778589`. Performance job `94318968086` and artifact `9165514010` have GitHub digest `sha256:71a187d3453f13f19f4a0a585cc75d9fafcb69195870678f8cd0d7c4713911f1`; 43 outer, 13 Agent, 8 Controller and 8 Protocol manifest entries, all nested status/revision bindings, and a new independent secret scan pass. The final 100-sample Direct average/p95 is `0.344`/`0.408` ms and Relay is `0.387`/`0.465` ms. Failed run `31657413129` remains retained with Direct average/p95 `7.242`/`39.441` ms; the steady-state gate now allows at most 12 separately recorded ten-packet attempts and does not change the formal 5/10 ms bounds.
+Latest exact code revision `67152427acc197deca49443a8527c74b18d71098` passed all 13 jobs in run `31661323846`. Performance job `94326567382` and artifact `9166384854` have GitHub digest `sha256:0596b994919de5f083006ee4f4093dab4c0cdf5dfb649656b9b9e06a5708a3`; all 72 manifest entries, nested status/revision bindings, and a new independent secret scan pass. The final 100-sample Direct average/p95 is `0.322`/`0.385` ms and Relay is `0.365`/`0.431` ms. Failed run `31657413129` remains retained with Direct average/p95 `7.242`/`39.441` ms; the steady-state gate now allows at most 12 separately recorded ten-packet attempts and does not change the formal 5/10 ms bounds.
 
 ## Bounded Controller Envelope
 
@@ -56,7 +56,7 @@ All 1,000 authenticated large configuration responses used chunk transport. The 
 
 The retained-frame root-cause fix reduced Controller RSS from 490,496 KiB in the retained failing run to 66,668 KiB in the final run, an 86.4% reduction. No limit or security assertion was weakened to obtain the result.
 
-## Other Current-Revision Results
+## Gate 21 Capacity-Revision Results
 
 | Area | Result |
 |---|---|

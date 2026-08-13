@@ -427,3 +427,11 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0072`：run `31657413129` 的性能 job `94314821959` 完成功能流量但 Direct 恢复后的单轮 10 包 warm-up p95 仍为 `27.383` ms，正式 100 包平均/p95 为 `7.242`/`39.441` ms，严格超过 5/10 ms。artifact `9164999014` 与 digest `sha256:360f2873b4aa8f252f1592cf90d16666d77a88a6c0531fcf50a963eaae797e23` 保留。修复增加最多 12 轮、逐轮留证的 10 包稳态探测，只有双端 Direct 且 warm-up p95 ≤10 ms 才进入正式测量；正式样本数、平均/p95/增量阈值和最大值保留均不变。
 - 最终 exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 run `31658778589` 全 13 job 通过。性能、Gate 22、Relay、Gate 25 四个 artifact 共独立验证 72、84、12、118 个清单项并通过仓库秘密扫描；Direct/Relay 正式 p95 为 `0.408`/`0.465` ms。
 - 上述关闭的是 hosted 仓库回归缺陷，不是正式 24 小时长测、owner-signed RC 或独立生产演练。Gate 22 保持 `UNKNOWN`，Gate 25 保持 `FAIL`，总体保持 `NO_GO`，生产未改变。
+
+## Docker 端口负向夹具竞态（2026-08-13）
+
+- `XS-2026-0073`：revision `999b420cbf274e47bf28d3a4f86600e4f81f72c4` 的 run `31660307047` 为 12/13；Gate 25 job `94323554733`、artifact `9166162670`、digest `sha256:51cffde14a0d1f74e498b76032336ed04147bb6b512c760e5bdb1f1bb56f4206` 保留 `occupied Controller HTTP port unexpectedly passed preflight`。
+- 根因：测试启动 `python3 -m http.server` 后的 20 次轮询没有在退出循环后断言 listener 就绪或进程存活，因此慢启动会让产品预检面对空闲端口并正确通过，测试却误报失败。
+- 修复：夹具先拒绝预先占用的固定端口，再同时要求精确子进程 `kill -0` 成功和 `ss` 观察到监听；若两秒内未就绪则夹具自身失败。产品预检、端口冲突拒绝、部署生命周期和清理断言未改变。
+- 精确 revision `67152427acc197deca49443a8527c74b18d71098` 的 run `31661323846` 全 13 job 通过。Gate 25 artifact `9166570284` 通过 110 外层、8 嵌套清单、10/10 阶段、两组 10/10 不变量和零秘密扫描；四个关键 artifact 合计独立验证 286 个清单项。
+- 该缺陷已关闭，但正式 Gate 22/25 外部门禁不变；生产未改变，总体保持 `NO_GO`。
