@@ -8,7 +8,17 @@ param(
         'DisableVerifier', 'Uninstall')]
     [string]$Stage,
     [Parameter(Mandatory)][string]$RunDirectory,
-    [Parameter(Mandatory)][ValidateLength(1, 256)][string]$SnapshotId,
+    [ValidateSet('VirtualMachine', 'PhysicalMachine')]
+    [string]$TargetType = 'VirtualMachine',
+    [ValidateLength(1, 256)][string]$SnapshotId,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')]
+    [string]$SystemImageId,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')]
+    [string]$RecoveryMediaId,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')]
+    [string]$DiskRecoveryReceiptId,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')]
+    [string]$RecoveryOperatorId,
     [string]$PackageDirectory,
     [ValidatePattern('^[0-9A-Fa-f]{40,128}$')]
     [string]$ExpectedSignerThumbprint,
@@ -16,14 +26,39 @@ param(
     [string]$ExpectedDriverVersion,
     [string]$DevGenPath,
     [switch]$ConfirmDisposableVm,
-    [switch]$ConfirmSnapshotAvailable
+    [switch]$ConfirmSnapshotAvailable,
+    [switch]$ConfirmDedicatedPhysicalTarget,
+    [switch]$ConfirmExternalSystemImageAvailable,
+    [switch]$ConfirmBootableRecoveryMediaAvailable,
+    [switch]$ConfirmDiskRecoveryMaterialAvailable,
+    [switch]$ConfirmOnsiteRecoveryOperatorAvailable
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $ConfirmDisposableVm -or -not $ConfirmSnapshotAvailable) {
-    throw 'VM validation requires -ConfirmDisposableVm and -ConfirmSnapshotAvailable'
+if ($TargetType -eq 'VirtualMachine') {
+    if (-not $ConfirmDisposableVm -or -not $ConfirmSnapshotAvailable -or
+        [string]::IsNullOrWhiteSpace($SnapshotId)) {
+        throw 'virtual-machine validation requires disposable-VM, snapshot, and snapshot-ID confirmations'
+    }
+    $recoveryIdentifier = $SnapshotId
+} else {
+    $physicalIdentifiers = @(
+        $SystemImageId,
+        $RecoveryMediaId,
+        $DiskRecoveryReceiptId,
+        $RecoveryOperatorId
+    )
+    if (-not $ConfirmDedicatedPhysicalTarget -or
+        -not $ConfirmExternalSystemImageAvailable -or
+        -not $ConfirmBootableRecoveryMediaAvailable -or
+        -not $ConfirmDiskRecoveryMaterialAvailable -or
+        -not $ConfirmOnsiteRecoveryOperatorAvailable -or
+        $physicalIdentifiers.Where({ [string]::IsNullOrWhiteSpace($_) }).Count -ne 0) {
+        throw 'physical-machine validation requires dedicated-target, external-image, bootable-media, disk-recovery, and onsite-recovery confirmations'
+    }
+    $recoveryIdentifier = $SystemImageId
 }
 if ([Environment]::OSVersion.Version.Build -lt 26100) {
     throw 'Windows build 26100 or newer is required'
@@ -45,19 +80,42 @@ function Resolve-RealPath {
     return $item.FullName
 }
 
-function Assert-DisposableVirtualMachine {
+function Assert-ApprovedTestTarget {
     $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
     $virtualIdentity = "$($computer.Manufacturer) $($computer.Model)"
     $knownVirtualIdentity = $virtualIdentity -match
         '(?i)virtual|vmware|virtualbox|kvm|qemu|xen|hyper-v|parallels'
-    if (-not $computer.HypervisorPresent -and -not $knownVirtualIdentity) {
-        throw 'refusing to run because the host is not identified as a virtual machine'
+    if ($TargetType -eq 'VirtualMachine' -and -not $knownVirtualIdentity) {
+        throw 'refusing to run because the target is not identified as a virtual machine'
+    }
+    if ($TargetType -eq 'PhysicalMachine' -and $knownVirtualIdentity) {
+        throw 'refusing physical-machine mode because the target is identified as virtual'
     }
     return [ordered]@{
         computer_name = $env:COMPUTERNAME
         manufacturer = [string]$computer.Manufacturer
         model = [string]$computer.Model
         hypervisor_present = [bool]$computer.HypervisorPresent
+        target_type = $TargetType
+        virtual_identity_detected = [bool]$knownVirtualIdentity
+    }
+}
+
+function Get-DiskProtectionEvidence {
+    $systemDrive = $env:SystemDrive
+    if ($null -eq (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue)) {
+        return [ordered]@{
+            mount_point = $systemDrive
+            status = 'cmdlet-unavailable'
+        }
+    }
+    $volume = Get-BitLockerVolume -MountPoint $systemDrive -ErrorAction Stop
+    return [ordered]@{
+        mount_point = [string]$volume.MountPoint
+        volume_status = [string]$volume.VolumeStatus
+        protection_status = [string]$volume.ProtectionStatus
+        encryption_method = [string]$volume.EncryptionMethod
+        encryption_percentage = [int]$volume.EncryptionPercentage
     }
 }
 
@@ -92,9 +150,17 @@ function Read-RunManifest {
         throw 'run manifest cannot be a reparse point'
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.schema -ne 1 -or $manifest.snapshot_id -cne $SnapshotId -or
+    if ($manifest.schema -ne 2 -or $manifest.target_type -cne $TargetType -or
+        $manifest.recovery_identifier -cne $recoveryIdentifier -or
         $manifest.computer_name -cne $env:COMPUTERNAME) {
-        throw 'run manifest does not match this VM and snapshot assertion'
+        throw 'run manifest does not match this target and recovery assertion'
+    }
+    if ($TargetType -eq 'PhysicalMachine' -and
+        ($manifest.physical_recovery.system_image_id -cne $SystemImageId -or
+         $manifest.physical_recovery.recovery_media_id -cne $RecoveryMediaId -or
+         $manifest.physical_recovery.disk_recovery_receipt_id -cne $DiskRecoveryReceiptId -or
+         $manifest.physical_recovery.recovery_operator_id -cne $RecoveryOperatorId)) {
+        throw 'run manifest does not match the physical recovery material identifiers'
     }
     return $manifest
 }
@@ -122,7 +188,7 @@ function Complete-Stage {
     )
 
     $record = [ordered]@{
-        schema = 1
+        schema = 2
         stage = $Stage
         completed_at_utc = [DateTime]::UtcNow.ToString('O')
         details = $Details
@@ -194,7 +260,7 @@ function Write-EvidenceManifest {
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 }
 
-$vmIdentity = Assert-DisposableVirtualMachine
+$targetIdentity = Assert-ApprovedTestTarget
 $installerRoot = Resolve-RealPath -Path (
     Join-Path $PSScriptRoot '..\..\installers\windows') -Directory
 $installer = Resolve-RealPath -Path (Join-Path $installerRoot 'install-xsnet-test.ps1')
@@ -215,16 +281,30 @@ if ($Stage -eq 'Initialize') {
     Import-Module $module -Force
     if (@(Get-XsnetDevices).Count -ne 0 -or
         @(Get-XsnetDriverPackages).Count -ne 0) {
-        throw 'xsnet must not exist before VM validation initialization'
+        throw 'xsnet must not exist before target validation initialization'
     }
     $script:RunRoot = (New-Item -ItemType Directory -Path $runPath).FullName
     $manifest = [ordered]@{
         schema = 1
         test_only = $true
-        snapshot_assertion_only = $true
-        snapshot_id = $SnapshotId
+        recovery_assertion_only = $true
+        target_type = $TargetType
+        recovery_identifier = $recoveryIdentifier
         computer_name = $env:COMPUTERNAME
-        vm_identity = $vmIdentity
+        target_identity = $targetIdentity
+        physical_recovery = if ($TargetType -eq 'PhysicalMachine') {
+            [ordered]@{
+                system_image_id = $SystemImageId
+                recovery_media_id = $RecoveryMediaId
+                disk_recovery_receipt_id = $DiskRecoveryReceiptId
+                recovery_operator_id = $RecoveryOperatorId
+                external_system_image_asserted = $true
+                bootable_recovery_media_asserted = $true
+                disk_recovery_material_asserted = $true
+                onsite_recovery_operator_asserted = $true
+            }
+        } else { $null }
+        disk_protection = Get-DiskProtectionEvidence
         initialized_at_utc = [DateTime]::UtcNow.ToString('O')
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content `
@@ -286,7 +366,7 @@ switch ($Stage) {
     'CollectVerifier' {
         $enable = Assert-CompletedStage -Name '20-enable-verifier'
         if ((Get-BootTimeUtc) -le [DateTime]::Parse($enable.details.boot_time_utc).ToUniversalTime()) {
-            throw 'VM must reboot after enabling Driver Verifier'
+            throw 'test target must reboot after enabling Driver Verifier'
         }
         $null = Assert-ExactHealthyXsnet
         $stageDirectory = New-StageDirectory -Name '30-collect-verifier'
@@ -323,7 +403,7 @@ switch ($Stage) {
     'Uninstall' {
         $disable = Assert-CompletedStage -Name '40-disable-verifier'
         if ((Get-BootTimeUtc) -le [DateTime]::Parse($disable.details.boot_time_utc).ToUniversalTime()) {
-            throw 'VM must reboot after disabling Driver Verifier'
+            throw 'test target must reboot after disabling Driver Verifier'
         }
         $stageDirectory = New-StageDirectory -Name '50-uninstall'
         $verifier = Resolve-RealPath -Path "$env:SystemRoot\System32\verifier.exe"

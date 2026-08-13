@@ -4,6 +4,8 @@
 
 Repository code and safely automatable validation are complete. Formal production remains `NO_GO` until every external gate has real no-secret evidence. This handoff provides one fail-closed evidence format for all remaining manual work; it does not convert a checklist into test evidence.
 
+The current evidence-kit schema is v2. Windows receipts must explicitly identify `virtual-machine` or `physical-machine`; v1 kits cannot be reused for a changed candidate.
+
 ## Prepare The Kit
 
 Use the final full 40-character commit and a directory outside the repository, source checkout, shell-synchronized folder, and production host:
@@ -20,7 +22,7 @@ The kit creates twelve receipts and separate evidence directories for:
 2. credential rotation;
 3. formal key ceremony;
 4. independent security audit;
-5. Windows real-system testing;
+5. Windows real-system testing on a recoverable VM or dedicated physical target;
 6. NAS real-system testing;
 7. real WAN, Relay, subnet and capacity testing;
 8. planned-domain strict TLS/CDN;

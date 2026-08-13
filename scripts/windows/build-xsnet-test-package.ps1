@@ -12,7 +12,11 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{40,128}$')]
     [string]$TestSignerThumbprint,
     [switch]$CertificateInLocalMachineStore,
+    [ValidateSet('VirtualMachine', 'PhysicalMachine')]
+    [string]$TargetType = 'VirtualMachine',
     [switch]$ConfirmDisposableVm,
+    [switch]$ConfirmDedicatedPhysicalTarget,
+    [switch]$ConfirmPhysicalRecoveryReady,
     [switch]$AllowTestSigning
 )
 
@@ -21,12 +25,34 @@ $ErrorActionPreference = 'Stop'
 $script:ApprovedInf2CatSha256 = `
     'B594728D38B271979367ABC8060A971B8E42422738009BE126710B1F5DD0FCBC'
 
-if (-not $ConfirmDisposableVm -or -not $AllowTestSigning) {
-    throw 'test package generation requires -ConfirmDisposableVm and -AllowTestSigning'
+if (-not $AllowTestSigning) {
+    throw 'test package generation requires -AllowTestSigning'
+}
+if ($TargetType -eq 'VirtualMachine' -and -not $ConfirmDisposableVm) {
+    throw 'virtual-machine package generation requires -ConfirmDisposableVm'
+}
+if ($TargetType -eq 'PhysicalMachine' -and
+    (-not $ConfirmDedicatedPhysicalTarget -or -not $ConfirmPhysicalRecoveryReady)) {
+    throw 'physical-machine package generation requires dedicated-target and recovery-ready confirmations'
 }
 if ([Environment]::OSVersion.Version.Build -lt 26100) {
     throw 'Windows build 26100 or newer is required'
 }
+
+function Assert-ApprovedTestTarget {
+    $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+    $virtualIdentity = "$($computer.Manufacturer) $($computer.Model)"
+    $isKnownVirtualMachine = $virtualIdentity -match
+        '(?i)virtual|vmware|virtualbox|kvm|qemu|xen|hyper-v|parallels'
+    if ($TargetType -eq 'VirtualMachine' -and -not $isKnownVirtualMachine) {
+        throw 'target is not identified as a virtual machine'
+    }
+    if ($TargetType -eq 'PhysicalMachine' -and $isKnownVirtualMachine) {
+        throw 'target is identified as virtual and cannot satisfy physical-machine mode'
+    }
+}
+
+Assert-ApprovedTestTarget
 
 function Resolve-RealPath {
     param([Parameter(Mandatory)][string]$Path, [switch]$Directory)

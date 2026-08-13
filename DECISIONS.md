@@ -1202,3 +1202,11 @@
 - 安全边界：工具拒绝仓库内输出、symlink、路径穿越、额外根或门禁对象、秘密字段/内容、TOFU host identity、小于 86400 秒 soak、非独立第三方审计/正式演练和任何 hash/file-set 漂移；未列 evidence 文件同样扫描并进入全包 manifest。
 - 状态语义：`BLOCKED_EXTERNAL` 和 `IN_PROGRESS` 均保持生产 `NO_GO`。所有 receipts 完整时只输出 `READY_FOR_FRESH_AUDIT`，必须从 owner-signed exact RC 在新目录重新执行全部 25 Hard Gate，只有该独立审计才有权给出 `GO`、`CONDITIONAL_GO` 或 `NO_GO`。
 - 边界：该自动化降低人工交接和证据完整性风险，不生成凭据、不执行密钥仪式、不操作生产、不替代真实 Windows/NAS/WAN/DR/告警/长测/发布演练，也不关闭任何外部门禁。
+
+## ADR-106：Windows 实机门禁允许专用实体目标但要求整机可恢复
+
+- 日期：2026-08-13
+- 背景：项目首轮 `xsnet` WDK/Verifier 门禁已在可快照 Windows 11 VM 真实通过。所有者后续明确选择可重装实体笔记本执行完整 Agent、真实网卡切换、睡眠和崩溃恢复矩阵；原脚本硬编码 VM，直接删除检查会把日常电脑和不可恢复目标暴露给测试签名驱动与 Driver Verifier。
+- 决策：保留默认 VM 模式并新增严格互斥的 `PhysicalMachine` 模式。实体模式只接受测试期间专用目标，并在每个阶段要求相同的外置完整系统镜像、可启动恢复介质、磁盘恢复材料和现场恢复人员公开标识与确认；记录磁盘保护状态但绝不记录恢复值。实体/虚拟身份与声明不一致立即失败。
+- 安全边界：签名、Microsoft WDK 工具、精确包 allowlist、clean install、Driver Verifier oneboot、两次人工重启、健康状态和卸载零残留断言均未放宽。远程自动化不能处理无法启动的机器；启动或网络异常时必须停止并由现场人员从批准恢复路径救援。
+- 证据兼容：外部门禁和 Windows run manifest 均升级为 v2，Windows gate 改用通用恢复检查/证据/公开标识，防止旧 VM-only 回执或运行目录被实体机路径误接受。实体笔记本已完成带外 host identity、公钥认证和只读环境基线，但尚未安装驱动；Gate 11 继续 `BLOCKED_EXTERNAL`，总体继续 `NO_GO`。

@@ -1,10 +1,10 @@
 # xsnet Windows test installer
 
-These scripts are only for a disposable Windows 11 build 26100 or newer test VM with a snapshot. They are not a production installer and must not be used on a daily workstation.
+These scripts are only for an approved Windows 11 build 26100 or newer test target. The preferred target is a disposable VM with a snapshot. After the first VM driver gate has passed, a physical machine is allowed only when the owner dedicates it to testing for the entire run and has already prepared an external full-system image, bootable recovery media, disk-recovery material, and an onsite recovery operator. These scripts are not a production installer.
 
 The package directory must contain exactly `xsnet.inf`, `xsnet.cat`, and `xsnet.dll`. Installation requires the expected test signer certificate thumbprint and a valid Microsoft-signed `DevGen.exe` from the locally installed WDK. DevGen is not included or redistributed because Microsoft limits it to test scenarios.
 
-Build a new test package only inside the disposable VM. The VM must already have Windows test-signing policy configured by the operator; the script does not modify BCD or certificate trust. Every tool path is explicit and must resolve to a valid Microsoft-signed binary.
+Build a new test package only on the approved target. The target must already have Windows test-signing policy configured by the operator; the script does not modify BCD or certificate trust. Every tool path is explicit and must resolve to a valid Microsoft-signed binary.
 
 ```powershell
 pwsh -File .\scripts\windows\build-xsnet-test-package.ps1 `
@@ -15,7 +15,17 @@ pwsh -File .\scripts\windows\build-xsnet-test-package.ps1 `
   -Inf2CatPath <WDK_PATH>\Inf2Cat.exe `
   -SignToolPath <WDK_PATH>\signtool.exe `
   -TestSignerThumbprint <TEST_CERT_THUMBPRINT> `
+  -TargetType VirtualMachine `
   -ConfirmDisposableVm `
+  -AllowTestSigning
+```
+
+For a dedicated physical target, replace the VM confirmation with:
+
+```powershell
+  -TargetType PhysicalMachine `
+  -ConfirmDedicatedPhysicalTarget `
+  -ConfirmPhysicalRecoveryReady `
   -AllowTestSigning
 ```
 
@@ -35,9 +45,31 @@ pwsh -File .\installers\windows\install-xsnet-test.ps1 `
 pwsh -File .\installers\windows\uninstall-xsnet-test.ps1
 ```
 
-Use `scripts/windows/invoke-xsnet-test-vm-stage.ps1` to preserve an append-only test record. Run the stages in this exact order: `Initialize`, `Install`, `EnableVerifier`, reboot, `CollectVerifier`, execute and separately record the required traffic/lifecycle scenarios, `DisableVerifier`, reboot, then `Uninstall`. Every invocation requires the same absolute run directory, snapshot identifier, `-ConfirmDisposableVm`, and `-ConfirmSnapshotAvailable`. The snapshot identifier is an operator assertion, not proof that a hypervisor snapshot exists.
+Use `scripts/windows/invoke-xsnet-test-vm-stage.ps1` to preserve an append-only test record; the filename is retained for compatibility but the orchestrator supports both target types. Run the stages in this exact order: `Initialize`, `Install`, `EnableVerifier`, reboot, `CollectVerifier`, execute and separately record the required traffic/lifecycle scenarios, `DisableVerifier`, reboot, then `Uninstall`.
 
-The workflow refuses non-VM hosts, pre-existing xsnet state, reused stage directories, missing required reboots, unhealthy or ambiguous device state, and uninstall residuals. It never restarts the VM automatically. `CollectVerifier` captures Verifier settings, system errors, adapters, routes, devices, and driver inventory but explicitly does not claim the required scenarios or M6.2 acceptance. Successful final uninstall writes `evidence-sha256.json` over the collected files.
+Every VM invocation requires the same run directory, snapshot identifier, `-TargetType VirtualMachine`, `-ConfirmDisposableVm`, and `-ConfirmSnapshotAvailable`. Every physical invocation requires the same run directory, system-image ID, recovery-media ID, disk-recovery-receipt ID, recovery-operator ID, `-TargetType PhysicalMachine`, and all five physical recovery confirmations. Identifiers are public operator assertions, not secret recovery values and not proof by themselves. Never pass or record a BitLocker recovery password.
+
+Example physical-target initialization after the recovery set has been independently verified:
+
+```powershell
+$PhysicalTarget = @{
+  TargetType = 'PhysicalMachine'
+  RunDirectory = 'C:\xsnet-runs\physical-001'
+  SystemImageId = 'system-image-20260813-01'
+  RecoveryMediaId = 'winre-usb-20260813-01'
+  DiskRecoveryReceiptId = 'disk-recovery-receipt-20260813-01'
+  RecoveryOperatorId = 'owner-onsite-01'
+  ConfirmDedicatedPhysicalTarget = $true
+  ConfirmExternalSystemImageAvailable = $true
+  ConfirmBootableRecoveryMediaAvailable = $true
+  ConfirmDiskRecoveryMaterialAvailable = $true
+  ConfirmOnsiteRecoveryOperatorAvailable = $true
+}
+& .\scripts\windows\invoke-xsnet-test-vm-stage.ps1 `
+  -Stage Initialize @PhysicalTarget
+```
+
+The workflow rejects a target whose observed physical/virtual identity conflicts with the requested mode, pre-existing xsnet state, reused stage directories, changed recovery identifiers, missing required reboots, unhealthy or ambiguous device state, and uninstall residuals. It never restarts the target automatically. `CollectVerifier` captures Verifier settings, system errors, adapters, routes, devices, driver inventory, target identity and disk-protection status but explicitly does not claim the required scenarios or M6.2 acceptance. Successful final uninstall writes `evidence-sha256.json` over the collected files.
 
 The installer rejects an existing xsnet device/package, unexpected files, directories, reparse points, invalid signatures, signer mismatch, INF `DriverVer` mismatch, staged driver-store version mismatch, non-Microsoft DevGen, unsupported OS builds, unhealthy devices, and ambiguous driver-store results. Failure attempts bounded removal of the exact xsnet device and staged `oem#.inf`.
 

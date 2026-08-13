@@ -415,3 +415,14 @@
 - 阻塞：需要所有者完成离线签名仪式/认证公钥分发并批准 formal RC；需要独立操作者、身份验证的新鲜服务器和生产维护窗口。生产 SSH host key 仍未带外确认，因此当前不能安全执行生产链。
 - 计划：正式 RC 合并 `main` 后，由独立操作者从认证 tag/bundle 在新鲜服务器完整重演；随后用定时回滚保护执行当前生产升级、反向验证、真实 rollback 与恢复批准 release。
 - 解除条件：formal signing/key/main provenance、fresh-host raw evidence、independent operator receipt、production backup/migration/identity/data/ACL/route checks、rollback/restored-release 和全部 SHA-256/secret scan 独立通过，Gate 25 才可重新判定。
+
+---
+
+## KI-031 Windows 专用实体目标恢复门禁尚未解除
+
+- 严重度：高
+- 状态：外部阻塞（实体机脚本适配已完成，未执行实机）
+- 影响：所有者选择实体笔记本后，测试签名驱动、Driver Verifier、路由和网络切换可能造成失联、蓝屏或无法启动；远程 SSH 无法替代本地启动恢复。没有完整恢复材料时不得安装驱动或启用 Verifier。
+- 已完成：默认 VM 门禁保留；新增严格实体目标模式，要求外置完整系统镜像、可启动恢复介质、磁盘恢复材料和现场恢复人员公开标识逐阶段一致，记录磁盘保护状态，不记录恢复值；签名、重启、Verifier 和零残留断言未放宽。
+- 当前证据：Windows build、局域网 OpenSSH ED25519 host identity、管理员专用公钥认证、Secure Boot、TPM、系统盘保护、PowerShell 7、Windows Kits 和物理网卡已只读验证；具体主机标识保存在仓库外。
+- 解除条件：所有者把笔记本在整个测试期设为专用目标，完成并验证外置整机镜像、实际引导恢复 U 盘、BitLocker/磁盘恢复材料和现场操作能力，并提供无秘密恢复标识。随后才允许 Initialize；Driver Verifier 每次重启仍需现场确认。

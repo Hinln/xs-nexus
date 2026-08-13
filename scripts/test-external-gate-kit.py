@@ -63,6 +63,23 @@ def main() -> int:
             "COMPLETE": 0,
         }
         assert status["production_gate_result"] == "NO_GO"
+        windows = read_receipt(root, "windows-real")
+        assert "restorable_target_recovery_created" in windows["checks"]
+        assert "restorable_vm_snapshot_created" not in windows["checks"]
+        assert MODULE.GATES["windows-real"].evidence_kinds == (
+            "environment",
+            "recovery",
+            "stage-logs",
+            "network-before-after",
+            "verifier-dump-summary",
+            "cleanup",
+        )
+        assert set(windows["public"]) == {
+            "target_type",
+            "windows_build",
+            "recovery_identifier",
+            "package_digest",
+        }
         expect_failure(
             lambda: MODULE.status_kit(root, REVISION, True),
             "gate is not COMPLETE",
@@ -105,6 +122,18 @@ def main() -> int:
         write_receipt(root, "formal-soak", soak)
         MODULE.seal_kit(root, REVISION, "formal-soak", False)
         MODULE.verify_kit(root, REVISION, False)
+
+        windows = read_receipt(root, "windows-real")
+        add_complete_evidence(root, "windows-real", windows)
+        windows["public"]["target_type"] = "laptop"
+        write_receipt(root, "windows-real", windows)
+        expect_failure(
+            lambda: MODULE.seal_kit(root, REVISION, "windows-real", False),
+            "target_type must identify a virtual or physical machine",
+        )
+        windows["public"]["target_type"] = "physical-machine"
+        write_receipt(root, "windows-real", windows)
+        MODULE.seal_kit(root, REVISION, "windows-real", False)
 
         credentials = read_receipt(root, "credential-rotation")
         credentials["password"] = "must-not-be-accepted"

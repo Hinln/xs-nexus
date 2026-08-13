@@ -8,7 +8,7 @@ Repository evidence at revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855`, run 
 
 ## Required Environment
 
-- Controlled Windows 11 x64 VM with a verified restorable snapshot.
+- Controlled Windows 11 x64 target. Prefer a VM with a verified restorable snapshot. A physical target is allowed only after the first VM driver gate has passed and the owner dedicates it to testing for the entire run, with a verified external full-system image, bootable recovery media, disk-recovery material, and an onsite recovery operator.
 - Approved test network, current signed RC package, short-lived Enrollment Token, Linux peer, and evidence export path.
 
 ## Required Matrix
@@ -17,8 +17,8 @@ Install, service start, virtual NIC, enrollment, Windows-to-Linux traffic, Direc
 
 ## Risk And Rollback
 
-Do not use a daily workstation. Preserve ordinary-network access, take a snapshot before installation, disable/reset Verifier before leaving the test stage, and restore the snapshot after any boot/network instability.
+Do not continue ordinary work on the target during testing. Preserve ordinary-network access. Before installation, create the VM snapshot or complete and verify the physical-target recovery set. Disable/reset Verifier before leaving the test stage. After any boot/network instability, stop remote automation and use the approved local recovery path; do not repeatedly reboot an unknown driver state.
 
 ## Resume Condition
 
-Provide the VM build, snapshot identifier, exact RC manifest/digest, stage logs, route/device/service before/after, verifier/dump summary, traffic results, and cleanup proof without secrets or Enrollment Token values.
+Provide the Windows build, target type, snapshot or system-image identifier, recovery-media and operator receipts for a physical target, exact RC manifest/digest, stage logs, route/device/service before/after, verifier/dump summary, traffic results, and cleanup proof without secrets, disk-recovery values, or Enrollment Token values.

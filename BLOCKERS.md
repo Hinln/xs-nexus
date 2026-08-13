@@ -165,3 +165,15 @@
 - 安全结果：本轮没有接受变化后的 SSH host key，没有认证或修改生产，没有修改 DNS/CDN、1Panel、凭据、GitHub tag/release 或 branch protection，也没有部署 `NO_GO` 候选。
 - 解除后验证：外部集合逐项产生无秘密原始证据后，从 owner-signed exact RC 在 `audit/production-readiness-final/` 全新重跑 25 个 Hard Gate；不得复制本目录 PASS，全部为 PASS 后才能重新判断 `GO`。
 - 等待期自动化：`scripts/external-gate-kit.py` 可在仓库外为十二类外部门禁生成固定 revision 的结构化回执和证据目录，执行状态/完整性/无秘密/路径/指纹/独立操作者/至少 86400 秒检查，封存 SHA-256 并独立复核；操作入口见 `audit/production-readiness-remediation-v2/EXTERNAL_GATE_HANDOFF.md`。该工具只验证真实外部证据，不替代人工执行，不改变任何 Gate 状态。
+
+---
+
+## BLK-013 Windows 专用实体测试目标恢复与现场救援
+
+- 状态：`BLOCKED_EXTERNAL`（实体机脚本适配完成，Gate 11 保持 `BLOCKED_EXTERNAL`）。
+- 首次确认：2026-08-13，所有者选择可重装实体笔记本执行后续 Windows 门禁。
+- 已完成的不受阻塞工作：首轮测试签名 `xsnet` 已在历史快照 VM 通过；构建与六阶段编排已新增严格实体模式，要求实体身份、专用目标、外置系统镜像、可启动恢复介质、磁盘恢复材料和现场恢复人员标识逐阶段一致，且不降低签名、Verifier、重启、健康或零残留断言。
+- 已验证接入：2026-08-13 已带外核对实体笔记本的 Windows build、局域网地址和 OpenSSH ED25519 host fingerprint，并以专用公钥完成管理员只读认证；Secure Boot、TPM、系统盘保护、PowerShell 7、Windows Kits 和物理网卡基线已采集。具体主机标识只保存在仓库外证据目录，不进入公开仓库。
+- 阻塞事实：尚未获得外置完整系统镜像回执、已实际引导验证的恢复介质回执、磁盘恢复材料存在性确认和现场恢复人员确认。远程自动化不能处理无法启动或网络驱动失效。
+- 解除步骤：所有者把笔记本在整个测试期设为专用目标；完成并验证外置整机镜像与恢复 U 盘；离线保管 BitLocker/磁盘恢复材料；确认可现场进入 Windows RE/固件并执行恢复；然后配置局域网限定 OpenSSH 专用公钥并提供无秘密公开标识。
+- 解除后验证：先只读采集系统、磁盘保护、网卡、路由、驱动、服务和更新基线，运行 `Initialize` 封存恢复断言；仅在全部前置通过后安装驱动。每次 Driver Verifier 重启都需现场确认，任何启动/网络异常立即停止并恢复，不得反复远程重启。

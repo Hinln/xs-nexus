@@ -609,3 +609,12 @@ make clean
 - 完成回执必须满足固定 schema、完整布尔检查、规定 evidence kind、精确 revision、UTC 时间、公开标识和适用指标；正式 soak 强制不少于 86400 秒，host identity 强制相同 OpenSSH SHA-256 指纹并拒绝 SSH/TOFU/同会话/聊天/仅邮件作为带外渠道，独立审计和正式发布演练强制独立操作者。
 - 封存与复核拒绝仓库内输出、symlink、路径穿越、额外根文件/门禁目录、缺失或额外 manifest 文件、hash 漂移、未列出证据中的秘密旁路、私钥/认证头/带密码 URI/秘密赋值；生成 `SHA256SUMS` 和机器可读 summary，但 `READY_FOR_FRESH_AUDIT` 只允许进入全新 25 Gate 审计，不等于 `GO`。
 - 新增完整正负回归和 baseline `make test` 入口；手动交接见 `audit/production-readiness-remediation-v2/EXTERNAL_GATE_HANDOFF.md`。正式计数和 `NO_GO` 不变，生产未连接或修改。
+
+## 2026-08-13 Windows 专用实体测试目标适配
+
+- 所有者明确选择可重装实体笔记本执行后续 Windows 门禁。首轮测试签名 `xsnet` 已在历史可快照 VM 通过，因此允许新增实体硬件矩阵，但实体机在测试期间不得承担日常工作。
+- Windows 包构建与六阶段编排新增严格互斥的 `VirtualMachine`/`PhysicalMachine` 模式。实体模式要求外置完整系统镜像、可启动恢复介质、磁盘恢复材料和现场恢复人员；同一组公开标识必须贯穿全部阶段，目标身份不匹配、材料变化、缺少重启或残留均失败关闭。
+- 没有降低 WDK 工具签名、测试 signer、包 allowlist、clean install、Verifier oneboot、双重人工重启、系统/网卡/路由/设备/驱动证据和零残留规则。外部门禁 schema 升级为 v2，并把 Windows `snapshot` 字段泛化为 `recovery`，旧 schema 不能封存新候选。
+- Linux QA 主机 `34.92.139.129:122` 的旧候选 `9300fcc` 长测在应用镜像构建阶段、正式 `start-utc.txt` 产生前停止；Gate22 容器/网络均清理，`1panel-network` ID `02ea0ca0...931d`、`172.18.0.0/16` 和空成员保持不变。候选材料变化后必须从新提交重新运行完整 86400 秒。
+- 当前正在进行：完成定向回归、秘密扫描、提交/推送和 CI 后，在 Linux QA 主机检出新候选并从零重启正式长测；Windows Gate 11 仍等待实体机恢复材料，整体仍为 `NO_GO`。
+- 2026-08-13 已带外核对实体笔记本 OpenSSH ED25519 host identity，并以专用公钥完成管理员只读认证；Windows build、Secure Boot、TPM、系统盘保护、PowerShell 7、Windows Kits 和物理网卡基线满足后续门禁起点。主机名、局域网地址和完整指纹仅进入仓库外证据，不提交公开仓库。Gate 11 现仅等待已验证的外置完整系统镜像、可启动恢复介质、磁盘恢复材料与现场恢复人员回执。

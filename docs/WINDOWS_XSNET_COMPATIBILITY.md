@@ -16,9 +16,9 @@ The 32-byte message header is itself versioned. A v1 driver must parse the heade
 
 ## Test installer scope
 
-The current installer is clean-install only. It refuses any existing xsnet device or driver package and does not implement an in-place driver or Agent upgrade. Replacing a test package requires stopping the Agent, closing the device handle, running the exact-state uninstaller, rebooting when required by Windows, and installing the new package from a VM snapshot. Failure recovery is snapshot rollback, not an unimplemented hot downgrade.
+The current installer is clean-install only. It refuses any existing xsnet device or driver package and does not implement an in-place driver or Agent upgrade. Replacing a test package requires stopping the Agent, closing the device handle, running the exact-state uninstaller, rebooting when required by Windows, and installing the new package from an approved recovery baseline. VM recovery uses a snapshot. Dedicated physical-target recovery uses a verified external full-system image plus bootable media, disk-recovery material, and an onsite recovery operator. Failure recovery is whole-target restoration, not an unimplemented hot downgrade.
 
-This boundary prevents a partially upgraded Agent/driver pair from being described as supported. It also means the M6.2 repeated install, failure rollback, and Agent/driver compatibility acceptance items remain incomplete until they run in the Windows VM.
+This boundary prevents a partially upgraded Agent/driver pair from being described as supported. It also means the M6.2 repeated install, failure rollback, and Agent/driver compatibility acceptance items remain incomplete until they run on the approved Windows target.
 
 ## Future production transaction
 

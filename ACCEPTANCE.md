@@ -149,7 +149,7 @@ Gate 19 候选 revision `5505893710ab1d15e06495603dff08bf5c1e035f` 的 run `3152
 - [x] MUST：升级保留节点身份。
 - [x] MUST：升级包篡改被拒绝。
 - [x] MUST：卸载不残留接口和路由。
-- [ ] MUST：Windows 安装器在测试 VM 通过。
+- [ ] MUST：Windows 安装器在受控 Windows 测试目标通过；VM 必须有快照，实体机必须有外置完整系统镜像、可启动恢复介质、磁盘恢复材料和现场救援能力。
 - [ ] MUST：驱动和 Agent 版本兼容。
 - [x] MUST：正式签名状态如实说明。
 

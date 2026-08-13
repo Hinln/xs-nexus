@@ -13,7 +13,7 @@ from typing import Any, NamedTuple
 
 
 REPOSITORY = Path(__file__).resolve().parent.parent
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 REVISION = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
@@ -117,7 +117,7 @@ GATES: dict[str, GateSpec] = {
     ),
     "windows-real": GateSpec(
         checks=(
-            "restorable_vm_snapshot_created",
+            "restorable_target_recovery_created",
             "package_signature_verified",
             "install_enrollment_and_traffic_passed",
             "direct_and_relay_passed",
@@ -130,13 +130,13 @@ GATES: dict[str, GateSpec] = {
         ),
         evidence_kinds=(
             "environment",
-            "snapshot",
+            "recovery",
             "stage-logs",
             "network-before-after",
             "verifier-dump-summary",
             "cleanup",
         ),
-        public_fields=("windows_build", "snapshot_identifier", "package_digest"),
+        public_fields=("target_type", "windows_build", "recovery_identifier", "package_digest"),
     ),
     "nas-real": GateSpec(
         checks=(
@@ -639,6 +639,11 @@ def validate_receipt(
             duration = metrics["duration_seconds"]
             if not isinstance(duration, int) or isinstance(duration, bool) or duration < 86400:
                 raise ValidationError("formal-soak: duration_seconds must be at least 86400")
+        if gate == "windows-real" and public["target_type"] not in {
+            "virtual-machine",
+            "physical-machine",
+        }:
+            raise ValidationError("windows-real: target_type must identify a virtual or physical machine")
         if gate == "offsite-recovery":
             for name in spec.metrics:
                 value = metrics[name]
