@@ -406,8 +406,8 @@ assert_fails "$INSTALLER" install \
 [[ $(current_release) == 1.0.0-x86_64-unknown-linux-gnu ]]
 
 bad_signature="$temporary/bad-signature"
-cp "$(package_path 1.1.0 .manifest.sig)" "$bad_signature"
-printf 'x' | dd of="$bad_signature" bs=1 seek=0 conv=notrunc status=none
+openssl pkeyutl -sign -rawin -inkey "$other_private_key" \
+    -in "$(package_path 1.1.0 .manifest)" -out "$bad_signature"
 assert_fails "$INSTALLER" install \
     --archive "$(package_path 1.1.0 .tar.gz)" \
     --manifest "$(package_path 1.1.0 .manifest)" \

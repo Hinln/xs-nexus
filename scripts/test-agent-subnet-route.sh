@@ -363,13 +363,15 @@ generate_fixture subnet_nat 12
 start_agents
 wait_for_route
 wait_for_gateway_resources yes
-nft_rules=$(ip netns exec "$NETNS_B" nft list table ip xs_nexus_xsb0)
-for expected in 'iifname "xsb0"' "oifname \"$LAN_B\"" 'ip daddr 192.168.232.0/24' masquerade; do
-    if [[ $nft_rules != *"$expected"* ]]; then
-        printf 'missing scoped NAT expression: %s\n' "$expected" >&2
-        exit 1
-    fi
-done
+nft_rules="$FIXTURE_ROOT/nat-rules.json"
+ip netns exec "$NETNS_B" nft -j list table ip xs_nexus_xsb0 >"$nft_rules"
+python3 "$ROOT_DIR/scripts/validate-nft-gateway-rules.py" \
+    --input "$nft_rules" \
+    --table xs_nexus_xsb0 \
+    --chain postrouting \
+    --input-interface xsb0 \
+    --output-interface "$LAN_B" \
+    --destination 192.168.232.0/24
 run_tcp_probe xs-m32-nat 43223
 
 kill "$AGENT_B_PID"
