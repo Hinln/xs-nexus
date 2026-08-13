@@ -6,7 +6,7 @@
 
 ## Repository-Side Rehearsal
 
-Exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in GitHub Actions run `31649030446`. Dedicated job `94289075249` and artifact `9162246723` (`clean-release-rehearsal-evidence`, GitHub digest `sha256:d69d7ff0d24195f629a5032152b1c1851f0cab8d79048ae90ca00af5fa9659fe`) prove:
+Exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` passed all 13 jobs in GitHub Actions run `31658778589`. Dedicated job `94318968293` and artifact `9165661918` (`clean-release-rehearsal-evidence`, GitHub digest `sha256:08a9a05c09a827b8d4cfc35c0eb0d4a5ae086be125b24e0c17ac45b83f7e6ffa`) prove:
 
 1. A full-history Git bundle and detached clean checkout exactly match the requested revision and pass `git fsck`.
 2. An explicitly test-only ephemeral SSH-signed tag verifies, while evidence records `formal_signed_rc=false` and `independent_operator=false`.
@@ -16,7 +16,7 @@ Exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in 
 6. Signed update failure/rollback tests and two complete Docker deployment lifecycles pass from the clean checkout.
 7. The temporary external `1panel-network`, PostgreSQL container, sentinel, volumes, namespaces, links, routes, rules, nftables, failed services, and Docker resources return to their exact baseline.
 
-The artifact records 10 of 10 phases, 10 of 10 fixture invariants, and 10 of 10 final cleanup invariants as PASS. All 111 manifest entries independently verify and the repository secret scanner reports zero findings. `production_mutation=false`; no production resource was contacted or changed.
+The artifact records 10 of 10 phases, 10 of 10 fixture invariants, and 10 of 10 final cleanup invariants as PASS. All 110 outer and 8 nested manifest entries independently verify and the repository secret scanner reports zero findings. `production_mutation=false`; no production resource was contacted or changed.
 
 ## Retained Failure Chain
 
@@ -28,8 +28,11 @@ The artifact records 10 of 10 phases, 10 of 10 fixture invariants, and 10 of 10 
 | `31644737926` | First loopback publication initialized Docker's raw table after the baseline. |
 | `31646007655` | `pg_isready` observed PostgreSQL's temporary initialization server; the separate performance job also retained Direct path-transition outliers. |
 | `31647482539` | The 10-phase submatrix passed, but a GitHub runner PCI interface hot-plugged after the original baseline, so final link equality failed. |
+| `31654905139` | The receiver authenticated the exact primary Relay with legitimate `relay_failover`, while the old harness allowed only `relay_fallback`. |
+| `31655990346` | The separate soak calibration applied the new configuration but sampled before both Direct sessions recovered. |
+| `31657413129` | The separate performance matrix began formal Direct sampling while the single warm-up batch still exceeded the p95 envelope. |
 
-The final implementation waits for PostgreSQL's completed-init marker and a real SQL query, measures 100 steady-state RTT samples after a 10-packet Direct warm-up without changing thresholds, initializes Docker firewall state before the baseline, and permits only an added kernel hardware-backed interface with no address or route. Virtual-interface additions, interface removals, or any route/rule/nftables/Docker drift still fail closed. The passing run required no hot-plug exception; link inventories were byte-identical.
+The final implementation waits for PostgreSQL's completed-init marker and a real SQL query, measures 100 steady-state RTT samples only after a bounded, evidence-bearing ten-packet Direct attempt meets the unchanged p95 envelope, initializes Docker firewall state before the baseline, and permits only an added kernel hardware-backed interface with no address or route. At most 12 warm-up attempts are allowed; exhaustion fails and every attempt remains in the artifact. Virtual-interface additions, interface removals, or any route/rule/nftables/Docker drift still fail closed. The passing run required no hot-plug exception; link inventories were byte-identical.
 
 ## Required Formal Rehearsal
 

@@ -630,7 +630,7 @@
 - 日志增长；
 - 数据库重连。
 
-实际结果：已完成真实 PostgreSQL backend 终止后的连接池恢复、Controller 100/500/1000 节点 API 注册/查询、XSP/1 与 Relay 吞吐、Direct/Relay RTT、release Agent 空闲资源、WebSocket 广播和可配置 Docker 资源/日志/故障恢复采样。24 小时证据 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z` 含三服务各 1420 个样本；`XS-2026-0004` 修正重启计数语义后，真实完整回归 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z` 通过。该历史里程碑只关闭当时 Linux 单机基线，不满足生产审计 Gate 22 的当前 revision 要求。最新 revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 的 600 秒 harness 校准在 run `31649030446` 全通过，但正式至少 24 小时运行尚未开始，Gate 22 保持 `UNKNOWN`；这也不代表 Windows、NAS、公网跨地域或水平扩展容量。
+实际结果：已完成真实 PostgreSQL backend 终止后的连接池恢复、Controller 100/500/1000 节点 API 注册/查询、XSP/1 与 Relay 吞吐、Direct/Relay RTT、release Agent 空闲资源、WebSocket 广播和可配置 Docker 资源/日志/故障恢复采样。24 小时证据 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260731T212242Z` 含三服务各 1420 个样本；`XS-2026-0004` 修正重启计数语义后，真实完整回归 `/srv/xs-nexus/artifacts/qa/runtime-stability-20260802T061521Z` 通过。该历史里程碑只关闭当时 Linux 单机基线，不满足生产审计 Gate 22 的当前 revision 要求。最新 revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 600 秒 harness 校准在 run `31658778589` 全通过，但正式至少 24 小时运行尚未开始，Gate 22 保持 `UNKNOWN`；这也不代表 Windows、NAS、公网跨地域或水平扩展容量。
 
 ---
 

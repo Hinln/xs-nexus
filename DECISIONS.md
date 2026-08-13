@@ -1161,7 +1161,7 @@
 - 背景：Gate 22 既需要频繁受控重启，又需要判断资源泄漏。跨计划重启比较 PID 资源会产生错误趋势，数据库连接预热也不能用单点首尾差代替稳定性判断。Agent 候选上报还会合法推进配置版本，使测试持有的版本在路由清理前过期。
 - 决策：600 秒运行只用于 harness 校准；正式证据至少运行 86400 秒，优选 72 小时。资源按连续进程代际判断，PostgreSQL 使用末端平台稳定性并同时保留 FD 2048、连接 32 的全局硬上限。路由写仅对 `409` 在重新读取当前版本后有界重试并记录全部尝试，任何其他状态立即失败。
 - 主机边界：正式运行只能在身份已通过独立渠道确认、已批准且可清理的特权 Linux QA 主机执行。SSH host key 变化时必须在认证前停止；禁止关闭严格检查、自动覆盖 `known_hosts` 或把重复 TOFU 观察当成带外确认。
-- 证据：最新 exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 的 run `31649030446` 全 13 job 通过；job `94289075250`、artifact `9162201059`、84/84 内部 SHA-256、零秘密扫描、八项事件、264 个资源样本和九类前后不变量通过。
+- 证据：最新 exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 run `31658778589` 全 13 job 通过；job `94318968217`、artifact `9165687987`、84/84 内部 SHA-256、零秘密扫描、八项事件、258 个资源样本和九类前后不变量通过。
 - 边界：该证据只有 600 秒，不能关闭 Gate 22。生产主机新指纹尚未带外确认且没有替代 QA 主机，正式运行未开始；Gate 22 保持 `UNKNOWN`，总体保持 `NO_GO`。
 
 ---
@@ -1172,6 +1172,6 @@
 - 背景：clean checkout、可复现构建和完整生命周期可以在一次性 hosted Linux 自动化，但同一项目控制的临时签名 key/runner 不能证明所有者签名、独立操作者、正式秘密或生产升级回滚。把前者绿色状态直接当作 Gate PASS 会绕过发布治理。
 - 决策：仓库子矩阵必须从完整 Git bundle 的 detached checkout 执行，证据和 secrets 位于 checkout 外，使用明确 test-only tag，完成五镜像双无缓存复现、Direct/Relay/subnet、更新、两次部署生命周期和精确宿主清理。summary 永久记录 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。
 - 主机不变量：所有虚拟接口增加、任意接口删除，以及 Docker/路由/规则/nftables/namespace/failed-service/`1panel-network` 漂移均失败。托管平台新增接口只有在内核存在硬件 device 后端且该接口没有地址或 IPv4/IPv6 路由时可单独标记外部 hot-plug；必须保存原始 diff 和设备 JSON。当前通过证据没有使用该例外。
-- 统计边界：Direct 切回后先执行 10 个成功 warm-up 包，再采集 100 个正式样本；原平均/p95 上限保持不变，最大值完整报告。PostgreSQL 必须观察 final-init marker、readiness 和真实 SQL，不能由 entrypoint 临时 server 满足。
-- 证据：exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27`，run `31649030446`，job `94289075249`，artifact `9162246723`，111/111 清单、零秘密、10/10 阶段和 20/20 不变量通过。
+- 统计边界：Direct 切回后最多执行 12 轮、每轮 10 包且逐轮留证的 warm-up；每轮前后必须是双端精确 established Direct，且该轮 p95 ≤10 ms 才采集 100 个正式样本。原平均/p95 上限保持不变，最大值完整报告；耗尽仍失败。PostgreSQL 必须观察 final-init marker、readiness 和真实 SQL，不能由 entrypoint 临时 server 满足。
+- 证据：exact revision `795b1ea461a179958aed27e6935faba8f36e43ce`，run `31658778589`，job `94318968293`，artifact `9165661918`，110+8 清单、零秘密、10/10 阶段和 20/20 不变量通过；性能 artifact `9165514010` 的 Direct/Relay 正式 p95 为 `0.408`/`0.465` ms。
 - 边界：只有 owner-controlled signed RC/main、独立操作者、新鲜非托管服务器、正式 secrets 和 current production upgrade/rollback 全部独立通过，Gate 25 才可从 `FAIL` 改为 `PASS`；仓库子矩阵不能自行改变总体 `NO_GO`。

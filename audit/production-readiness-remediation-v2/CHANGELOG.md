@@ -153,7 +153,7 @@
 
 - Added a fail-closed current-revision soak harness with separate calibration/formal modes, six-service resource sampling, eight required fault events, host-invariant baselines, cleanup checks, manifests, and evidence secret scanning.
 - Fixed path-recovery backoff, manual-probe cooldown isolation, Relay lease recovery waiting, pre-enabled gateway forwarding, process-generation resource analysis, and version-aware bounded route-update retries. No product threshold, ACL, signature, identity, or security assertion was weakened.
-- Latest exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`; job `94289075250` and artifact `9162201059` passed 84/84 independent hashes, zero secret findings, 264 resource rows, eight events, and nine invariant classes.
+- That exact revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`; job `94289075250` and artifact `9162201059` passed 84/84 independent hashes, zero secret findings, 264 resource rows, eight events, and nine invariant classes.
 - This is a 600-second calibration only. Gate 22 remains `UNKNOWN` until an exact-revision run reaches at least 86,400 seconds and independently passes all checks.
 - The formal run did not start because the production SSH host key changed and has no out-of-band confirmation, while no alternate approved privileged Linux QA host is available. Strict verification was preserved; no password was sent and production was not changed.
 
@@ -179,3 +179,11 @@
 - Fixed the harness to require both Agents to converge on the exact established primary Relay, backup Relay, restarted Relay, and restored Direct path before each bidirectional assertion. Product timers, per-Agent bounds, packet/ACL/encryption checks, and cleanup requirements remain unchanged.
 - Exact revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` passed all 13 jobs in run `31653564044`. Relay artifact `9163588782` and Gate 25 artifact `9163844194` passed independent manifests and zero-finding secret scans.
 - Production was not connected or changed. Gate 02 remains `FAIL`, Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, and the overall decision remains `NO_GO`.
+
+## 2026-08-13 Exact-Head Recovery And Performance Closure
+
+- Preserved three consecutive 12/13 runs instead of replacing them with an older green result: `31654905139` exposed a legitimate authenticated receiver `relay_failover` classification, `31655990346` exposed post-configuration Direct-session recovery, and `31657413129` exposed Direct RTT sampling before the path reached steady state.
+- Kept exact endpoint/session, bidirectional ping, product timers, per-side wait bounds, 100 formal samples, 5/10 ms Direct bounds, 10/20 ms Relay bounds, 15 ms p95 increment, ACL, encryption, cleanup and secret-scan assertions unchanged.
+- Added bounded evidence-bearing steady-state measurement: at most 12 ten-packet attempts, exact established Direct paths before and after every attempt, and warm-up p95 at most 10 ms before formal sampling. Exhaustion fails and retains every attempt.
+- Exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` passed all 13 jobs in run `31658778589`. Performance, Gate 22, Relay and Gate 25 artifacts `9165514010`, `9165687987`, `9165498146` and `9165661918` passed independent manifests, revision/status binding and zero-finding secret scans.
+- Production was not connected or changed. Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, and overall remains `NO_GO` because formal duration, owner-controlled signed RC, independent operation and production upgrade/rollback are still external.

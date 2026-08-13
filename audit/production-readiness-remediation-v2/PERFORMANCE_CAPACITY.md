@@ -30,7 +30,7 @@ No production container, host network, firewall, route, service, or `1panel-netw
 
 The GitHub API digest binds the uploaded artifact. The independently downloaded extracted payload, nested manifests, revision files, summaries, and reports were separately verified. This report does not claim an independently computed ZIP digest.
 
-Current exact-head regression revision `6e63424298e491c0035e1d138de5d03b0ab83c27` passed all 13 jobs in run `31649030446`. Performance job `94289075182` and artifact `9161977864` have GitHub digest `sha256:da6b88b6d3b8f87f6c94a1dd86103c9e495843840aa7ebe0f55268ce4b7b95c1`; all 42 extracted manifest entries, three nested status/revision bindings, and a new independent secret scan pass.
+Current exact-head regression revision `795b1ea461a179958aed27e6935faba8f36e43ce` passed all 13 jobs in run `31658778589`. Performance job `94318968086` and artifact `9165514010` have GitHub digest `sha256:71a187d3453f13f19f4a0a585cc75d9fafcb69195870678f8cd0d7c4713911f1`; 43 outer, 13 Agent, 8 Controller and 8 Protocol manifest entries, all nested status/revision bindings, and a new independent secret scan pass. The final 100-sample Direct average/p95 is `0.344`/`0.408` ms and Relay is `0.387`/`0.465` ms. Failed run `31657413129` remains retained with Direct average/p95 `7.242`/`39.441` ms; the steady-state gate now allows at most 12 separately recorded ten-packet attempts and does not change the formal 5/10 ms bounds.
 
 ## Bounded Controller Envelope
 

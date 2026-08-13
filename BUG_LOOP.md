@@ -419,3 +419,11 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 修复：测试现在保存两端 Direct 候选，并在初始 Relay、主 Relay 故障切换、重启主 Relay 接管和最终 Direct 恢复四个边界都要求两个 Agent 的端点、路径原因和 established session 同时收敛。没有修改产品故障超时、每端等待上限、流量成功条件、ACL、密文或清理断言。
 - 精确 revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` 的 run `31653564044` 全 13 job 通过；Relay job `94302909276`、artifact `9163588782`、GitHub digest `sha256:8b6495407a822ebefaa6259e5c64f43effa61628250550705648b2f217c05803` 通过。独立下载复核外层 8/8、容量层 4/4 SHA-256 和零秘密发现。
 - 同一 revision 的 Gate 25 artifact `9163844194` 通过 110/110 外层、8/8 更新供应链清单、10/10 阶段及两组各 10/10 不变量；仍明确记录 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。Gate 25 保持 `FAIL`，总体保持 `NO_GO`。
+
+## Exact-head 恢复与性能门禁闭环（2026-08-13）
+
+- `XS-2026-0070` 补充：run `31654905139` 的 Gate 25 job `94307126471` 在接收端已对精确主 Relay 建立会话时读到合法 `relay_failover`，旧 harness 只允许 `relay_fallback`。artifact `9164303385` 与 digest `sha256:ecdebd8bc487ba85b02b9f47e6ccfce06437dda33e42f4b8426dc5c4d0ea5ea7` 保留；修复只扩展已认证接收端原因，端点、会话、流量和安全断言不变。
+- `XS-2026-0071`：run `31655990346` 的 Gate 22 job `94310433905` 在 configuration update 已应用两端版本后立即 ping，命中瞬时 `agent_peer_session_unavailable`。artifact `9164596254` 与 digest `sha256:fbfb49cd42b46f5163086fbca9e39ef1206c1a04367e8bf5669451115634d5e6` 保留；修复要求两端精确 established Direct 路径恢复后再执行原 ping，未调整产品计时或 180 秒等待边界。
+- `XS-2026-0072`：run `31657413129` 的性能 job `94314821959` 完成功能流量但 Direct 恢复后的单轮 10 包 warm-up p95 仍为 `27.383` ms，正式 100 包平均/p95 为 `7.242`/`39.441` ms，严格超过 5/10 ms。artifact `9164999014` 与 digest `sha256:360f2873b4aa8f252f1592cf90d16666d77a88a6c0531fcf50a963eaae797e23` 保留。修复增加最多 12 轮、逐轮留证的 10 包稳态探测，只有双端 Direct 且 warm-up p95 ≤10 ms 才进入正式测量；正式样本数、平均/p95/增量阈值和最大值保留均不变。
+- 最终 exact revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 run `31658778589` 全 13 job 通过。性能、Gate 22、Relay、Gate 25 四个 artifact 共独立验证 72、84、12、118 个清单项并通过仓库秘密扫描；Direct/Relay 正式 p95 为 `0.408`/`0.465` ms。
+- 上述关闭的是 hosted 仓库回归缺陷，不是正式 24 小时长测、owner-signed RC 或独立生产演练。Gate 22 保持 `UNKNOWN`，Gate 25 保持 `FAIL`，总体保持 `NO_GO`，生产未改变。

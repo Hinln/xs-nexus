@@ -1,7 +1,7 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-08-13
-当前 Git 提交：以包含本记录的提交为准；Gate 22/Gate 25 最新精确代码证据 revision 为 `6e63424298e491c0035e1d138de5d03b0ab83c27`
+当前 Git 提交：以包含本记录的提交为准；最新精确代码证据 revision 为 `795b1ea461a179958aed27e6935faba8f36e43ce`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
 当前总状态：`NO_GO`（Gate 22 harness 校准通过但正式 24 小时长测尚未开始；Gate 02/13/14/20/21/22/23/25 及外部门禁仍未闭合）
 当前里程碑：`生产门禁修复 V2：Gate 22 当前 revision 24 小时稳定性与故障注入`
@@ -540,7 +540,7 @@ make clean
 
 - 已实现 `scripts/test-current-revision-soak.sh`、`scripts/summarize-current-revision-soak.py`、汇总器回归和 CI 专项 job；正式模式固定要求至少 `86400` 秒，校准模式不能生成 Gate PASS。
 - 校准期间发现并修复路径恢复 backoff、手工探测 cooldown 隔离、Relay lease 恢复等待、预启用 gateway forwarding、计划重启后的进程代际资源分析，以及路由更新与 Agent 候选上报并发时的乐观锁重试。HTTP `409` 只在重新读取当前版本后有界重试，其他状态立即失败，每次尝试均写入证据。
-- 最新精确 revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 的 GitHub Actions run `31649030446` 全 13 job 通过；Gate 22 job `94289075250`、artifact `9162201059`、GitHub digest `sha256:73918119786fe5d25dcceb7f8cdb9509ff3a1ac5439780e1972c4201e8d08e59` 通过。
+- 该阶段精确 revision `6e63424298e491c0035e1d138de5d03b0ab83c27` 的 GitHub Actions run `31649030446` 全 13 job 通过；Gate 22 job `94289075250`、artifact `9162201059`、GitHub digest `sha256:73918119786fe5d25dcceb7f8cdb9509ff3a1ac5439780e1972c4201e8d08e59` 通过。
 - 独立下载验证 84/84 项 SHA-256、零秘密发现、六服务共 264 个资源样本、八项故障注入全部 PASS，且 Docker 网络/卷/容器、默认路由、规则、链路、nftables、failed units 与 `1panel-network` 九类前后基线逐字节一致。
 - 上述证据仅为 600 秒 harness 校准，不是 24 小时稳定性证据。Gate 22 保持 `UNKNOWN`，总体保持 `NO_GO`，生产最后已知仍运行 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`，本轮未连接或修改生产。
 - 正式运行尚未开始：本机没有 Docker/可用 WSL Linux，旧开发服务器拒绝 SSH 握手；生产服务器当前呈现的 ED25519 指纹与受信记录不一致，且尚无云控制台等带外确认。严格主机密钥验证没有被关闭，未发送密码，未自动接受新密钥。
@@ -564,3 +564,12 @@ make clean
 - 精确 revision `c0c059e84806f70586f37ca3f3bb33cdd602c4a4` 的 run `31653564044` 全 13 job 通过。Relay job `94302909276`、artifact `9163588782`、digest `sha256:8b6495407a822ebefaa6259e5c64f43effa61628250550705648b2f217c05803`，外层 8/8、容量层 4/4 清单与零秘密扫描通过。
 - 同 revision 的 Gate 25 artifact `9163844194`、digest `sha256:376e136188c0782b2af3797395c0b871fb39747c007475c4241c58075ce84a08` 独立通过 110/110 外层、8/8 更新清单、10/10 阶段及 20/20 前后不变量。它仍是 hosted、test-only、非独立、无生产变更的仓库子矩阵。
 - 生产未连接或修改，最后已知运行 revision 仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。Gate 02=`FAIL/BLOCKED_EXTERNAL`、Gate 22=`UNKNOWN/BLOCKED_EXTERNAL`、Gate 25=`FAIL/BLOCKED_EXTERNAL`，总体严格保持 `NO_GO`。
+
+## 2026-08-13 Exact-head 恢复与性能证据闭环
+
+- run `31654905139` 在 revision `b18b3171d261839c251f5273c6e89d65917d8a5d` 为 12/13；Gate 25 job `94307126471`、artifact `9164303385` 保留接收端已在精确主 Relay 建立会话但合法标记 `relay_failover` 的失败。修复只接受该已认证接收端分类，精确端点和 established session 未放宽。
+- run `31655990346` 在 revision `df9b452b951c7763d733d0cfa7774e28a15b4e2d` 为 12/13；Gate 22 job `94310433905`、artifact `9164596254` 保留配置版本已应用后立即 ping 命中 `agent_peer_session_unavailable` 的失败。配置更新阶段现等待两端精确 established Direct 路径后再保留原 ping 断言和每端 180 秒边界。
+- run `31657413129` 在 revision `d56d672a1c8156f276437e1db018204eb2fe661d` 为 12/13；性能 job `94314821959`、artifact `9164999014` 保留 Direct warm-up p95 `27.383` ms 以及正式 Direct 平均/p95 `7.242`/`39.441` ms 的真实阈值失败。测试现最多执行 12 轮、每轮 10 包且全部留证的稳态探测，只有双端 Direct 且该轮 p95 ≤10 ms 才进入原 100 包正式测量；正式平均/p95 上限仍为 5/10 ms。
+- 精确 revision `795b1ea461a179958aed27e6935faba8f36e43ce` 的 run `31658778589` 全 13 job 通过。性能 artifact `9165514010`、Gate 22 artifact `9165687987`、Relay artifact `9165498146`、Gate 25 artifact `9165661918` 均完成独立 SHA-256、revision、状态和零秘密发现复核。
+- 最终性能 Direct 平均/p95 为 `0.344`/`0.408` ms，Relay 为 `0.387`/`0.465` ms；Gate 22 校准为 600 秒、六服务各 43 个样本、八项事件和九类宿主不变量；Gate 25 为 10/10 阶段与两组 10/10 不变量。Gate 22 仍缺至少 86400 秒，Gate 25 仍明确 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。
+- 生产未连接或修改，最后已知 revision 仍为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。Gate 02=`FAIL/BLOCKED_EXTERNAL`、Gate 22=`UNKNOWN/BLOCKED_EXTERNAL`、Gate 25=`FAIL/BLOCKED_EXTERNAL`，总体保持 `NO_GO`。

@@ -2,7 +2,7 @@
 
 ## Status
 
-`UNKNOWN`. No 24-hour raw evidence exists for the current remediation revision. The latest 600-second calibration passed at revision `6e63424298e491c0035e1d138de5d03b0ab83c27`, but calibration is not Gate 22 evidence.
+`UNKNOWN`. No 24-hour raw evidence exists for the current remediation revision. The latest 600-second calibration passed at revision `795b1ea461a179958aed27e6935faba8f36e43ce`, but calibration is not Gate 22 evidence.
 
 ## Minimum Run
 
@@ -27,13 +27,15 @@ The run must restart from zero if the revision, image, configuration, or test ha
 
 ## Harness Calibration
 
-- Exact revision: `6e63424298e491c0035e1d138de5d03b0ab83c27`.
-- GitHub Actions run/job: `31649030446` / `94289075250`; all 13 workflow jobs passed.
-- Artifact: `9162201059`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:73918119786fe5d25dcceb7f8cdb9509ff3a1ac5439780e1972c4201e8d08e59`.
-- Independent verification: 84/84 manifest entries, zero secret-scan findings, 264 service resource rows, eight PASS fault events, and byte-identical before/after Docker/network/system invariants.
+- Exact revision: `795b1ea461a179958aed27e6935faba8f36e43ce`.
+- GitHub Actions run/job: `31658778589` / `94318968217`; all 13 workflow jobs passed.
+- Artifact: `9165687987`, `current-revision-soak-calibration-evidence`; GitHub digest `sha256:7387b961dc813b033cc6b80cfe9e23ebec5fb858c858f4ecc1c4cfbef5d298f9`.
+- Independent verification: 84/84 manifest entries, zero secret-scan findings, 258 service resource rows, eight PASS fault events, and nine byte-identical before/after Docker/network/system invariants.
 - Duration: 600 seconds with explicit calibration mode. It cannot satisfy the mandatory duration.
 
 The harness evaluates growth within each contiguous process generation so planned restarts do not create false trends. PostgreSQL terminal stability is evaluated alongside global FD and connection ceilings. Route replacement may retry only an actual optimistic-lock `409`, after rereading the current version, with every attempt recorded; every other response fails immediately.
+
+The retained failed run `31655990346` proves that configuration-version application alone does not imply immediate data-plane readiness. The configuration-update event now requires both Agents to report the exact established Direct path before the original ping assertion; the product timers and per-side 180-second wait bound are unchanged.
 
 ## Formal-Run Blocker
 
