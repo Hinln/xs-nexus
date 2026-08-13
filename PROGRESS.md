@@ -602,3 +602,10 @@ make clean
 - 独立公网复核中，两个域名 DNS/TCP 443 可达，但 Schannel 与 OpenSSL 均在 TLS 证书/HTTP 前 EOF；Gate 13 没有 PASS 证据。
 - 正式计数为 PASS 4、FAIL 5、BLOCKED_EXTERNAL 5、PARTIAL 8、SIMULATED_ONLY 2、UNKNOWN 1。权威结论继续为 `NO_GO`；当前候选禁止生产部署。
 - 所有剩余项均需所有者或独立环境：全量凭据轮换、正式密钥、第三方审计、Windows/NAS/WAN/Subnet 实机、计划域名、外部告警/on-call、异地恢复、至少 24 小时长测、签名 RC、独立新机演练和生产升级/回滚。
+
+## 2026-08-13 外部门禁等待期自动化
+
+- 新增 `scripts/external-gate-kit.py`，从精确 40 字符候选 revision 在仓库外初始化十二类外部门禁回执、隔离证据目录和无秘密说明；状态只能为 `BLOCKED_EXTERNAL`、`IN_PROGRESS` 或 `COMPLETE`。
+- 完成回执必须满足固定 schema、完整布尔检查、规定 evidence kind、精确 revision、UTC 时间、公开标识和适用指标；正式 soak 强制不少于 86400 秒，host identity 强制相同 OpenSSH SHA-256 指纹并拒绝 SSH/TOFU/同会话/聊天/仅邮件作为带外渠道，独立审计和正式发布演练强制独立操作者。
+- 封存与复核拒绝仓库内输出、symlink、路径穿越、额外根文件/门禁目录、缺失或额外 manifest 文件、hash 漂移、未列出证据中的秘密旁路、私钥/认证头/带密码 URI/秘密赋值；生成 `SHA256SUMS` 和机器可读 summary，但 `READY_FOR_FRESH_AUDIT` 只允许进入全新 25 Gate 审计，不等于 `GO`。
+- 新增完整正负回归和 baseline `make test` 入口；手动交接见 `audit/production-readiness-remediation-v2/EXTERNAL_GATE_HANDOFF.md`。正式计数和 `NO_GO` 不变，生产未连接或修改。

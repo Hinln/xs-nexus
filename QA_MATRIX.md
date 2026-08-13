@@ -697,3 +697,12 @@
 - [x] 最终精确代码回归：revision `a44d868c26e21285565fa794d482b8092c0bbbf4`、run `31671264821` 全 14 job 通过；update/ACL jobs 为 `94356192731`/`94356192857`。
 - [x] 独立证据：13 artifacts、18 manifests、1,027 SHA-256 条目、精确 revision/status 和整包秘密扫描通过。
 - [x] 结论边界：本项只关闭夹具缺陷；正式计数不变，总体严格保持 `NO_GO`。
+
+## 39. 外部门禁证据包自动化（2026-08-13）
+
+- [x] 十二类固定门禁回执、隔离 evidence 目录、精确 40 字符 revision 和仓库外输出初始化。
+- [x] COMPLETE 强制全检查、规定 evidence kind、UTC、operator、公开标识、适用指标和真实文件；缺失、错误 schema、额外 receipt/evidence 目录均拒绝。
+- [x] host identity 拒绝不同/伪格式指纹及 SSH、TOFU、同会话、聊天、仅邮件渠道；formal soak 拒绝小于 86400 秒；第三方审计和正式发布演练拒绝非独立 operator。
+- [x] 证据秘密扫描覆盖已列和未列文件；拒绝私钥、完整带密码数据库 URI、Bearer 认证头、秘密赋值、symlink、路径穿越、额外根文件和 hash/file-set 漂移。
+- [x] seal 写入逐 evidence hash、全包 `SHA256SUMS` 和 summary；verify 独立重算 receipt 与全包清单，篡改 README/receipt/evidence 均失败。
+- [x] 状态边界：未完成回执保持 `NO_GO`；十二项完成只输出 `READY_FOR_FRESH_AUDIT`，仍必须新建最终审计并重跑 25 Gate，不能自动输出 `GO`。

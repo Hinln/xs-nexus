@@ -164,3 +164,4 @@
 - provenance 阻塞：GitHub `main` 仍为 `8745b5804312587534c1e91980dfb11720952ed1`；精确代码候选取证时领先 162 个提交但无 PR、正式签名 tag 或 release；最后独立验证的生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。
 - 安全结果：本轮没有接受变化后的 SSH host key，没有认证或修改生产，没有修改 DNS/CDN、1Panel、凭据、GitHub tag/release 或 branch protection，也没有部署 `NO_GO` 候选。
 - 解除后验证：外部集合逐项产生无秘密原始证据后，从 owner-signed exact RC 在 `audit/production-readiness-final/` 全新重跑 25 个 Hard Gate；不得复制本目录 PASS，全部为 PASS 后才能重新判断 `GO`。
+- 等待期自动化：`scripts/external-gate-kit.py` 可在仓库外为十二类外部门禁生成固定 revision 的结构化回执和证据目录，执行状态/完整性/无秘密/路径/指纹/独立操作者/至少 86400 秒检查，封存 SHA-256 并独立复核；操作入口见 `audit/production-readiness-remediation-v2/EXTERNAL_GATE_HANDOFF.md`。该工具只验证真实外部证据，不替代人工执行，不改变任何 Gate 状态。

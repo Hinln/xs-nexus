@@ -1193,3 +1193,12 @@
 - 回归：为 nft JSON 验证器增加 direct/prefix/masked 正例和错误 input/output/destination/masquerade/chain/table/type 负例；更新供应链继续执行真实 OpenSSL 签名与拒绝路径。失败 run `31670477509` 和修复后 run `31671264821` 均永久保留。
 - 证据：exact code revision `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 14/14 CI、13 artifacts、18 manifests、1,027 hashes 与零发现秘密扫描通过。
 - 边界：结构化验证提高夹具确定性，不授权放宽签名、ACL、NAT、路由或清理条件，也不改变外部 Hard Gate、生产 provenance 或总体 `NO_GO`。
+
+## ADR-105：外部门禁交接采用仓库外结构化回执、全包封存与全新审计边界
+
+- 日期：2026-08-13
+- 背景：文字 runbook 可以说明步骤，却不能自动证明执行者、候选 revision、证据集合、持续时间、独立性和无秘密边界。把人工勾选或零散截图直接写回 Git 还会扩大凭据泄露、证据遗漏和错误复用风险。
+- 决策：十二类外部门禁统一使用仓库外 evidence kit；每项 receipt 绑定精确 full SHA、固定 checks/evidence kinds、operator、UTC、公开标识和适用指标。完成后先逐证据 hash，再对 metadata/receipts/全部 evidence/summary 建立严格文件集 `SHA256SUMS`，由独立 `verify` 重算。
+- 安全边界：工具拒绝仓库内输出、symlink、路径穿越、额外根或门禁对象、秘密字段/内容、TOFU host identity、小于 86400 秒 soak、非独立第三方审计/正式演练和任何 hash/file-set 漂移；未列 evidence 文件同样扫描并进入全包 manifest。
+- 状态语义：`BLOCKED_EXTERNAL` 和 `IN_PROGRESS` 均保持生产 `NO_GO`。所有 receipts 完整时只输出 `READY_FOR_FRESH_AUDIT`，必须从 owner-signed exact RC 在新目录重新执行全部 25 Hard Gate，只有该独立审计才有权给出 `GO`、`CONDITIONAL_GO` 或 `NO_GO`。
+- 边界：该自动化降低人工交接和证据完整性风险，不生成凭据、不执行密钥仪式、不操作生产、不替代真实 Windows/NAS/WAN/DR/告警/长测/发布演练，也不关闭任何外部门禁。
