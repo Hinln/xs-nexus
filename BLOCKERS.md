@@ -123,7 +123,7 @@
 
 - 状态：`BLOCKED_EXTERNAL`（仅阻塞正式 24 小时运行；Gate 22 本身继续为 `UNKNOWN`）。
 - 首次发现：2026-08-13，在 revision `92244eb4d386eba2c852682d8d2dadc7237b31da` 的 600 秒校准和独立证据复核完成后。
-- 已完成的不受阻塞工作：正式/校准模式分离的长测 harness、六服务资源采样、八项故障注入、进程代际增长分析、有界乐观锁重试、配置更新后双端 Direct 恢复、前后九类宿主不变量和 evidence secret scan 均已实现；最新 exact candidate `891b248634c72e313c501f39a6b97bc0241c2882` 的 run `31668495096` 全 14 job 通过，artifact `9169134243` 的 84/84 SHA-256 与零秘密扫描独立通过。
+- 已完成的不受阻塞工作：正式/校准模式分离的长测 harness、六服务资源采样、八项故障注入、进程代际增长分析、有界乐观锁重试、配置更新后双端 Direct 恢复、前后九类宿主不变量和 evidence secret scan 均已实现；最新 exact code candidate `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 run `31671264821` 全 14 job 通过，artifact `9170104931` 的清单与零秘密扫描独立通过。
 - 阻塞事实：本机没有 Docker 或可用 WSL Linux，Hyper-V 管理权限不可用；旧开发服务器在 SSH 握手前主动关闭连接。生产服务器的当前 ED25519 指纹为 `SHA256:Iik0ptfRKPFebbyCP8hIEllx46zYgztne0QjAvc4JVY`，与本地受信记录不一致，且未通过云控制台等独立渠道确认。不得以关闭 `StrictHostKeyChecking`、覆盖受信记录或 TOFU 自动接受代替带外验证。
 - 安全结果：严格 SSH 连接在认证前终止，未发送密码，未修改 production、Docker、1Panel、网络、防火墙、路由或服务；正式长测没有启动。
 - 解除步骤：所有者通过腾讯云控制台在目标主机执行 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 并确认精确指纹，或提供独立、可重装、已批准且具有 Docker、`/dev/net/tun`、network namespace 与 nftables 的特权 Linux QA 主机。
@@ -134,8 +134,8 @@
 ## BLK-010 Gate 25 owner-signed RC 与独立生产演练
 
 - 状态：`BLOCKED_EXTERNAL`（仓库侧 clean release/deployment 子矩阵已完成，Gate 25 保持 `FAIL`）。
-- 首次发现：2026-08-13，在仓库侧自动化演练和独立证据复核完成后；最新 exact candidate 为 `891b248634c72e313c501f39a6b97bc0241c2882`。
-- 已完成的不受阻塞工作：run `31668495096` 全 14 job 通过；job `94348144544`、artifact `9169167867` 完成 full-history clean checkout、test-only 签名、五镜像双 no-cache、仓库外 secrets、Direct/Relay/subnet、更新和双 Docker 生命周期，110+8 hashes、零秘密、10/10 阶段和 20/20 不变量通过。
+- 首次发现：2026-08-13，在仓库侧自动化演练和独立证据复核完成后；最新 exact code candidate 为 `a44d868c26e21285565fa794d482b8092c0bbbf4`。
+- 已完成的不受阻塞工作：run `31671264821` 全 14 job 通过；job `94356192877`、artifact `9170135871` 完成 full-history clean checkout、test-only 签名、五镜像双 no-cache、仓库外 secrets、Direct/Relay/subnet、更新和双 Docker 生命周期，完整清单、零秘密、10/10 阶段和 20/20 不变量通过。
 - 阻塞事实：没有 owner-controlled offline release key ceremony、认证公钥、合并 `main` 的 formal signed RC；没有与项目实现者独立的操作者和新鲜非托管服务器；没有当前正式 release 的生产 upgrade/rollback 窗口。artifact 明确标记 `formal_signed_rc=false`、`independent_operator=false`、`production_mutation=false`。
 - 安全结果：生产未连接或修改；没有把临时 key、hosted runner 或历史 `3d93656` 部署当作当前正式发布证据。当前生产 SSH host key 仍需带外确认。
 - 解除步骤：先完成 `BLK-006` 的 owner key ceremony/public-key distribution 和 formal RC；由独立操作者在身份验证的新鲜服务器复演；批准生产窗口、带外确认 host identity、配置定时回滚后执行 upgrade、独立反向验证、rollback 与 restored release。
@@ -158,9 +158,9 @@
 ## BLK-012 正式生产门禁复判后的外部执行集合
 
 - 状态：`BLOCKED_EXTERNAL`（仓库代码与自动化已完成，正式结论仍为 `NO_GO`）。
-- 首次确认：2026-08-13，在 exact candidate `891b248634c72e313c501f39a6b97bc0241c2882` 的 14/14 CI 和全部 artifact 独立复核后。
-- 已完成的不受阻塞工作：13 个 artifacts、18 份 manifest、1,032 个 SHA-256 条目、整包秘密扫描、原生 Windows build/test、六目标 ASan fuzz、真实 Console、性能、观测、1Panel、Gate 22 校准与 Gate 25 仓库演练全部通过。
+- 首次确认：2026-08-13，在 exact code candidate `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 14/14 CI 和全部 artifact 独立复核后。
+- 已完成的不受阻塞工作：13 个 artifacts、18 份 manifest、1,027 个 SHA-256 条目、整包秘密扫描、原生 Windows build/test、六目标 ASan fuzz、真实 Console、性能、观测、1Panel、Gate 22 校准与 Gate 25 仓库演练全部通过。
 - 外部执行集合：Gate 02 凭据轮换；Gate 03/18 正式密钥与 signed RC；Gate 05 第三方审计；Gate 07/08/10/11/12/21 真实 WAN/Relay/Subnet/Windows/NAS/容量；Gate 13 计划域名；Gate 14/20 外部告警与 on-call；Gate 17 异地恢复；Gate 22 至少 24 小时正式长测；Gate 25 独立 fresh-host 和生产升级/回滚。
-- provenance 阻塞：GitHub `main` 仍为 `8745b5804312587534c1e91980dfb11720952ed1`；候选领先 160 个提交但无 PR、正式签名 tag 或 release；最后独立验证的生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。
+- provenance 阻塞：GitHub `main` 仍为 `8745b5804312587534c1e91980dfb11720952ed1`；精确代码候选取证时领先 162 个提交但无 PR、正式签名 tag 或 release；最后独立验证的生产运行 revision 为 `3d93656cc9ec3ea35d58e453118154b25bcc4e14`。
 - 安全结果：本轮没有接受变化后的 SSH host key，没有认证或修改生产，没有修改 DNS/CDN、1Panel、凭据、GitHub tag/release 或 branch protection，也没有部署 `NO_GO` 候选。
 - 解除后验证：外部集合逐项产生无秘密原始证据后，从 owner-signed exact RC 在 `audit/production-readiness-final/` 全新重跑 25 个 Hard Gate；不得复制本目录 PASS，全部为 PASS 后才能重新判断 `GO`。

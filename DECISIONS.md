@@ -1184,3 +1184,12 @@
 - 依赖边界：独立实现扫描只允许精确 Windows 测试编排脚本调用已批准的 Wintun 适配器包；普通脚本和 runtime crate 不因此获得例外，WireGuard 仍只允许发行安装器识别供应方身份。
 - 证据：exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855`、run `31667104728`、job `94343940285`、artifact `9168434013`；12/12 独立哈希、51 Agent 与 23 边界测试、release build、Clippy 和零秘密发现通过。
 - 边界：该决策关闭原生编译自动化，不关闭 Windows 在线设备生命周期。只有受控 VM 完整矩阵通过后 Gate 11 才能改变；当前仍为 `BLOCKED_EXTERNAL`。
+
+## ADR-104：密码学负向夹具与 nftables 验收必须验证语义而非偶然字节或文本格式
+
+- 日期：2026-08-13
+- 背景：复制签名后把首字节写成固定值可能在原值相同时形成 no-op；nftables 人类可读输出是否给接口名加引号不属于稳定语义。两者都会让产品行为正确时由夹具偶然性或格式差异决定门禁结果。
+- 决策：签名负向夹具必须产生在目标信任根下密码学确定无效的输入，本次使用另一把真实 Ed25519 私钥对同一 manifest 签名；不得使用可能 no-op 的固定字节覆盖。nftables 规则验收必须使用 `nft -j` 并验证 table、chain、type、hook、priority、接口、地址语义和动作，不依赖文本引号或显示顺序。
+- 回归：为 nft JSON 验证器增加 direct/prefix/masked 正例和错误 input/output/destination/masquerade/chain/table/type 负例；更新供应链继续执行真实 OpenSSL 签名与拒绝路径。失败 run `31670477509` 和修复后 run `31671264821` 均永久保留。
+- 证据：exact code revision `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 14/14 CI、13 artifacts、18 manifests、1,027 hashes 与零发现秘密扫描通过。
+- 边界：结构化验证提高夹具确定性，不授权放宽签名、ACL、NAT、路由或清理条件，也不改变外部 Hard Gate、生产 provenance 或总体 `NO_GO`。

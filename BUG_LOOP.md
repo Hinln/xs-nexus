@@ -442,3 +442,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - `XS-2026-0075`：首轮 run `31666007136` 的 Windows job `94340603780` 已通过，但 baseline job `94340603963` 把精确测试脚本中的 `xs-windows-wintun` 包名当成禁止的运行时引用。修复为路径精确、工具用途限定的例外，并新增其他脚本、generic runtime 和 WireGuard 的负向回归；没有跳过扫描或扩大产品运行时边界。
 - 最终 exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` 的 run `31667104728` 全 14 job 通过。Windows artifact `9168434013` 独立通过 12/12 哈希、51 个 Agent 测试、23 个边界测试、release 构建、严格 Clippy 和零发现秘密扫描。
 - 两项仓库自动化缺陷已关闭；真实 Windows 在线生命周期仍按 `PRV2-007`/`KI-020`/`KI-022` 外部阻塞，不得改写为已完成。
+
+## 正式门禁精确 HEAD 夹具闭环（2026-08-13）
+
+- `XS-2026-0076`：文档 HEAD `72d7e5328a1f1ef5f4387521f5cbabcf4a2e23d2` 的 run `31670477509` 中 update job `94353856787`、artifact `9169529635` 报告 `bad-signature` 意外成功。旧夹具把复制签名的第一个字节写成字面 `x`；原字节恰为 `0x78` 时修改是 no-op。修复改为用另一把真实 Ed25519 私钥对同一 manifest 签名，确保签名在目标公钥下确定无效；产品验签和拒绝条件未变。
+- `XS-2026-0077`：同一 run 的 ACL job `94353856911`、artifact `9169570590` 在真实流量和 ACL 已通过后报告缺少 `iifname "xsb0"`。规则存在，但 runner 的 nft 文本输出省略引号。修复改为读取 `nft -j`，对精确 table、chain、type、hook、priority、input/output interface、IPv4 destination 与 masquerade 语义做结构化验证，并新增七类负向回归；ACL/NAT/路由断言未弱化。
+- 精确修复 revision `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 run `31671264821` 全 14 job 通过。全部 13 artifacts 独立通过 18 份 manifest、1,027 个 SHA-256 条目、revision/status 边界和整包零发现秘密扫描。
+- 两项均为测试真实性缺陷，不改变正式 Gate 计数。Gate 22=`UNKNOWN`、Gate 25=`FAIL`、总体=`NO_GO`，生产未认证或修改。

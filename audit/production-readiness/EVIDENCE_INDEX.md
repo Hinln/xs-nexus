@@ -89,19 +89,20 @@
 - Detailed scope, visual review, failure chain and residual boundary: `audit/production-readiness-remediation-v2/CONSOLE_VISUAL_UX.md`.
 - Result: internal current-source submatrix `PASS`, hard Gate 19 `PARTIAL` because planned-domain strict TLS/CDN/public runtime and current deployment remain absent.
 
-## 2026-08-13 Exact Candidate Evidence
+## 2026-08-13 Final Exact Code Candidate Evidence
 
 - GitHub `main`: `8745b5804312587534c1e91980dfb11720952ed1`.
-- Candidate branch: `891b248634c72e313c501f39a6b97bc0241c2882`, 160 commits ahead and zero behind `main`, with no PR and no formal release/tag.
-- Exact-head CI: [run 31668495096](https://github.com/Hinln/xs-nexus/actions/runs/31668495096), all 14 jobs PASS.
-- Independent downloaded-artifact verification: 13 artifacts, 18 nested `SHA256SUMS`, 1,032 entries, exact revision/status boundaries and a zero-finding whole-artifact secret scan.
-- Protocol fuzz: job `94348144409`, artifact `9169202093`, digest `sha256:962a89d78da385e9d16b083eadce76066abe614d07899e8a40fefadd3a56b843`; six AddressSanitizer targets, 180 seconds each.
-- Clean release rehearsal: job `94348144544`, artifact `9169167867`, digest `sha256:407c6142451a06d7ee146773acd06c8d03409e8ff3d48fd1b29f655f4bbeb59a`; 110 outer and 8 nested hashes, with `formal_signed_rc=false`, `independent_operator=false`, `production_mutation=false`.
-- Current-revision calibration: job `94348144486`, artifact `9169134243`, digest `sha256:cc9e580edcb2a37fa9eac1dcf80b35c8ffb791bad087e32d9fc17dd127ed5322`; 84 hashes, eight events and six-service sampling. Duration is calibration-only, not Gate 22 PASS.
-- Image reproducibility: job `94348144481`, artifact `9169029904`, digest `sha256:1b68830a3db676a3df4ac38880fe4e9f77ee54de7a3c559e5eed5da771c1c968`.
-- Performance/capacity: job `94348144442`, artifact `9168962471`, digest `sha256:861f4c812777f4b0c2e070405e33c27393f7eb68010b3cd234681864c308f219`; 43 outer plus 29 nested hashes.
-- Native Windows: job `94348144382`, artifact `9168957041`, digest `sha256:7500a93a4cd3cef86f31bc3d4d0c5c4b782ef105f9555300f14e1d75436dc70c`; 12 hashes and explicit no-device/no-Verifier/no-production boundary.
-- Relay, ACL, update, Console, Linux recovery, observability and 1Panel artifacts: `9168936275`, `9168925873`, `9168885290`, `9168882627`, `9168875783`, `9168861179`, `9168837365`; all corresponding jobs PASS and nested manifests validate.
+- Exact code candidate: `a44d868c26e21285565fa794d482b8092c0bbbf4`, 162 commits ahead and zero behind `main` at evidence capture, with no PR and no formal release/tag.
+- Retained failed docs-head CI: [run 31670477509](https://github.com/Hinln/xs-nexus/actions/runs/31670477509), 12/14 jobs PASS. Update job/artifact `94353856787`/`9169529635` retained the possible no-op bad-signature failure; ACL job/artifact `94353856911`/`9169570590` retained the nftables quoted-text dependency.
+- Exact-code CI: [run 31671264821](https://github.com/Hinln/xs-nexus/actions/runs/31671264821), all 14 jobs PASS.
+- Independent downloaded-artifact verification: 13 artifacts, 18 nested `SHA256SUMS`, 1,027 entries, exact revision/status boundaries and a zero-finding whole-artifact secret scan.
+- Protocol fuzz: job `94356192801`, artifact `9170180297`, digest `sha256:fda90a309b68be3dbdefa1d6885e347a836efbf85b5ab6485aa4c28f74df373f`; six AddressSanitizer targets, 180 seconds each.
+- Clean release rehearsal: job `94356192877`, artifact `9170135871`, digest `sha256:1ecf5f1255ac63c00e10648a5b48b9f4dacf8042e90318e31cc97e684d09d4f1`; complete outer/nested hashes, with `formal_signed_rc=false`, `independent_operator=false`, `production_mutation=false`.
+- Current-revision calibration: job `94356192850`, artifact `9170104931`, digest `sha256:c2a8c0ab2a2f42881a9623ebb2e816393bec5c99f28efef44821cccd86c9ea37`; eight events and six-service sampling. Duration is calibration-only, not Gate 22 PASS.
+- Image reproducibility: job `94356192899`, artifact `9169973995`, digest `sha256:233d4463dc64d4813c45682c6d2e1979d9f42ac2b26dab316339686f7627c593`.
+- Performance/capacity: job `94356192797`, artifact `9169905010`, digest `sha256:9f53571a8131e79a602d6276372fb409f094ef8a1895b19f09b62f3a6fe6ad86`.
+- Native Windows: job `94356192848`, artifact `9169919253`, digest `sha256:e68977444801c32a8595b78a7d692aeb9601beed50d12df13ed2914468d50e5f`; explicit no-device/no-Verifier/no-production boundary.
+- Relay, ACL, update, Console, Linux recovery, observability and 1Panel artifacts: `9169883351`, `9169869806`, `9169824381`, `9169826918`, `9169816639`, `9169802385`, `9169778978`; all corresponding jobs PASS and nested manifests validate.
 
 ## 2026-08-13 Read-only External Observations
 

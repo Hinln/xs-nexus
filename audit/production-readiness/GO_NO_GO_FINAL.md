@@ -82,9 +82,9 @@ Gate 02 和 Gate 16 同时包含外部操作条件，但其当前生产状态本
 | Layer | Current Evidence | Result |
 |---|---|---|
 | GitHub `main` | `8745b5804312587534c1e91980dfb11720952ed1` | 未包含 V2 候选 |
-| Candidate branch | `891b248634c72e313c501f39a6b97bc0241c2882`，相对 `main` ahead 160 / behind 0 | 未合并、无 PR、无正式签名 tag/release |
-| Candidate CI | run `31668495096`，精确 HEAD，14/14 job PASS | 仅证明仓库代码与自动化子矩阵 |
-| CI evidence | 13 个 artifact；独立验证 18 份 `SHA256SUMS`、1,032 个条目和整包零发现秘密扫描 | 原始证据完整性 PASS |
+| Exact code candidate | `a44d868c26e21285565fa794d482b8092c0bbbf4`，取证时相对 `main` ahead 162 / behind 0 | 未合并、无 PR、无正式签名 tag/release |
+| Candidate CI | run `31671264821`，精确代码 HEAD，14/14 job PASS | 仅证明仓库代码与自动化子矩阵 |
+| CI evidence | 13 个 artifact；独立验证 18 份 `SHA256SUMS`、1,027 个条目和整包零发现秘密扫描 | 原始证据完整性 PASS |
 | Production runtime | 最后独立验证 revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` | 本轮未重新认证；SSH host key 变化未获带外确认，严格验证未绕过 |
 
 当前 `main`、候选和最后已知生产运行 revision 仍是三个不同状态。不存在 owner-controlled signed RC、`main` 合并、正式构建身份、生产部署和反向验证组成的完整 provenance。
@@ -106,6 +106,7 @@ Gate 02 和 Gate 16 同时包含外部操作条件，但其当前生产状态本
 - Gate 25 仓库演练 artifact 明确记录 `formal_signed_rc=false`、`independent_operator=false` 和 `production_mutation=false`；Gate 25 仍为 `FAIL`。
 - 2026-08-13 从独立 Windows 审计端对 `vpn.xiashikeji.cn` 和 `vpn.qinwen.co` 复核：DNS 与 TCP/443 可达，但 Schannel 和 OpenSSL 均在证书/HTTP 前收到 TLS `unexpected eof while reading`；所有测试路径无法建立 TLS。该证据不能定位外部网络或源站根因，但足以证明 Gate 13 当前没有 PASS 证据。
 - 600 秒 current-revision soak 仍只能校准 harness；没有不少于 86,400 秒的精确候选证据，Gate 22 保持 `UNKNOWN`。
+- 前一文档 HEAD `72d7e53` 的 run `31670477509` 曾因错误签名夹具可能 no-op 和 nftables 文本格式依赖而 12/14；两项均按根因修复并在 `a44d868` 的全量 run 中通过，没有弱化签名、ACL 或 NAT 断言。
 
 ### Release Boundary
 

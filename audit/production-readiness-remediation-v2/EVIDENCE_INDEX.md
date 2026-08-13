@@ -382,9 +382,10 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 
 ## Formal Gate Re-entry Exact Candidate (2026-08-13)
 
-- Candidate/run: `891b248634c72e313c501f39a6b97bc0241c2882` / [`31668495096`](https://github.com/Hinln/xs-nexus/actions/runs/31668495096), all 14 jobs PASS.
-- GitHub state: `main=8745b5804312587534c1e91980dfb11720952ed1`; candidate is 160 commits ahead, zero behind, with no PR and no formal tag/release.
-- Independent artifact verification: 13 downloaded artifacts, 18 nested manifests, 1,032 entries and a zero-finding whole-artifact secret scan.
-- Key artifacts: fuzz `9169202093`, clean rehearsal `9169167867`, soak calibration `9169134243`, image reproducibility `9169029904`, performance `9168962471`, Windows native `9168957041`, Relay `9168936275`, ACL `9168925873`, update `9168885290`, Console `9168882627`, Linux recovery `9168875783`, observability `9168861179`, 1Panel coexistence `9168837365`.
+- Retained failure: candidate/run `72d7e5328a1f1ef5f4387521f5cbabcf4a2e23d2` / [`31670477509`](https://github.com/Hinln/xs-nexus/actions/runs/31670477509), 12/14 jobs PASS. Update job/artifact `94353856787`/`9169529635` exposed the possibly no-op bad-signature mutation; ACL job/artifact `94353856911`/`9169570590` exposed nft text-quoting dependence.
+- Final exact code candidate/run: `a44d868c26e21285565fa794d482b8092c0bbbf4` / [`31671264821`](https://github.com/Hinln/xs-nexus/actions/runs/31671264821), all 14 jobs PASS.
+- GitHub state at code-evidence capture: `main=8745b5804312587534c1e91980dfb11720952ed1`; exact code candidate is 162 commits ahead, zero behind, with no PR and no formal tag/release.
+- Independent artifact verification: 13 downloaded artifacts, 18 nested manifests, 1,027 entries and a zero-finding whole-artifact secret scan.
+- Key artifacts: fuzz `9170180297`, clean rehearsal `9170135871`, soak calibration `9170104931`, image reproducibility `9169973995`, performance `9169905010`, Windows native `9169919253`, Relay `9169883351`, ACL `9169869806`, update `9169824381`, Console `9169826918`, Linux recovery `9169816639`, observability `9169802385`, 1Panel coexistence `9169778978`.
 - External read-only check: both public domain names resolved and TCP/443 accepted connections, but Schannel and OpenSSL terminated both TLS handshakes before certificate/HTTP with unexpected EOF. Production SSH was not attempted because the changed host key remains unconfirmed out of band.
 - Formal result: `NO_GO`. No production, DNS/CDN, 1Panel, secret, tag, release or branch-protection resource was changed.

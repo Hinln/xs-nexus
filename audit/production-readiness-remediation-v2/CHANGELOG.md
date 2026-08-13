@@ -205,8 +205,10 @@
 
 ## 2026-08-13 Formal Production Gate Re-entry
 
-- Exact candidate `891b248634c72e313c501f39a6b97bc0241c2882` passed all 14 jobs in run `31668495096`.
-- Downloaded all 13 artifacts and independently verified 18 manifests, 1,032 entries, exact revision/status boundaries and a zero-finding whole-artifact secret scan.
-- Rechecked GitHub provenance: `main` remains `8745b580`, the candidate is 160 commits ahead with no PR or formal tag/release, and last independently verified production remains `3d93656`.
+- Retained docs-head run `31670477509`, where 12/14 jobs passed and the update and ACL jobs exposed a possibly unchanged bad-signature fixture and a dependency on nftables' human-readable quoting.
+- Replaced the bad-signature byte overwrite with a signature from a different real Ed25519 key and replaced nft text matching with exact JSON semantic validation plus positive and negative regressions. No product threshold or security assertion was relaxed.
+- Exact code candidate `a44d868c26e21285565fa794d482b8092c0bbbf4` passed all 14 jobs in run `31671264821`.
+- Downloaded all 13 artifacts and independently verified 18 manifests, 1,027 entries, exact revision/status boundaries and a zero-finding whole-artifact secret scan.
+- Rechecked GitHub provenance: `main` remains `8745b580`, the exact code candidate was 162 commits ahead with no PR or formal tag/release, and last independently verified production remains `3d93656`.
 - Read-only public checks found DNS/TCP reachability but TLS EOF before certificate/HTTP for both public domains. No production authentication or mutation was attempted because the changed SSH identity remains unconfirmed.
 - Formal counts remain PASS 4, FAIL 5, BLOCKED_EXTERNAL 5, PARTIAL 8, SIMULATED_ONLY 2, UNKNOWN 1. Overall remains `NO_GO`.

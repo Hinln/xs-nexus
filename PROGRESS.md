@@ -594,9 +594,11 @@ make clean
 
 ## 2026-08-13 正式生产门禁复判
 
-- 文档检查点 `891b248634c72e313c501f39a6b97bc0241c2882` 的 GitHub Actions run `31668495096` 全 14 job 通过；原生 Windows、baseline、协议 fuzz、可复现镜像、性能、Gate 22 校准、Gate 25 演练、Console、ACL、Relay、更新、观测、Linux recovery 和 1Panel 共存均为成功。
-- 下载全部 13 个 artifacts 后独立复核 18 份 `SHA256SUMS`、1,032 个条目、精确 revision/status 和整包秘密扫描通过。内部代码与自动化阶段没有剩余已知 P0/P1/Security High。
-- GitHub 当前 `main=8745b580`；候选分支领先 160、落后 0，但没有 PR、正式签名 tag 或 release。最后独立验证的生产 revision 仍为 `3d93656`，本轮因 SSH host key 未带外确认而没有重新认证或修改生产。
+- 首轮正式复判文档提交 `72d7e5328a1f1ef5f4387521f5cbabcf4a2e23d2` 的 run `31670477509` 为 12/14：更新 job `94353856787` 暴露错误签名夹具可能没有改变签名字节，ACL job `94353856911` 暴露 nftables 文本渲染省略引号。两个失败均保留，没有重跑掩盖或降低产品断言。
+- 修复使错误签名由另一把真实 Ed25519 私钥生成，保证密码学上无效；子网/NAT 门禁改为解析 `nft -j` 并验证精确 table/chain/type/hook/priority/iif/oif/destination/masquerade 语义，新增完整正负回归。未放宽签名校验、ACL、NAT、路由或清理条件。
+- 精确代码候选 `a44d868c26e21285565fa794d482b8092c0bbbf4` 的 GitHub Actions run `31671264821` 全 14 job 通过；原生 Windows、baseline、协议 fuzz、可复现镜像、性能、Gate 22 校准、Gate 25 演练、Console、ACL、Relay、更新、观测、Linux recovery 和 1Panel 共存均为成功。
+- 下载全部 13 个 artifacts 后独立复核 18 份 `SHA256SUMS`、1,027 个条目、精确 revision/status 和整包秘密扫描通过。内部代码与自动化阶段没有剩余已知 P0/P1/Security High。
+- GitHub 当前 `main=8745b580`；精确代码候选在取证时领先 162、落后 0，但没有 PR、正式签名 tag 或 release。最后独立验证的生产 revision 仍为 `3d93656`，本轮因 SSH host key 未带外确认而没有重新认证或修改生产。
 - 独立公网复核中，两个域名 DNS/TCP 443 可达，但 Schannel 与 OpenSSL 均在 TLS 证书/HTTP 前 EOF；Gate 13 没有 PASS 证据。
 - 正式计数为 PASS 4、FAIL 5、BLOCKED_EXTERNAL 5、PARTIAL 8、SIMULATED_ONLY 2、UNKNOWN 1。权威结论继续为 `NO_GO`；当前候选禁止生产部署。
 - 所有剩余项均需所有者或独立环境：全量凭据轮换、正式密钥、第三方审计、Windows/NAS/WAN/Subnet 实机、计划域名、外部告警/on-call、异地恢复、至少 24 小时长测、签名 RC、独立新机演练和生产升级/回滚。

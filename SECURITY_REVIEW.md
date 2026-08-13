@@ -594,3 +594,10 @@ Current clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-202
 - The first run exposed a policy false positive rather than suppressing it. The final allowlist is exact to the test orchestrator path; Wintun remains confined to the approved adapter/runtime roots, WireGuard remains installer-only, and all generic runtime or alternate-script references fail closed.
 - Exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` passed all 14 jobs in run `31667104728`. Windows artifact `9168434013` independently passed 12/12 hashes, exact revision/status/host checks, repository secret scanning, 51 Agent tests, 23 boundary tests, release build and strict Clippy.
 - This closes native compilation and unit-level automation only. It does not reduce the High residual risk in `PRV2-007`, `KI-020`, or `KI-022`; Gate 11 remains `BLOCKED_EXTERNAL` and overall remains `NO_GO`.
+
+## 39. Final exact-head fixture integrity review (2026-08-13)
+
+- Run `31670477509` correctly failed two jobs rather than being discarded. The update negative fixture could reproduce an unchanged signature when its copied first byte was already ASCII `x`; the ACL fixture depended on nftables' non-contractual quoted text rendering even though traffic and policy checks had passed.
+- The signature negative now uses a cryptographically valid signature from a different Ed25519 key, making it deterministically invalid for the trusted public key. The nftables check now consumes JSON and verifies exact gateway rule semantics, with positive direct/prefix/masked representations and negative table/chain/type/interface/destination/masquerade fixtures.
+- Exact code revision `a44d868c26e21285565fa794d482b8092c0bbbf4` passed all 14 jobs in run `31671264821`. All 13 artifacts independently passed 18 manifests, 1,027 hashes, revision/status binding and a whole-artifact zero-finding secret scan.
+- No product signature, ACL, NAT, route, traffic, cleanup or security threshold was relaxed. This closes two harness-integrity defects only; external High findings remain open, Gate 23 remains `FAIL`, and overall remains `NO_GO`.

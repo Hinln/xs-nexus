@@ -687,3 +687,13 @@
 - [x] 最终精确代码 revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` 的 run `31667104728` 全 14 job；Windows job/artifact `94343940285`/`9168434013`。
 - [x] 独立证据通过 12/12 文件哈希、revision/PASS/native-host、二进制哈希、测试摘要和仓库扫描器；GitHub digest 为 `sha256:473fedb5ec6c01c6a51e6149de522665bb94c0b0cf87c4f22472b35f8bcaa2ca`。
 - [ ] 未安装设备、未运行 Driver Verifier、未执行在线 Agent/SCM/路由/睡眠/崩溃/升级/卸载矩阵；Gate 11 保持 `BLOCKED_EXTERNAL`。
+
+## 38. 正式门禁精确 HEAD 夹具回归（2026-08-13）
+
+- [x] 失败链保留：revision `72d7e5328a1f1ef5f4387521f5cbabcf4a2e23d2`、run `31670477509` 为 12/14；update job/artifact `94353856787`/`9169529635` 与 ACL job/artifact `94353856911`/`9169570590` 保留原始失败。
+- [x] 错误签名确定无效：负向夹具使用另一把真实 Ed25519 私钥对相同 manifest 签名，不再依赖可能 no-op 的单字节覆盖；目标公钥验签仍必须拒绝。
+- [x] nftables 结构化语义：从 `nft -j` 验证精确 table/chain/type/hook/priority/iif/oif/IPv4 destination/masquerade；错误 table、chain、type、接口、目标和缺少 masquerade 均失败。
+- [x] 产品边界不变：签名校验、ACL、NAT、子网路由、流量和清理断言未跳过、降级、增加 allowed failure 或改为模拟。
+- [x] 最终精确代码回归：revision `a44d868c26e21285565fa794d482b8092c0bbbf4`、run `31671264821` 全 14 job 通过；update/ACL jobs 为 `94356192731`/`94356192857`。
+- [x] 独立证据：13 artifacts、18 manifests、1,027 SHA-256 条目、精确 revision/status 和整包秘密扫描通过。
+- [x] 结论边界：本项只关闭夹具缺陷；正式计数不变，总体严格保持 `NO_GO`。

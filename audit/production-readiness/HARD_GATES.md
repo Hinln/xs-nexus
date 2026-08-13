@@ -78,7 +78,7 @@
 
 | Gate | Fresh Evidence | Current Result |
 |---|---|---|
-| 01 | `main=8745b580`、candidate=`891b2486`、last-known production=`3d93656c`；候选 ahead 160、无 PR、无正式签名 tag/release/部署 | FAIL |
+| 01 | `main=8745b580`、exact code candidate=`a44d868`、last-known production=`3d93656c`；候选取证时 ahead 162、无 PR、无正式签名 tag/release/部署 | FAIL |
 | 02 | 仓库与 13 个最终 CI artifacts 零发现；所有者控制凭据仍无全量轮换和旧值拒绝 | FAIL |
 | 03 | 仓库测试签名/撤销链存在；正式离线 ceremony、双人控制、备份和恢复未执行 | BLOCKED_EXTERNAL |
 | 04 | exact-head six-target AddressSanitizer fuzz 180 秒/target、协议回归和清单通过 | PASS |
