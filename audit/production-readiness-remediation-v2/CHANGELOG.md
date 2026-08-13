@@ -202,3 +202,11 @@
 - Retained run `31666007136`, where native Windows passed but baseline exposed the policy false positive; no failure was skipped or marked allowed.
 - Exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` passed all 14 jobs in run `31667104728`. Artifact `9168434013` passed 12/12 independent hashes, revision/status/host checks, 51 Agent tests, 23 boundary tests, release build, Clippy and no-value scanning.
 - No Windows device, Driver Verifier or production resource was touched. Gate 11 remains `BLOCKED_EXTERNAL` and overall remains `NO_GO`.
+
+## 2026-08-13 Formal Production Gate Re-entry
+
+- Exact candidate `891b248634c72e313c501f39a6b97bc0241c2882` passed all 14 jobs in run `31668495096`.
+- Downloaded all 13 artifacts and independently verified 18 manifests, 1,032 entries, exact revision/status boundaries and a zero-finding whole-artifact secret scan.
+- Rechecked GitHub provenance: `main` remains `8745b580`, the candidate is 160 commits ahead with no PR or formal tag/release, and last independently verified production remains `3d93656`.
+- Read-only public checks found DNS/TCP reachability but TLS EOF before certificate/HTTP for both public domains. No production authentication or mutation was attempted because the changed SSH identity remains unconfirmed.
+- Formal counts remain PASS 4, FAIL 5, BLOCKED_EXTERNAL 5, PARTIAL 8, SIMULATED_ONLY 2, UNKNOWN 1. Overall remains `NO_GO`.

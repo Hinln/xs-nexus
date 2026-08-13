@@ -379,3 +379,12 @@ Gate 20 remains `PARTIAL/BLOCKED_EXTERNAL`. Localhost delivery cannot replace a 
 - Windows job/artifact: [`94343940285`](https://github.com/Hinln/xs-nexus/actions/runs/31667104728/job/94343940285) / `9168434013`; GitHub digest `sha256:473fedb5ec6c01c6a51e6149de522665bb94c0b0cf87c4f22472b35f8bcaa2ca`.
 - Independent extraction passed 12/12 manifest hashes, exact revision/PASS/native-host checks, repository secret scanning, 51 Agent tests, 23 Windows boundary tests, release Agent/CLI build and strict Clippy. Binary SHA-256 values are retained inside the artifact rather than duplicated in status documents.
 - Formal boundary: `device_installation=false`, `driver_verifier=false`, and `production_mutation=false`. Gate 11 and `PRV2-007` remain `BLOCKED_EXTERNAL`; production was not contacted or changed and overall remains `NO_GO`.
+
+## Formal Gate Re-entry Exact Candidate (2026-08-13)
+
+- Candidate/run: `891b248634c72e313c501f39a6b97bc0241c2882` / [`31668495096`](https://github.com/Hinln/xs-nexus/actions/runs/31668495096), all 14 jobs PASS.
+- GitHub state: `main=8745b5804312587534c1e91980dfb11720952ed1`; candidate is 160 commits ahead, zero behind, with no PR and no formal tag/release.
+- Independent artifact verification: 13 downloaded artifacts, 18 nested manifests, 1,032 entries and a zero-finding whole-artifact secret scan.
+- Key artifacts: fuzz `9169202093`, clean rehearsal `9169167867`, soak calibration `9169134243`, image reproducibility `9169029904`, performance `9168962471`, Windows native `9168957041`, Relay `9168936275`, ACL `9168925873`, update `9168885290`, Console `9168882627`, Linux recovery `9168875783`, observability `9168861179`, 1Panel coexistence `9168837365`.
+- External read-only check: both public domain names resolved and TCP/443 accepted connections, but Schannel and OpenSSL terminated both TLS handshakes before certificate/HTTP with unexpected EOF. Production SSH was not attempted because the changed host key remains unconfirmed out of band.
+- Formal result: `NO_GO`. No production, DNS/CDN, 1Panel, secret, tag, release or branch-protection resource was changed.

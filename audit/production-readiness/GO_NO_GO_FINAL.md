@@ -68,3 +68,45 @@ Gate 02 和 Gate 16 同时包含外部操作条件，但其当前生产状态本
 `CRITICAL`
 
 内部工程门禁已有实质改善，但正式范围仍同时包含公网入口、自研加密协议、特权网络 Agent、Windows、NAS 和生产数据。凭据、主机边界、正式密钥、DB 最小权限、真实平台、异地恢复、独立安全审计、版本部署一致性和长期运营均未闭环，任何 `GO` 或 `CONDITIONAL_GO` 都缺乏依据。
+
+## 2026-08-13 Formal Gate Re-entry
+
+### Decision
+
+`NO_GO`
+
+这是代码与自动化补齐后的正式生产门禁复判，不修改首轮冻结证据。不得部署当前候选、创建 RC、扩大公网业务或把内部 CI 结果描述为生产通过。
+
+### Current Provenance
+
+| Layer | Current Evidence | Result |
+|---|---|---|
+| GitHub `main` | `8745b5804312587534c1e91980dfb11720952ed1` | 未包含 V2 候选 |
+| Candidate branch | `891b248634c72e313c501f39a6b97bc0241c2882`，相对 `main` ahead 160 / behind 0 | 未合并、无 PR、无正式签名 tag/release |
+| Candidate CI | run `31668495096`，精确 HEAD，14/14 job PASS | 仅证明仓库代码与自动化子矩阵 |
+| CI evidence | 13 个 artifact；独立验证 18 份 `SHA256SUMS`、1,032 个条目和整包零发现秘密扫描 | 原始证据完整性 PASS |
+| Production runtime | 最后独立验证 revision `3d93656cc9ec3ea35d58e453118154b25bcc4e14` | 本轮未重新认证；SSH host key 变化未获带外确认，严格验证未绕过 |
+
+当前 `main`、候选和最后已知生产运行 revision 仍是三个不同状态。不存在 owner-controlled signed RC、`main` 合并、正式构建身份、生产部署和反向验证组成的完整 provenance。
+
+### Current Hard-Gate Counts
+
+| Result | Count | Gates |
+|---|---:|---|
+| PASS | 4 | 04、09、15、16 |
+| FAIL | 5 | 01、02、13、23、25 |
+| BLOCKED_EXTERNAL | 5 | 03、05、11、12、17 |
+| PARTIAL | 8 | 06、08、14、18、19、20、21、24 |
+| SIMULATED_ONLY | 2 | 07、10 |
+| UNKNOWN | 1 | 22 |
+
+### Fresh Read-only Observations
+
+- 原生 Windows CI 在精确候选上通过，但 artifact 明确记录 `device_installation=false`、`driver_verifier=false` 和 `production_mutation=false`；Gate 11 仍为 `BLOCKED_EXTERNAL`。
+- Gate 25 仓库演练 artifact 明确记录 `formal_signed_rc=false`、`independent_operator=false` 和 `production_mutation=false`；Gate 25 仍为 `FAIL`。
+- 2026-08-13 从独立 Windows 审计端对 `vpn.xiashikeji.cn` 和 `vpn.qinwen.co` 复核：DNS 与 TCP/443 可达，但 Schannel 和 OpenSSL 均在证书/HTTP 前收到 TLS `unexpected eof while reading`；所有测试路径无法建立 TLS。该证据不能定位外部网络或源站根因，但足以证明 Gate 13 当前没有 PASS 证据。
+- 600 秒 current-revision soak 仍只能校准 harness；没有不少于 86,400 秒的精确候选证据，Gate 22 保持 `UNKNOWN`。
+
+### Release Boundary
+
+所有可由仓库代码与自动化自行完成的已知缺口均已在 exact-head CI 中重测。剩余 release-governing 条件需要所有者或独立环境：正式凭据轮换及旧值拒绝、离线密钥仪式、第三方安全审计、受控 Windows VM、真实 NAS、真实 WAN/Subnet Router、计划域名 TLS/CDN、外部告警/on-call、异地恢复、至少 24 小时长测、owner-signed RC、独立 fresh-host 演练和当前生产升级/回滚。它们未完成前最终结论只能是 `NO_GO`。

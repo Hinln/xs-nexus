@@ -73,3 +73,35 @@
 | 25 部署演练 | CI 和隔离生命周期通过；未由独立工程师在全新服务器完成正式签名、恢复、节点接入和回滚 | FAIL |
 
 最终计数：PASS 0、FAIL 7、BLOCKED_EXTERNAL 5、PARTIAL 10、SIMULATED_ONLY 2、UNKNOWN 1。最终结论见 `GO_NO_GO_FINAL.md`：`NO_GO`。
+
+## 2026-08-13 V2 Formal Reassessment
+
+| Gate | Fresh Evidence | Current Result |
+|---|---|---|
+| 01 | `main=8745b580`、candidate=`891b2486`、last-known production=`3d93656c`；候选 ahead 160、无 PR、无正式签名 tag/release/部署 | FAIL |
+| 02 | 仓库与 13 个最终 CI artifacts 零发现；所有者控制凭据仍无全量轮换和旧值拒绝 | FAIL |
+| 03 | 仓库测试签名/撤销链存在；正式离线 ceremony、双人控制、备份和恢复未执行 | BLOCKED_EXTERNAL |
+| 04 | exact-head six-target AddressSanitizer fuzz 180 秒/target、协议回归和清单通过 | PASS |
+| 05 | 无独立第三方报告、findings、修复与 retest | BLOCKED_EXTERNAL |
+| 06 | hosted real-systemd/namespace 恢复通过；普通主机 reboot/disk-full/DHCP/VPN/arm64 未完成 | PARTIAL |
+| 07 | 仍只有 namespace NAT；无真实不同公网/热点/UDP block/切网 | SIMULATED_ONLY |
+| 08 | hosted 资源边界、5M frame、双 Relay 恢复通过；无公网对抗、多地域/多实例、长时容量 | PARTIAL |
+| 09 | 三 Agent 双端身份/离线 ACL、Relay 与 subnet bypass 矩阵通过 | PASS |
+| 10 | 仍只有 namespace subnet router；无真实 NAS/router | SIMULATED_ONLY |
+| 11 | 原生 MSVC build/tests 通过；无在线设备/SCM/路由/sleep/crash/upgrade/uninstall/Verifier | BLOCKED_EXTERNAL |
+| 12 | 无真实 NAS 普通节点与 subnet-router 证据 | BLOCKED_EXTERNAL |
+| 13 | 当前独立端 DNS/TCP 可达，但两个公开域名 TLS 均在证书前 EOF；计划域名公网矩阵未闭合 | FAIL |
+| 14 | SSH/firewall/更新/reboot/disk cleanup 已有生产证据；独立外部 warning/critical/on-call/resolved 未完成 | PARTIAL |
+| 15 | exact-head external-network/source regression 与生产生命周期映射通过 | PASS |
+| 16 | production least-privilege owner/app/migrator、负向权限、部署与回滚证据通过 | PASS |
+| 17 | 无独立故障域和全新服务器恢复 | BLOCKED_EXTERNAL |
+| 18 | schema 2、撤销、失败矩阵通过；正式 key/distribution/signed RC/真实平台/生产 release 链未完成 | PARTIAL |
+| 19 | real PostgreSQL/Controller/production Console/Chromium 与视觉矩阵通过；正式公网 strict-TLS 路径未完成 | PARTIAL |
+| 20 | repository metrics/alert lifecycle 通过；独立目的地、on-call 与正式连续 TLS/backup 证据未完成 | PARTIAL |
+| 21 | 1,000 node/session 单实例边界通过；公网、多实例、volumetric 与长时容量未完成 | PARTIAL |
+| 22 | exact-head 600 秒校准通过；不少于 86,400 秒正式运行未执行 | UNKNOWN |
+| 23 | 仓库 P0/P1 自修项通过；全局 Critical/High 外部门禁仍未清零 | FAIL |
+| 24 | 当前依赖、SBOM、license、image reproducibility 门禁通过；正式签名/部署和 glibc 限时处置未最终关闭 | PARTIAL |
+| 25 | exact-head clean-release 子矩阵通过，但明确 test-only/non-independent/no-production-mutation | FAIL |
+
+当前计数：PASS 4、FAIL 5、BLOCKED_EXTERNAL 5、PARTIAL 8、SIMULATED_ONLY 2、UNKNOWN 1。任何非 PASS 的硬门禁都禁止正式发布，因此结论仍为 `NO_GO`。

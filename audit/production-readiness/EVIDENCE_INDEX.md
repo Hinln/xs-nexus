@@ -88,3 +88,24 @@
 - Results: 8 expected, 0 unexpected/skipped/flaky; 14 browser observation sets, 0 page error/5xx; 132 screenshots over six viewports and real loading/offline/data states; no-value scan 0 findings.
 - Detailed scope, visual review, failure chain and residual boundary: `audit/production-readiness-remediation-v2/CONSOLE_VISUAL_UX.md`.
 - Result: internal current-source submatrix `PASS`, hard Gate 19 `PARTIAL` because planned-domain strict TLS/CDN/public runtime and current deployment remain absent.
+
+## 2026-08-13 Exact Candidate Evidence
+
+- GitHub `main`: `8745b5804312587534c1e91980dfb11720952ed1`.
+- Candidate branch: `891b248634c72e313c501f39a6b97bc0241c2882`, 160 commits ahead and zero behind `main`, with no PR and no formal release/tag.
+- Exact-head CI: [run 31668495096](https://github.com/Hinln/xs-nexus/actions/runs/31668495096), all 14 jobs PASS.
+- Independent downloaded-artifact verification: 13 artifacts, 18 nested `SHA256SUMS`, 1,032 entries, exact revision/status boundaries and a zero-finding whole-artifact secret scan.
+- Protocol fuzz: job `94348144409`, artifact `9169202093`, digest `sha256:962a89d78da385e9d16b083eadce76066abe614d07899e8a40fefadd3a56b843`; six AddressSanitizer targets, 180 seconds each.
+- Clean release rehearsal: job `94348144544`, artifact `9169167867`, digest `sha256:407c6142451a06d7ee146773acd06c8d03409e8ff3d48fd1b29f655f4bbeb59a`; 110 outer and 8 nested hashes, with `formal_signed_rc=false`, `independent_operator=false`, `production_mutation=false`.
+- Current-revision calibration: job `94348144486`, artifact `9169134243`, digest `sha256:cc9e580edcb2a37fa9eac1dcf80b35c8ffb791bad087e32d9fc17dd127ed5322`; 84 hashes, eight events and six-service sampling. Duration is calibration-only, not Gate 22 PASS.
+- Image reproducibility: job `94348144481`, artifact `9169029904`, digest `sha256:1b68830a3db676a3df4ac38880fe4e9f77ee54de7a3c559e5eed5da771c1c968`.
+- Performance/capacity: job `94348144442`, artifact `9168962471`, digest `sha256:861f4c812777f4b0c2e070405e33c27393f7eb68010b3cd234681864c308f219`; 43 outer plus 29 nested hashes.
+- Native Windows: job `94348144382`, artifact `9168957041`, digest `sha256:7500a93a4cd3cef86f31bc3d4d0c5c4b782ef105f9555300f14e1d75436dc70c`; 12 hashes and explicit no-device/no-Verifier/no-production boundary.
+- Relay, ACL, update, Console, Linux recovery, observability and 1Panel artifacts: `9168936275`, `9168925873`, `9168885290`, `9168882627`, `9168875783`, `9168861179`, `9168837365`; all corresponding jobs PASS and nested manifests validate.
+
+## 2026-08-13 Read-only External Observations
+
+- GitHub provenance was read through authenticated repository metadata only; no branch, tag, release, rule or production resource was modified by the audit.
+- `vpn.xiashikeji.cn` resolves through CDN CNAME to `117.139.140.63`; `vpn.qinwen.co` resolves to `101.32.170.223`. TCP/443 was reachable from the audit host.
+- Schannel and OpenSSL 3.5.5 independently failed both SNI handshakes before certificate/HTTP with `unexpected eof while reading`; `/`, `/health/ready`, `/install`, and `/v1/control` produced no TLS HTTP status. Gate 13 therefore has no current PASS evidence.
+- Production runtime was not contacted because the changed SSH host key has no out-of-band confirmation. Strict host verification was not disabled, no historical password was reused, and the last independently verified production revision remains `3d93656cc9ec3ea35d58e453118154b25bcc4e14`.

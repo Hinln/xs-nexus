@@ -46,3 +46,21 @@
 | PR-019 | CONTAINED | 临时 clone token 未进入 Git/生产；证据脱敏和复扫为零，不能替代全部生产凭据轮换 |
 
 仍未关闭的 P1/Security High 包括 PR-001、PR-002、PR-003、PR-004、PR-006、PR-010、PR-011、PR-012、PR-013、PR-014、PR-015、PR-016，以及 PR-005 的发布残余。P1 和 Security High 未清零，Hard Gate 23 最终仍为 `FAIL`。
+
+## 2026-08-13 V2 Formal Finding Reassessment
+
+| Finding | Fresh Status | Exit Evidence Still Required |
+|---|---|---|
+| Provenance / PR-005 | BLOCKED_EXTERNAL after internal closure | owner-signed RC、merge to `main`、formal build identity、independent fresh-host rehearsal、production deploy/rollback/reverse verification |
+| Credentials / PR-001 | BLOCKED_EXTERNAL | every real replacement activated and every old value independently rejected without recording values |
+| Formal keys / PR-003 | BLOCKED_EXTERNAL | offline root/update/recovery ceremony, dual control, authenticated distribution, revoke and restore |
+| Independent audit / PR-004 | BLOCKED_EXTERNAL | independent report, findings, fixes and retest |
+| Public edge / PR-010 | BLOCKED_EXTERNAL with current FAIL evidence | planned-domain origin certificate/SNI/vhost/CDN repair and fresh API/WebSocket/Console/browser matrix |
+| Windows / PR-011 | BLOCKED_EXTERNAL | controlled VM online enrollment, SCM, NIC, routes, sleep/crash, upgrade/rollback, uninstall and Verifier |
+| NAS / PR-012 | BLOCKED_EXTERNAL | real ordinary-node and subnet-router matrix |
+| WAN / PR-013 | BLOCKED_EXTERNAL | different public networks, UDP block, Direct/Relay migration and recovery |
+| DR / PR-014 | BLOCKED_EXTERNAL | independent failure-domain replica, formal key and clean-server restore |
+| Operations / PR-015 | BLOCKED_EXTERNAL after internal closure | independent warning/critical delivery, on-call acknowledgement/escalation/resolved and continuous formal checks |
+| Soak / PR-016 | BLOCKED_EXTERNAL | exact signed candidate for at least 86,400 seconds on approved identity-verified privileged host |
+
+No new self-solvable source P0/P1 or Security High was found in the final code/automation audit. Exact candidate `891b248634c72e313c501f39a6b97bc0241c2882` passed 14/14 jobs in run `31668495096`; 13 artifacts passed 18 manifests, 1,032 independent hashes and a zero-finding repository secret scan. This does not close the findings above. P1/Security High remain non-zero and Gate 23 remains `FAIL`.

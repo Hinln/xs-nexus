@@ -591,3 +591,12 @@ make clean
 - 精确代码 revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` 的 run `31667104728` 全 14 job 通过；Windows job `94343940285`、artifact `9168434013`、GitHub digest `sha256:473fedb5ec6c01c6a51e6149de522665bb94c0b0cf87c4f22472b35f8bcaa2ca`。
 - 独立下载复核 12/12 SHA-256、精确 revision/PASS、原生 host、51 个 Agent 测试、23 个 Windows 边界测试、release 构建、Clippy 和两次零发现秘密扫描。生产未连接或修改。
 - 该闭环消除了“仅 Linux 交叉编译”的仓库自动化缺口，但 Windows VM 在线 Enrollment、SCM、虚拟网卡、IP Helper/DAD、路由、睡眠、崩溃、升级/回滚、卸载和 Driver Verifier 仍为 `BLOCKED_EXTERNAL`。Gate 11 和总体结论保持 `NO_GO`。
+
+## 2026-08-13 正式生产门禁复判
+
+- 文档检查点 `891b248634c72e313c501f39a6b97bc0241c2882` 的 GitHub Actions run `31668495096` 全 14 job 通过；原生 Windows、baseline、协议 fuzz、可复现镜像、性能、Gate 22 校准、Gate 25 演练、Console、ACL、Relay、更新、观测、Linux recovery 和 1Panel 共存均为成功。
+- 下载全部 13 个 artifacts 后独立复核 18 份 `SHA256SUMS`、1,032 个条目、精确 revision/status 和整包秘密扫描通过。内部代码与自动化阶段没有剩余已知 P0/P1/Security High。
+- GitHub 当前 `main=8745b580`；候选分支领先 160、落后 0，但没有 PR、正式签名 tag 或 release。最后独立验证的生产 revision 仍为 `3d93656`，本轮因 SSH host key 未带外确认而没有重新认证或修改生产。
+- 独立公网复核中，两个域名 DNS/TCP 443 可达，但 Schannel 与 OpenSSL 均在 TLS 证书/HTTP 前 EOF；Gate 13 没有 PASS 证据。
+- 正式计数为 PASS 4、FAIL 5、BLOCKED_EXTERNAL 5、PARTIAL 8、SIMULATED_ONLY 2、UNKNOWN 1。权威结论继续为 `NO_GO`；当前候选禁止生产部署。
+- 所有剩余项均需所有者或独立环境：全量凭据轮换、正式密钥、第三方审计、Windows/NAS/WAN/Subnet 实机、计划域名、外部告警/on-call、异地恢复、至少 24 小时长测、签名 RC、独立新机演练和生产升级/回滚。
