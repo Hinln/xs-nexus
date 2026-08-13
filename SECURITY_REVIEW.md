@@ -586,3 +586,11 @@ Current clean-commit evidence `/srv/xs-nexus/artifacts/qa/image-supply-chain-202
 - All incomplete register rows require a current owner inventory, approved no-echo delivery, actual replacement activation, controlled client/device migration, and an independent negative old-value check. A disabled authentication path is useful mitigation but does not by itself prove the disclosed underlying credential was rotated.
 - Production host identity remains unverified after its SSH key change. Reusing a historical password, disabling strict host verification, accepting TOFU, or modifying cloud/NAS/organization secrets without an owner-controlled recovery path would increase risk and is forbidden.
 - `PRV2-001`, `KI-023`, and `BLK-011` are therefore `BLOCKED_EXTERNAL`, not closed. Gate 02 remains `FAIL`, and no credential row may change to complete without raw no-value evidence.
+
+## 38. Native Windows CI boundary review (2026-08-13)
+
+- The native job runs on fixed `windows-2025` infrastructure and requires the MSVC host triple, a clean tracked checkout, release Agent/CLI builds, all Windows boundary crates, focused tests, strict Clippy, binary digests, and source/evidence secret scans.
+- Evidence cannot imply device validation: its signed-in-band summary explicitly records `device_installation=false`, `driver_verifier=false`, and `production_mutation=false`. No privileged device, route, service, sleep, crash, upgrade, or uninstall action runs in CI.
+- The first run exposed a policy false positive rather than suppressing it. The final allowlist is exact to the test orchestrator path; Wintun remains confined to the approved adapter/runtime roots, WireGuard remains installer-only, and all generic runtime or alternate-script references fail closed.
+- Exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` passed all 14 jobs in run `31667104728`. Windows artifact `9168434013` independently passed 12/12 hashes, exact revision/status/host checks, repository secret scanning, 51 Agent tests, 23 boundary tests, release build and strict Clippy.
+- This closes native compilation and unit-level automation only. It does not reduce the High residual risk in `PRV2-007`, `KI-020`, or `KI-022`; Gate 11 remains `BLOCKED_EXTERNAL` and overall remains `NO_GO`.

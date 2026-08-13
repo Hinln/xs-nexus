@@ -275,9 +275,9 @@
 - 严重度：高
 - 状态：开放
 - 首次发现：2026-07-31
-- 影响：IP Helper FFI、地址/DAD、精确路由、事务补偿、manifest 和恢复源码已实现并通过 MSVC target check/Clippy，且首版 Wintun Agent runtime 已调用该准备层；但仍没有真实 Windows 在线地址/路由、DAD、崩溃恢复、PnP 或睡眠证据，因此不得宣称 Windows 网络生命周期已通过。
+- 影响：IP Helper FFI、地址/DAD、精确路由、事务补偿、manifest 和恢复源码已实现；原生 Windows CI 已完成 MSVC release Agent/CLI 与六边界 crate 构建、51 个 Agent 测试、23 个边界测试和严格 Clippy。但仍没有真实 Windows 在线地址/路由、DAD、崩溃恢复、PnP 或睡眠证据，因此不得宣称 Windows 网络生命周期已通过。
 - 临时缓解：默认路由、保留网段、外部重叠、所有权漂移和无界路由表在任何系统写入前失败关闭，原生路由表由 RAII 无条件释放，所有写入只接受精确 route/address key；Windows 子网路由继续失败关闭。
-- 计划：在已验证的 Windows 11 VM 运行当前 Wintun Agent，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复、Agent crash 和睡眠；`xsnet` 路径继续单独跟踪。
+- 计划：使用原生 CI 产物对应的正式候选，在已验证的 Windows 11 VM 运行当前 Wintun Agent，验证表释放、精确错误映射、地址/DAD、路由补偿、manifest 崩溃恢复、Agent crash 和睡眠；`xsnet` 路径继续单独跟踪。
 - 解除条件：完整 Agent 在 Windows VM 中证明地址/DAD、路由添加更新删除、冲突拒绝、崩溃恢复、睡眠/PnP 和卸载零残留。
 ## KI-021 运行时基础镜像仍有无当前修复版本的漏洞发现
 
@@ -297,7 +297,7 @@
 - 状态：开放
 - 首次发现：2026-08-04
 - 影响：Windows 11 x64 已完成 Wintun 适配器的真实创建/清理、交叉测试、离线发布包构建和安装器完整性校验；生产 Controller 回环及 `vpn.qinwen.co` 公网下载也已通过。仍需在受控 Windows VM 使用一次性 Enrollment Token 验证注册、Windows 服务启动、CLI readiness、基本连通性和卸载/重新安装。当前不能把离线 package QA 或公开下载写成最终在线接入结果。
-- 已完成缓解：引导器固定 `https://vpn.qinwen.co`，固定 manifest 摘要，校验 HTTPS、归档大小/哈希、精确 payload tree、每个 payload hash、Wintun DLL hash 与有效的 `CN=WireGuard LLC` Authenticode 签名；失败时删除仅由本次安装创建的服务和目录。Controller 只暴露精确的 `install.ps1`、manifest 和 ZIP 文件名，目录或未知文件拒绝。
+- 已完成缓解：引导器固定 `https://vpn.qinwen.co`，固定 manifest 摘要，校验 HTTPS、归档大小/哈希、精确 payload tree、每个 payload hash、Wintun DLL hash 与有效的 `CN=WireGuard LLC` Authenticode 签名；失败时删除仅由本次安装创建的服务和目录。Controller 只暴露精确的 `install.ps1`、manifest 和 ZIP 文件名，目录或未知文件拒绝。原生 Windows CI 另已证明当前 Agent/CLI release 链接、边界测试和严格 Clippy，不再只依赖 Linux 交叉检查。
 - 计划：公开发布目录、PowerShell User-Agent、`/install/windows`、Linux `/install`、下载哈希和 404 边界已完成；下一步仅在受控 Windows 11 VM 生成短时 Enrollment Token，实际运行管理员 PowerShell 安装、服务和网络验证，并保留失败关闭、普通网络、卸载和重装证据。
 - 解除条件：上述生产下载/注册/服务/基本数据面/卸载重装实测通过，且没有把 Token、密码、私钥、产物或环境文件写入 Git、日志或文档。Windows 10、完整 `xsnet` 实机 Agent、睡眠/路由恢复和独立安全审计仍由既有条目单独跟踪。
 

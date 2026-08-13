@@ -14,7 +14,7 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 08 | Relay security and resilience | PARTIAL | PARTIAL | Adversarial public-network, multi-region/multi-instance, and long-duration capacity evidence; hosted resource, 5M-frame, and restart submatrix is complete |
 | 09 | ACL enforcement | PARTIAL | PASS | Continue exact-head regression; Direct A/B/C, identity, offline-policy, Relay and subnet bypass evidence is complete |
 | 10 | Real Subnet Router | SIMULATED_ONLY | SIMULATED_ONLY | Real NAS/router approval, revoke, reboot and cleanup |
-| 11 | Windows online lifecycle | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Controlled Windows 11 VM full online matrix |
+| 11 | Windows online lifecycle | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | Native MSVC build/test automation passes at `16ee4bf`; still requires controlled Windows 11 VM full online matrix |
 | 12 | Real NAS | BLOCKED_EXTERNAL | BLOCKED_EXTERNAL | User-local signed install and ordinary-node matrix |
 | 13 | Planned domain/CDN/TLS | FAIL | FAIL | Owner-authorized planned-domain origin certificate/vhost and CDN strict-mode repair, then API, WebSocket, Console and browser evidence; current edge is 525 and direct-origin SNI fails |
 | 14 | Production host hardening | FAIL | PARTIAL | Prove warning/critical disk alerts through an independent external destination and on-call acknowledgement |
@@ -25,10 +25,10 @@ Status values are restricted to `PASS`, `FAIL`, `PARTIAL`, `SIMULATED_ONLY`, `UN
 | 19 | Web Console | PARTIAL | PARTIAL | Owner-authorized planned-domain strict TLS/public browser path; current-source real PostgreSQL/Controller/production-build E2E and visual matrix is complete |
 | 20 | Production observability | PARTIAL | PARTIAL | Independent production delivery/on-call/resolved closure and continuous formal TLS/backup evidence; repository metrics and alert matrix is complete |
 | 21 | Performance and capacity | PARTIAL | PARTIAL | Internal 1,000-node/session envelope complete; public-WAN, multi-region/multi-instance, volumetric, and hours/days evidence remains |
-| 22 | Current-revision soak | UNKNOWN | UNKNOWN | Latest 600-second harness calibration passed at `6715242`; still requires at least 24 hours on an approved identity-verified privileged Linux host |
+| 22 | Current-revision soak | UNKNOWN | UNKNOWN | Latest 600-second harness remains calibration-only; still requires at least 24 hours on an approved identity-verified privileged Linux host |
 | 23 | Defects and security findings | FAIL | FAIL | Exact-head self-fixable checks pass at `3bf8619`; all remaining P0/P1/Critical/High findings, including external findings, must reach zero and P2 dispositions must remain current |
 | 24 | Dependencies and image supply chain | PARTIAL | PARTIAL | Formal signed/deployed release and bounded glibc disposition closure; dated `paste` topology review completed |
-| 25 | Clean deployment rehearsal | FAIL | FAIL | Repository clean-checkout/full-lifecycle submatrix passes at `6715242`; still requires owner-signed RC, independent operator/fresh server, and production upgrade/rollback |
+| 25 | Clean deployment rehearsal | FAIL | FAIL | Repository clean-checkout/full-lifecycle submatrix passes in exact-head CI; still requires owner-signed RC, independent operator/fresh server, and production upgrade/rollback |
 
 ## Initial Counts
 
@@ -83,3 +83,5 @@ Gate 22 remains `UNKNOWN`. Latest exact code revision `67152427acc197deca49443a8
 Gate 25 remains `FAIL`. Exact code revision `67152427acc197deca49443a8527c74b18d71098` passed all 13 jobs in run `31661323846`; clean-rehearsal job `94326567391` and artifact `9166570284` prove a full-history clean checkout, test-only signed tag, five-image double no-cache reproducibility, repository-external generated secrets, real Direct/Relay/subnet paths, update failure matrix, two Docker lifecycles, 10/10 phase results, 20/20 fixture/final invariants, 118 independently verified hashes, and zero secret findings. The artifact explicitly records `formal_signed_rc=false`, `independent_operator=false`, and `production_mutation=false`. Owner-controlled signed RC/main provenance, an independent operator on a fresh non-hosted server, formal secrets, and current production upgrade/rollback remain absent; this repository submatrix cannot change Gate 25 or the overall `NO_GO` decision.
 
 Gate 02 remains `FAIL`, while `PRV2-001` is now accurately classified `BLOCKED_EXTERNAL`. The repository can enforce no-value handling and prove test/role isolation, but cannot rotate owner-controlled production, NAS, CI, TLS, backup, release, recovery, enrollment, node or administrator credentials, activate replacements through approved channels, or independently prove old-value rejection. `BLK-011` records the exact external inputs; no stale credential or SSH verification bypass was used.
+
+Gate 11 remains `BLOCKED_EXTERNAL`. Exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` passed all 14 jobs in run `31667104728`; native Windows job `94343940285` and artifact `9168434013` prove MSVC release Agent/CLI and six-boundary-crate builds, 51 Agent tests, 23 boundary tests, strict Clippy, 12/12 independent hashes and zero secret findings. The artifact explicitly records no device installation, no Driver Verifier and no production mutation, so it cannot close the online lifecycle gate or change overall `NO_GO`.

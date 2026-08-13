@@ -194,3 +194,11 @@
 - Fixed the fixture to prove the chosen port is initially free, then require the exact child process to remain alive and the port to be listening before exercising the unchanged product preflight rejection. Timeout fails the fixture; no product condition was relaxed.
 - Exact revision `67152427acc197deca49443a8527c74b18d71098` passed all 13 jobs in run `31661323846`. Performance, Gate 22, Relay and Gate 25 artifacts `9166384854`, `9166550402`, `9166363481` and `9166570284` passed 72/84/12/118 independently verified hashes and zero-finding secret scans.
 - Production was not connected or changed. Gate 22 remains `UNKNOWN`, Gate 25 remains `FAIL`, and overall remains `NO_GO`.
+
+## 2026-08-13 Native Windows Build Gate Closure
+
+- Added fixed native `windows-2025` CI for release Agent/CLI and six Windows boundary crates, focused tests, strict Clippy, binary digests and secret scans.
+- Added fail-closed CI structure regressions and exact-path independent-implementation policy tests; the Wintun test-orchestrator exception does not extend to generic runtime or WireGuard paths.
+- Retained run `31666007136`, where native Windows passed but baseline exposed the policy false positive; no failure was skipped or marked allowed.
+- Exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` passed all 14 jobs in run `31667104728`. Artifact `9168434013` passed 12/12 independent hashes, revision/status/host checks, 51 Agent tests, 23 boundary tests, release build, Clippy and no-value scanning.
+- No Windows device, Driver Verifier or production resource was touched. Gate 11 remains `BLOCKED_EXTERNAL` and overall remains `NO_GO`.

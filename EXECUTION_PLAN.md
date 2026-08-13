@@ -566,7 +566,7 @@
 - 安装和卸载脚本；
 - 未实机测试时明确标记。
 
-跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。`xsnet` 测试签名驱动已在 Windows 11 VM 完成 WDK Release 构建、安装、SYSTEM 数据面、PnP、standard/UMDF/Application Verifier 和卸载，证据见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，但不进入首版正式分发。首版 Agent 已接入发行方签名的 Wintun adapter/session，并完成 Windows 11 VM 离线 adapter smoke、整包与安装器完整性验证；生产回环下载也通过。剩余工作是公网 TLS 恢复后在受控 VM 实测在线 Enrollment、SCM/Named Pipe/存储/IP Helper/DAD、Agent crash、sleep、卸载/重装和普通网络。因此 M6.1 仍未完成，不宣称 Windows 客户端可用。
+跨平台 ABI、数据面和生命周期模型、UMDF/NetAdapterCx 源码、Rust Agent 客户端契约、隔离 Win32 transport、`XsnetDeviceSession`、测试安装器/包构建/VM 采证编排、exact ABI/DriverVer、一致性门禁、受限命名管道、私有存储、Service/SCM、IP Helper、DAD、可信 LUID、路由事务/manifest/恢复与 Windows-only Agent 准备编排均已完成。`xsnet` 测试签名驱动已在 Windows 11 VM 完成 WDK Release 构建、安装、SYSTEM 数据面、PnP、standard/UMDF/Application Verifier 和卸载，证据见 `docs/WINDOWS_XSNET_VM_EVIDENCE.md`，但不进入首版正式分发。首版 Agent 已接入发行方签名的 Wintun adapter/session，并完成 Windows 11 VM 离线 adapter smoke、整包与安装器完整性验证；生产回环下载也通过。原生 `windows-2025` CI 现从 MSVC host 构建 release Agent/CLI 与六个边界 crate，并通过 51 个 Agent 测试、23 个边界测试、严格 Clippy 和独立证据校验，run/artifact 为 `31667104728`/`9168434013`。剩余工作是在受控 VM 实测在线 Enrollment、SCM/Named Pipe/存储/IP Helper/DAD、Agent crash、sleep、升级/回滚、卸载/重装和普通网络。因此 M6.1 仍未完成，不宣称 Windows 客户端可用。
 
 ---
 

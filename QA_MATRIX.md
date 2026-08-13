@@ -676,3 +676,14 @@
 - [x] 最终精确回归：revision `67152427acc197deca49443a8527c74b18d71098`、run `31661323846` 全 13 job 通过；Gate 25 job `94326567391`、artifact `9166570284`、digest `sha256:b19a27070227992de3c5440fae4377d67e58351f4b012fdd9b3129fdee954825`。
 - [x] 最终独立证据：性能/Gate 22/Relay/Gate 25 artifacts `9166384854`/`9166550402`/`9166363481`/`9166570284` 分别通过 72/84/12/118 个清单项、精确 revision/status 和零秘密扫描；所有相应不变量通过。
 - [x] 结论边界：本项只关闭测试同步缺陷；Gate 22=`UNKNOWN`、Gate 25=`FAIL`、总体=`NO_GO`。
+
+## 37. 原生 Windows Agent/CLI 构建门禁（2026-08-13）
+
+- [x] 固定 `windows-2025` 原生 runner 和 `x86_64-pc-windows-msvc` host；非原生 host 或脏 tracked checkout 失败关闭。
+- [x] release 构建 `xs-agent.exe`、`xs.exe` 和六个 Windows 边界 crate；执行 51 个 Agent 测试、23 个边界测试、CLI 测试与严格 Clippy。
+- [x] CI 验证器要求 Windows job、固定 runner、Rust 1.94.0、专项脚本和 artifact 上传，负向夹具拒绝删除或漂移。
+- [x] 独立实现扫描器只对精确 Windows CI 编排脚本允许 Wintun 测试引用；其他脚本和非适配器 runtime 路径仍拒绝，WireGuard 边界未扩大。
+- [x] 失败链保留：run `31666007136` 的 Windows job 通过而 baseline job `94340603963` 因误分类失败；未跳过扫描器或允许 baseline failure。
+- [x] 最终精确代码 revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` 的 run `31667104728` 全 14 job；Windows job/artifact `94343940285`/`9168434013`。
+- [x] 独立证据通过 12/12 文件哈希、revision/PASS/native-host、二进制哈希、测试摘要和仓库扫描器；GitHub digest 为 `sha256:473fedb5ec6c01c6a51e6149de522665bb94c0b0cf87c4f22472b35f8bcaa2ca`。
+- [ ] 未安装设备、未运行 Driver Verifier、未执行在线 Agent/SCM/路由/睡眠/崩溃/升级/卸载矩阵；Gate 11 保持 `BLOCKED_EXTERNAL`。

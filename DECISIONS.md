@@ -1175,3 +1175,12 @@
 - 统计边界：Direct 切回后最多执行 12 轮、每轮 10 包且逐轮留证的 warm-up；每轮前后必须是双端精确 established Direct，且该轮 p95 ≤10 ms 才采集 100 个正式样本。原平均/p95 上限保持不变，最大值完整报告；耗尽仍失败。PostgreSQL 必须观察 final-init marker、readiness 和真实 SQL，不能由 entrypoint 临时 server 满足。
 - 证据：exact revision `67152427acc197deca49443a8527c74b18d71098`，run `31661323846`，job `94326567391`，artifact `9166570284`，110+8 清单、零秘密、10/10 阶段和 20/20 不变量通过；性能 artifact `9166384854` 的 Direct/Relay 正式 p95 为 `0.385`/`0.431` ms。
 - 边界：只有 owner-controlled signed RC/main、独立操作者、新鲜非托管服务器、正式 secrets 和 current production upgrade/rollback 全部独立通过，Gate 25 才可从 `FAIL` 改为 `PASS`；仓库子矩阵不能自行改变总体 `NO_GO`。
+
+## ADR-103：Windows 原生构建自动化与设备生命周期验收必须分层
+
+- 日期：2026-08-13
+- 背景：Linux 交叉编译可发现条件编译和 ABI 问题，但不能证明 Agent/CLI 在原生 MSVC host 上完整链接；hosted CI 又不能安全替代虚拟网卡、SCM、路由、睡眠和 Driver Verifier 实机门禁。
+- 决策：固定 `windows-2025` 执行原生 release 构建、Agent/CLI/六边界 crate 测试、严格 Clippy、二进制哈希和秘密扫描。harness 拒绝非 MSVC host 与脏 tracked checkout，并在 summary 中强制写入三个 false 实机边界。
+- 依赖边界：独立实现扫描只允许精确 Windows 测试编排脚本调用已批准的 Wintun 适配器包；普通脚本和 runtime crate 不因此获得例外，WireGuard 仍只允许发行安装器识别供应方身份。
+- 证据：exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855`、run `31667104728`、job `94343940285`、artifact `9168434013`；12/12 独立哈希、51 Agent 与 23 边界测试、release build、Clippy 和零秘密发现通过。
+- 边界：该决策关闭原生编译自动化，不关闭 Windows 在线设备生命周期。只有受控 VM 完整矩阵通过后 Gate 11 才能改变；当前仍为 `BLOCKED_EXTERNAL`。

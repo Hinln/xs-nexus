@@ -1,10 +1,10 @@
 # PROGRESS.md — 当前项目状态
 
 最后更新时间：2026-08-13
-当前 Git 提交：以包含本记录的提交为准；最新精确代码证据 revision 为 `67152427acc197deca49443a8527c74b18d71098`
+当前 Git 提交：以包含本记录的提交为准；最新精确代码证据 revision 为 `16ee4bf7be4687f2ac307c7a1235f7d92275e855`
 当前生产运行提交：`3d93656cc9ec3ea35d58e453118154b25bcc4e14`
 当前总状态：`NO_GO`（Gate 22 harness 校准通过但正式 24 小时长测尚未开始；Gate 02/13/14/20/21/22/23/25 及外部门禁仍未闭合）
-当前里程碑：`生产门禁修复 V2：Gate 22 当前 revision 24 小时稳定性与故障注入`
+当前里程碑：`生产门禁修复 V2：仓库代码/自动化闭环，转入正式生产硬门禁`
 
 ---
 
@@ -581,3 +581,13 @@ make clean
 - 精确 revision `67152427acc197deca49443a8527c74b18d71098` 的 run `31661323846` 全 13 job 通过。最终性能/Gate 22/Relay/Gate 25 jobs 为 `94326567382`/`94326567469`/`94326567416`/`94326567391`，artifacts 为 `9166384854`/`9166550402`/`9166363481`/`9166570284`。
 - 独立复核四个 artifact 的 72/84/12/118 个 SHA-256 清单项、精确 revision/status、零秘密扫描通过；Direct/Relay 平均/p95 为 `0.322`/`0.385` 与 `0.365`/`0.431` ms，Gate 22 为 600 秒/258 资源行/8 事件/9 宿主不变量，Gate 25 为 10/10 阶段和两组 10/10 不变量。
 - 生产未连接或修改。Gate 22 仍缺至少 86400 秒，Gate 25 仍明确 test-only、非独立且无生产变更，总体严格保持 `NO_GO`。
+
+## 2026-08-13 原生 Windows 构建门禁闭环
+
+- 新增固定 `windows-2025` 的 `windows-native` CI job，从原生 `x86_64-pc-windows-msvc` 主机构建 release Agent/CLI 和六个 Windows 边界 crate，并执行 Agent/CLI/边界测试、严格 Clippy、二进制哈希、源码与证据秘密扫描。
+- `scripts/windows/test-native-agent.ps1` 拒绝非原生 MSVC host 和脏 tracked checkout；证据永久标记 `device_installation=false`、`driver_verifier=false`、`production_mutation=false`，因此不能被误用为实机或生产验收。
+- 首轮 revision `42f8453e6858116812a648705b12b5de5f7140b6` 的 run `31666007136` 中 Windows job 已通过，但 baseline job `94340603963` 正确暴露独立实现扫描器把精确 CI 编排脚本中的 Wintun 包名误判为运行时依赖。
+- 修复仅允许 `scripts/windows/test-native-agent.ps1` 作为 Wintun 测试编排引用；其他脚本、普通 runtime crate 和 WireGuard 引用边界继续失败关闭，并新增正负回归。未扩大运行时代码例外。
+- 精确代码 revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` 的 run `31667104728` 全 14 job 通过；Windows job `94343940285`、artifact `9168434013`、GitHub digest `sha256:473fedb5ec6c01c6a51e6149de522665bb94c0b0cf87c4f22472b35f8bcaa2ca`。
+- 独立下载复核 12/12 SHA-256、精确 revision/PASS、原生 host、51 个 Agent 测试、23 个 Windows 边界测试、release 构建、Clippy 和两次零发现秘密扫描。生产未连接或修改。
+- 该闭环消除了“仅 Linux 交叉编译”的仓库自动化缺口，但 Windows VM 在线 Enrollment、SCM、虚拟网卡、IP Helper/DAD、路由、睡眠、崩溃、升级/回滚、卸载和 Driver Verifier 仍为 `BLOCKED_EXTERNAL`。Gate 11 和总体结论保持 `NO_GO`。

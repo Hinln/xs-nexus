@@ -48,6 +48,7 @@
 - [x] 稳定性（24 小时长样本与修正重启门禁回归已审计）
 - [x] 安全检查
 - [x] Windows 11 xsnet standard/UMDF/Application Verifier 实机通过（`docs/WINDOWS_XSNET_VM_EVIDENCE.md`）
+- [x] 原生 Windows MSVC Agent/CLI release 构建、六边界 crate 测试和严格 Clippy 通过（run `31667104728`，artifact `9168434013`）
 
 ## 部署
 
@@ -170,3 +171,5 @@ The checked items close four self-fixable findings and one bounded P2 dependency
 - [ ] Current revision and exact images/configuration complete at least 24 hours of sampled Controller/Relay/PostgreSQL/Agent operation with required service, database, enrollment/revocation, route/configuration, and controlled network-fault recovery.
 
 Gate 21 remains `PARTIAL/BLOCKED_EXTERNAL`, Gate 22 remains `UNKNOWN`, Release Candidate remains unchecked, and the overall result remains `NO_GO`.
+
+Native Windows CI closes compilation/linking automation only. The unchecked Windows Agent/Driver and complete Windows VM lifecycle items remain release-blocking; artifact `9168434013` explicitly records no device installation, no Driver Verifier and no production mutation.

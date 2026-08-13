@@ -8,7 +8,7 @@
 | PRV2-004 | High | 16 | Long-running Controller database access depended on a bootstrap superuser; production now uses separated owner/app/migrator roles | CLOSED |
 | PRV2-005 | High | 13/19 | Planned production domain returns CDN 525 because planned-domain origin SNI/certificate/vhost is absent; current public root is also routed to Controller rather than Console | BLOCKED_EXTERNAL |
 | PRV2-006 | High | 05 | Proprietary protocol, cryptography, API, Relay, Agents, Windows, and supply chain have no independent audit and retest | BLOCKED_EXTERNAL |
-| PRV2-007 | High | 11 | Windows online enrollment, SCM, routing, sleep, upgrade, rollback, and cleanup matrix is incomplete | BLOCKED_EXTERNAL |
+| PRV2-007 | High | 11 | Native Windows build/tests pass, but online enrollment, SCM, routing, sleep, upgrade, rollback, and cleanup matrix is incomplete | BLOCKED_EXTERNAL |
 | PRV2-008 | High | 12 | Real NAS ordinary-node and subnet-router evidence is absent | BLOCKED_EXTERNAL |
 | PRV2-009 | High | 17 | Backup replica remains in the same failure domain and no clean-server restore exists | BLOCKED_EXTERNAL |
 | PRV2-010 | High | 20 | Repository metrics/alerting is complete, but independent production delivery, formal on-call/resolved closure, and continuous formal TLS/backup evidence are absent | BLOCKED_EXTERNAL |
@@ -45,3 +45,5 @@ The four closed Gate 23 findings were independently revalidated at exact commit 
 `PRV2-012` now has complete repository-side rehearsal evidence at the same revision, run `31661323846`, job `94326567391`, and artifact `9166570284`. The clean checkout, test-only tag, image reproducibility, real network paths, update/lifecycle matrix and cleanup pass, but the artifact explicitly denies formal signing, independent operation and production mutation. An owner-controlled signed RC/main chain, independent fresh server and current production upgrade/rollback remain external; Gate 01 and Gate 25 stay `FAIL` and overall stays `NO_GO`.
 
 `PRV2-001` is `BLOCKED_EXTERNAL`, not closed. The no-value register now classifies every incomplete credential as requiring an owner-controlled secret channel, current production/NAS/CI inventory, controlled devices or cloud-console access, and independent old-value rejection. Test credentials, repository changes, a stale password, or bypassing the unverified production SSH host key cannot satisfy the finding. Gate 02 remains `FAIL` until every row is independently complete.
+
+`PRV2-007` remains `BLOCKED_EXTERNAL`, not closed. Exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` passed native Windows release compilation, unit/boundary tests, strict Clippy and independently verified evidence in run `31667104728`, artifact `9168434013`. This closes a repository automation gap only; no device was installed and no online SCM, virtual NIC, route, sleep, crash, upgrade/rollback, uninstall or Verifier matrix ran.

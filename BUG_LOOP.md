@@ -435,3 +435,10 @@ Bug 集中修复阶段只有满足以下条件才通过：
 - 修复：夹具先拒绝预先占用的固定端口，再同时要求精确子进程 `kill -0` 成功和 `ss` 观察到监听；若两秒内未就绪则夹具自身失败。产品预检、端口冲突拒绝、部署生命周期和清理断言未改变。
 - 精确 revision `67152427acc197deca49443a8527c74b18d71098` 的 run `31661323846` 全 13 job 通过。Gate 25 artifact `9166570284` 通过 110 外层、8 嵌套清单、10/10 阶段、两组 10/10 不变量和零秘密扫描；四个关键 artifact 合计独立验证 286 个清单项。
 - 该缺陷已关闭，但正式 Gate 22/25 外部门禁不变；生产未改变，总体保持 `NO_GO`。
+
+## 原生 Windows CI 与独立实现策略闭环（2026-08-13）
+
+- `XS-2026-0074`：仓库原 CI 只从 Linux 交叉检查部分 Windows crate，不能证明 Agent/CLI 在原生 MSVC host 上构建。新增固定 `windows-2025` job 和严格 PowerShell harness，构建 release 二进制与六个边界 crate，运行测试、Clippy、哈希和秘密扫描；证据明确不声明设备安装或 Verifier。
+- `XS-2026-0075`：首轮 run `31666007136` 的 Windows job `94340603780` 已通过，但 baseline job `94340603963` 把精确测试脚本中的 `xs-windows-wintun` 包名当成禁止的运行时引用。修复为路径精确、工具用途限定的例外，并新增其他脚本、generic runtime 和 WireGuard 的负向回归；没有跳过扫描或扩大产品运行时边界。
+- 最终 exact code revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855` 的 run `31667104728` 全 14 job 通过。Windows artifact `9168434013` 独立通过 12/12 哈希、51 个 Agent 测试、23 个边界测试、release 构建、严格 Clippy 和零发现秘密扫描。
+- 两项仓库自动化缺陷已关闭；真实 Windows 在线生命周期仍按 `PRV2-007`/`KI-020`/`KI-022` 外部阻塞，不得改写为已完成。

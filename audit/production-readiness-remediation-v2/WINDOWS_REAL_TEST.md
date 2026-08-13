@@ -2,7 +2,9 @@
 
 ## Status
 
-`BLOCKED_EXTERNAL`. Cross-target builds, test-signed `xsnet` VM evidence, Wintun packaging, and offline smoke do not prove the complete online client lifecycle.
+`BLOCKED_EXTERNAL`. Native MSVC Agent/CLI builds and unit/boundary tests, cross-target builds, test-signed `xsnet` VM evidence, Wintun packaging, and offline smoke do not prove the complete online client lifecycle.
+
+Repository evidence at revision `16ee4bf7be4687f2ac307c7a1235f7d92275e855`, run `31667104728`, artifact `9168434013` independently proves the native build boundary. Its summary explicitly records `device_installation=false`, `driver_verifier=false`, and `production_mutation=false`; it is prerequisite evidence, not this gate's PASS evidence.
 
 ## Required Environment
 
